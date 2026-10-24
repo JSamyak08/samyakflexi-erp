@@ -12,6 +12,7 @@ export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
 import { getFilmSubstrates } from './services/filmSubstratesService';
 import { attendanceCalendarDate } from './services/employeeAttendance';
+import { isPayrollRecoverableAdvance } from './services/salaryAdvance';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -1663,11 +1664,10 @@ export function calculateEmployeeMonthlySalary(emp, monthKey, attendanceList = [
   // Professional Tax
   const ptDeduction = Number(struct.professionalTax) || 0;
 
-  // Salary Advance EMI Deduction (active approved advances)
-  const activeAdvances = advanceList.filter(adv => 
-    adv.employeeId === emp.id && 
-    (adv.status === 'Approved & Disbursed') &&
-    (adv.remainingBalance > 0)
+  // Salary advance EMI only after the advance has been disbursed.
+  const activeAdvances = advanceList.filter(adv =>
+    String(adv.employeeId) === String(emp.id) &&
+    isPayrollRecoverableAdvance(adv)
   );
   
   let totalAdvanceDeduction = 0;

@@ -65,6 +65,14 @@ import {
 } from '../services/employeeAttendance';
 import { pushSlugState } from '../utils/slugRouter';
 import { roundToTwo, formatUpToTwoDecimals } from '../utils/numberHelpers';
+import {
+  canApproveSalaryAdvanceRole,
+  findUnsettledAdvance,
+  isExactAdminRole,
+  isPayrollRecoverableAdvance,
+  SALARY_ADVANCE_STATUS_FILTERS,
+  salaryAdvanceBadgeStyle,
+} from '../services/salaryAdvance';
 
 export function calculateOvertimeTimeWindow(att) {
   if (!att) return { otStartTime: '', otEndTime: '', displayStr: '' };
@@ -253,6 +261,16 @@ export default function EmployeeManagement({
     const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
     return roleStr === 'admin' || roleStr.includes('admin') || roleStr.includes('director') || roleStr.includes('owner');
   }, [currentUser, userRole]);
+
+  const advanceActorRole = currentUser?.role || userRole || '';
+  const isExactAdmin = useMemo(
+    () => isExactAdminRole(advanceActorRole),
+    [advanceActorRole]
+  );
+  const canApproveAdvance = useMemo(
+    () => canApproveSalaryAdvanceRole(advanceActorRole, { anonymous: !currentUser && !userRole }),
+    [advanceActorRole, currentUser, userRole]
+  );
 
   // Sub-Tab Navigation: 'directory', 'attendance', 'overtime', 'advances', 'payroll'
   const [activeSubTab, setActiveSubTab] = useState(() => {
@@ -698,6 +716,15 @@ export default function EmployeeManagement({
   // Advance Recovery History Modal
   const [showAdvanceHistoryModal, setShowAdvanceHistoryModal] = useState(false);
   const [historyTargetAdvance, setHistoryTargetAdvance] = useState(null);
+
+  // Approve-with-override (Admin only) and disbursal (payment reference required)
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideTargetAdvance, setOverrideTargetAdvance] = useState(null);
+  const [overrideAck, setOverrideAck] = useState(false);
+  const [showDisburseModal, setShowDisburseModal] = useState(false);
+  const [disburseTargetAdvance, setDisburseTargetAdvance] = useState(null);
+  const [disbursePaymentRef, setDisbursePaymentRef] = useState('');
+  const [disburseDate, setDisburseDate] = useState(() => new Date().toISOString().split('T')[0]);
 
   // Open Onboard Modal
   const handleOpenOnboardModal = () => {
@@ -1239,15 +1266,9 @@ export default function EmployeeManagement({
     if (!selectedEmp) return;
 
     if (!editingAdvance) {
-      // Rule Enforcement: Any employee with a previous outstanding advance cannot request a new advance before completion of old dues
-      const activeExistingAdvance = salaryAdvances.find(adv => 
-        adv.employeeId === selectedEmp.id && 
-        (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
-        Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
-      );
-
-      if (activeExistingAdvance) {
-        alert(`⚠️ Advance Blocked: ${selectedEmp.fullName} already has an active outstanding advance (${activeExistingAdvance.id}) with ₹${(Number(activeExistingAdvance.remainingBalance || activeExistingAdvance.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} remaining dues! New advances cannot be requested until previous dues are 100% completed.`);
+      const activeExistingAdvance = findUnsettledAdvance(salaryAdvances, selectedEmp.id);
+      if (activeExistingAdvance && !isExactAdmin) {
+        alert(`Advance blocked: ${selectedEmp.fullName} already has an unsettled advance (${activeExistingAdvance.id}). A new request cannot be added until that advance is settled. Only an Admin can file the next request, and it still has to be approved.`);
         return;
       }
     }
@@ -1282,10 +1303,15 @@ export default function EmployeeManagement({
         repaymentTenureMonths: tenure,
         monthlyEmiAmount: emi,
         reason: advReason.trim() || 'Salary Advance Request',
-        status: canApprove ? 'Approved & Disbursed' : 'Pending Approval',
-        approvedBy: canApprove ? (currentUser?.name || 'Plant Head') : '',
-        approvedDate: canApprove ? new Date().toISOString().split('T')[0] : '',
-        disbursedDate: canApprove ? new Date().toISOString().split('T')[0] : '',
+        status: 'Requested',
+        approvedBy: '',
+        approvedDate: '',
+        disbursedDate: '',
+        disbursedBy: '',
+        paymentReference: '',
+        policyOverride: false,
+        policyOverrideBy: '',
+        policyOverrideAt: null,
         totalRecoveredAmount: 0,
         remainingBalance: amt,
         deductionHistory: []
@@ -1299,25 +1325,100 @@ export default function EmployeeManagement({
     setAdvEmpId('');
     setAdvAmount('');
     setAdvReason('');
-    alert(`Salary Advance ${editingAdvance ? 'Updated' : 'Request recorded'} for ${selectedEmp.fullName} (₹${(amt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})!`);
+    alert(`Salary advance ${editingAdvance ? 'updated' : 'requested'} for ${selectedEmp.fullName} (₹${(amt || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}). It stays Requested until an approver approves it.`);
   };
 
-  // Approve Salary Advance
-  const handleApproveAdvance = (adv) => {
-    if (!canApprove) {
-      alert("Authorization required to approve salary advances!");
-      return;
-    }
+  const commitAdvanceApproval = (adv, withOverride) => {
     const updated = {
       ...adv,
-      status: 'Approved & Disbursed',
-      approvedBy: currentUser?.name || 'Plant Head',
+      status: 'Approved',
+      approvedBy: currentUser?.name || currentUser?.fullName || advanceActorRole || 'Approver',
       approvedDate: new Date().toISOString().split('T')[0],
-      disbursedDate: new Date().toISOString().split('T')[0]
+      disbursedDate: '',
+      disbursedBy: '',
+      paymentReference: '',
+      policyOverride: Boolean(withOverride),
+      policyOverrideBy: withOverride ? (currentUser?.name || currentUser?.fullName || 'Admin') : '',
+      policyOverrideAt: withOverride ? new Date().toISOString() : null,
     };
     if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updated);
     saveSalaryAdvanceToSupabase(updated);
-    alert(`Salary Advance of ₹${(adv.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for ${adv.employeeName} approved & disbursed! Monthly EMI: ₹${adv.monthlyEmiAmount}`);
+    alert(`Salary advance of ₹${(adv.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} for ${adv.employeeName} is approved. It is not disbursed until a payment reference is entered.`);
+  };
+
+  // Approve only. Disbursal is a later step and needs a payment reference.
+  const handleApproveAdvance = (adv) => {
+    if (!canApproveAdvance) {
+      alert("Authorization required to approve salary advances!");
+      return;
+    }
+    if (adv.status !== 'Requested' && adv.status !== 'Pending Approval') {
+      alert('Only a requested advance can be approved.');
+      return;
+    }
+    const other = findUnsettledAdvance(salaryAdvances, adv.employeeId, adv.id);
+    if (other) {
+      if (!isExactAdmin) {
+        alert(`Only an Admin can approve this request while ${adv.employeeName} still has unsettled advance ${other.id}. The override is recorded at approval.`);
+        return;
+      }
+      setOverrideTargetAdvance(adv);
+      setOverrideAck(false);
+      setShowOverrideModal(true);
+      return;
+    }
+    commitAdvanceApproval(adv, false);
+  };
+
+  const handleConfirmOverrideApproval = (e) => {
+    e.preventDefault();
+    if (!isExactAdmin || !overrideTargetAdvance) return;
+    if (!overrideAck) {
+      alert('Tick the policy override before approving. The request stays Requested until then.');
+      return;
+    }
+    commitAdvanceApproval(overrideTargetAdvance, true);
+    setShowOverrideModal(false);
+    setOverrideTargetAdvance(null);
+    setOverrideAck(false);
+  };
+
+  const handleOpenDisburseModal = (adv) => {
+    if (!canApproveAdvance) {
+      alert('Authorization required to disburse salary advances!');
+      return;
+    }
+    if (adv.status !== 'Approved') {
+      alert('Only an approved advance can be disbursed.');
+      return;
+    }
+    setDisburseTargetAdvance(adv);
+    setDisbursePaymentRef('');
+    setDisburseDate(new Date().toISOString().split('T')[0]);
+    setShowDisburseModal(true);
+  };
+
+  const handleDisburseAdvanceSubmit = (e) => {
+    e.preventDefault();
+    if (!disburseTargetAdvance) return;
+    const ref = disbursePaymentRef.trim();
+    if (!ref) {
+      alert('A payment reference is required to disburse an approved advance.');
+      return;
+    }
+    const updated = {
+      ...disburseTargetAdvance,
+      status: 'Disbursed',
+      paymentReference: ref,
+      disbursedDate: disburseDate || new Date().toISOString().split('T')[0],
+      disbursedBy: currentUser?.name || currentUser?.fullName || advanceActorRole || '',
+    };
+    if (onUpdateSalaryAdvance) onUpdateSalaryAdvance(updated);
+    saveSalaryAdvanceToSupabase(updated);
+    setShowDisburseModal(false);
+    setDisburseTargetAdvance(null);
+    setDisbursePaymentRef('');
+    alert(`Advance ${disburseTargetAdvance.id} for ${disburseTargetAdvance.employeeName} is disbursed against payment reference ${ref}. Recovery can start now.`);
   };
 
   // Open Payment Disbursal Modal with Advance Recovery Option
@@ -1331,11 +1432,9 @@ export default function EmployeeManagement({
     setPaymentTxnRef(`UTR-${Date.now().toString().slice(-6)}`);
     setPaymentNotes(`${payrollMonth} monthly salary disbursed`);
 
-    // Look for active approved advance for this employee
-    const activeAdv = salaryAdvances.find(a => 
-      String(a.employeeId) === String(row.employeeId) && 
-      (a.status === 'Approved & Disbursed') && 
-      Number(a.remainingBalance ?? (a.advanceAmount - (a.totalRecoveredAmount || 0))) > 0
+    const activeAdv = salaryAdvances.find(a =>
+      String(a.employeeId) === String(row.employeeId) &&
+      isPayrollRecoverableAdvance(a)
     );
 
     if (activeAdv) {
@@ -1471,6 +1570,10 @@ export default function EmployeeManagement({
   const handleDirectAdvanceRecoverySubmit = (e) => {
     e.preventDefault();
     if (!recoveryTargetAdvance) return;
+    if (recoveryTargetAdvance.status !== 'Disbursed' && recoveryTargetAdvance.status !== 'Approved & Disbursed') {
+      alert('Recovery starts only after the advance is disbursed.');
+      return;
+    }
 
     const remBal = Number(recoveryTargetAdvance.remainingBalance ?? (recoveryTargetAdvance.advanceAmount - (recoveryTargetAdvance.totalRecoveredAmount || 0)));
     const amt = parseFloat(recoveryAmountInput) || 0;
@@ -1613,7 +1716,9 @@ export default function EmployeeManagement({
   // Salary Advances Summary Metrics
   const advancesMetrics = useMemo(() => {
     return filteredSalaryAdvances.reduce((acc, adv) => {
-      acc.totalDisbursed += (adv.advanceAmount || 0);
+      if (adv.status === 'Disbursed' || adv.status === 'Fully Recovered' || adv.status === 'Approved & Disbursed') {
+        acc.totalDisbursed += (adv.advanceAmount || 0);
+      }
       acc.totalRecovered += (adv.totalRecoveredAmount || 0);
       acc.totalBalance += (adv.remainingBalance || 0);
       acc.count += 1;
@@ -1623,9 +1728,9 @@ export default function EmployeeManagement({
 
   // Export Salary Advances Schedule to CSV
   const handleExportAdvancesCSV = () => {
-    let csv = "Request Date,Disbursement Date,Employee Code,Employee Name,Department,Advance Amount (₹),Repayment Tenure (Months),Monthly EMI (₹),Total Recovered (₹),Remaining Balance (₹),Status,Reason,Approved By\n";
+    let csv = "Request Date,Disbursement Date,Employee Code,Employee Name,Department,Advance Amount (₹),Repayment Tenure (Months),Monthly EMI (₹),Total Recovered (₹),Remaining Balance (₹),Status,Reason,Approved By,Payment Reference,Disbursed By,Policy Override,Policy Override By,Policy Override At\n";
     filteredSalaryAdvances.forEach(adv => {
-      csv += `"${adv.requestDate || ''}","${adv.disbursementDate || ''}","${adv.employeeCode || ''}","${adv.employeeName || ''}","${adv.department || ''}",${adv.advanceAmount || 0},${adv.repaymentTenureMonths || 0},${adv.monthlyEmiAmount || 0},${adv.totalRecoveredAmount || 0},${adv.remainingBalance || 0},"${adv.status || ''}","${(adv.reason || '').replace(/"/g, '""')}","${adv.approvedBy || ''}"\n`;
+      csv += `"${adv.requestDate || ''}","${adv.disbursedDate || ''}","${adv.employeeCode || ''}","${adv.employeeName || ''}","${adv.department || ''}",${adv.advanceAmount || 0},${adv.repaymentTenureMonths || 0},${adv.monthlyEmiAmount || 0},${adv.totalRecoveredAmount || 0},${adv.remainingBalance || 0},"${adv.status || ''}","${(adv.reason || '').replace(/"/g, '""')}","${adv.approvedBy || ''}","${(adv.paymentReference || '').replace(/"/g, '""')}","${adv.disbursedBy || ''}","${adv.policyOverride ? 'Yes' : 'No'}","${adv.policyOverrideBy || ''}","${adv.policyOverrideAt || ''}"\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -1770,7 +1875,7 @@ export default function EmployeeManagement({
             <div className="stat-card">
               <div className="stat-card-title">Active Salary Advances</div>
               <div className="stat-card-val" style={{ color: '#d97706' }}>
-                ₹ {salaryAdvances.filter(a => a.status === 'Approved & Disbursed').reduce((acc, a) => acc + (a.remainingBalance || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₹ {salaryAdvances.filter(a => isPayrollRecoverableAdvance(a)).reduce((acc, a) => acc + (a.remainingBalance || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div className="stat-card-sub">Recoverable outstanding balance</div>
             </div>
@@ -3196,9 +3301,9 @@ export default function EmployeeManagement({
                   onChange={(e) => setAdvancesStatusFilter(e.target.value)}
                 >
                   <option value="ALL">All Statuses</option>
-                  <option value="Pending Approval">Pending Approval</option>
-                  <option value="Approved & Disbursed">Approved & Disbursed</option>
-                  <option value="Fully Recovered">Fully Recovered</option>
+                  {SALARY_ADVANCE_STATUS_FILTERS.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
                 </SearchableSelect>
               </div>
 
@@ -3268,7 +3373,7 @@ export default function EmployeeManagement({
             </div>
           </div>
 
-          <div className="glass-panel" style={{ padding: '0', overflow: 'hidden' }}>
+          <div className="glass-panel" data-testid="salary-advances-panel" style={{ padding: '0', overflow: 'hidden' }}>
             <table className="data-table" style={{ width: '100%', margin: 0 }}>
               <thead>
                 <tr>
@@ -3323,13 +3428,35 @@ export default function EmployeeManagement({
                         })()}
                       </td>
                       <td>
-                        <span style={{ 
-                          background: adv.status === 'Approved & Disbursed' ? '#dcfce7' : adv.status === 'Fully Recovered' ? '#f1f5f9' : '#fef9c3',
-                          color: adv.status === 'Approved & Disbursed' ? '#166534' : adv.status === 'Fully Recovered' ? '#475569' : '#854d0e',
-                          padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '800'
-                        }}>
-                          {adv.status}
-                        </span>
+                        {(() => {
+                          const badge = salaryAdvanceBadgeStyle(adv.status);
+                          const showRef = adv.paymentReference && (adv.status === 'Disbursed' || adv.status === 'Fully Recovered' || adv.status === 'Approved & Disbursed');
+                          return (
+                            <div>
+                              <span
+                                data-testid={`advance-status-${adv.id}`}
+                                style={{
+                                  background: badge.background,
+                                  color: badge.color,
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: '800'
+                                }}
+                              >
+                                {adv.status}
+                              </span>
+                              {showRef && (
+                                <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '4px' }}>Ref: {adv.paymentReference}</div>
+                              )}
+                              {adv.policyOverride && (
+                                <div style={{ fontSize: '0.68rem', color: '#7c3aed', marginTop: '2px' }}>
+                                  Policy override{adv.policyOverrideBy ? ` · ${adv.policyOverrideBy}` : ''}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3344,42 +3471,60 @@ export default function EmployeeManagement({
                               <Edit3 size={13} /> Edit
                             </button>
                           )}
-                          {adv.status === 'Pending Approval' ? (
-                            <button 
-                              type="button" 
-                              className="btn-primary" 
-                              style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              onClick={() => handleApproveAdvance(adv)}
-                            >
-                              <Check size={13} /> Approve & Disburse
-                            </button>
-                          ) : (
-                            <>
-                              {Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0 && (
-                                <button
-                                  type="button"
-                                  className="btn-primary"
-                                  style={{ padding: '3px 8px', fontSize: '0.73rem', background: '#16a34a', borderColor: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
-                                  onClick={() => handleOpenAdvanceRecoveryModal(adv)}
-                                  title="Confirm recovery of advance in salary or direct payment"
-                                >
-                                  <Coins size={13} /> Confirm Recovery
-                                </button>
-                              )}
+                          {(adv.status === 'Requested' || adv.status === 'Pending Approval') && canApproveAdvance && (
+                            findUnsettledAdvance(salaryAdvances, adv.employeeId, adv.id) && !isExactAdmin ? (
+                              <span
+                                data-testid={`advance-awaiting-admin-${adv.id}`}
+                                style={{ fontSize: '0.72rem', fontWeight: '800', color: '#92400e', background: '#fef3c7', padding: '3px 8px', borderRadius: '4px' }}
+                              >
+                                Awaiting Admin approval
+                              </span>
+                            ) : (
                               <button
                                 type="button"
-                                className="btn-secondary"
-                                style={{ padding: '3px 8px', fontSize: '0.73rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                onClick={() => {
-                                  setHistoryTargetAdvance(adv);
-                                  setShowAdvanceHistoryModal(true);
-                                }}
-                                title="View advance deduction and recovery audit history"
+                                className="btn-primary"
+                                data-testid={`advance-approve-${adv.id}`}
+                                style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#1d4ed8', borderColor: '#1d4ed8', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => handleApproveAdvance(adv)}
                               >
-                                <RotateCcw size={13} /> History {adv.deductionHistory?.length ? `(${adv.deductionHistory.length})` : ''}
+                                <Check size={13} /> {findUnsettledAdvance(salaryAdvances, adv.employeeId, adv.id) ? 'Approve with override' : 'Approve'}
                               </button>
-                            </>
+                            )
                           )}
+                          {adv.status === 'Approved' && canApproveAdvance && (
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              data-testid={`advance-disburse-${adv.id}`}
+                              style={{ padding: '3px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              onClick={() => handleOpenDisburseModal(adv)}
+                            >
+                              <CreditCard size={13} /> Disburse
+                            </button>
+                          )}
+                          {(adv.status === 'Disbursed' || adv.status === 'Approved & Disbursed') && Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0 && (
+                            <button
+                              type="button"
+                              className="btn-primary"
+                              style={{ padding: '3px 8px', fontSize: '0.73rem', background: '#16a34a', borderColor: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
+                              onClick={() => handleOpenAdvanceRecoveryModal(adv)}
+                              title="Confirm recovery of advance in salary or direct payment"
+                            >
+                              <Coins size={13} /> Confirm Recovery
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '3px 8px', fontSize: '0.73rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            onClick={() => {
+                              setHistoryTargetAdvance(adv);
+                              setShowAdvanceHistoryModal(true);
+                            }}
+                            title="View advance deduction and recovery audit history"
+                          >
+                            <RotateCcw size={13} /> History {adv.deductionHistory?.length ? `(${adv.deductionHistory.length})` : ''}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -4201,49 +4346,54 @@ export default function EmployeeManagement({
 
             {/* Advance Request Form */}
             {(() => {
-              const selectedEmpActiveAdvance = advEmpId ? salaryAdvances.find(adv => 
-                adv.employeeId === advEmpId && 
-                adv.id !== editingAdvance?.id &&
-                (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
-                Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
-              ) : null;
+              const selectedEmpActiveAdvance = advEmpId
+                ? findUnsettledAdvance(salaryAdvances, advEmpId, editingAdvance?.id)
+                : null;
+              const blockNewRequest = Boolean(selectedEmpActiveAdvance) && !editingAdvance && !isExactAdmin;
+              const adminMayFileDespiteOutstanding = Boolean(selectedEmpActiveAdvance) && !editingAdvance && isExactAdmin;
 
               return (
-                <form onSubmit={handleSaveSalaryAdvance}>
+                <form onSubmit={handleSaveSalaryAdvance} data-testid="salary-advance-request-form">
                   <div style={{ marginBottom: '12px' }}>
                     <label className="form-label">Select Employee *</label>
                     <SearchableSelect 
                       className="form-control" 
                       value={advEmpId} 
                       onChange={e => setAdvEmpId(e.target.value)} 
-                      disabled={Boolean(editingAdvance || selectedEmpActiveAdvance)}
+                      disabled={Boolean(editingAdvance || blockNewRequest)}
                       required
                       placeholder="-- Choose Employee --"
                     >
                       <option value="">-- Choose Employee --</option>
                       {employees.filter(e => e.status === 'Active' || e.status === 'On Probation').map(e => {
-                        const hasActive = salaryAdvances.find(adv => 
-                          adv.employeeId === e.id && 
-                          adv.id !== editingAdvance?.id &&
-                          (adv.status === 'Approved & Disbursed' || adv.status === 'Pending Approval') &&
-                          Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0))) > 0
-                        );
+                        const hasActive = findUnsettledAdvance(salaryAdvances, e.id, editingAdvance?.id);
                         return (
                           <option key={e.id} value={e.id}>
-                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[⚠️ Advance Due: ₹${(Number(hasActive.remainingBalance || hasActive.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}]` : ''}
+                            {e.fullName} ({e.empCode || e.id}) - {e.department} {hasActive ? `[Advance due: ₹${(Number(hasActive.remainingBalance || hasActive.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}]` : ''}
                           </option>
                         );
                       })}
                     </SearchableSelect>
                   </div>
 
-                  {selectedEmpActiveAdvance && (
-                    <div style={{ background: '#fef2f2', border: '1.5px solid #fecaca', padding: '14px 16px', borderRadius: '8px', marginBottom: '16px', color: '#991b1b', fontSize: '0.84rem' }}>
+                  {blockNewRequest && (
+                    <div data-testid="salary-advance-request-blocked" style={{ background: '#fef2f2', border: '1.5px solid #fecaca', padding: '14px 16px', borderRadius: '8px', marginBottom: '16px', color: '#991b1b', fontSize: '0.84rem' }}>
                       <div style={{ fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', color: '#b91c1c' }}>
                         <AlertTriangle size={18} style={{ color: '#dc2626' }} /> Advance Request Blocked — Outstanding Advance Pending
                       </div>
                       <div>
-                        This employee already has an active advance (<b>{selectedEmpActiveAdvance.id}</b>) with an outstanding balance of <b style={{ color: '#b91c1c' }}>₹{(Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> ({selectedEmpActiveAdvance.status}). As per factory policy, a new advance cannot be requested before completion of old dues.
+                        This employee already has an unsettled advance (<b>{selectedEmpActiveAdvance.id}</b>) with a balance of <b style={{ color: '#b91c1c' }}>₹{(Number(selectedEmpActiveAdvance.remainingBalance || selectedEmpActiveAdvance.advanceAmount) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> ({selectedEmpActiveAdvance.status}). A new advance cannot be requested until that one is settled.
+                      </div>
+                    </div>
+                  )}
+
+                  {adminMayFileDespiteOutstanding && (
+                    <div data-testid="salary-advance-admin-request-notice" style={{ background: '#fffbeb', border: '1.5px solid #fde68a', padding: '14px 16px', borderRadius: '8px', marginBottom: '16px', color: '#92400e', fontSize: '0.84rem' }}>
+                      <div style={{ fontWeight: '900', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                        <AlertTriangle size={18} /> Outstanding advance — this submit only files a request
+                      </div>
+                      <div>
+                        {selectedEmpActiveAdvance.employeeName || 'This employee'} still has unsettled advance <b>{selectedEmpActiveAdvance.id}</b> ({selectedEmpActiveAdvance.status}). Submitting keeps this new advance at <b>Requested</b>. It is not approved. An Admin records the policy override later, on the approval step.
                       </div>
                     </div>
                   )}
@@ -4257,7 +4407,7 @@ export default function EmployeeManagement({
                         value={advAmount} 
                         onChange={e => setAdvAmount(e.target.value)} 
                         placeholder="e.g. 10000" 
-                        disabled={Boolean(selectedEmpActiveAdvance)}
+                        disabled={blockNewRequest}
                         required 
                       />
                     </div>
@@ -4268,7 +4418,7 @@ export default function EmployeeManagement({
                         className="form-control" 
                         value={advTenureMonths} 
                         onChange={e => setAdvTenureMonths(Number(e.target.value) || 1)}
-                        disabled={Boolean(selectedEmpActiveAdvance)}
+                        disabled={blockNewRequest}
                       >
                         <option value={1}>1 Month (Full in next salary)</option>
                         <option value={2}>2 Months (50% EMI)</option>
@@ -4279,7 +4429,7 @@ export default function EmployeeManagement({
                     </div>
                   </div>
 
-                  {Number(advAmount) > 0 && !selectedEmpActiveAdvance && (
+                  {Number(advAmount) > 0 && !blockNewRequest && (
                     <div style={{ background: '#f0fdf4', padding: '10px 14px', borderRadius: '6px', border: '1px solid #bbf7d0', marginBottom: '14px', fontSize: '0.84rem', color: '#166534' }}>
                       💰 Monthly Salary EMI Deduction: <b>₹{Math.round(Number(advAmount) / (Number(advTenureMonths) || 1)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / month</b>
                     </div>
@@ -4293,7 +4443,7 @@ export default function EmployeeManagement({
                       value={advReason} 
                       onChange={e => setAdvReason(e.target.value)} 
                       placeholder="e.g. Family medical emergency, festival, children school fee..."
-                      disabled={Boolean(selectedEmpActiveAdvance)}
+                      disabled={blockNewRequest}
                     />
                   </div>
 
@@ -4304,12 +4454,13 @@ export default function EmployeeManagement({
                     <button 
                       type="submit" 
                       className="btn-primary"
-                      disabled={Boolean(selectedEmpActiveAdvance)}
+                      data-testid="salary-advance-request-submit"
+                      disabled={blockNewRequest}
                       style={{
-                        opacity: selectedEmpActiveAdvance ? 0.5 : 1,
-                        cursor: selectedEmpActiveAdvance ? 'not-allowed' : 'pointer'
+                        opacity: blockNewRequest ? 0.5 : 1,
+                        cursor: blockNewRequest ? 'not-allowed' : 'pointer'
                       }}
-                      title={selectedEmpActiveAdvance ? 'Request blocked due to outstanding advance' : (editingAdvance ? 'Update Salary Advance Details' : 'Submit Advance Request')}
+                      title={blockNewRequest ? 'Request blocked due to outstanding advance' : (editingAdvance ? 'Update Salary Advance Details' : 'Submit Advance Request')}
                     >
                       {editingAdvance ? 'Update Salary Advance' : 'Submit Advance Request'}
                     </button>
@@ -4317,6 +4468,95 @@ export default function EmployeeManagement({
                 </form>
               );
             })()}
+          </div>
+        </div>
+      )}
+
+      {/* Admin-only override. It is part of approval, not the request form. */}
+      {isExactAdmin && showOverrideModal && overrideTargetAdvance && (
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.75)', zIndex: 1060 }}>
+          <div className="modal-content glass-panel" style={{ width: '520px', padding: '24px', background: '#ffffff' }} data-testid="salary-advance-override-modal">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontWeight: '900', color: '#7c3aed', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={20} /> Approve with policy override
+              </h3>
+              <button type="button" className="btn-secondary" onClick={() => { setShowOverrideModal(false); setOverrideTargetAdvance(null); setOverrideAck(false); }}>
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleConfirmOverrideApproval}>
+              <p style={{ fontSize: '0.86rem', color: '#334155', marginTop: 0 }}>
+                {overrideTargetAdvance.employeeName} still has another unsettled advance. Approving <b>{overrideTargetAdvance.id}</b> does not disburse it. The override is stored with your name and the time of this approval.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.84rem', fontWeight: '800', color: '#1e293b', marginBottom: '16px' }}>
+                <input
+                  type="checkbox"
+                  data-testid="salary-advance-override-control"
+                  checked={overrideAck}
+                  onChange={(e) => setOverrideAck(e.target.checked)}
+                  style={{ width: '16px', height: '16px', marginTop: '2px', accentColor: '#7c3aed' }}
+                />
+                <span>I am an Admin and I am overriding the outstanding-advance policy for this approval.</span>
+              </label>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary" onClick={() => { setShowOverrideModal(false); setOverrideTargetAdvance(null); setOverrideAck(false); }}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" data-testid="salary-advance-override-submit" disabled={!overrideAck} style={{ background: '#7c3aed', borderColor: '#7c3aed', opacity: overrideAck ? 1 : 0.5 }}>
+                  Approve, do not disburse
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showDisburseModal && disburseTargetAdvance && (
+        <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.75)', zIndex: 1060 }}>
+          <div className="modal-content glass-panel" style={{ width: '480px', padding: '24px', background: '#ffffff' }} data-testid="salary-advance-disburse-modal">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+              <h3 style={{ margin: 0, fontWeight: '900', color: '#166534', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CreditCard size={20} /> Disburse approved advance
+              </h3>
+              <button type="button" className="btn-secondary" onClick={() => setShowDisburseModal(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <form onSubmit={handleDisburseAdvanceSubmit}>
+              <p style={{ fontSize: '0.86rem', color: '#334155', marginTop: 0 }}>
+                {disburseTargetAdvance.employeeName} · {disburseTargetAdvance.id} · ₹{(disburseTargetAdvance.advanceAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Status stays Approved until a payment reference is saved.
+              </p>
+              <div style={{ marginBottom: '12px' }}>
+                <label className="form-label">Payment reference *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  data-testid="salary-advance-payment-reference"
+                  value={disbursePaymentRef}
+                  onChange={(e) => setDisbursePaymentRef(e.target.value)}
+                  placeholder="UTR, cheque number, or cash voucher"
+                  required
+                />
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label className="form-label">Disbursement date</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  value={disburseDate}
+                  onChange={(e) => setDisburseDate(e.target.value)}
+                  required
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn-secondary" onClick={() => setShowDisburseModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary" data-testid="salary-advance-disburse-submit" style={{ background: '#059669', borderColor: '#059669' }}>
+                  Mark Disbursed
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -4624,8 +4864,7 @@ export default function EmployeeManagement({
                           </div>
                         </div>
                         <span style={{ 
-                          background: recoveryTargetAdvance.status === 'Approved & Disbursed' ? '#dcfce7' : '#fef9c3', 
-                          color: recoveryTargetAdvance.status === 'Approved & Disbursed' ? '#166534' : '#854d0e',
+                          ...salaryAdvanceBadgeStyle(recoveryTargetAdvance.status),
                           fontSize: '0.72rem', fontWeight: '800', padding: '2px 8px', borderRadius: '4px' 
                         }}>
                           {recoveryTargetAdvance.status}
@@ -4806,8 +5045,7 @@ export default function EmployeeManagement({
                         </div>
                       </div>
                       <span style={{ 
-                        background: historyTargetAdvance.status === 'Fully Recovered' ? '#f1f5f9' : '#dcfce7',
-                        color: historyTargetAdvance.status === 'Fully Recovered' ? '#475569' : '#166534',
+                        ...salaryAdvanceBadgeStyle(historyTargetAdvance.status),
                         padding: '3px 10px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '800'
                       }}>
                         {historyTargetAdvance.status}
