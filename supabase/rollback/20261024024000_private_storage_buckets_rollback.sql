@@ -1,0 +1,6 @@
+-- Do not set erp-files or artwork back to public.
+-- A public bucket lets anyone read, replace, or delete artwork and documents.
+--
+-- If signed URLs fail for a signed-in user, check that private.app_role()
+-- returns their role and that erp_files_read exists on storage.objects.
+-- Do not uncomment a public = true update.

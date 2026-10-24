@@ -1,0 +1,14 @@
+-- This file is a no-op. Every statement is a comment.
+-- The migration it refers to is supabase/migrations/20261024013000_save_grn_with_lines.sql.
+-- This directory is not applied by the GitHub integration.
+--
+-- Dropping the save function stops new multi-item writes. Receipt headers,
+-- grn_line_items rows, and roll links already stored are left in place.
+-- The pellet companion save returns to the previous function the next time
+-- supabase/migrations/20261023190000_pellet_fuel_grn_and_vehicle.sql is applied
+-- by hand (CREATE OR REPLACE of save_pellet_inward_with_grn). Do not run that
+-- older file through the GitHub migration stream.
+--
+-- Run by hand in the Supabase SQL editor (postgres), only to undo this step:
+--
+-- DROP FUNCTION IF EXISTS public.save_grn_with_lines(jsonb);

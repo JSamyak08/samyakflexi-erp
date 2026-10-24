@@ -2,19 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 import { readSmtpConfig } from './smtpConfig.js';
-
-const ROLES = [
-  'Admin',
-  'Plant Manager',
-  'HR & Payroll Manager',
-  'Production Manager',
-  'Store Manager',
-  'QC Chemist',
-  'Purchase Manager',
-  'Sales Manager',
-  'Printing Operator',
-  'Shop Floor Operator',
-];
+import { SYSTEM_ROLES as ROLES } from '../src/roles.js';
 
 const USER_DAILY_CAP = 50;
 const GLOBAL_DAILY_CAP = 60;

@@ -5,19 +5,7 @@ import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 import { readUsername } from '../src/utils/activeUserLabel.js';
 import { resolveAppOrigin } from './appOrigin.js';
 import { readSmtpConfig } from './smtpConfig.js';
-
-const ROLES = [
-  'Admin',
-  'Plant Manager',
-  'HR & Payroll Manager',
-  'Production Manager',
-  'Store Manager',
-  'QC Chemist',
-  'Purchase Manager',
-  'Sales Manager',
-  'Printing Operator',
-  'Shop Floor Operator',
-];
+import { SYSTEM_ROLES as ROLES } from '../src/roles.js';
 
 const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
 

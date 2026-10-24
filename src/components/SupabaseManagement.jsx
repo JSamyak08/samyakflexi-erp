@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   Database, 
   CheckCircle2, 
@@ -29,7 +30,7 @@ import {
 import { seedAllDataToSupabase, clearAllSupabaseData } from '../services/supabaseDataService';
 import { initializeStorageBuckets } from '../services/supabaseStorageService';
 
-export default function SupabaseManagement() {
+export default function SupabaseManagement({ urlParams = {} }) {
   const [urlInput, setUrlInput] = useState(() => {
     return getSupabaseCredentials().url || '';
   });
@@ -47,7 +48,14 @@ export default function SupabaseManagement() {
   });
 
   const [copied, setCopied] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState('status'); // 'status', 'config', 'schema', 'auth'
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || 'status');
+  useEffect(() => {
+    if (urlParams?.subTab) setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const chooseSupabaseTab = (subTab) => {
+    setActiveSubTab(subTab);
+    pushSlugState('supabase', { section: subTab });
+  };
 
   const handleSeedData = async () => {
     setSeeding(true);
@@ -866,7 +874,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
               disabled={initializingBuckets || !isSupabaseConfigured()}
               className="btn-primary"
               style={{ background: '#0284c7', borderColor: '#0284c7', opacity: (!isSupabaseConfigured() || initializingBuckets) ? 0.6 : 1 }}
-              title="Create or verify public storage bucket erp-files and artwork in Supabase"
+              title="Create or verify private storage buckets erp-files and artwork"
             >
               <Cloud size={16} className={initializingBuckets ? 'animate-spin' : ''} />
               {initializingBuckets ? 'Configuring...' : 'Setup Storage Buckets'}
@@ -914,28 +922,28 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
       {/* Subtab Navigation Pills */}
       <div className="scrollable-tabs-container" style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
         <button
-          onClick={() => setActiveSubTab('status')}
+          onClick={() => chooseSupabaseTab('status')}
           className={`tab-pill ${activeSubTab === 'status' ? 'active' : ''}`}
         >
           <Server size={16} />
           Connection Overview
         </button>
         <button
-          onClick={() => setActiveSubTab('config')}
+          onClick={() => chooseSupabaseTab('config')}
           className={`tab-pill ${activeSubTab === 'config' ? 'active' : ''}`}
         >
           <Key size={16} />
           Credentials & API Setup
         </button>
         <button
-          onClick={() => setActiveSubTab('schema')}
+          onClick={() => chooseSupabaseTab('schema')}
           className={`tab-pill ${activeSubTab === 'schema' ? 'active' : ''}`}
         >
           <FileCode size={16} />
           SQL Schema Script
         </button>
         <button
-          onClick={() => setActiveSubTab('auth')}
+          onClick={() => chooseSupabaseTab('auth')}
           className={`tab-pill ${activeSubTab === 'auth' ? 'active' : ''}`}
         >
           <ShieldCheck size={16} />
@@ -1050,7 +1058,7 @@ ALTER TABLE public.job_masters ADD COLUMN IF NOT EXISTS creation_date DATE;
                   Run the SQL schema provided under the <strong>SQL Schema Script</strong> tab in your Supabase SQL Editor to create all 14 tables and access policies.
                 </li>
                 <li>
-                  Go to <strong>Storage</strong> in Supabase Dashboard &gt; <strong>New bucket</strong> &gt; Name it <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a', fontWeight: '700' }}>erp-files</code> &gt; Toggle <strong>Public bucket</strong> to ON &gt; Save.
+                  Go to <strong>Storage</strong> in Supabase Dashboard &gt; <strong>New bucket</strong> &gt; Name it <code style={{ background: '#e2e8f0', padding: '2px 6px', borderRadius: '4px', color: '#0f172a', fontWeight: '700' }}>erp-files</code> &gt; Leave <strong>Public bucket</strong> off &gt; Save. Signed-in users open files with signed URLs.
                 </li>
               </ol>
             </div>

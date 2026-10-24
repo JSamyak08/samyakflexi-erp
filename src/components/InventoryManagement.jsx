@@ -46,12 +46,21 @@ import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
-import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings } from '../services/settingsService';
+import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, getDocumentPrefixes } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCEscalation12h, notifyGRNQCVarianceModified } from '../services/emailService';
 import { dispatchOverdueQcAlerts } from '../services/qcEscalationGuard';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName } from '../services/supabaseDataService';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber } from '../services/supabaseDataService';
+import {
+  applyMultiLineQc,
+  findDuplicateInvoice,
+  oneLineFromReceipt,
+  pendingQcKgForItem,
+  prepareMultiLineReceipt,
+  qcDraftFromLine,
+  validateCapturedLines
+} from '../services/grnDocument';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
 import { pushSlugState } from '../utils/slugRouter';
@@ -440,7 +449,7 @@ export default function InventoryManagement({
 
   const handleTabClick = (tabKey) => {
     setActiveTab(tabKey);
-    pushSlugState('inventory', { tab: tabKey });
+    pushSlugState('inventory', { section: tabKey });
   };
 
   // Modals state
@@ -477,8 +486,64 @@ export default function InventoryManagement({
     noOdor: true
   });
 
+  const applyQcDraftToForm = (draft) => {
+    if (!draft) return;
+    setQcEditFilmType(draft.filmType || 'PET');
+    setQcEditCategory(draft.category || 'Film Substrates');
+    setQcEditItemName(draft.itemName || '');
+    setQcEditWidthMm(draft.widthMm !== '-' && draft.widthMm !== undefined ? draft.widthMm : '');
+    setQcEditMicron(draft.micron !== '-' && draft.micron !== undefined ? draft.micron : '');
+    setQcEditNetWeightKg(draft.netWeightKg !== undefined ? draft.netWeightKg : '');
+    setQcEditGrossWeightKg(draft.grossWeightKg !== undefined ? draft.grossWeightKg : '');
+    setQcEditTareWeightKg(draft.tareWeightKg !== undefined ? draft.tareWeightKg : '');
+    setQcEditRollsReceived(draft.rollsReceived || 1);
+    setQcEditBatchNo(draft.batchNo || '');
+    setQcEditPackagingType(draft.packagingType || 'Roll');
+    setQcEditItemsBreakdown(Array.isArray(draft.itemsBreakdown) ? draft.itemsBreakdown : []);
+    setQcEditLengthMeters(draft.itemsBreakdown?.[0]?.lengthMeters || '');
+  };
+
+  const currentQcDraftFromForm = () => ({
+    filmType: qcEditFilmType,
+    category: qcEditCategory,
+    itemName: qcEditItemName,
+    widthMm: qcEditWidthMm,
+    micron: qcEditMicron,
+    netWeightKg: qcEditNetWeightKg,
+    grossWeightKg: qcEditGrossWeightKg,
+    tareWeightKg: qcEditTareWeightKg,
+    rollsReceived: qcEditRollsReceived,
+    batchNo: qcEditBatchNo,
+    packagingType: qcEditPackagingType,
+    itemsBreakdown: qcEditItemsBreakdown
+  });
+
   useEffect(() => {
     if (qcInspectingGRN) {
+      const qcLines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
+      if (qcLines.length > 1) {
+        const drafts = {};
+        qcLines.forEach((line) => {
+          drafts[line.id] = qcDraftFromLine(line);
+        });
+        setQcLineDrafts(drafts);
+        setQcActiveLineId(qcLines[0].id);
+        applyQcDraftToForm(drafts[qcLines[0].id]);
+        setQcNotesInput(qcInspectingGRN.qcNotes || '');
+        setQcEditDyneLevel(qcInspectingGRN.dyneLevel || '38-42');
+        setQcEditGaugeVariance(qcInspectingGRN.gaugeVariance || '±1.0');
+        setQcIsEditingDetails(false);
+        setQcVisualChecks(qcInspectingGRN.qcVisualChecks || {
+          noPinholes: true,
+          noScratches: true,
+          coreIntact: true,
+          uniformWinding: true,
+          noOdor: true
+        });
+        return;
+      }
+      setQcLineDrafts({});
+      setQcActiveLineId('');
       setQcEditFilmType(qcInspectingGRN.filmType || 'PET');
       setQcEditCategory(qcInspectingGRN.category || 'Film Substrates');
       setQcEditItemName(qcInspectingGRN.itemName || '');
@@ -935,6 +1000,11 @@ export default function InventoryManagement({
   const [grnItemRemarks, setGrnItemRemarks] = useState('');
 
   // Individual Roll / Container Itemized Breakdown State (Each with distinct gross/tare/net weights)
+  const [savedGrnLines, setSavedGrnLines] = useState([]);
+  const [activeGrnLineKey, setActiveGrnLineKey] = useState('line-active');
+  const [expandedGrnNo, setExpandedGrnNo] = useState('');
+  const [qcLineDrafts, setQcLineDrafts] = useState({});
+  const [qcActiveLineId, setQcActiveLineId] = useState('');
   const [grnItemsList, setGrnItemsList] = useState([
     { id: 'item-1', grossWeightKg: '', tareWeightKg: 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', itemRemarks: '', notes: '' }
   ]);
@@ -1813,6 +1883,8 @@ export default function InventoryManagement({
       }
     ]);
     
+    setSavedGrnLines([]);
+    setActiveGrnLineKey(`line-${Date.now()}`);
     setActiveTab('grn_inward');
     setIsNewGRNModalOpen(true);
   };
@@ -1853,6 +1925,8 @@ export default function InventoryManagement({
   };
 
   const openNewGRNModal = (preselectedItem = null) => {
+    setSavedGrnLines([]);
+    setActiveGrnLineKey(`line-${Date.now()}`);
     setIsNewGRNModalOpen(true);
     setIsManualPoEntry(false);
     setGrnRolls('1');
@@ -2149,9 +2223,216 @@ export default function InventoryManagement({
   const lastRecDateStr = (stockLedgerAdjustments && stockLedgerAdjustments[0]?.date) || new Date().toISOString().split('T')[0];
   const isRecDue = isReconciliationDue(lastRecDateStr);
 
+  const captureCurrentGrnLine = () => ({
+    id: activeGrnLineKey,
+    poLineId: null,
+    category: grnCategory,
+    itemName: grnItemName,
+    filmType: grnFilmType,
+    metallocenePct: grnMetallocenePct,
+    micron: grnMicron,
+    widthMm: grnWidthMm,
+    unit: grnUnit,
+    packagingType: grnPackagingType,
+    purchaseRate: grnPurchaseRate,
+    batchNo: grnBatchNo,
+    remarks: grnItemRemarks,
+    stockItemId: grnSelectedStockItemId,
+    itemSearchTerm: grnItemSearchTerm,
+    weightKg: grnWeightKg,
+    rolls: grnItemsList,
+    defaultTare: grnDefaultTare,
+    rollsCount: grnRolls
+  });
+
+  const applyGrnLineToForm = (line) => {
+    if (!line) return;
+    setGrnCategory(line.category || 'Film Substrates');
+    setGrnItemName(line.itemName || '');
+    setGrnFilmType(line.filmType || 'PET');
+    setGrnMetallocenePct(line.metallocenePct || '');
+    setGrnMicron(line.micron ?? '');
+    setGrnWidthMm(line.widthMm ?? '');
+    setGrnUnit(line.unit || 'Kg');
+    setGrnPackagingType(line.packagingType || 'Roll');
+    setGrnPurchaseRate(line.purchaseRate ?? '');
+    setGrnBatchNo(line.batchNo || '');
+    setGrnItemRemarks(line.remarks || '');
+    setGrnSelectedStockItemId(line.stockItemId || '');
+    setGrnItemSearchTerm(line.itemSearchTerm || line.itemName || '');
+    setGrnWeightKg(line.weightKg ?? '');
+    setGrnItemsList(Array.isArray(line.rolls) && line.rolls.length > 0 ? line.rolls : [
+      { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: line.defaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
+    ]);
+    setGrnDefaultTare(line.defaultTare || 0);
+    setGrnRolls(line.rollsCount || String((line.rolls || []).length || 1));
+  };
+
+  const blankGrnLineFields = (keepBatch = true) => {
+    const freshId = `line-${Date.now()}`;
+    setActiveGrnLineKey(freshId);
+    setGrnItemName('');
+    setGrnItemSearchTerm('');
+    setGrnSelectedStockItemId('');
+    setGrnMicron('');
+    setGrnWidthMm('');
+    setGrnPurchaseRate('');
+    setGrnItemRemarks('');
+    setGrnWeightKg('');
+    if (!keepBatch) setGrnBatchNo('');
+    setGrnItemsList([
+      { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
+    ]);
+    setGrnRolls('1');
+    return freshId;
+  };
+
+  const handleAddAnotherGrnItem = () => {
+    const current = captureCurrentGrnLine();
+    setSavedGrnLines((prev) => [...prev.filter((line) => line.id !== current.id), current]);
+    blankGrnLineFields(true);
+  };
+
+  const handleSwitchGrnLine = (lineId) => {
+    const current = captureCurrentGrnLine();
+    const target = savedGrnLines.find((line) => line.id === lineId);
+    if (!target) return;
+    setSavedGrnLines((prev) => [...prev.filter((line) => line.id !== lineId && line.id !== current.id), current]);
+    applyGrnLineToForm(target);
+    setActiveGrnLineKey(target.id);
+  };
+
+  const handleRemoveSavedGrnLine = (lineId) => {
+    setSavedGrnLines((prev) => prev.filter((line) => line.id !== lineId));
+  };
+
+  const handleAddOtherPoLines = () => {
+    const po = (unifiedIssuedPOs || []).find((item) => item && item.poNumber === grnPoNo)
+      || (purchaseOrders || []).find((item) => item && item.poNumber === grnPoNo);
+    const items = po?.items || [];
+    if (items.length < 2) {
+      alert('This purchase order has only one open line.');
+      return;
+    }
+    const extras = items.slice(1).map((item, index) => {
+      const category = po.category || item.category || grnCategory || 'Film Substrates';
+      const filmType = item.filmType || '';
+      const micron = item.micron || '';
+      const widthMm = item.widthMm || '';
+      const itemName = category === 'Film Substrates'
+        ? formatFilmItemName(filmType || 'PET', widthMm || 1000, micron || 12)
+        : (item.itemDesc || item.itemName || item.description || 'Item');
+      return {
+        id: `po-line-${index + 2}-${Date.now()}`,
+        poLineId: item.id || item.lineId || String(index + 2),
+        category,
+        itemName,
+        filmType,
+        metallocenePct: '',
+        micron,
+        widthMm,
+        unit: item.unit || 'Kg',
+        packagingType: item.packagingType || grnPackagingType,
+        purchaseRate: item.rate || '',
+        batchNo: grnBatchNo,
+        remarks: '',
+        stockItemId: item.itemId || item.stockItemId || '',
+        itemSearchTerm: itemName,
+        weightKg: '',
+        rolls: [{ id: `item-${Date.now()}-${index + 2}`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }],
+        defaultTare: grnDefaultTare || 0,
+        rollsCount: '1'
+      };
+    });
+    const current = captureCurrentGrnLine();
+    setSavedGrnLines((prev) => [...prev.filter((line) => line.id !== current.id), ...extras]);
+  };
+
   // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE)
   const handleSaveGRN = async (e) => {
     e.preventDefault();
+    const capturedLines = [
+      ...savedGrnLines.filter((line) => line.id !== activeGrnLineKey),
+      captureCurrentGrnLine()
+    ];
+    if (capturedLines.length > 1) {
+      if (!grnInvoiceNo.trim()) {
+        alert('Invoice Number is required.');
+        return;
+      }
+      const problems = validateCapturedLines(capturedLines);
+      if (problems.length > 0) {
+        alert(problems.join('\n'));
+        return;
+      }
+      const duplicate = findDuplicateInvoice(safeGrns, { invoiceNo: grnInvoiceNo, vendorName: grnVendor });
+      if (duplicate) {
+        alert(`🚫 DUPLICATE INWARD PREVENTED:\n\nA GRN (GRN #${duplicate.grnNo || duplicate.id}) already exists for supplier "${grnVendor}" with invoice #${grnInvoiceNo}.`);
+        return;
+      }
+      let grnDocNo;
+      try {
+        grnDocNo = await allocateGrnNumber(getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/');
+      } catch (err) {
+        alert(`Could not reserve a GRN number: ${err.message || err}`);
+        return;
+      }
+      const now = new Date();
+      const matchedVendor = (vendors || []).find(v => v.companyName === grnVendor || v.name === grnVendor || v.id === grnVendor);
+      const matchedPo = grnPoNo
+        ? ((unifiedIssuedPOs || []).find(p => p.poNumber === grnPoNo) || (purchaseOrders || []).find(p => p.poNumber === grnPoNo))
+        : null;
+      const prepared = prepareMultiLineReceipt({
+        header: {
+          poNumber: grnPoNo,
+          vendorName: grnVendor,
+          vendorId: matchedVendor?.id || null,
+          vendorAddress: matchedVendor?.address || '',
+          vendorGstin: matchedVendor?.gstin || '',
+          vendorEmail: matchedVendor?.email || '',
+          vendorPhone: matchedVendor?.phone || matchedVendor?.contactNo || '',
+          vendorContact: matchedVendor?.contactPerson || '',
+          invoiceNo: grnInvoiceNo,
+          freightAmount: grnFreightAmount,
+          transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
+          storeManager: currentUser?.name || 'Store Manager',
+          receivedTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          remarks: (grnItemRemarks || '').trim()
+        },
+        capturedLines,
+        grnNo: grnDocNo,
+        nowIso: now.toISOString(),
+        inventory,
+        poItems: matchedPo?.items || [],
+        generateBarcodeId,
+        generateInventoryId,
+        formatFilmItemName,
+        calculateFilmRollLength,
+        isMetalloceneEligibleFilm
+      });
+      const totalAmountVal = prepared.newGRN.lineItems.reduce(
+        (sum, line) => sum + (Number(line.netWeightKg) || 0) * (Number(line.purchaseRate) || 0),
+        0
+      );
+      setGrnConfirmationModal({
+        isOpen: true,
+        pendingData: {
+          newGRN: prepared.newGRN,
+          newInvItems: prepared.inventoryLots,
+          newRolls: prepared.rolls,
+          isCylinderCategory: false,
+          targetStockItemId: prepared.newGRN.stockItemId,
+          itemName: prepared.newGRN.itemName,
+          grnPoNo,
+          unitCount: prepared.newGRN.rollsReceived,
+          totalNetQty: prepared.newGRN.netWeightKg,
+          rateVal: prepared.newGRN.purchaseRatePerKg,
+          totalAmountVal: Number(totalAmountVal.toFixed(2))
+        }
+      });
+      return;
+    }
+
     if (!grnInvoiceNo.trim() || !grnBatchNo.trim()) {
       alert("Invoice Number and Batch Number are required!");
       return;
@@ -2177,17 +2458,19 @@ export default function InventoryManagement({
     const rateVal = parseFloat(grnPurchaseRate) || 0;
 
     const isCylinderCategory = grnCategory === 'Rotogravure Cylinders';
-    const grnDocNo = getNextDocRefNumber('grn');
+    let grnDocNo;
+    try {
+      grnDocNo = await allocateGrnNumber(getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/');
+    } catch (err) {
+      alert(`Could not reserve a GRN number: ${err.message || err}`);
+      return;
+    }
     const grnCode = grnDocNo.replace('GRN-', '');
 
     // =========================================================================
     // DUPLICATE GRN CHECK & PREVENTION
     // =========================================================================
     const grnNoClean = String(grnDocNo).trim().toLowerCase();
-    const invNoClean = String(grnInvoiceNo).trim().toLowerCase();
-    const vendorClean = String(grnVendor).trim().toLowerCase();
-    const batchClean = String(grnBatchNo).trim().toLowerCase();
-    const itemClean = String(itemName).trim().toLowerCase();
 
     // Check 1: Duplicate GRN Number
     const dupByDocNo = (safeGrns || []).find(g => 
@@ -2198,18 +2481,15 @@ export default function InventoryManagement({
       return;
     }
 
-    // Check 2: Duplicate Invoice No + Vendor Name + Item / Batch
-    const dupByInvoice = (safeGrns || []).find(g => {
-      const gInv = String(g.invoiceNo || '').trim().toLowerCase();
-      const gVendor = String(g.vendorName || '').trim().toLowerCase();
-      const gItem = String(g.itemName || '').trim().toLowerCase();
-      const gBatch = String(g.batchNo || '').trim().toLowerCase();
-      return gInv && gVendor && gInv === invNoClean && gVendor === vendorClean &&
-        (gItem === itemClean || gBatch === batchClean);
+    // Check 2: one receipt per supplier and invoice. Extra items belong on that receipt.
+    const dupByInvoice = findDuplicateInvoice(safeGrns, {
+      invoiceNo: grnInvoiceNo,
+      vendorName: grnVendor,
+      grnNo: grnDocNo
     });
 
     if (dupByInvoice) {
-      alert(`🚫 DUPLICATE INWARD PREVENTED:\n\nA GRN (GRN #${dupByInvoice.grnNo || dupByInvoice.id}) already exists for Supplier "${grnVendor}" with Invoice #${grnInvoiceNo} and Batch #${grnBatchNo}!\n\nDuplicate GRNs are blocked to maintain stock ledger accuracy.`);
+      alert(`🚫 DUPLICATE INWARD PREVENTED:\n\nA GRN (GRN #${dupByInvoice.grnNo || dupByInvoice.id}) already exists for supplier "${grnVendor}" with invoice #${grnInvoiceNo}.`);
       return;
     }
 
@@ -2319,6 +2599,7 @@ export default function InventoryManagement({
     ].filter(Boolean).join('; ');
 
     const newGRN = {
+      id: grnDocNo,
       grnNo: grnDocNo,
       poNumber: grnPoNo,
       vendorName: grnVendor,
@@ -2372,6 +2653,7 @@ export default function InventoryManagement({
       inspectedBy: isCylinderCategory ? "Cylinder QC Inspector" : "",
       storeManager: currentUser?.name || "Store Manager"
     };
+    newGRN.lineItems = [oneLineFromReceipt(newGRN)];
 
     // Generate individual barcode stickers for each box / roll / container unit received with its DISTINCT net weight!
     const newRolls = preparedItemsBreakdown.map((item) => {
@@ -2380,6 +2662,9 @@ export default function InventoryManagement({
         id: item.barcodeId,
         barcodeId: item.barcodeId,
         grnNo: newGRN.grnNo,
+        grnId: grnDocNo,
+        grnLineItemId: `${grnDocNo}-L1`,
+        lineNo: 1,
         unitNo: item.unitNo,
         totalUnits: unitCount,
         rollType: isFilm ? 'RAW_MATERIAL' : 'CONSUMABLE_ITEM',
@@ -2443,6 +2728,7 @@ export default function InventoryManagement({
     const {
       newGRN,
       newInvItem,
+      newInvItems,
       newRolls,
       isCylinderCategory,
       targetStockItemId,
@@ -2451,17 +2737,25 @@ export default function InventoryManagement({
       unitCount
     } = grnConfirmationModal.pendingData;
 
-    // 1. Add Master Stock Item
-    if (onSaveInventoryItem) {
-      await onSaveInventoryItem(newInvItem);
-    } else if (onUpdateInventory) {
-      onUpdateInventory([...inventory, newInvItem]);
+    const lots = Array.isArray(newInvItems) && newInvItems.length > 0
+      ? newInvItems
+      : (newInvItem ? [newInvItem] : []);
+
+    // 1. Add one stock lot per receipt line. Quantity stays 0 until QC, as before.
+    for (const lot of lots) {
+      if (onSaveInventoryItem) {
+        await onSaveInventoryItem(lot);
+      } else if (onUpdateInventory) {
+        onUpdateInventory([...inventory, lot]);
+      }
     }
 
     // 2. Save GRN to Supabase Database
+    let storedGRN = newGRN;
     try {
       if (onAddGRN) {
-        await onAddGRN(newGRN);
+        const saved = await onAddGRN(newGRN);
+        if (saved && saved.grnNo) storedGRN = { ...newGRN, ...saved, lineItems: saved.lineItems || newGRN.lineItems };
       }
     } catch (err) {
       console.error('[GRN Inward] Save to database failed:', err);
@@ -2471,8 +2765,8 @@ export default function InventoryManagement({
     }
 
     // 2b. Dispatch Email Notification to Quality (QC) Users for Pending QC Approval
-    if (newGRN.status === 'Pending QC Approval' || newGRN.qcStatus === 'Pending QC Approval' || newGRN.status === 'Pending QC') {
-      notifyGRNPendingQC({ grn: newGRN, users }).catch(err => {
+    if (storedGRN.status === 'Pending QC Approval' || storedGRN.qcStatus === 'Pending QC Approval' || storedGRN.status === 'Pending QC') {
+      notifyGRNPendingQC({ grn: storedGRN, users }).catch(err => {
         console.warn('[GRN Inward] QC email notification error:', err);
       });
     }
@@ -2489,8 +2783,8 @@ export default function InventoryManagement({
         onUpdateCylinder({
           ...linkedCylinder,
           status: 'Active In-Use',
-          inwardGrnNo: newGRN.grnNo,
-          receivedDate: newGRN.receivedDate
+          inwardGrnNo: storedGRN.grnNo,
+          receivedDate: storedGRN.receivedDate
         });
       }
       const linkedOrder = (orders || []).find(o => 
@@ -2503,24 +2797,32 @@ export default function InventoryManagement({
           ...linkedOrder,
           status: 'Completed',
           cylinderStatus: 'Active In-Use',
-          inwardGrnNo: newGRN.grnNo
+          inwardGrnNo: storedGRN.grnNo
         });
       }
     }
 
+    const rollsToStore = (newRolls || []).map((roll) => ({
+      ...roll,
+      grnNo: storedGRN.grnNo,
+      grnId: storedGRN.id || storedGRN.grnNo,
+      grnLineItemId: roll.grnLineItemId || `${storedGRN.id || storedGRN.grnNo}-L1`,
+      lineNo: roll.lineNo || 1
+    }));
+
     // 4. Register EACH INDIVIDUAL roll/item with its own separate barcode into stock rolls/batches ledger
     try {
       if (onUpdateInventoryRolls) {
-        await onUpdateInventoryRolls(newRolls);
+        await onUpdateInventoryRolls(rollsToStore);
       } else {
-        for (const rollObj of newRolls) {
+        for (const rollObj of rollsToStore) {
           if (onAddRoll) {
             await onAddRoll(rollObj);
           }
         }
       }
     } catch (err) {
-      alert(`GRN ${newGRN.grnNo} was saved, but the roll barcodes were not all stored. Failed rolls are not shown as received.\n\n${err.message || err}`);
+      alert(`GRN ${storedGRN.grnNo} was saved, but the roll barcodes were not all stored. Failed rolls are not shown as received.\n\n${err.message || err}`);
       setIsNewGRNModalOpen(false);
       setGrnConfirmationModal({ isOpen: false, pendingData: null });
       return;
@@ -2539,6 +2841,8 @@ export default function InventoryManagement({
     setGrnItemsList([
       { id: `item-${Date.now()}-1`, grossWeightKg: '', tareWeightKg: grnDefaultTare || 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', notes: '' }
     ]);
+    setSavedGrnLines([]);
+    setActiveGrnLineKey(`line-${Date.now()}`);
 
     // Close Create Modal and Confirmation Modal
     setIsNewGRNModalOpen(false);
@@ -2547,14 +2851,134 @@ export default function InventoryManagement({
     // Open Success Animation Modal
     setGrnSuccessModal({
       isOpen: true,
-      grnRecord: newGRN,
-      newRolls: newRolls
+      grnRecord: storedGRN,
+      newRolls: rollsToStore
     });
   };
 
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
+  const switchQcLine = (lineId) => {
+    if (!lineId || lineId === qcActiveLineId) return;
+    const current = currentQcDraftFromForm();
+    const source = (qcInspectingGRN?.lineItems || []).find((line) => line.id === lineId);
+    const next = qcLineDrafts[lineId] || qcDraftFromLine(source);
+    setQcLineDrafts((prev) => ({ ...prev, [qcActiveLineId]: current }));
+    applyQcDraftToForm(next);
+    setQcActiveLineId(lineId);
+  };
+
   const handleQCAction = async (status) => {
     if (!qcInspectingGRN) return;
+    const qcLines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
+    if (qcLines.length > 1) {
+      const isApproved = status === 'Approved';
+      const drafts = { ...qcLineDrafts, [qcActiveLineId]: currentQcDraftFromForm() };
+      const { updatedGRN, stockPosts, rollPatches } = applyMultiLineQc({
+        grn: qcInspectingGRN,
+        draftsByLineId: drafts,
+        status,
+        formatFilmItemName,
+        isMetalloceneEligibleFilm,
+        calculateFilmRollLength
+      });
+      const inspectorName = currentUser?.name || 'Quality QC Chemist';
+      updatedGRN.qcNotes = qcNotesInput || (isApproved
+        ? 'Inspected and passed all laboratory parameters.'
+        : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.');
+      updatedGRN.inspectedBy = inspectorName;
+      updatedGRN.qcVerifiedAt = new Date().toISOString();
+      try {
+        if (onUpdateGRN) await onUpdateGRN(updatedGRN);
+      } catch (err) {
+        alert(`GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
+        return;
+      }
+      const byBarcode = new Map(rollPatches.filter((patch) => patch.barcodeId).map((patch) => [String(patch.barcodeId), patch]));
+      const matchingRolls = (inventoryRolls || []).filter((roll) => (
+        (roll.grnNo && (roll.grnNo === qcInspectingGRN.grnNo || roll.grnNo === qcInspectingGRN.id))
+        || (roll.grnId && (roll.grnId === qcInspectingGRN.id || roll.grnId === qcInspectingGRN.grnNo))
+        || byBarcode.has(String(roll.barcodeId || roll.id))
+      ));
+      if (matchingRolls.length > 0 && onUpdateInventoryRolls) {
+        const updatedRolls = matchingRolls.map((roll) => {
+          const patch = byBarcode.get(String(roll.barcodeId || roll.id))
+            || rollPatches.find((item) => item.grnLineItemId && item.grnLineItemId === roll.grnLineItemId);
+          if (!patch) return roll;
+          return {
+            ...roll,
+            ...patch,
+            availableWeightKg: patch.netWeightKg,
+            grnId: roll.grnId || qcInspectingGRN.id || qcInspectingGRN.grnNo,
+            grnLineItemId: patch.grnLineItemId || roll.grnLineItemId
+          };
+        });
+        try {
+          await onUpdateInventoryRolls(updatedRolls);
+        } catch (err) {
+          alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved.\n\n${err.message || err}`);
+          return;
+        }
+      }
+      if (isApproved && onSaveInventoryItem) {
+        const working = [...inventory];
+        for (const post of stockPosts) {
+          const index = working.findIndex((item) => (
+            (post.stockItemId && String(item.id) === String(post.stockItemId))
+            || (post.isFilm && item.filmType === post.filmType && Number(item.micron) === Number(post.micron) && Number(item.widthMm) === Number(post.widthMm))
+            || (!post.isFilm && String(item.itemName || '').toLowerCase() === String(post.itemName || '').toLowerCase())
+          ));
+          if (index >= 0) {
+            const item = working[index];
+            const newAvailable = Number(((item.availableQtyKg || 0) + post.addKg).toFixed(2));
+            const price = post.rate > 0 ? post.rate : (item.unitPrice || 0);
+            const updated = {
+              ...item,
+              availableQtyKg: newAvailable,
+              unitPrice: price,
+              purchaseRatePerKg: price,
+              purchaseValuation: Number((newAvailable * price).toFixed(2)),
+              lastVendor: updatedGRN.vendorName || item.lastVendor,
+              lastBatch: post.batchNo || item.lastBatch,
+              itemName: post.itemName || item.itemName,
+              filmType: post.filmType || item.filmType,
+              micron: post.micron,
+              widthMm: post.widthMm
+            };
+            working[index] = updated;
+            await onSaveInventoryItem(updated);
+          } else {
+            const newId = generateInventoryId(working);
+            const created = {
+              id: newId,
+              itemCode: newId,
+              itemName: post.itemName,
+              category: post.category || 'Film Substrates',
+              filmType: post.filmType,
+              micron: post.micron,
+              widthMm: post.widthMm,
+              unit: 'Kg',
+              availableQtyKg: post.addKg,
+              allocatedQtyKg: 0,
+              unitPrice: post.rate,
+              purchaseRatePerKg: post.rate,
+              purchaseValuation: Number((post.addKg * post.rate).toFixed(2)),
+              location: post.isFilm ? 'Bay A - Inward Dock' : 'Consumables Store',
+              reorderLevelKg: 100,
+              lastVendor: updatedGRN.vendorName,
+              lastBatch: post.batchNo
+            };
+            working.push(created);
+            await onSaveInventoryItem(created);
+          }
+        }
+      }
+      setQcInspectingGRN(null);
+      setQcNotesInput('');
+      alert(isApproved
+        ? `✅ GRN ${updatedGRN.grnNo} APPROVED!\n${stockPosts.map((post) => `${post.itemName}: ${post.addKg} kg`).join('\n')}`
+        : `🚫 GRN ${updatedGRN.grnNo} REJECTED!\nEach item was moved to QC Hold.`);
+      return;
+    }
 
     const isApproved = status === 'Approved';
     const finalStatus = isApproved ? 'Approved' : 'QC Hold';
@@ -4072,6 +4496,10 @@ export default function InventoryManagement({
         const micron = g.micron !== undefined ? String(g.micron) : '';
         const width = g.widthMm !== undefined ? String(g.widthMm) : '';
         const category = String(g.category || '').toLowerCase();
+        const lineText = (Array.isArray(g.lineItems) ? g.lineItems : [])
+          .map((line) => `${line.itemName || ''} ${line.batchNo || ''} ${line.filmType || ''} ${line.micron || ''} ${line.widthMm || ''}`)
+          .join(' ')
+          .toLowerCase();
 
         return grnNo.includes(q) ||
                poNo.includes(q) ||
@@ -4083,7 +4511,8 @@ export default function InventoryManagement({
                status.includes(q) ||
                micron.includes(q) ||
                width.includes(q) ||
-               category.includes(q);
+               category.includes(q) ||
+               lineText.includes(q);
       });
     }
 
@@ -4994,14 +5423,7 @@ export default function InventoryManagement({
                   const formattedInwardDate = oldestDate ? oldestDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
 
                   // Pending QC matching for this item
-                  const pendingGRNs = (safeGrns || []).filter(g => 
-                    (g.status === 'Pending QC' || g.status === 'Pending') && 
-                    ((g.stockItemId && String(g.stockItemId) === String(item.id)) || 
-                     (g.itemId && String(g.itemId) === String(item.id)) || 
-                     (g.itemName && item.itemName && g.itemName.trim().toLowerCase() === item.itemName.trim().toLowerCase()) ||
-                     (isFilm && g.filmType === item.filmType && Number(g.micron) === Number(item.micron) && Number(g.widthMm) === Number(item.widthMm)))
-                  );
-                  const pendingQcQty = pendingGRNs.reduce((sum, g) => sum + (Number(g.netWeightKg) || 0), 0);
+                  const pendingQcQty = pendingQcKgForItem(item, safeGrns);
 
                   const itemResInfo = getItemReservations(item);
                   const allocatedForOrders = itemResInfo.totalReservedKg;
@@ -5371,7 +5793,8 @@ export default function InventoryManagement({
               <tbody>
                 {grnPagination.paginatedItems.length > 0 ? (
                   grnPagination.paginatedItems.map(g => (
-                    <tr key={g.grnNo}>
+                    <React.Fragment key={g.grnNo || g.id}>
+                    <tr>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
                         {g.grnNo}
                         <div style={{ fontSize: '0.75rem', fontWeight: '500', color: 'var(--text-muted)' }}>
@@ -5381,7 +5804,20 @@ export default function InventoryManagement({
                       <td>{g.poNumber || '—'}</td>
                       <td style={{ fontWeight: '600' }}>{g.vendorName || '—'}</td>
                       <td>{g.invoiceNo || '—'}</td>
-                      <td>{g.filmType} ({g.micron}µ / {g.widthMm}mm)</td>
+                      <td>
+                        {g.filmType} ({g.micron}µ / {g.widthMm}mm)
+                        {Array.isArray(g.lineItems) && g.lineItems.length > 1 && (
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedGrnNo(expandedGrnNo === g.grnNo ? '' : g.grnNo)}
+                              style={{ marginTop: '4px', background: 'none', border: 'none', padding: 0, color: '#0284c7', fontWeight: '700', cursor: 'pointer', fontSize: '0.78rem' }}
+                            >
+                              {g.lineItems.length} items {expandedGrnNo === g.grnNo ? '▾' : '▸'}
+                            </button>
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontWeight: '700', color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</td>
                       <td><code>{g.batchNo || '—'}</code></td>
                       <td>
@@ -5461,6 +5897,20 @@ export default function InventoryManagement({
                         </div>
                       </td>
                     </tr>
+                    {expandedGrnNo === g.grnNo && Array.isArray(g.lineItems) && g.lineItems.length > 1 && (
+                      <tr>
+                        <td colSpan="9" style={{ background: '#f8fafc', padding: '10px 14px' }}>
+                          {g.lineItems.map((line) => (
+                            <div key={line.id || line.lineNo} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '4px 0', fontSize: '0.82rem' }}>
+                              <strong>Item {line.lineNo}: {line.itemName}</strong>
+                              <span>{line.filmType || line.category} {line.micron && line.micron !== '-' ? `${line.micron}µ` : ''} {line.widthMm && line.widthMm !== '-' ? `/ ${line.widthMm}mm` : ''}</span>
+                              <span>{line.netWeightKg} kg · {line.rollsReceived || (line.rolls || []).length || 0} rolls · batch {line.batchNo || '—'}</span>
+                            </div>
+                          ))}
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))
                 ) : (
                   <tr>
@@ -5547,6 +5997,12 @@ export default function InventoryManagement({
                             : (g.itemName || g.category || g.filmType || 'Chemicals & Solvents')}
                         </span>
                       </div>
+                      {Array.isArray(g.lineItems) && g.lineItems.length > 1 && g.lineItems.map((line) => (
+                        <div className="calc-summary-row" key={line.id || line.lineNo}>
+                          <span>Item {line.lineNo}:</span>
+                          <span className="bold-val">{line.itemName} · {line.netWeightKg} kg</span>
+                        </div>
+                      ))}
                       <div className="calc-summary-row">
                         <span>Inward Net Weight:</span>
                         <span className="bold-val" style={{ color: '#2563eb' }}>{g.netWeightKg} {g.unit || 'kg'} ({g.rollsReceived || 1} {g.packagingType || 'Roll'})</span>
@@ -5965,6 +6421,41 @@ export default function InventoryManagement({
 
             {/* Scrollable Form Body */}
             <form onSubmit={handleSaveGRN}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#334155' }}>
+                    Invoice items ({savedGrnLines.length + 1})
+                  </span>
+                  {savedGrnLines.map((line, index) => (
+                    <button
+                      key={line.id}
+                      type="button"
+                      onClick={() => handleSwitchGrnLine(line.id)}
+                      style={{ border: '1px solid #cbd5e1', background: '#fff', borderRadius: '999px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer' }}
+                    >
+                      Item {index + 1}: {line.itemName || line.filmType || 'New item'}
+                    </button>
+                  ))}
+                  <span style={{ border: '1px solid #0284c7', background: '#e0f2fe', color: '#075985', borderRadius: '999px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: '800' }}>
+                    Editing item {savedGrnLines.length + 1}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {savedGrnLines.length > 0 && (
+                    <button type="button" className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={() => handleRemoveSavedGrnLine(savedGrnLines[savedGrnLines.length - 1].id)}>
+                      Remove last added item
+                    </button>
+                  )}
+                  {grnPoNo && (
+                    <button type="button" className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.75rem' }} onClick={handleAddOtherPoLines}>
+                      Add the other open PO lines
+                    </button>
+                  )}
+                  <button type="button" className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.78rem' }} onClick={handleAddAnotherGrnItem}>
+                    <Plus size={14} /> Add another item
+                  </button>
+                </div>
+              </div>
               
               {/* Section 1: Vendor & Item Categorization */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -6950,7 +7441,15 @@ export default function InventoryManagement({
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Supplier / Vendor</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>{p.newGRN.vendorName}</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Invoice Number</span><strong style={{ color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>{p.newGRN.invoiceNo || 'N/A'}</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Batch / Lot Number</span><strong style={{ color: '#0f172a', fontWeight: '700', fontFamily: 'monospace' }}>{p.newGRN.batchNo || 'N/A'}</strong></div>
-                    <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Item Name / Spec</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>{p.itemName}</strong></div>
+                    <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Item Name / Spec</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>{p.itemName}</strong>
+                      {Array.isArray(p.newGRN.lineItems) && p.newGRN.lineItems.length > 1 && (
+                        <div style={{ marginTop: '6px', fontSize: '0.78rem', color: '#334155' }}>
+                          {p.newGRN.lineItems.map((line) => (
+                            <div key={line.id}>Item {line.lineNo}: {line.itemName} — {line.netWeightKg} kg @ ₹{line.purchaseRate}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Individual Units / Barcodes</span><strong style={{ color: '#059669', fontWeight: '800' }}>{p.unitCount} Unit(s) (Separate Barcodes)</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Total Inward Net Qty</span><strong style={{ color: '#0f172a', fontWeight: '800' }}>{(p.totalNetQty ?? 0).toLocaleString()} {p.newGRN.unit || 'Kg'}</strong></div>
                     <div><span style={{ color: '#64748b', fontSize: '0.78rem', display: 'block' }}>Purchase Rate</span><strong style={{ color: '#0f172a', fontWeight: '700' }}>₹{p.rateVal} / {p.newGRN.unit || 'Kg'}</strong></div>
@@ -7111,6 +7610,28 @@ export default function InventoryManagement({
                   </p>
                 </div>
               </div>
+              {Array.isArray(qcInspectingGRN.lineItems) && qcInspectingGRN.lineItems.length > 1 && (
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '0 0 12px' }}>
+                  {qcInspectingGRN.lineItems.map((line) => (
+                    <button
+                      key={line.id}
+                      type="button"
+                      onClick={() => switchQcLine(line.id)}
+                      style={{
+                        border: line.id === qcActiveLineId ? '2px solid #059669' : '1px solid #cbd5e1',
+                        background: line.id === qcActiveLineId ? '#ecfdf5' : '#fff',
+                        borderRadius: '8px',
+                        padding: '6px 10px',
+                        fontSize: '0.75rem',
+                        fontWeight: '700',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Item {line.lineNo}: {line.itemName}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button type="button" className="modal-close-btn" onClick={() => setQcInspectingGRN(null)}>
                 <X size={18} />
               </button>

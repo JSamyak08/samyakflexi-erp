@@ -390,6 +390,13 @@ export default function OrderManagement({
   
   // Navigation SubTab: 'orders' | 'requirements'
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
+  useEffect(() => {
+    if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);
+  }, [urlParams?.subtab]);
+  const chooseOrderTab = (subtab) => {
+    setActiveSubTab(subtab);
+    pushSlugState('orders', { section: subtab });
+  };
 
   // Search and Filter states for Orders View
   const [searchTerm, setSearchTerm] = useState('');
@@ -1170,7 +1177,7 @@ export default function OrderManagement({
               gap: '8px',
               cursor: 'pointer'
             }}
-            onClick={() => setActiveSubTab('orders')}
+            onClick={() => chooseOrderTab('orders')}
           >
             <ShoppingBag size={18} />
             <span>Orders & Jobs Breakdown</span>
@@ -1218,7 +1225,7 @@ export default function OrderManagement({
               gap: '8px',
               cursor: 'pointer'
             }}
-            onClick={() => setActiveSubTab('requirements')}
+            onClick={() => chooseOrderTab('requirements')}
           >
             <Layers size={18} />
             <span>Consolidated Raw Material Requirements</span>
