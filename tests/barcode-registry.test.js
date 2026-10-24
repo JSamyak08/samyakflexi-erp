@@ -6,10 +6,12 @@ await register(new URL('../scripts/resolve-js-hook.mjs', import.meta.url));
 
 const {
   BARCODE_SOURCE,
+  PRINT_STATUS,
   collectBarcodes,
   filterBarcodeRows,
   mergeBarcodeRows,
   sourceModuleForCode,
+  withPrintStatus,
 } = await import('../src/utils/barcodeRegistry.js');
 const {
   BARCODE_REGISTRY_ROLES,
@@ -181,4 +183,33 @@ test('barcodes permission follows inventory roles and leaves the other keys alon
   assert.ok(cachesToDrop(defaults, 'Sales Manager').includes('samyak_cache_barcode_registry'));
   assert.equal(cachesToDrop(defaults, 'Store Manager').includes('samyak_cache_barcode_registry'), false);
   assert.equal(roleHasModule({ 'Store Manager': { barcodes: 'true' } }, 'Store Manager', 'barcodes'), false);
+});
+
+test('print status is Printed only for a confirmed printer job', () => {
+  const rows = [
+    { barcode: 'RM-BC-1', sourceModule: BARCODE_SOURCE.rm, status: 'In Stock' },
+    { barcode: 'FG-BC-2', sourceModule: BARCODE_SOURCE.fg, status: 'Ready' },
+  ];
+  const untouched = withPrintStatus(rows, []);
+  assert.equal(untouched[0].printStatus, PRINT_STATUS.notPrinted);
+  assert.equal(untouched[0].status, 'In Stock');
+  assert.equal(untouched[1].printStatus, PRINT_STATUS.notPrinted);
+
+  const ignored = withPrintStatus(rows, [
+    { barcode: 'RM-BC-1', job_status: 'cancelled', job_id: 'job-cancel', printer: 'Zebra', printed_at: '2026-10-24T01:00:00Z' },
+    { barcode: 'RM-BC-1', job_status: 'failed', job_id: 'job-fail', printer: 'Zebra', printed_at: '2026-10-24T02:00:00Z' },
+    { barcode: 'rm-bc-1', job_status: 'afterprint', job_id: 'job-dialog', printer: 'Browser', printed_at: '2026-10-24T03:00:00Z' },
+  ]);
+  assert.equal(ignored[0].printStatus, PRINT_STATUS.notPrinted);
+
+  const printed = withPrintStatus(rows, [
+    { barcode: 'rm-bc-1', job_status: 'printed', job_id: 'job-old', printer: 'Zebra-1', printed_at: '2026-10-24T01:00:00Z', printed_by: 'A' },
+    { barcode: 'RM-BC-1', job_status: 'success', job_id: 'job-new', printer: 'Zebra-2', printed_at: '2026-10-24T04:00:00Z', printed_by: 'Store Clerk' },
+    { barcode: 'RM-BC-1', job_status: 'cancelled', job_id: 'job-later-cancel', printer: 'Zebra-2', printed_at: '2026-10-24T05:00:00Z' },
+  ]);
+  assert.equal(printed[0].printStatus, PRINT_STATUS.printed);
+  assert.equal(printed[0].printJobId, 'job-new');
+  assert.equal(printed[0].printer, 'Zebra-2');
+  assert.equal(printed[0].printedBy, 'Store Clerk');
+  assert.equal(printed[1].printStatus, PRINT_STATUS.notPrinted);
 });

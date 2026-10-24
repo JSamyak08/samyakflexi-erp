@@ -4007,3 +4007,27 @@ export async function fetchBarcodeRegistry() {
   return rows;
 }
 
+/**
+ * Confirmed physical prints only. A missing view or a failed read leaves
+ * every barcode Not printed. This never writes the log.
+ */
+export async function fetchBarcodePrintStatus() {
+  if (!isSupabaseConfigured()) return [];
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; from < 20000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('barcode_print_status')
+      .select('barcode, source_module, job_id, job_status, printer, printed_at, printed_by')
+      .range(from, from + pageSize - 1);
+    if (error) {
+      console.warn('[barcode_print_status]', error.message || error);
+      return rows;
+    }
+    const batch = Array.isArray(data) ? data : [];
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return rows;
+}
+

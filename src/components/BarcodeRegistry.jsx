@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScanBarcode, Search } from 'lucide-react';
+import { Printer, ScanBarcode, Search } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
+import BarcodePrinterModal from './BarcodePrinterModal';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
-import { fetchBarcodeRegistry } from '../services/supabaseDataService';
+import { fetchBarcodePrintStatus, fetchBarcodeRegistry } from '../services/supabaseDataService';
 import { fetchPayloadRecords } from '../services/businessRecords';
 import {
+  PRINT_STATUS,
   barcodeSourceModules,
   collectBarcodes,
   filterBarcodeRows,
   mergeBarcodeRows,
+  withPrintStatus,
 } from '../utils/barcodeRegistry';
 
 function formatWhen(value) {
@@ -56,11 +59,14 @@ export default function BarcodeRegistry({
   productionRecords = [],
   cylinders = [],
   pelletInwards = [],
+  confirmedPrints = null,
 }) {
   const [viewRows, setViewRows] = useState([]);
   const [extras, setExtras] = useState(null);
+  const [printLogs, setPrintLogs] = useState(Array.isArray(confirmedPrints) ? confirmedPrints : []);
   const [query, setQuery] = useState('');
   const [sourceModule, setSourceModule] = useState('');
+  const [sticker, setSticker] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +85,22 @@ export default function BarcodeRegistry({
     };
   }, []);
 
-  const rows = useMemo(() => mergeBarcodeRows(
+  useEffect(() => {
+    if (Array.isArray(confirmedPrints)) {
+      setPrintLogs(confirmedPrints);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      const logs = await fetchBarcodePrintStatus();
+      if (!cancelled) setPrintLogs(Array.isArray(logs) ? logs : []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmedPrints]);
+
+  const rows = useMemo(() => withPrintStatus(mergeBarcodeRows(
     serverRows,
     viewRows,
     collectBarcodes({
@@ -93,8 +114,7 @@ export default function BarcodeRegistry({
       cylinders,
       pelletInwards,
       ...(extras || {}),
-    })
-  ), [
+    })), printLogs), [
     serverRows,
     viewRows,
     inventoryRolls,
@@ -107,6 +127,7 @@ export default function BarcodeRegistry({
     cylinders,
     pelletInwards,
     extras,
+    printLogs,
   ]);
 
   const modules = useMemo(() => barcodeSourceModules(rows), [rows]);
@@ -126,6 +147,8 @@ export default function BarcodeRegistry({
           Every barcode stored on raw-material and GRN rolls, SFG and FG batches, consume child rolls,
           dispatch packing lists, printed tags, cylinders, and production records.
           Pellet fuel does not generate barcodes.
+          Print status stays Not printed until a print agent reports a successful printer job.
+          Opening this list or the browser print dialog does not count.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
           <label style={{ position: 'relative', flex: '1 1 240px' }}>
@@ -157,6 +180,7 @@ export default function BarcodeRegistry({
           <thead>
             <tr>
               <th>Barcode</th>
+              <th>Print status</th>
               <th>Source module</th>
               <th>Item / description</th>
               <th>Order / GRN / job</th>
@@ -168,7 +192,7 @@ export default function BarcodeRegistry({
           <tbody>
             {pagination.paginatedItems.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: '#64748b', padding: '28px' }}>
+                <td colSpan={8} style={{ textAlign: 'center', color: '#64748b', padding: '28px' }}>
                   {rows.length === 0
                     ? 'No barcodes have been stored yet.'
                     : 'No barcodes match this search.'}
@@ -178,7 +202,31 @@ export default function BarcodeRegistry({
             {pagination.paginatedItems.map((row) => (
               <tr key={`${row.sourceModule}|${row.barcode}`}>
                 <td>
-                  <code style={{ fontWeight: '800', color: '#0f172a' }}>{row.barcode}</code>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <code style={{ fontWeight: '800', color: '#0f172a' }}>{row.barcode}</code>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      aria-label={`${row.printStatus === PRINT_STATUS.printed ? 'Reprint' : 'Print'} ${row.barcode}`}
+                      onClick={() => setSticker(row)}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', fontSize: '0.75rem' }}
+                    >
+                      <Printer size={13} />
+                      {row.printStatus === PRINT_STATUS.printed ? 'Reprint' : 'Print'}
+                    </button>
+                  </div>
+                </td>
+                <td>
+                  <span style={{
+                    fontWeight: '700',
+                    color: row.printStatus === PRINT_STATUS.printed ? '#047857' : '#64748b',
+                  }}
+                  >
+                    {row.printStatus}
+                  </span>
+                  {row.printStatus === PRINT_STATUS.printed && row.printer && (
+                    <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{row.printer}</div>
+                  )}
                 </td>
                 <td>{row.sourceModule}</td>
                 <td>{row.description || '—'}</td>
@@ -192,6 +240,19 @@ export default function BarcodeRegistry({
         </table>
         <TablePagination pagination={pagination} />
       </div>
+
+      {sticker && (
+        <BarcodePrinterModal
+          roll={{
+            barcodeId: sticker.barcode,
+            itemName: sticker.description,
+            orderId: sticker.referenceNo,
+            status: sticker.status,
+            locationBay: sticker.location,
+          }}
+          onClose={() => setSticker(null)}
+        />
+      )}
     </div>
   );
 }

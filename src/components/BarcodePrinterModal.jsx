@@ -37,6 +37,8 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     if (autoPrint && rollList.length > 0) {
       const timer = setTimeout(() => {
         try {
+          // Opens the browser dialog only. afterprint also fires on cancel,
+          // so this must not write barcode_print_log.
           window.print();
         } catch (e) {
           console.warn("Auto-print error:", e);
@@ -54,6 +56,8 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
   const activeRoll = rollList[activeIndex] || rollList[0];
 
   const handlePrint = () => {
+    // Opens the browser dialog only. afterprint also fires on cancel,
+    // so this must not write barcode_print_log.
     window.print();
   };
 

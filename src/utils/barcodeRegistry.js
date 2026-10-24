@@ -464,3 +464,57 @@ export function filterBarcodeRows(rows, { query = '', sourceModule = '' } = {}) 
 export function barcodeSourceModules(rows) {
   return [...new Set((rows || []).map((row) => row?.sourceModule).filter(Boolean))].sort();
 }
+
+export const PRINT_STATUS = {
+  printed: 'Printed',
+  notPrinted: 'Not printed',
+};
+
+/** Printer-agent success values. Dialog open/close and afterprint are not in this set. */
+const CONFIRMED_PRINT_STATUSES = new Set(['printed', 'success']);
+
+function logStatus(log) {
+  return codeKey(log?.jobStatus ?? log?.job_status);
+}
+
+function logWhen(log) {
+  return String(log?.printedAt || log?.printed_at || '');
+}
+
+/** Latest confirmed printer job per barcode. Failed, cancelled, and empty jobs are ignored. */
+export function confirmedPrintByBarcode(logs) {
+  const map = new Map();
+  (logs || []).forEach((log) => {
+    if (!CONFIRMED_PRINT_STATUSES.has(logStatus(log))) return;
+    const barcode = codeKey(log?.barcode);
+    if (!barcode) return;
+    const prev = map.get(barcode);
+    if (!prev || logWhen(log) >= logWhen(prev)) map.set(barcode, log);
+  });
+  return map;
+}
+
+export function withPrintStatus(rows, logs) {
+  const confirmed = confirmedPrintByBarcode(logs);
+  return (rows || []).map((row) => {
+    const hit = confirmed.get(codeKey(row?.barcode));
+    if (!hit) {
+      return {
+        ...row,
+        printStatus: PRINT_STATUS.notPrinted,
+        printJobId: '',
+        printedAt: '',
+        printedBy: '',
+        printer: '',
+      };
+    }
+    return {
+      ...row,
+      printStatus: PRINT_STATUS.printed,
+      printJobId: plain(hit.jobId, hit.job_id),
+      printedAt: logWhen(hit),
+      printedBy: plain(hit.printedBy, hit.printed_by),
+      printer: plain(hit.printer),
+    };
+  });
+}
