@@ -119,6 +119,7 @@ test('collects every stored barcode and keeps each module', () => {
   assert.ok(codes.includes(`${BARCODE_SOURCE.print}|BAR-TX-1`));
   assert.ok(codes.includes(`${BARCODE_SOURCE.adjust}|ADJ-1000`));
   assert.ok(codes.includes(`${BARCODE_SOURCE.hold}|QCHOLD-100001`));
+  assert.ok(codes.includes(`${BARCODE_SOURCE.scrap}|QCHOLD-100001`));
   assert.equal(codes.some((code) => code.endsWith('|should-not-list')), false);
   assert.equal(codes.some((code) => code.includes('11111111-1111')), false);
 
