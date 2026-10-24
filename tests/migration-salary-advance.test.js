@@ -2,11 +2,67 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import {
+  buildApprovedSalaryAdvance,
+  buildDisbursedSalaryAdvance,
+  isPayrollRecoverableAdvance,
+  salaryAdvancePrimaryAction,
+  toSalaryAdvanceRow,
+} from '../src/services/salaryAdvance.js';
 
 const migrationSql = fs.readFileSync(
   new URL('../supabase/migrations/20261024120000_salary_advance_stages.sql', import.meta.url),
   'utf8',
 );
+const upsertFixSql = fs.readFileSync(
+  new URL('../supabase/migrations/20261024140000_salary_advance_upsert_stage.sql', import.meta.url),
+  'utf8',
+);
+
+function sqlLiteral(value) {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : 'NULL';
+  if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
+  if (typeof value === 'object') return `'${JSON.stringify(value).replace(/'/g, "''")}'::jsonb`;
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+// Same statement PostgREST sends for supabase.from('salary_advances').upsert(row, { onConflict: 'id' }).
+async function upsertAdvance(db, adv) {
+  const row = toSalaryAdvanceRow(adv, { updatedAt: '2026-10-24T13:14:10.000Z' });
+  const cols = Object.keys(row);
+  const values = cols.map((col) => sqlLiteral(row[col]));
+  const assignments = cols.filter((col) => col !== 'id').map((col) => `${col} = EXCLUDED.${col}`);
+  await db.exec(`
+    INSERT INTO public.salary_advances (${cols.join(', ')})
+    VALUES (${values.join(', ')})
+    ON CONFLICT (id) DO UPDATE SET ${assignments.join(', ')}
+  `);
+}
+
+function requestedAdvance(id, employeeId, employeeName) {
+  return {
+    id,
+    employeeId,
+    employeeName,
+    department: 'Printing',
+    requestDate: '2026-10-24',
+    advanceAmount: 8000,
+    repaymentTenureMonths: 4,
+    monthlyEmiAmount: 2000,
+    reason: 'Salary Advance Request',
+    status: 'Requested',
+    approvedBy: '',
+    approvedDate: '',
+    disbursedDate: '',
+    disbursedBy: '',
+    paymentReference: '',
+    policyOverride: false,
+    totalRecoveredAmount: 0,
+    remainingBalance: 8000,
+    deductionHistory: [],
+  };
+}
 
 const ADMIN_UID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const HR_UID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
@@ -345,6 +401,203 @@ test('server allows only Requested -> Approved -> Disbursed, and only Admin can 
     `);
     const serviceRow = await db.query(`SELECT status FROM public.salary_advances WHERE id = 'ADV-SERVICE'`);
     assert.equal(serviceRow.rows[0].status, 'Disbursed');
+  } finally {
+    await db.close();
+  }
+});
+
+test('screen upsert approves and disburses a normal advance and an override advance', async () => {
+  const db = new PGlite();
+  try {
+    await prepare(db);
+    await db.exec(migrationSql);
+    await db.exec(upsertFixSql);
+    await db.exec(upsertFixSql);
+    await db.exec('ALTER TABLE public.salary_advances ADD COLUMN IF NOT EXISTS updated_at timestamptz');
+    await db.exec('GRANT SELECT, INSERT, UPDATE, DELETE ON public.salary_advances TO authenticated, service_role');
+
+    const sibling = {
+      id: 'ADV-OLD',
+      employeeId: 'EMP-9',
+      status: 'Disbursed',
+      advanceAmount: 10000,
+      remainingBalance: 4000,
+    };
+    await db.exec('RESET ROLE');
+    await db.exec('SET ROLE service_role');
+    await db.exec(`
+      INSERT INTO public.salary_advances (
+        id, employee_id, employee_name, status, advance_amount, remaining_balance,
+        monthly_emi_amount, payment_reference, total_recovered_amount
+      ) VALUES (
+        'ADV-OLD', 'EMP-9', 'Neha', 'Disbursed', 10000, 4000, 2500, 'LEGACY-ADV-OLD', 6000
+      )
+    `);
+
+    await actAs(db, 'hr');
+    const normalRequest = requestedAdvance('ADV-NORMAL', 'EMP-20', 'Asha');
+    await upsertAdvance(db, normalRequest);
+    const normalApproved = buildApprovedSalaryAdvance(normalRequest, {
+      withOverride: false,
+      actorName: 'Browser Name',
+      approvedDate: '2026-10-24',
+    });
+    assert.equal(salaryAdvancePrimaryAction(normalRequest, [normalRequest], 'HR & Payroll Manager'), 'approve');
+    await upsertAdvance(db, normalApproved);
+    const normalRow = await db.query(`
+      SELECT status, policy_override, approved_by, payment_reference
+      FROM public.salary_advances WHERE id = 'ADV-NORMAL'
+    `);
+    assert.equal(normalRow.rows[0].status, 'Approved');
+    assert.equal(normalRow.rows[0].policy_override, false);
+    assert.equal(normalRow.rows[0].approved_by, 'Payroll Lead');
+    assert.equal(normalRow.rows[0].payment_reference, null);
+    assert.equal(salaryAdvancePrimaryAction(
+      { ...normalApproved, status: 'Approved', policyOverride: false },
+      [{ ...normalApproved, status: 'Approved' }],
+      'HR & Payroll Manager',
+    ), 'disburse');
+    assert.equal(salaryAdvancePrimaryAction(
+      { ...normalApproved, status: 'Approved', policyOverride: false },
+      [{ ...normalApproved, status: 'Approved' }],
+      'Admin',
+    ), 'disburse');
+
+    await rejects(
+      db,
+      `INSERT INTO public.salary_advances (id, employee_id, status, advance_amount, remaining_balance, payment_reference)
+       VALUES ('ADV-NORMAL', 'EMP-20', 'Disbursed', 8000, 8000, 'placeholder')
+       ON CONFLICT (id) DO UPDATE SET status = 'Disbursed', payment_reference = '   '`,
+      /payment reference is required/,
+    );
+
+    await actAs(db, 'admin');
+    const normalDisbursed = buildDisbursedSalaryAdvance(
+      { ...normalApproved, status: 'Approved', policyOverride: false },
+      { paymentReference: ' UTR-NORMAL ', disbursedDate: '2026-10-24', disbursedBy: 'Browser Name' },
+    );
+    assert.equal(normalDisbursed.status, 'Disbursed');
+    assert.equal(toSalaryAdvanceRow(normalDisbursed).status, 'Disbursed');
+    assert.equal(toSalaryAdvanceRow(normalDisbursed).payment_reference, 'UTR-NORMAL');
+    await upsertAdvance(db, normalDisbursed);
+    const normalPaid = await db.query(`
+      SELECT status, payment_reference, disbursed_by, policy_override, remaining_balance, monthly_emi_amount
+      FROM public.salary_advances WHERE id = 'ADV-NORMAL'
+    `);
+    assert.equal(normalPaid.rows[0].status, 'Disbursed');
+    assert.equal(normalPaid.rows[0].payment_reference, 'UTR-NORMAL');
+    assert.equal(normalPaid.rows[0].disbursed_by, 'Samyak Jain');
+    assert.equal(normalPaid.rows[0].policy_override, false);
+    assert.equal(isPayrollRecoverableAdvance({
+      status: normalPaid.rows[0].status,
+      remainingBalance: normalPaid.rows[0].remaining_balance,
+      monthlyEmiAmount: normalPaid.rows[0].monthly_emi_amount,
+    }), true);
+
+    await actAs(db, 'admin');
+    const nextRequest = requestedAdvance('ADV-NEXT', 'EMP-9', 'Neha');
+    await upsertAdvance(db, nextRequest);
+    assert.equal(salaryAdvancePrimaryAction(nextRequest, [sibling, nextRequest], 'Admin'), 'approve-override');
+    assert.equal(salaryAdvancePrimaryAction(nextRequest, [sibling, nextRequest], 'HR & Payroll Manager'), 'awaiting-admin');
+
+    const overrideApproved = buildApprovedSalaryAdvance(nextRequest, {
+      withOverride: true,
+      actorName: 'Browser Name',
+      approvedDate: '2026-10-24',
+      overrideAt: '2020-01-01T00:00:00.000Z',
+    });
+    await actAs(db, 'hr');
+    await assert.rejects(
+      () => upsertAdvance(db, overrideApproved),
+      /Only an Admin can approve a salary advance while a previous advance is unsettled/,
+    );
+
+    await actAs(db, 'admin');
+    await upsertAdvance(db, overrideApproved);
+    const overrideRow = await db.query(`
+      SELECT status, policy_override, policy_override_by, policy_override_at, payment_reference, approved_by
+      FROM public.salary_advances WHERE id = 'ADV-NEXT'
+    `);
+    assert.equal(overrideRow.rows[0].status, 'Approved');
+    assert.equal(overrideRow.rows[0].policy_override, true);
+    assert.equal(overrideRow.rows[0].policy_override_by, 'Samyak Jain');
+    assert.equal(overrideRow.rows[0].approved_by, 'Samyak Jain');
+    assert.ok(overrideRow.rows[0].policy_override_at);
+    assert.notEqual(new Date(overrideRow.rows[0].policy_override_at).toISOString(), '2020-01-01T00:00:00.000Z');
+    assert.equal(overrideRow.rows[0].payment_reference, null);
+    const storedOverrideAt = overrideRow.rows[0].policy_override_at;
+
+    const approvedForUi = {
+      ...overrideApproved,
+      status: 'Approved',
+      policyOverride: true,
+      policyOverrideBy: overrideRow.rows[0].policy_override_by,
+      policyOverrideAt: storedOverrideAt,
+    };
+    assert.equal(salaryAdvancePrimaryAction(approvedForUi, [sibling, approvedForUi], 'Admin'), 'disburse');
+    assert.equal(salaryAdvancePrimaryAction(approvedForUi, [sibling, approvedForUi], 'HR & Payroll Manager'), 'disburse');
+
+    await upsertAdvance(db, {
+      ...approvedForUi,
+      policyOverrideBy: 'Browser Name',
+      policyOverrideAt: '2020-01-01T00:00:00.000Z',
+    });
+    const replayed = await db.query(`
+      SELECT status, policy_override_by, policy_override_at FROM public.salary_advances WHERE id = 'ADV-NEXT'
+    `);
+    assert.equal(replayed.rows[0].status, 'Approved');
+    assert.equal(replayed.rows[0].policy_override_by, 'Samyak Jain');
+
+    await actAs(db, 'hr');
+    const overrideDisbursed = buildDisbursedSalaryAdvance({
+      ...approvedForUi,
+      policyOverrideBy: 'Browser Name',
+      policyOverrideAt: '2020-01-01T00:00:00.000Z',
+    }, {
+      paymentReference: '  UTR-OVERRIDE  ',
+      disbursedDate: '2026-10-24',
+      disbursedBy: 'Browser Name',
+    });
+    assert.equal(overrideDisbursed.status, 'Disbursed');
+    assert.equal(toSalaryAdvanceRow(overrideDisbursed).status, 'Disbursed');
+    await upsertAdvance(db, overrideDisbursed);
+    await upsertAdvance(db, overrideDisbursed);
+    const overridePaid = await db.query(`
+      SELECT status, payment_reference, disbursed_by, approved_by, policy_override, policy_override_by, policy_override_at,
+             remaining_balance, monthly_emi_amount
+      FROM public.salary_advances WHERE id = 'ADV-NEXT'
+    `);
+    assert.equal(overridePaid.rows[0].status, 'Disbursed');
+    assert.equal(overridePaid.rows[0].payment_reference, 'UTR-OVERRIDE');
+    assert.equal(overridePaid.rows[0].disbursed_by, 'Payroll Lead');
+    assert.equal(overridePaid.rows[0].approved_by, 'Samyak Jain');
+    assert.equal(overridePaid.rows[0].policy_override, true);
+    assert.equal(overridePaid.rows[0].policy_override_by, 'Samyak Jain');
+    assert.equal(
+      new Date(overridePaid.rows[0].policy_override_at).toISOString(),
+      new Date(storedOverrideAt).toISOString(),
+    );
+    assert.equal(isPayrollRecoverableAdvance({
+      status: overridePaid.rows[0].status,
+      remainingBalance: overridePaid.rows[0].remaining_balance,
+    }), true);
+
+    await actAs(db, 'admin');
+    await assert.rejects(
+      () => upsertAdvance(db, {
+        ...requestedAdvance('ADV-SKIP', 'EMP-3', 'Ravi'),
+        status: 'Disbursed',
+        paymentReference: 'UTR-SKIP',
+      }),
+      /must start as Requested/,
+    );
+    await assert.rejects(
+      () => upsertAdvance(db, {
+        ...normalDisbursed,
+        policyOverride: true,
+      }),
+      /only be recorded when an Admin approves/,
+    );
   } finally {
     await db.close();
   }

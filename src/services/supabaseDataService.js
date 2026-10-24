@@ -33,6 +33,7 @@ import {
   applyAuditLogBoundary
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { toSalaryAdvanceRow } from './salaryAdvance';
 import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
 import { linesForSave, stampLineIds } from './grnDocument';
@@ -3181,30 +3182,7 @@ export async function saveSalaryAdvanceToSupabase(adv) {
     throw new Error("Cannot save salary advance: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  const row = {
-    id: adv.id,
-    employee_id: adv.employeeId,
-    employee_name: adv.employeeName,
-    department: adv.department,
-    request_date: adv.requestDate,
-    advance_amount: adv.advanceAmount,
-    repayment_tenure_months: adv.repaymentTenureMonths,
-    monthly_emi_amount: adv.monthlyEmiAmount,
-    reason: adv.reason,
-    status: adv.status,
-    approved_by: adv.approvedBy || '',
-    approved_date: adv.approvedDate || '',
-    disbursed_date: adv.disbursedDate || null,
-    disbursed_by: adv.disbursedBy || null,
-    payment_reference: adv.paymentReference ? String(adv.paymentReference).trim() : null,
-    policy_override: Boolean(adv.policyOverride),
-    policy_override_by: adv.policyOverrideBy || null,
-    policy_override_at: adv.policyOverrideAt || null,
-    total_recovered_amount: adv.totalRecoveredAmount || 0,
-    remaining_balance: adv.remainingBalance || 0,
-    deduction_history: adv.deductionHistory || [],
-    updated_at: new Date().toISOString()
-  };
+  const row = toSalaryAdvanceRow(adv);
 
   const { error } = await supabase.from('salary_advances').upsert(row, { onConflict: 'id' });
   if (error) handleSupabaseError(error, 'salary_advances');
