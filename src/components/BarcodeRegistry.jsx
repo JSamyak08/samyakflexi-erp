@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Printer, ScanBarcode, Search } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import BarcodePrinterModal from './BarcodePrinterModal';
+import BarcodePrinterSettings from './BarcodePrinterSettings';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { fetchBarcodePrintAttempts, fetchBarcodePrintStatus, fetchBarcodeRegistry } from '../services/supabaseDataService';
 import { fetchPayloadRecords } from '../services/businessRecords';
@@ -155,8 +156,8 @@ export default function BarcodeRegistry({
           Every barcode stored on raw-material and GRN rolls, SFG and FG batches, consume child rolls,
           dispatch packing lists, printed tags, cylinders, and production records.
           Pellet fuel does not generate barcodes.
-          Print status stays Not printed until a printer reports a finished job.
-          Sending a sticker to the browser dialog does not count. Reprint shows after that send.
+          Print status stays Not printed until QZ Tray reports the Windows spooler finished the TSC job.
+          A browser dialog does not count. Reprint shows after a send.
         </p>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '14px' }}>
           <label style={{ position: 'relative', flex: '1 1 240px' }}>
@@ -182,6 +183,8 @@ export default function BarcodeRegistry({
           </select>
         </div>
       </div>
+
+      <BarcodePrinterSettings />
 
       <div className="glass-panel" style={{ padding: 0, overflow: 'auto' }}>
         <table className="data-table" style={{ fontSize: '0.84rem' }}>

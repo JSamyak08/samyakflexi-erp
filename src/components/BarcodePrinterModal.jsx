@@ -3,10 +3,12 @@ import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode, ArrowRight } from '
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import QRCode2D from './QRCode2D';
-import { codeKey, codeStartsWith, textFrom } from '../utils/barcodeCode';
+import { codeKey } from '../utils/barcodeCode';
 import { stickerPrintLogs } from '../utils/barcodeRegistry';
+import { describeSticker } from '../utils/stickerLabel';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { recordBarcodePrints } from '../services/supabaseDataService';
+import { sendStickersWithQz } from '../services/barcodeStickerPrint';
 
 async function operatorName() {
   if (!isSupabaseConfigured()) return 'Operator';
@@ -46,14 +48,73 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onRecordNext, onClose]);
 
+  const resolveItemPurchaseRate = (r) => {
+    const directRate = Number(r.purchaseRatePerKg || r.purchaseRate || r.unitPrice || r.rate || r.ratePerKg || 0);
+    if (directRate > 0) return directRate;
+
+    const cleanId = String(r.itemId || r.id || r.itemCode || r.barcodeId || '').toLowerCase().trim();
+    const strippedId = cleanId.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
+
+    const matchedItem = (inventory || []).find(i => {
+      const iId = codeKey(i.id);
+      const iCode = codeKey(i.itemCode);
+      const pCode = codeKey(i.productCode);
+      const lBatch = codeKey(i.lastBatch);
+      const iName = codeKey(i.itemName);
+      return iId === cleanId || iId === strippedId ||
+        iCode === cleanId || iCode === strippedId ||
+        pCode === cleanId || pCode === strippedId ||
+        lBatch === cleanId || lBatch === strippedId ||
+        (iName && (iName === cleanId || cleanId.includes(iName)));
+    });
+
+    if (matchedItem) {
+      const invRate = Number(matchedItem.unitPrice || matchedItem.purchaseRatePerKg || matchedItem.pricePerKg || 0);
+      if (invRate > 0) return invRate;
+    }
+
+    const matchedInk = (inks || []).find(ink => {
+      const pCode = codeKey(ink.productCode);
+      const inkId = codeKey(ink.id);
+      const shade = codeKey(ink.shade);
+      return pCode === cleanId || pCode === strippedId || inkId === cleanId || (shade && (shade === cleanId || cleanId.includes(shade)));
+    });
+
+    if (matchedInk) {
+      const inkRate = Number(matchedInk.pricePerKg || matchedInk.unitPrice || 0);
+      if (inkRate > 0) return inkRate;
+    }
+
+    return directRate;
+  };
+
   const printStickers = async () => {
+    const printedBy = await operatorName();
+    const letterheadNow = loadLetterhead();
+    const company = letterheadNow?.company || {};
+    try {
+      const sent = await sendStickersWithQz({
+        rolls: rollList,
+        company,
+        inventory,
+        inks,
+        printedBy,
+        rateFor: resolveItemPurchaseRate,
+      });
+      if (sent.mode === 'qz') {
+        if (sent.logs.length && onPrinted) onPrinted(sent.logs);
+        return;
+      }
+    } catch (error) {
+      console.warn('[qz] falling back to the browser dialog', error?.message || error);
+    }
     try {
       window.print();
     } catch (error) {
       console.warn('Print error:', error);
       return;
     }
-    const logs = stickerPrintLogs(rollList, { printedBy: await operatorName() });
+    const logs = stickerPrintLogs(rollList, { printedBy });
     const saved = await recordBarcodePrints(logs);
     if (saved.length && onPrinted) onPrinted(saved);
   };
@@ -80,98 +141,18 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     printStickers();
   };
 
-  const resolveItemPurchaseRate = (r) => {
-    // 1. Check explicit rate on roll/sticker object
-    const directRate = Number(r.purchaseRatePerKg || r.purchaseRate || r.unitPrice || r.rate || r.ratePerKg || 0);
-    if (directRate > 0) return directRate;
-
-    // 2. Cross-reference with live inventory list
-    const cleanId = String(r.itemId || r.id || r.itemCode || r.barcodeId || '').toLowerCase().trim();
-    const strippedId = cleanId.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
-
-    const matchedItem = (inventory || []).find(i => {
-      const iId = codeKey(i.id);
-      const iCode = codeKey(i.itemCode);
-      const pCode = codeKey(i.productCode);
-      const lBatch = codeKey(i.lastBatch);
-      const iName = codeKey(i.itemName);
-      return iId === cleanId || iId === strippedId ||
-        iCode === cleanId || iCode === strippedId ||
-        pCode === cleanId || pCode === strippedId ||
-        lBatch === cleanId || lBatch === strippedId ||
-        (iName && (iName === cleanId || cleanId.includes(iName)));
-    });
-
-    if (matchedItem) {
-      const invRate = Number(matchedItem.unitPrice || matchedItem.purchaseRatePerKg || matchedItem.pricePerKg || 0);
-      if (invRate > 0) return invRate;
-    }
-
-    // 3. Cross-reference with inks master
-    const matchedInk = (inks || []).find(ink => {
-      const pCode = codeKey(ink.productCode);
-      const inkId = codeKey(ink.id);
-      const shade = codeKey(ink.shade);
-      return pCode === cleanId || pCode === strippedId || inkId === cleanId || (shade && (shade === cleanId || cleanId.includes(shade)));
-    });
-
-    if (matchedInk) {
-      const inkRate = Number(matchedInk.pricePerKg || matchedInk.unitPrice || 0);
-      if (inkRate > 0) return inkRate;
-    }
-
-    return directRate;
-  };
-
   const renderSingleSticker = (r, isPrintView = false) => {
-    const isSFG = r.rollType === 'SFG_PRINTED' || r.rollType === 'SFG_LAMINATED' || r.rollType === 'SFG';
-    const isFG = r.rollType === 'FG_DISPATCH' || r.rollType === 'FG';
-
-    const nonFilmCategories = [
-      'Doctor Blades', 'Doctor Blades & Wipers', 'Inks & Solvents',
-      'Printing Inks', 'Printing Inks & Toners', 'Chemicals & Solvents', 'Adhesives & Hardener',
-      'Rollers & Sleeves', 'Machine Spare Parts', 'Lubricants & Oils',
-      'Tapes & Consumables', 'Safety Gear (PPE)', 'General Store', 'CONSUMABLE_ITEM', 'Packaging & Cores'
-    ];
-
-    const itemNameLower = String(r.itemName || '').toLowerCase();
-    const catLower = String(r.category || '').toLowerCase();
-
-    const KNOWN_NON_FILM_KEYWORDS = [
-      'acetate', 'solvent', 'ink', 'cyan', 'magenta', 'yellow', 'black', 'white',
-      'blade', 'wiper', 'adhesive', 'hardener', 'tape', 'core', 'roller', 'sleeve',
-      'lubricant', 'oil', 'gear', 'ppe', 'glove', 'mask', 'chemical', 'cylinder',
-      'thinner', 'alcohol', 'toluene', 'varnish'
-    ];
-
-    const isNonFilmByKeyword = KNOWN_NON_FILM_KEYWORDS.some(kw => 
-      itemNameLower.includes(kw) || catLower.includes(kw)
-    );
-
-    const isExplicitNonFilm = nonFilmCategories.includes(r.category) || 
-      isNonFilmByKeyword ||
-      r.rollType === 'CONSUMABLE_ITEM';
-
-    const hasValidFilmSpecs = parseFloat(r.micron) > 0 && parseFloat(r.widthMm) > 0 && r.micron !== '-' && r.widthMm !== '-';
-
-    const isFilmItem = !isExplicitNonFilm && 
-      (r.rollType === 'RAW_MATERIAL' || r.category === 'Film Substrates') && 
-      hasValidFilmSpecs;
-
-    const catStr = codeKey(r.category);
-    const isChemicalOrInk = catStr.includes('chemical') || catStr.includes('solvent') || catStr.includes('ink') || catStr.includes('adhesive') || catStr.includes('resin') || codeStartsWith(r.barcodeId, 'CON-BC') || codeStartsWith(r.barcodeId, 'RM-BC');
-    const displayUnit = r.unit || r.uom || (isFilmItem || isChemicalOrInk ? 'Kg' : 'Pcs');
-    const displayQty = (r.netWeightKg !== undefined && r.netWeightKg !== null && Number(r.netWeightKg) > 0)
-      ? Number(r.netWeightKg)
-      : ((r.availableWeightKg !== undefined && r.availableWeightKg !== null && Number(r.availableWeightKg) > 0)
-        ? Number(r.availableWeightKg)
-        : (Number(r.qty ?? r.weightKg ?? r.receivedQtyKg ?? 0)));
-    const rateVal = resolveItemPurchaseRate(r);
-    const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
-    const batchStr = r.batchNo || r.heatNo || r.batch || '-';
-    const barcodeCodeStr = textFrom(r.barcodeId, r.id) || 'BC-2026-0000';
-
-    const isQCHold = r.isQCHold || r.targetProcess === 'QC Hold Store' || r.status === 'QC_HOLD' || r.rollType === 'QC_HOLD' || r.isHold === true;
+    const sticker = describeSticker(r, { company: COMPANY_DETAILS, inventory, inks, rate: resolveItemPurchaseRate(r) });
+    const isSFG = sticker.isSfg;
+    const isFG = sticker.isFg;
+    const isFilmItem = sticker.isFilm;
+    const displayUnit = sticker.unit;
+    const displayQty = sticker.qty;
+    const rateVal = sticker.rate;
+    const vendorStr = sticker.vendor;
+    const batchStr = sticker.batch;
+    const barcodeCodeStr = sticker.barcode;
+    const isQCHold = sticker.qcHold;
 
     return (
       <div 
