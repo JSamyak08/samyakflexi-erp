@@ -149,7 +149,17 @@ export function withTimeout(promise, ms, label = 'operation') {
 }
 
 /**
- * Test connectivity to Supabase (both PostgreSQL tables and Storage Buckets)
+ * Anonymous clients cannot read public tables after the RBAC lockdown.
+ * A table probe is only valid once a user access token is present.
+ */
+export function sessionCanReadTables(session) {
+  return Boolean(session && typeof session.access_token === 'string' && session.access_token);
+}
+
+/**
+ * Test connectivity to Supabase (both PostgreSQL tables and Storage Buckets).
+ * Signed-out calls do not touch tables. The login screen must not treat a
+ * 401 from an anonymous orders probe as "offline".
  */
 export const checkSupabaseConnection = async () => {
   if (!isSupabaseConfigured()) {
@@ -174,7 +184,24 @@ export const checkSupabaseConnection = async () => {
 
   try {
     const client = getSupabaseClient();
-    
+    let session = null;
+    try {
+      const { data } = await client.auth.getSession();
+      session = data?.session || null;
+    } catch {
+      session = null;
+    }
+    if (!sessionCanReadTables(session)) {
+      return {
+        connected: false,
+        skipped: true,
+        databaseOnline: false,
+        storageOnline: false,
+        tablesExist: false,
+        message: 'Signed out. Database tables are checked after sign-in.',
+      };
+    }
+
     // 1. Check PostgreSQL Database Connectivity. Bound the probe so a hung request
     // cannot leave the dashboard loader on "checking" for minutes.
     const { error: dbError } = await withTimeout(

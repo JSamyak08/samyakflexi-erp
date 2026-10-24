@@ -285,6 +285,12 @@ export default function App() {
   const runDatabaseHealthCheck = async () => {
     try {
       const res = await withTimeout(checkSupabaseConnection(), 8000, 'database health check');
+      if (res?.skipped) {
+        // No token means we did not probe. That is not an outage, and the
+        // loader cannot stay on "checking" or it never finishes.
+        setDatabaseStatus(prev => (prev === 'checking' ? 'connected' : prev));
+        return;
+      }
       if (res && res.connected) {
         setDatabaseStatus('connected');
         setDatabaseErrorMessage(null);
@@ -298,12 +304,6 @@ export default function App() {
       setDatabaseErrorMessage(err.message || 'Database health check failed.');
     }
   };
-
-  useEffect(() => {
-    runDatabaseHealthCheck();
-    const interval = setInterval(runDatabaseHealthCheck, 15000); // 15-second polling interval
-    return () => clearInterval(interval);
-  }, []);
 
   // Guard function to enforce active DB connection before any transactional write
   const requireDatabaseConnection = (actionName = 'perform this action') => {
@@ -331,6 +331,15 @@ export default function App() {
     const timer = setTimeout(() => setIsSigningIn(false), 8000);
     return () => clearTimeout(timer);
   }, [isSigningIn]);
+
+  // The orders count probe needs a signed-in token. Running it on the login
+  // screen is an anonymous table read, which now returns 401.
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    runDatabaseHealthCheck();
+    const interval = setInterval(runDatabaseHealthCheck, 15000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
 
   // Route & Navigation State
   const [routeInfo, setRouteInfo] = useState(() => getRouteFromUrl());
@@ -3456,7 +3465,7 @@ export default function App() {
     }
     const subInfo = multiSubstrate2 ? null : (logEntry.substrate2 || logEntry.substrate3);
     if (subInfo && subInfo.barcode) {
-      const subBarcode = subInfo.barcode.trim();
+      const subBarcode = String(subInfo.barcode).trim();
       const subConsumed = Number(subInfo.consumedKg) || 0;
       const subRollMatch = (inventoryRolls || []).find(r => (r.barcodeId || r.id) === subBarcode);
       if (subRollMatch && subConsumed > 0) {

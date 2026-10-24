@@ -1,3 +1,4 @@
+-- Sorts after 20261024040100, which production has already applied.
 -- Read-only list of barcodes already stored by each module.
 -- security_invoker keeps the caller's RLS on the source tables.
 -- private.can_any(ARRAY['barcodes']) returns no rows unless that role

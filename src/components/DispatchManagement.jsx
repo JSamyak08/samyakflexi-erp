@@ -1228,7 +1228,7 @@ export default function DispatchManagement({
   const filteredPackingLists = useMemo(() => {
     const term = searchTerm.toLowerCase();
     return (dispatchShipments || []).filter(ds => 
-      (ds.dispatchId || ds.id || '').toLowerCase().includes(term) ||
+      String(ds.dispatchId || ds.id || '').toLowerCase().includes(term) ||
       (ds.clientName || '').toLowerCase().includes(term) ||
       (ds.jobName || '').toLowerCase().includes(term) ||
       (ds.vehicleNo || '').toLowerCase().includes(term) ||

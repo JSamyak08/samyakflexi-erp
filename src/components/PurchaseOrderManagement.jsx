@@ -202,7 +202,7 @@ export default function PurchaseOrderManagement({
 
   // Check for active unreceived PO collision for a given item
   const checkActivePoCollision = (itemToCheck) => {
-    const targetItemId = (itemToCheck.itemId || itemToCheck.itemCode || itemToCheck.id || '').trim().toLowerCase();
+    const targetItemId = String(itemToCheck.itemId || itemToCheck.itemCode || itemToCheck.id || '').trim().toLowerCase();
     const targetDesc = (itemToCheck.itemDesc || itemToCheck.itemName || itemToCheck.description || '').trim().toLowerCase();
     const targetFilmType = (itemToCheck.filmType || '').trim().toLowerCase();
     const targetMicron = itemToCheck.micron ? Number(itemToCheck.micron) : null;
@@ -224,7 +224,7 @@ export default function PurchaseOrderManagement({
 
       // Check if any line item in this existing PO matches our target item
       for (const line of (existingPo.items || [])) {
-        const lineItemId = (line.itemId || line.itemCode || line.id || '').trim().toLowerCase();
+        const lineItemId = String(line.itemId || line.itemCode || line.id || '').trim().toLowerCase();
         const lineDesc = (line.itemDesc || line.itemName || line.description || '').trim().toLowerCase();
         const lineFilmType = (line.filmType || '').trim().toLowerCase();
         const lineMicron = line.micron ? Number(line.micron) : null;

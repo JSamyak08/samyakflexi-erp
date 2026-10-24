@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const migrationSql = fs.readFileSync(
-  new URL('../supabase/migrations/20261024040000_barcode_registry.sql', import.meta.url),
+  new URL('../supabase/migrations/20261024050000_barcode_registry.sql', import.meta.url),
   'utf8'
 );
 const rollbackSql = fs.readFileSync(
-  new URL('../supabase/rollback/20261024040000_barcode_registry_rollback.sql', import.meta.url),
+  new URL('../supabase/rollback/20261024050000_barcode_registry_rollback.sql', import.meta.url),
   'utf8'
 );
 

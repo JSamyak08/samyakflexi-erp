@@ -453,7 +453,7 @@ export default function SalesManagement({
       (j.skuCode || j.sku || '').toLowerCase().includes(q) ||
       (j.clientName || j.client_name || '').toLowerCase().includes(q) ||
       (j.structure || j.film_structure || '').toLowerCase().includes(q) ||
-      (j.id || '').toLowerCase().includes(q)
+      String(j.id || '').toLowerCase().includes(q)
     );
   };
 

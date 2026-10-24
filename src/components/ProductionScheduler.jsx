@@ -580,7 +580,7 @@ export default function ProductionScheduler({
         const q = searchQuery.toLowerCase().trim();
         const matchesJobName = (order.jobName || '').toLowerCase().includes(q);
         const matchesClient = (order.clientName || '').toLowerCase().includes(q);
-        const matchesJobCode = (order.jobCode || order.id || '').toLowerCase().includes(q);
+        const matchesJobCode = String(order.jobCode || order.id || '').toLowerCase().includes(q);
         if (!matchesJobName && !matchesClient && !matchesJobCode) return false;
       }
       // Machine filter
@@ -604,7 +604,7 @@ export default function ProductionScheduler({
         const q = searchQuery.toLowerCase().trim();
         const matchesJobName = (order.jobName || '').toLowerCase().includes(q);
         const matchesClient = (order.clientName || '').toLowerCase().includes(q);
-        const matchesJobCode = (order.jobCode || order.id || '').toLowerCase().includes(q);
+        const matchesJobCode = String(order.jobCode || order.id || '').toLowerCase().includes(q);
         if (!matchesJobName && !matchesClient && !matchesJobCode) return false;
       }
       if (selectedMachineFilter !== 'All') {

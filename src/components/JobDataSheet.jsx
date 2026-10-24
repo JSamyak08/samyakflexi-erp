@@ -181,10 +181,10 @@ export default function JobDataSheet({
     // Search query match
     const query = searchTerm.toLowerCase().trim();
     const matchesQuery = !query || 
-      sheet.id?.toLowerCase().includes(query) ||
+      String(sheet.id ?? '').toLowerCase().includes(query) ||
       sheet.jobName?.toLowerCase().includes(query) ||
       sheet.clientName?.toLowerCase().includes(query) ||
-      sheet.jobId?.toLowerCase().includes(query);
+      String(sheet.jobId ?? '').toLowerCase().includes(query);
 
     // Date range match
     const sheetDate = sheet.completionDate;

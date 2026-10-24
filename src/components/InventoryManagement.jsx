@@ -337,7 +337,7 @@ export default function InventoryManagement({
       } else if (cleanName) {
         groupKey = `ITEM_${cleanName.toLowerCase().replace(/\s+/g, '')}`;
       } else {
-        groupKey = `ITEM_${(item.category || item.id || '').toLowerCase().replace(/\s+/g, '')}`;
+        groupKey = `ITEM_${String(item.category || item.id || '').toLowerCase().replace(/\s+/g, '')}`;
       }
 
       if (!groupsMap.has(groupKey)) {
@@ -1999,7 +1999,7 @@ export default function InventoryManagement({
   const filteredStockItemsForGrn = (groupedInventory || []).filter(item => {
     const term = (grnItemSearchTerm || '').toLowerCase().trim();
     const title = (item.itemName || `${item.filmType || ''} ${item.micron || ''} ${item.widthMm || ''}`).toLowerCase();
-    const code = (item.itemCode || item.primaryId || item.id || '').toLowerCase();
+    const code = String(item.itemCode || item.primaryId || item.id || '').toLowerCase();
     const cat = (item.category || '').toLowerCase();
     
     if (!term) return true;
@@ -4259,7 +4259,7 @@ export default function InventoryManagement({
               }
             }
             const invNameClean = (inv.itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-            const invCodeClean = (inv.id || inv.itemCode || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+            const invCodeClean = String(inv.id || inv.itemCode || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
             if (normRowName && (invNameClean === normRowName || invCodeClean === normRowName)) return true;
             
             // Check film spec match (filmType/grade + micron + width)
@@ -4520,7 +4520,7 @@ export default function InventoryManagement({
     const substrateGrade = (i.substrateOrGrade || i.substrateGrade || i.grade || i.subType || '').toLowerCase();
     const location = (i.location || '').toLowerCase();
     const itemCode = (i.itemCode || '').toLowerCase();
-    const id = (i.id || '').toLowerCase();
+    const id = String(i.id || '').toLowerCase();
     const allIds = (i.allInventoryIds || []).join(' ').toLowerCase();
     const category = (i.category || 'Film Substrates').toLowerCase();
     const vendor = (i.lastVendor || i.vendor || '').toLowerCase();
@@ -4569,7 +4569,7 @@ export default function InventoryManagement({
       // 1. Search Filter
       if (recSearchTerm && recSearchTerm.trim()) {
         const q = recSearchTerm.toLowerCase().trim();
-        const matchId = (item.id || '').toLowerCase().includes(q);
+        const matchId = String(item.id || '').toLowerCase().includes(q);
         const matchFilm = (item.filmType || '').toLowerCase().includes(q);
         const matchName = (item.itemName || '').toLowerCase().includes(q);
         const matchCategory = (item.category || '').toLowerCase().includes(q);
@@ -9547,7 +9547,7 @@ export default function InventoryManagement({
             return (
               (tx.refNo && tx.refNo.toLowerCase().includes(q)) ||
               (tx.partyName && tx.partyName.toLowerCase().includes(q)) ||
-              (tx.barcode && tx.barcode.toLowerCase().includes(q)) ||
+              (tx.barcode && String(tx.barcode).toLowerCase().includes(q)) ||
               (tx.type && tx.type.toLowerCase().includes(q)) ||
               (tx.notes && tx.notes.toLowerCase().includes(q))
             );
@@ -9945,7 +9945,7 @@ export default function InventoryManagement({
                                 </div>
                               ) : (
                                 (() => {
-                                  const rawBarcodeStr = (tx.barcode || '').trim();
+                                  const rawBarcodeStr = String(tx.barcode || '').trim();
                                   const barcodeTokens = rawBarcodeStr
                                     ? rawBarcodeStr.split(/[,;\n]+/).map(b => b.trim()).filter(Boolean)
                                     : [];

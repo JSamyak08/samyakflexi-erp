@@ -709,7 +709,7 @@ export default function JobMasterDirectory({
       const search = (searchTerm || '').toLowerCase().trim();
       if (search) {
         const matchName = (j.jobName || '').toLowerCase().includes(search);
-        const matchId = (j.id || '').toLowerCase().includes(search);
+        const matchId = String(j.id || '').toLowerCase().includes(search);
         const matchSku = (j.skuCode || j.sku || j.cylinderSku || '').toLowerCase().includes(search);
         const matchClient = (j.clientName || '').toLowerCase().includes(search);
         const matchStructure = (j.structure || '').toLowerCase().includes(search);

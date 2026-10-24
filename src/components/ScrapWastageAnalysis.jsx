@@ -196,7 +196,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           (r.jobName && r.jobName.toLowerCase().includes(q)) ||
           (r.orderId && r.orderId.toLowerCase().includes(q)) ||
           (r.operatorName && r.operatorName.toLowerCase().includes(q)) ||
-          (r.id && r.id.toLowerCase().includes(q)) ||
+          (r.id && String(r.id).toLowerCase().includes(q)) ||
           (r.reasonOrCategory && r.reasonOrCategory.toLowerCase().includes(q));
         if (!matchesSearch) return false;
       }
