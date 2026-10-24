@@ -78,10 +78,10 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
         <div id="printable-payslip" className="printable-document" style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Banner */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1e293b', paddingBottom: '16px', marginBottom: '16px' }}>
+          <div className="letterhead-header">
             <div>
               {logoImage ? (
-                <img src={logoImage} alt="Company Logo" style={{ height: '52px', maxWidth: '240px', objectFit: 'contain', marginBottom: '6px' }} />
+                <img src={logoImage} alt="Company Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain', marginBottom: '4px' }} />
               ) : (
                 <h1 style={{ fontSize: '1.6rem', fontWeight: '900', color: '#1e293b', margin: 0, letterSpacing: '-0.5px' }}>
                   {COMPANY_DETAILS.name}
@@ -268,18 +268,16 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
               </div>
             </div>
 
-            <div style={{ textAlign: 'center', width: '220px' }}>
-              <div style={{ height: '45px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="pdf-sign-company">
+              <div style={{ fontWeight: '800', fontSize: '0.8rem', color: '#0f172a' }}>For Samyak International Ltd</div>
+              <div className="pdf-sign-slot">
                 {signatureImage ? (
-                  <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '42px', maxWidth: '140px', objectFit: 'contain' }} />
+                  <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '140px', objectFit: 'contain' }} />
                 ) : (
                   <span style={{ fontFamily: 'cursive', fontSize: '1.1rem', color: '#0f172a' }}>Samyak Jain</span>
                 )}
               </div>
-              <div style={{ borderTop: '1px solid #475569', paddingTop: '6px', fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>
-                For Samyak International Ltd<br/>
-                <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>(Authorised Signatory)</span>
-              </div>
+              <div className="pdf-sign-role">(Authorised Signatory)</div>
             </div>
           </div>
 

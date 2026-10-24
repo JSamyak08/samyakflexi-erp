@@ -54,7 +54,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-logo-column">
-              <img src={companyLogo} alt="Samyak International Ltd" className="letterhead-logo-img" style={{ maxHeight: '48px', objectFit: 'contain' }} />
+              <img src={companyLogo} alt="Samyak International Ltd" className="letterhead-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
               <div style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
                 {COMPANY_DETAILS.tagline}
               </div>
@@ -192,14 +192,14 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
           {/* Authorised Signatory */}
           <div className="letterhead-signatory-block pdf-signature-block" style={{ marginTop: '8px' }}>
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
-            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div className="pdf-sign-slot">
               {signatureImage ? (
-                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', objectFit: 'contain' }} />
+                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
               ) : (
                 <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '18px', fontWeight: 'bold' }}>Sy</span>
               )}
             </div>
-            <div style={{ fontSize: '9px', fontWeight: 'bold' }}>Authorised Signatory</div>
+            <div className="pdf-sign-role">Authorised Signatory</div>
           </div>
 
         </div>
