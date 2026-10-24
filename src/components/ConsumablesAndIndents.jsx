@@ -1941,7 +1941,7 @@ export default function ConsumablesAndIndents({
           <div className="modal-content" style={{ width: '750px', maxWidth: '95vw', maxHeight: '90vh', padding: '0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onClick={e => e.stopPropagation()}>
             
             {/* Header Toolbar */}
-            <div style={{ padding: '14px 20px', background: '#0f172a', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div className="no-print" style={{ padding: '14px 20px', background: '#0f172a', color: '#ffffff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div style={{ fontWeight: '700', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Printer size={16} /> Material Indent Slip: {selectedIndentForPrint.indentNo}
               </div>
@@ -1960,7 +1960,7 @@ export default function ConsumablesAndIndents({
             </div>
 
             {/* Formatted Indent Slip Sheet */}
-            <div style={{ padding: '30px', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif', overflowY: 'auto', flex: 1 }}>
+            <div id="printable-indent" className="printable-document" style={{ padding: '11mm 12mm', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif', overflow: 'visible', flex: 1, width: '210mm', maxWidth: '100%', boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '16px', marginBottom: '20px' }}>
                 <div>
                   <h2 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0f172a', margin: 0 }}>SAMYAK INTERNATIONAL LTD.</h2>
@@ -2007,7 +2007,7 @@ export default function ConsumablesAndIndents({
                 <strong>Remarks / Justification:</strong> {selectedIndentForPrint.remarks}
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', paddingTop: '40px', borderTop: '1px dashed #cbd5e1', textAlign: 'center', fontSize: '0.8rem' }}>
+              <div className="pdf-signature-block" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', textAlign: 'center', fontSize: '8pt' }}>
                 <div>
                   <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '4px', fontWeight: '700' }}>{selectedIndentForPrint.raisedBy}</div>
                   <div style={{ color: '#64748b', marginTop: '4px' }}>Requisition Raised By</div>

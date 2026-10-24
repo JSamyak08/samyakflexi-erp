@@ -140,8 +140,8 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
         </button>
       </div>
 
-      <div className="pdf-paper-container" style={{ background: '#ffffff', minHeight: '297mm', height: 'auto', boxSizing: 'border-box' }}>
-        <div className="printable-document" id="printable-ocn" style={{ background: '#ffffff', minHeight: 'calc(297mm - 24mm)', height: 'auto', boxSizing: 'border-box' }}>
+      <div className="pdf-paper-container" style={{ background: '#ffffff', height: 'auto', boxSizing: 'border-box' }}>
+        <div className="printable-document" id="printable-ocn" style={{ background: '#ffffff', height: 'auto', boxSizing: 'border-box' }}>
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">
@@ -512,7 +512,7 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
 
 
           {/* Authorised Signatory */}
-          <div className="letterhead-signatory-block">
+          <div className="letterhead-signatory-block pdf-signature-block">
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
             <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {signatureImage ? (

@@ -79,15 +79,17 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
       {/* Printable Sheet Container */}
       <div 
         id="printable-client-pending-orders"
+        className="printable-document pdf-paper-container"
         style={{
-          width: '100%',
-          maxWidth: '900px',
+          width: '210mm',
+          maxWidth: '100%',
           background: '#ffffff',
           color: '#0f172a',
-          padding: '36px 40px',
-          borderRadius: '8px',
+          padding: '11mm 12mm',
+          borderRadius: '0',
           boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          boxSizing: 'border-box'
         }}
       >
         {/* Printable Header */}
@@ -299,12 +301,12 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
         </div>
 
         {/* Terms & Authorization Sign-Off */}
-        <div style={{
+        <div className="pdf-signature-block" style={{
           display: 'grid',
           gridTemplateColumns: '1.4fr 1fr',
-          gap: '20px',
+          gap: '8px',
           alignItems: 'end',
-          paddingTop: '16px',
+          paddingTop: '6px',
           borderTop: '1px dashed #cbd5e1'
         }}>
           <div>
@@ -347,13 +349,13 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
             margin: 0 !important;
           }
           #printable-client-pending-orders {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+            position: static !important;
+            left: auto !important;
+            top: auto !important;
             width: 100% !important;
             max-width: 100% !important;
             box-shadow: none !important;
-            padding: 15mm !important;
+            padding: 0 !important;
             border-radius: 0 !important;
           }
         }

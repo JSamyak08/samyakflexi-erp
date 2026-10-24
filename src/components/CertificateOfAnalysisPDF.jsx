@@ -273,7 +273,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
           </table>
 
           {/* Remarks Section */}
-          <div style={{ border: '1.5px solid #000', marginTop: '10px', padding: '8px 12px', background: '#fafafa' }}>
+          <div className="pdf-keep-with-next" style={{ border: '1.5px solid #000', marginTop: '6px', padding: '6px 8px', background: '#fafafa' }}>
             <div style={{ fontSize: '10px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', marginBottom: '2px' }}>
               Remarks / QC Disposition Statement:
             </div>
@@ -283,7 +283,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
           </div>
 
           {/* Dual QC Laboratory Signatures */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '18px' }}>
+          <div className="pdf-signature-block" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px' }}>
             {/* Prepared By / Chemist */}
             <div style={{ border: '1px solid #cbd5e1', borderRadius: '6px', padding: '10px 14px', background: '#ffffff' }}>
               <div style={{ fontSize: '10px', fontWeight: '800', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '3px', marginBottom: '6px' }}>

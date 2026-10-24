@@ -42,10 +42,11 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
       <div 
         className="modal-content glass-panel" 
         style={{ 
-          width: '880px', 
+          width: '210mm', 
+          maxWidth: '96vw',
           maxHeight: '92vh', 
           overflowY: 'auto', 
-          padding: '30px',
+          padding: '16px 12px',
           background: '#ffffff',
           color: '#0f172a',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
@@ -74,7 +75,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
         </div>
 
         {/* PRINTABLE PAYSLIP CONTAINER */}
-        <div id="printable-payslip" className="printable-document" style={{ padding: '20px', background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div id="printable-payslip" className="printable-document" style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Banner */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1e293b', paddingBottom: '16px', marginBottom: '16px' }}>
@@ -259,7 +260,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
           )}
 
           {/* Signatures Section */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', marginTop: '30px', paddingTop: '16px', borderTop: '1px dashed #cbd5e1' }}>
+          <div className="pdf-signature-block" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'end', marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed #cbd5e1' }}>
             <div style={{ textAlign: 'center', width: '220px' }}>
               <div style={{ height: '45px' }}></div>
               <div style={{ borderTop: '1px solid #475569', paddingTop: '6px', fontSize: '0.8rem', fontWeight: '700', color: '#334155' }}>

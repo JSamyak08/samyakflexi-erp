@@ -38,11 +38,8 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
       <style>{`
         @media print {
           @page {
-            size: A4 landscape !important;
-            margin: 0 !important;
-          }
-          body * {
-            visibility: hidden !important;
+            size: A4 landscape;
+            margin: 10mm 12mm;
           }
           .printable-jobcard-host,
           .printable-jobcard-host *,
@@ -55,22 +52,25 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
+            height: auto !important;
+            max-height: none !important;
             opacity: 1 !important;
             pointer-events: auto !important;
             display: block !important;
+            overflow: visible !important;
           }
           .no-print, button, .modal-overlay {
             display: none !important;
           }
           .printable-landscape-card {
-            position: relative !important;
+            position: static !important;
             display: block !important;
-            left: 0 !important;
-            top: 0 !important;
+            left: auto !important;
+            top: auto !important;
             width: 100% !important;
-            max-width: 297mm !important;
-            padding: 6mm 10mm !important;
-            margin: 0 auto !important;
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
             background: #ffffff !important;
             color: #000000 !important;
           }
@@ -237,7 +237,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
       </div>
 
       <div style={{ marginTop: '10px' }}>
-        <table className="jobcard-table" style={{ marginBottom: 0 }}>
+        <table className="jobcard-table pdf-signature-block" style={{ marginBottom: 0 }}>
           <thead>
             <tr>
               <th style={{ width: '50%', textAlign: 'center' }}>Prepared By (Management)</th>

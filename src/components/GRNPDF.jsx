@@ -490,7 +490,7 @@ export default function GRNPDF({ grnData, onClose }) {
 
 
           {/* Authorised Signatory */}
-          <div className="letterhead-signatory-block">
+          <div className="letterhead-signatory-block pdf-signature-block">
             <div style={{ fontWeight: 'bold' }}>For {COMPANY_DETAILS.name}</div>
             <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {signatureImage ? (
