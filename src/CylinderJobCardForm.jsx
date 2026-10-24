@@ -116,7 +116,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
       {/* Header Banner: Company Logo, Address, GSTIN, CIN */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2.5px solid #0f172a', paddingBottom: '8px', marginBottom: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <img src={companyLogo} alt="Company Logo" style={{ maxHeight: '46px', objectFit: 'contain' }} />
+          <img src={companyLogo} alt="Company Logo" className="samyak-logo-img" style={{ height: '34px', maxWidth: '160px', objectFit: 'contain' }} />
           <div>
             <div style={{ fontSize: '9.5px', color: '#1e293b', fontWeight: '700', lineHeight: '1.3', maxWidth: '580px' }}>
               {COMPANY_DETAILS.address}
@@ -248,7 +248,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
             <tr style={{ height: '54px' }}>
               <td style={{ textAlign: 'center', verticalAlign: 'middle', fontSize: '10px' }}>
                 {managementSignature ? (
-                  <img src={managementSignature} alt="Management Signature" style={{ height: '36px', maxHeight: '36px', objectFit: 'contain', display: 'block', margin: '0 auto 2px auto' }} />
+                  <img src={managementSignature} alt="Management Signature" style={{ height: '36px', maxHeight: '36px', maxWidth: '140px', objectFit: 'contain', display: 'block', margin: '0 auto 2px auto' }} />
                 ) : (
                   <div style={{ fontWeight: '800', color: '#0f172a', marginBottom: '2px' }}>Samyak International Ltd</div>
                 )}

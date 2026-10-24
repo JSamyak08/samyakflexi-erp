@@ -52,13 +52,14 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
           }}
         >
           {/* Header Block with Company Logo */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px' }}>
+          <div className="letterhead-header">
             <div>
               {logoUrl ? (
                 <img 
                   src={logoUrl} 
                   alt={COMPANY_DETAILS.name} 
-                  style={{ maxHeight: '60px', maxWidth: '280px', objectFit: 'contain', marginBottom: '6px', display: 'block' }}
+                  className="samyak-logo-img"
+                  style={{ height: '36px', maxWidth: '188px', objectFit: 'contain', marginBottom: '4px', display: 'block' }}
                   onError={(e) => {
                     e.target.onerror = null;
                     e.target.style.display = 'none';

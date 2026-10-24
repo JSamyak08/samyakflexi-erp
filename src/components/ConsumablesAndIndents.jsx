@@ -1961,13 +1961,13 @@ export default function ConsumablesAndIndents({
 
             {/* Formatted Indent Slip Sheet */}
             <div id="printable-indent" className="printable-document" style={{ padding: '11mm 12mm', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif', overflow: 'visible', flex: 1, width: '210mm', maxWidth: '100%', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #0f172a', paddingBottom: '16px', marginBottom: '20px' }}>
+              <div className="letterhead-header">
                 <div>
-                  <h2 style={{ fontSize: '1.4rem', fontWeight: '900', color: '#0f172a', margin: 0 }}>SAMYAK INTERNATIONAL LTD.</h2>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>Pithampur Industrial Area, Dhar (MP) • Flexi Packaging Plant</div>
+                  <h2 className="letterhead-company-name" style={{ margin: 0 }}>SAMYAK INTERNATIONAL LTD.</h2>
+                  <div className="letterhead-company-sub">Pithampur Industrial Area, Dhar (MP) • Flexi Packaging Plant</div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '1.2rem', fontWeight: '900', color: '#0284c7' }}>MATERIAL INDENT REQUISITION</div>
+                <div className="letterhead-doc-title">
+                  <h2 style={{ margin: 0 }}>MATERIAL INDENT REQUISITION</h2>
                   <div style={{ fontSize: '0.9rem', fontWeight: '800', marginTop: '2px' }}>No: {selectedIndentForPrint.indentNo}</div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Date: {selectedIndentForPrint.date}</div>
                 </div>
