@@ -70,13 +70,14 @@ import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
+import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS } from './bootAccess';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsFromSupabase, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
-import { getRouteFromUrl, getTabFromUrl, pushSlugState } from './utils/slugRouter';
+import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
 import { isSupabaseConfigured, checkSupabaseConnection } from './services/supabaseClient';
 import { 
@@ -236,6 +237,28 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
 initSafeStorage();
 
 
+function e2eStubUser() {
+  if (import.meta.env.VITE_E2E_STUB_AUTH !== '1') return null;
+  try {
+    if (sessionStorage.getItem('samyak_e2e_signed_out') === '1') return null;
+  } catch {
+    /* session storage can be blocked */
+  }
+  return { id: 'e2e-admin', name: 'E2E Admin', email: 'e2e@samyakinternational.in', role: 'Admin' };
+}
+
+function routeFromHref(href) {
+  try {
+    const url = new URL(href, 'http://erp.local');
+    const route = parseLocation({ pathname: url.pathname, search: url.search, hash: url.hash });
+    if (!route || route.tab === 'login') return null;
+    if (!route.unknown && !route.tab) return null;
+    return route;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   const isSupaConfigured = isSupabaseConfigured();
   const [isSupaActive, setIsSupaActive] = useState(isSupaConfigured);
@@ -276,11 +299,12 @@ export default function App() {
   };
 
   // Authentication & Active User Session State
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => e2eStubUser());
   const [sessionProfile, setSessionProfile] = useState(null);
   const [mustSetPassword, setMustSetPassword] = useState(false);
   const passwordRecoveryRef = useRef(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const recoveryHandledRef = useRef(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(e2eStubUser()));
   const [isAuthReady, setIsAuthReady] = useState(!isSupaConfigured);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
@@ -291,8 +315,18 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleTabChange = (tabKey, params = {}) => {
-    setRouteInfo({ tab: tabKey, params });
-    pushSlugState(tabKey, params);
+    const href = pushSlugState(tabKey, params);
+    let next = { tab: tabKey, params, section: params.section || null, unknown: false, canonical: href };
+    if (href && typeof window !== 'undefined') {
+      try {
+        const url = new URL(href, window.location.origin);
+        const parsed = parseLocation({ pathname: url.pathname, search: url.search, hash: url.hash });
+        if (parsed && !parsed.unknown) next = parsed;
+      } catch {
+        /* keep the requested tab */
+      }
+    }
+    setRouteInfo(next);
     setIsMobileMenuOpen(false);
   };
 
@@ -303,25 +337,49 @@ export default function App() {
     };
 
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener('erp-slug-navigate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('erp-slug-navigate', handlePopState);
+    };
   }, []);
 
-  // Sync URL path with auth state and deep links
+  // Sync URL path with auth state and deep links.
+  // Recovery hashes and /reset-password stay put so the email link can finish.
+  // A signed-out visit stores the page and returns there after sign-in.
   useEffect(() => {
-    if (isAuthReady) {
-      if (!isAuthenticated || !currentUser) {
-        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-          window.history.replaceState({ tab: 'login' }, '', '/login');
-        }
-      } else {
-        if (activeTab === 'login' || (typeof window !== 'undefined' && window.location.pathname === '/login')) {
-          const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
-          handleTabChange(defaultTab);
-        } else {
-          pushSlugState(activeTab, urlParams, true);
-        }
-      }
+    if (!isAuthReady || typeof window === 'undefined') return;
+    const loc = window.location;
+    if (!recoveryHandledRef.current && isRecoveryLocation(loc)) {
+      passwordRecoveryRef.current = true;
+      setMustSetPassword(true);
+      return;
     }
+    if (!isAuthenticated || !currentUser) {
+      if (loc.pathname !== '/login' && !loc.pathname.startsWith('/login/')) {
+        rememberReturnTo(loc.pathname + loc.search + loc.hash);
+        window.history.replaceState({ tab: 'login' }, '', '/login');
+      }
+      return;
+    }
+    if (activeTab === 'login' || loc.pathname === '/login' || loc.pathname.startsWith('/login/') || loc.pathname === '/reset-password') {
+      const saved = consumeReturnTo();
+      const restored = saved ? routeFromHref(saved) : null;
+      if (restored?.unknown) {
+        window.history.replaceState({ unknown: true }, '', saved);
+        setRouteInfo(restored);
+        return;
+      }
+      if (restored && isTabAllowed(restored.tab)) {
+        handleTabChange(restored.tab, restored.params || {});
+        return;
+      }
+      const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+      handleTabChange(defaultTab);
+      return;
+    }
+    const route = getRouteFromUrl();
+    if (!route.unknown) pushSlugState(activeTab, urlParams, true);
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
   // Supabase is the store of record. Screens stay on the loader until that fetch finishes.
@@ -354,7 +412,13 @@ export default function App() {
   const [jobMasters, setJobMasters] = useState([]);
   const [inks, setInks] = useState([]);
   const [selectedJobMasterForPunch, setSelectedJobMasterForPunch] = useState(null);
-  const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
+  const [rolePermissions, setRolePermissions] = useState(() => {
+    const cached = safeLocalStorageGet('samyak_cache_role_permissions', null);
+    if (cached && typeof cached === 'object' && !Array.isArray(cached) && Object.keys(cached).length > 0) {
+      return cached;
+    }
+    return DEFAULT_ROLE_PERMISSIONS;
+  });
   const [indents, setIndents] = useState([]);
   const [machineIssues, setMachineIssues] = useState([]);
   const [consumables, setConsumables] = useState([]);
@@ -519,14 +583,16 @@ export default function App() {
     }));
   }, [activeUsersList, currentUser]);
 
-  const isTabAllowed = (tabKey) => {
-    if (!currentUser) return false;
-    if (currentUser.role === 'Admin') return true;
+  const isUserTabAllowed = (user, tabKey) => {
+    if (!user || !tabKey) return false;
+    if (user.role === 'Admin') return true;
     if (tabKey === 'user_management' || tabKey === 'audit_logs') return false;
-    const rolePerm = rolePermissions[currentUser.role];
+    const rolePerm = rolePermissions[user.role];
     if (!rolePerm) return false;
     return rolePerm[tabKey] === true;
   };
+
+  const isTabAllowed = (tabKey) => isUserTabAllowed(currentUser, tabKey);
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
 
@@ -635,6 +701,34 @@ export default function App() {
           alert(`Some records saved only in this browser could not be uploaded. They were left on this device. ${describeSaveError(importErr)}`);
         }
 
+        const roleName = currentUser?.role || sessionProfile?.role || '';
+        let accessMatrix = rolePermissions;
+        const loadedMatrix = await fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions');
+        if (loadedMatrix && typeof loadedMatrix === 'object' && !Array.isArray(loadedMatrix) && Object.keys(loadedMatrix).length > 0) {
+          accessMatrix = loadedMatrix;
+          setRolePermissions(loadedMatrix);
+          safeLocalStorageSet('samyak_cache_role_permissions', loadedMatrix);
+        }
+        const allow = (moduleKey) => roleHasModule(accessMatrix, roleName, moduleKey);
+        const need = (...keys) => roleNeedsAny(accessMatrix, roleName, keys.length === 1 && Array.isArray(keys[0]) ? keys[0] : keys);
+        const hrAllowed = canReadPayroll(roleName);
+        const remember = (moduleKey, storageKey, value) => {
+          if (allow(moduleKey)) safeLocalStorageSet(storageKey, value);
+          else {
+            try { localStorage.removeItem(storageKey); } catch (e) {}
+          }
+        };
+        cachesToDrop(accessMatrix, roleName).forEach((key) => {
+          try { localStorage.removeItem(key); } catch (e) {}
+        });
+        if (!hrAllowed && isMounted) {
+          setEmployees([]);
+          setEmployeeAttendance([]);
+          setSalaryAdvances([]);
+          setSalaryPayments([]);
+        }
+        if (roleName !== 'Admin' && isMounted) setAuditLogs([]);
+
         const currentOrdersVersion = ++ordersFetchVersion.current;
         setOrdersLoading(true);
         setOrdersError(null);
@@ -655,17 +749,19 @@ export default function App() {
           supaMachines,
           supaSchedules
         ] = await Promise.all([
-          fetchWithTimeout(fetchOrders(), 12000).catch(err => {
-            console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
-            return null;
-          }),
-          fetchSafe(fetchJobMasters, 'Job Masters'),
-          fetchSafe(fetchInventory, 'Inventory'),
-          fetchSafe(fetchCylinders, 'Cylinders'),
-          fetchSafe(fetchVendors, 'Vendors'),
-          fetchSafe(fetchClients, 'Clients'),
-          fetchSafe(fetchPrintingMachines, 'Printing Machines'),
-          fetchSafe(fetchProductionSchedules, 'Production Schedules')
+          need(BOOT_NEEDS.orders)
+            ? fetchWithTimeout(fetchOrders(), 12000).catch(err => {
+              console.error('[ORDERS][FETCH] Failed to load from Supabase:', err);
+              return null;
+            })
+            : Promise.resolve(null),
+          need(BOOT_NEEDS.jobMasters) ? fetchSafe(fetchJobMasters, 'Job Masters') : Promise.resolve(null),
+          need(BOOT_NEEDS.inventory) ? fetchSafe(fetchInventory, 'Inventory') : Promise.resolve(null),
+          need(BOOT_NEEDS.cylinders) ? fetchSafe(fetchCylinders, 'Cylinders') : Promise.resolve(null),
+          need(BOOT_NEEDS.vendors) ? fetchSafe(fetchVendors, 'Vendors') : Promise.resolve(null),
+          need(BOOT_NEEDS.clients) ? fetchSafe(fetchClients, 'Clients') : Promise.resolve(null),
+          need(BOOT_NEEDS.machines) ? fetchSafe(fetchPrintingMachines, 'Printing Machines') : Promise.resolve(null),
+          need(BOOT_NEEDS.schedules) ? fetchSafe(fetchProductionSchedules, 'Production Schedules') : Promise.resolve(null)
         ]);
 
         if (!isMounted) return;
@@ -676,7 +772,7 @@ export default function App() {
             o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
           );
           setOrders(cleanOrders);
-          safeLocalStorageSet('samyak_cache_orders', cleanOrders);
+          remember('orders', 'samyak_cache_orders', cleanOrders);
 
           const runningInDb = cleanOrders.find(o => 
             (o.status === 'In Production' || o.printingStatus === 'In Production') &&
@@ -694,7 +790,7 @@ export default function App() {
         if (Array.isArray(supaJobMasters)) {
           const cleanJM = stripDummyRecords(supaJobMasters);
           setJobMasters(cleanJM);
-          safeLocalStorageSet('samyak_cache_job_masters', cleanJM);
+          remember('job_masters', 'samyak_cache_job_masters', cleanJM);
           supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
         }
 
@@ -702,7 +798,7 @@ export default function App() {
         if (Array.isArray(supaInv)) {
           const cleanInv = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
           setInventory(cleanInv);
-          safeLocalStorageSet('samyak_cache_inventory', cleanInv);
+          remember('inventory', 'samyak_cache_inventory', cleanInv);
           cleanInv.forEach(item => {
             if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
               saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
@@ -715,7 +811,7 @@ export default function App() {
         if (Array.isArray(supaCyls)) {
           const cleanCyls = stripDummyRecords(supaCyls);
           setCylinders(cleanCyls);
-          safeLocalStorageSet('samyak_cache_cylinders', cleanCyls);
+          remember('cylinders', 'samyak_cache_cylinders', cleanCyls);
           supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
         }
 
@@ -723,7 +819,7 @@ export default function App() {
         if (Array.isArray(supaVendors)) {
           const cleanVendors = stripDummyRecords(supaVendors);
           setVendors(cleanVendors);
-          safeLocalStorageSet('samyak_cache_vendors', cleanVendors);
+          remember('vendors', 'samyak_cache_vendors', cleanVendors);
           supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
         }
 
@@ -731,7 +827,7 @@ export default function App() {
         if (Array.isArray(supaClients)) {
           const cleanClients = stripDummyRecords(supaClients);
           setClients(cleanClients);
-          safeLocalStorageSet('samyak_cache_clients', cleanClients);
+          remember('clients', 'samyak_cache_clients', cleanClients);
           supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
         }
 
@@ -739,14 +835,14 @@ export default function App() {
         if (Array.isArray(supaMachines)) {
           const cleanMachines = stripDummyRecords(supaMachines);
           setMachines(cleanMachines);
-          safeLocalStorageSet('samyak_cache_printing_machines', cleanMachines);
+          remember('printing_scheduler', 'samyak_cache_printing_machines', cleanMachines);
         }
 
         // Hydrate Schedules
         if (Array.isArray(supaSchedules)) {
           const cleanSchedules = stripDummyRecords(supaSchedules);
           setSchedules(cleanSchedules);
-          safeLocalStorageSet('samyak_cache_production_schedules', cleanSchedules);
+          remember('printing_scheduler', 'samyak_cache_production_schedules', cleanSchedules);
           supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
         }
 
@@ -774,19 +870,19 @@ export default function App() {
           supaPelletConsumptions,
           supaPOs
         ] = await Promise.all([
-          fetchSafe(fetchGRNs, 'GRNs'),
-          fetchSafe(fetchProductionRecords, 'Production Records'),
+          need(BOOT_NEEDS.grns) ? fetchSafe(fetchGRNs, 'GRNs') : Promise.resolve(null),
+          need(BOOT_NEEDS.productionRecords) ? fetchSafe(fetchProductionRecords, 'Production Records') : Promise.resolve(null),
           fetchSafe(fetchUsers, 'Users'),
-          fetchSafe(fetchJobDataSheets, 'Job Data Sheets'),
-          fetchSafe(fetchInventoryRolls, 'Inventory Rolls'),
-          fetchSafe(fetchDispatchShipments, 'Dispatch Shipments'),
-          fetchSafe(fetchInks, 'Inks'),
-          fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods'),
-          fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans'),
-          fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis'),
-          fetchPelletBook(fetchPelletInwardsFromSupabase),
-          fetchPelletBook(fetchPelletConsumptionsFromSupabase),
-          fetchSafe(fetchPurchaseOrders, 'Purchase Orders')
+          need(BOOT_NEEDS.datasheets) ? fetchSafe(fetchJobDataSheets, 'Job Data Sheets') : Promise.resolve(null),
+          need(BOOT_NEEDS.rolls) ? fetchSafe(fetchInventoryRolls, 'Inventory Rolls') : Promise.resolve(null),
+          need(BOOT_NEEDS.shipments) ? fetchSafe(fetchDispatchShipments, 'Dispatch Shipments') : Promise.resolve(null),
+          need(BOOT_NEEDS.inks) ? fetchSafe(fetchInks, 'Inks') : Promise.resolve(null),
+          need(BOOT_NEEDS.sfg) ? fetchSafe(fetchSFGGoodsFromSupabase, 'SFG Goods') : Promise.resolve(null),
+          need(BOOT_NEEDS.challans) ? fetchSafe(fetchDeliveryChallansFromSupabase, 'Delivery Challans') : Promise.resolve(null),
+          need(BOOT_NEEDS.coas) ? fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis') : Promise.resolve(null),
+          need(BOOT_NEEDS.pellets) ? fetchPelletBook(fetchPelletInwardsFromSupabase) : Promise.resolve({ data: null, error: null }),
+          need(BOOT_NEEDS.pellets) ? fetchPelletBook(fetchPelletConsumptionsFromSupabase) : Promise.resolve({ data: null, error: null }),
+          need(BOOT_NEEDS.purchaseOrders) ? fetchSafe(fetchPurchaseOrders, 'Purchase Orders') : Promise.resolve(null)
         ]);
 
         if (!isMounted) return;
@@ -794,14 +890,14 @@ export default function App() {
         if (Array.isArray(supaGRNs)) {
           const cleanGRNs = stripDummyRecords(supaGRNs).map(sanitizeGRN);
           setGrns(cleanGRNs);
-          safeLocalStorageSet('samyak_cache_grns', cleanGRNs);
+          remember('inventory', 'samyak_cache_grns', cleanGRNs);
           supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
         }
 
         if (Array.isArray(supaProd)) {
           const cleanProd = stripDummyRecords(supaProd);
           setProductionRecords(cleanProd);
-          safeLocalStorageSet('samyak_cache_production_records', cleanProd);
+          remember('production_records', 'samyak_cache_production_records', cleanProd);
           supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
         }
 
@@ -813,43 +909,43 @@ export default function App() {
         if (Array.isArray(supaSheets)) {
           const cleanSheets = stripDummyRecords(supaSheets);
           setJobDataSheets(cleanSheets);
-          safeLocalStorageSet('samyak_cache_job_datasheets', cleanSheets);
+          remember('job_masters', 'samyak_cache_job_datasheets', cleanSheets);
           supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
         }
 
         if (Array.isArray(supaRolls)) {
           const cleanRolls = stripDummyRecords(supaRolls);
           setInventoryRolls(cleanRolls);
-          safeLocalStorageSet('samyak_cache_inventory_rolls', cleanRolls);
+          remember('inventory', 'samyak_cache_inventory_rolls', cleanRolls);
         }
 
         if (Array.isArray(supaShipments)) {
           const cleanShip = stripDummyRecords(supaShipments);
           setDispatchShipments(cleanShip);
-          safeLocalStorageSet('samyak_cache_dispatch_shipments', cleanShip);
+          remember('dispatch', 'samyak_cache_dispatch_shipments', cleanShip);
         }
 
         if (Array.isArray(supaInks)) {
           setInks(supaInks);
-          safeLocalStorageSet('samyak_cache_inks', supaInks);
+          remember('ink_management', 'samyak_cache_inks', supaInks);
         }
 
         if (Array.isArray(supaSFG)) {
           const cleanSFG = stripDummyRecords(supaSFG);
           setSfgGoods(cleanSFG);
-          safeLocalStorageSet('samyak_cache_sfg_goods', cleanSFG);
+          remember('sfg_store', 'samyak_cache_sfg_goods', cleanSFG);
         }
 
         if (Array.isArray(supaDCs)) {
           const cleanDCs = stripDummyRecords(supaDCs);
           setDeliveryChallans(cleanDCs);
-          safeLocalStorageSet('samyak_cache_delivery_challans', cleanDCs);
+          remember('dispatch', 'samyak_cache_delivery_challans', cleanDCs);
         }
 
         if (Array.isArray(supaCoAs)) {
           const cleanCoAs = stripDummyRecords(supaCoAs);
           setCertificateOfAnalyses(cleanCoAs);
-          safeLocalStorageSet('samyak_cache_certificate_of_analyses', cleanCoAs);
+          remember('production_records', 'samyak_cache_certificate_of_analyses', cleanCoAs);
         }
 
         const pelletErrors = [supaPelletInwards?.error, supaPelletConsumptions?.error].filter(Boolean);
@@ -859,18 +955,18 @@ export default function App() {
           setPelletLoadError('');
           if (Array.isArray(supaPelletInwards?.data)) {
             setPelletInwards(supaPelletInwards.data);
-            safeLocalStorageSet('samyak_cache_pellet_inwards', supaPelletInwards.data);
+            remember('pellet_fuel', 'samyak_cache_pellet_inwards', supaPelletInwards.data);
           }
           if (Array.isArray(supaPelletConsumptions?.data)) {
             setPelletConsumptions(supaPelletConsumptions.data);
-            safeLocalStorageSet('samyak_cache_pellet_consumptions', supaPelletConsumptions.data);
+            remember('pellet_fuel', 'samyak_cache_pellet_consumptions', supaPelletConsumptions.data);
           }
         }
 
         if (Array.isArray(supaPOs)) {
           const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
-          safeLocalStorageSet('samyak_cache_purchase_orders', cleanPOs);
+          remember('purchase_orders', 'samyak_cache_purchase_orders', cleanPOs);
         }
 
         // ====================================================================
@@ -887,18 +983,17 @@ export default function App() {
           supaAuditLogs,
           allSettings
         ] = await Promise.all([
-          fetchSafe(fetchEmployeesFromSupabase, 'Employees'),
-          fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance'),
-          fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances'),
-          fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments'),
-          fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions'),
-          fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs'),
+          hrAllowed ? fetchSafe(fetchEmployeesFromSupabase, 'Employees') : Promise.resolve(null),
+          hrAllowed ? fetchSafe(fetchEmployeeAttendanceFromSupabase, 'Attendance') : Promise.resolve(null),
+          hrAllowed ? fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances') : Promise.resolve(null),
+          hrAllowed ? fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments') : Promise.resolve(null),
+          Promise.resolve(accessMatrix),
+          roleName === 'Admin' ? fetchSafe(fetchAuditLogsFromSupabase, 'Audit Logs') : Promise.resolve(null),
           fetchSafe(fetchAllSystemSettings, 'All System Settings')
         ]);
 
         if (!isMounted) return;
 
-        const hrAllowed = sessionProfile?.role === 'Admin' || sessionProfile?.role === 'HR & Payroll Manager';
         if (!hrAllowed) {
           clearHrCache();
         } else if (Array.isArray(supaEmployees)) {
@@ -949,10 +1044,15 @@ export default function App() {
           safeLocalStorageSet('samyak_cache_role_permissions', supaRolePerms);
         }
 
-        if (Array.isArray(supaAuditLogs)) {
+        if (roleName === 'Admin' && Array.isArray(supaAuditLogs)) {
           const pruned = pruneOldAuditLogs(supaAuditLogs);
           setAuditLogs(pruned);
           safeLocalStorageSet('samyak_cache_audit_logs', pruned);
+        } else if (roleName !== 'Admin') {
+          try {
+            localStorage.removeItem('samyak_cache_audit_logs');
+            localStorage.removeItem('samyak_erp_audit_logs');
+          } catch (e) {}
         }
 
         // Process batch settings returned from single query
@@ -981,11 +1081,11 @@ export default function App() {
         }
 
         const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
-          fetchSafe(() => fetchPayloadRecords(supabase, 'material_indents'), 'Material indents'),
-          fetchSafe(() => fetchPayloadRecords(supabase, 'machine_issues'), 'Machine issues'),
-          fetchSafe(() => fetchPayloadRecords(supabase, 'consumables'), 'Consumables'),
-          fetchSafe(() => fetchPayloadRecords(supabase, 'store_issue_transactions'), 'Store issues'),
-          fetchSafe(() => fetchPressBoard(supabase), 'Press board')
+          need(BOOT_NEEDS.indents) ? fetchSafe(() => fetchPayloadRecords(supabase, 'material_indents'), 'Material indents') : Promise.resolve(null),
+          need(BOOT_NEEDS.indents) ? fetchSafe(() => fetchPayloadRecords(supabase, 'machine_issues'), 'Machine issues') : Promise.resolve(null),
+          need(BOOT_NEEDS.indents) ? fetchSafe(() => fetchPayloadRecords(supabase, 'consumables'), 'Consumables') : Promise.resolve(null),
+          need(BOOT_NEEDS.indents) ? fetchSafe(() => fetchPayloadRecords(supabase, 'store_issue_transactions'), 'Store issues') : Promise.resolve(null),
+          need(BOOT_NEEDS.schedules) ? fetchSafe(() => fetchPressBoard(supabase), 'Press board') : Promise.resolve(null)
         ]);
         if (Array.isArray(indentRows)) setIndents(indentRows);
         if (Array.isArray(issueRows)) setMachineIssues(issueRows);
@@ -1093,21 +1193,21 @@ export default function App() {
               setJobMasters(clean);
               safeLocalStorageSet('samyak_cache_job_masters', clean);
             }
-          } else if (table === 'employees') {
+          } else if (table === 'employees' && canReadPayroll(sessionProfile?.role || currentUser?.role)) {
             const data = await fetchEmployeesFromSupabase();
             if (Array.isArray(data)) {
               const clean = stripDummyRecords(data);
               setEmployees(clean);
               safeLocalStorageSet('samyak_cache_employees', clean);
             }
-          } else if (table === 'employee_attendance') {
+          } else if (table === 'employee_attendance' && canReadPayroll(sessionProfile?.role || currentUser?.role)) {
             const data = await fetchEmployeeAttendanceFromSupabase();
             if (Array.isArray(data)) {
               const clean = stripDummyRecords(data);
               setEmployeeAttendance(clean);
               safeLocalStorageSet('samyak_cache_employee_attendance', clean);
             }
-          } else if (table === 'salary_advances') {
+          } else if (table === 'salary_advances' && canReadPayroll(sessionProfile?.role || currentUser?.role)) {
             const data = await fetchSalaryAdvancesFromSupabase();
             if (Array.isArray(data)) {
               const clean = stripDummyRecords(data);
@@ -1325,9 +1425,10 @@ export default function App() {
     try { localStorage.removeItem('samyak_erp_current_user'); } catch (e) {}
 
     if (!isSupaActive) {
-      setSessionProfile(null);
-      setCurrentUser(null);
-      setIsAuthenticated(false);
+      const stub = e2eStubUser();
+      setSessionProfile(stub);
+      setCurrentUser(stub);
+      setIsAuthenticated(Boolean(stub));
       setIsAuthReady(true);
       return;
     }
@@ -1384,9 +1485,22 @@ export default function App() {
     setIsSigningIn(true);
     logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id);
     applyAuthenticatedProfile(user);
-    const targetTab = user?.role === 'Printing Operator'
-      ? 'printing_scheduler'
-      : (activeTab === 'login' ? 'dashboard' : (activeTab || 'dashboard'));
+    const saved = consumeReturnTo();
+    const restored = saved ? routeFromHref(saved) : null;
+    if (restored?.unknown && typeof window !== 'undefined') {
+      window.history.replaceState({ unknown: true }, '', saved);
+      setRouteInfo(restored);
+      return;
+    }
+    if (restored && isUserTabAllowed(user, restored.tab)) {
+      handleTabChange(restored.tab, restored.params || {});
+      return;
+    }
+    if (activeTab && activeTab !== 'login' && isUserTabAllowed(user, activeTab)) {
+      handleTabChange(activeTab, urlParams);
+      return;
+    }
+    const targetTab = user?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
     handleTabChange(targetTab);
   };
 
@@ -1435,7 +1549,13 @@ export default function App() {
     clearHrCache();
     setSfgGoods([]);
 
+    recoveryHandledRef.current = false;
+    passwordRecoveryRef.current = false;
+    if (import.meta.env.VITE_E2E_STUB_AUTH === '1') {
+      try { sessionStorage.setItem('samyak_e2e_signed_out', '1'); } catch { /* ignore */ }
+    }
     if (typeof window !== 'undefined') {
+      rememberReturnTo(window.location.pathname + window.location.search + window.location.hash);
       window.history.replaceState({ tab: 'login' }, '', '/login');
     }
     if (isSupaActive) {
@@ -3450,7 +3570,7 @@ export default function App() {
 
   const handlePunchOrderFromJobMaster = (jobMaster) => {
     setSelectedJobMasterForPunch(jobMaster);
-    handleTabChange('job_punching');
+    handleTabChange('job_punching', jobMaster?.id ? { jobMasterId: jobMaster.id } : {});
   };
 
   const isDataReady = databaseStatus !== 'checking' && (!isAuthenticated || isDataFetched || (!isDataLoading && !ordersLoading));
@@ -3484,11 +3604,22 @@ export default function App() {
   // Render Authentication Screen if user is not signed in
   if (mustSetPassword || !isAuthenticated || !currentUser) {
     return (
+      <div data-module="login" data-section={mustSetPassword ? 'recovery' : (routeInfo.section || 'signin')}>
       <AuthScreen
         onLogin={handleLogin}
         recoveryMode={mustSetPassword}
+        initialView={routeInfo.section === 'forgot-password' ? 'forgot_password' : 'signin'}
+        onViewChange={(mode) => {
+          const section = mode === 'forgot_password' ? 'forgot-password' : 'signin';
+          const href = pushSlugState('login', { section });
+          setRouteInfo({ tab: 'login', section, params: { section }, unknown: false, canonical: href });
+        }}
         onPasswordUpdated={async () => {
+          recoveryHandledRef.current = true;
           passwordRecoveryRef.current = false;
+          if (typeof window !== 'undefined') {
+            window.history.replaceState({ tab: 'dashboard' }, '', '/dashboard');
+          }
           setMustSetPassword(false);
           const profile = await fetchSessionProfile();
           if (profile && !profile.pending && !profile.inactive) {
@@ -3496,11 +3627,18 @@ export default function App() {
           }
         }}
       />
+      </div>
     );
   }
 
+  const moduleOpen = !routeInfo.unknown && isTabAllowed(activeTab);
+
   return (
-    <div className="app-container">
+    <div
+      className="app-container"
+      data-module={routeInfo.unknown ? 'not-found' : (activeTab || '')}
+      data-section={routeInfo.unknown ? 'not-found' : (routeInfo.section || '')}
+    >
       {/* Mobile Top Header Bar */}
       <div className="mobile-header-bar">
         <button className="hamburger-btn" onClick={() => setIsMobileMenuOpen(true)}>
@@ -3961,25 +4099,27 @@ export default function App() {
         <div className="header">
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
-              {activeTab === 'dashboard' && 'Executive Operations Dashboard'}
-              {activeTab === 'sales' && 'Sales Management Engine'}
-              {activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
-              {activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
-              {activeTab === 'orders' && 'Order Management & PO Issuance'}
-              {activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
-              {activeTab === 'clients' && 'Client Onboarding & Directory'}
-              {activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
-              {activeTab === 'purchase_orders' && 'Purchase Order Management & Procurement Engine'}
-              {activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
-              {activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
-              {activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
-              {activeTab === 'pellet_fuel' && 'Boiler Pellet Fuel Stock & Consumption Management'}
-              {activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
-              {activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
-              {activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
-              {activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
-              {activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
-              {activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
+              {routeInfo.unknown && 'Page not found'}
+              {!routeInfo.unknown && !isTabAllowed(activeTab) && 'Access restricted'}
+              {moduleOpen && activeTab === 'dashboard' && 'Executive Operations Dashboard'}
+              {moduleOpen && activeTab === 'sales' && 'Sales Management Engine'}
+              {moduleOpen && activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
+              {moduleOpen && activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
+              {moduleOpen && activeTab === 'orders' && 'Order Management & PO Issuance'}
+              {moduleOpen && activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
+              {moduleOpen && activeTab === 'clients' && 'Client Onboarding & Directory'}
+              {moduleOpen && activeTab === 'vendors' && 'Vendor Onboarding & Directory'}
+              {moduleOpen && activeTab === 'purchase_orders' && 'Purchase Order Management & Procurement Engine'}
+              {moduleOpen && activeTab === 'inventory' && 'Raw Material Inventory, GRN & Quality Control'}
+              {moduleOpen && activeTab === 'ink_management' && 'Ink Master Directory, Solid Costing & Stock Management'}
+              {moduleOpen && activeTab === 'material_indents' && 'Material Indents Requisitions & Consumable Store'}
+              {moduleOpen && activeTab === 'pellet_fuel' && 'Boiler Pellet Fuel Stock & Consumption Management'}
+              {moduleOpen && activeTab === 'dispatch' && 'Finished Goods Dispatch, Delivery Challan & Quality CoA Hub'}
+              {moduleOpen && activeTab === 'user_management' && 'Departmental User Management (RBAC)'}
+              {moduleOpen && activeTab === 'cylinders' && 'Rotogravure Cylinder Database'}
+              {moduleOpen && activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
+              {moduleOpen && activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
+              {moduleOpen && activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
             </h1>
 
 
@@ -4102,8 +4242,20 @@ export default function App() {
           </div>
         )}
 
-        {!isTabAllowed(activeTab) && (
-          <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
+        {routeInfo.unknown && (
+          <div className="glass-panel" data-screen="not-found" style={{ padding: '40px', textAlign: 'center', margin: '20px 0' }}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: '700' }}>This page is not in the ERP</h2>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', marginTop: '8px' }}>
+              The address stays in the browser so the link can be checked. Nothing was redirected to the dashboard.
+            </p>
+            <button className="btn-primary" style={{ marginTop: '16px' }} onClick={() => handleTabChange('dashboard')}>
+              Go to dashboard
+            </button>
+          </div>
+        )}
+
+        {!routeInfo.unknown && !isTabAllowed(activeTab) && (
+          <div className="glass-panel" data-screen="forbidden" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
             <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
             <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
               Module Access Restricted for Role ({currentUser?.role})
@@ -4118,7 +4270,7 @@ export default function App() {
         )}
 
         {/* TAB 1: EXECUTIVE DASHBOARD / OPERATOR DASHBOARD */}
-        {activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
+        {moduleOpen && activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div className="glass-panel" style={{ padding: '20px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', borderRadius: '12px' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -4156,7 +4308,7 @@ export default function App() {
               onActiveRunningJobChange={handleActiveRunningJobChange}
             />
           </div>
-        ) : activeTab === 'dashboard' && (
+        ) : moduleOpen && activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
             {/* Redesigned Executive Operational Alerts Hub */}
             {(delayedOrdersCount > 0 || (lowStockInks || []).length > 0) && (
@@ -4244,7 +4396,7 @@ export default function App() {
                       {delayedOrders.slice(0, 3).map(o => (
                         <span 
                           key={o.id}
-                          onClick={() => handleTabChange('orders')}
+                          onClick={() => handleTabChange('orders', o?.id ? { id: o.id } : {})}
                           style={{
                             background: '#fff1f2',
                             border: '1px solid #fecdd3',
@@ -4356,7 +4508,7 @@ export default function App() {
                       {(lowStockInks || []).slice(0, 3).map(i => (
                         <span 
                           key={i.id || i.productCode}
-                          onClick={() => handleTabChange('ink_management')}
+                          onClick={() => handleTabChange('ink_management', (i?.id || i?.productCode) ? { id: i.id || i.productCode } : {})}
                           style={{
                             background: '#fff1f2',
                             border: '1px solid #fecdd3',
@@ -4741,7 +4893,7 @@ export default function App() {
         )}
 
         {/* TAB: SALES MANAGEMENT & QUOTATION ENGINE */}
-        {activeTab === 'sales' && (
+        {moduleOpen && activeTab === 'sales' && (
           <SalesManagement 
             urlParams={urlParams}
             orders={orders}
@@ -4758,7 +4910,7 @@ export default function App() {
         )}
 
         {/* TAB: PRODUCTION RECORDS & APPROVAL FLOW */}
-        {activeTab === 'production_records' && (
+        {moduleOpen && activeTab === 'production_records' && !['job-data-sheets', 'sheet', 'sheet-new'].includes(routeInfo.section) && (
           <ProductionRecordManagement 
             urlParams={urlParams}
             productionRecords={productionRecords}
@@ -4781,8 +4933,19 @@ export default function App() {
           />
         )}
 
+        {moduleOpen && activeTab === 'production_records' && ['job-data-sheets', 'sheet', 'sheet-new'].includes(routeInfo.section) && (
+          <JobDataSheet
+            urlParams={urlParams}
+            orders={orders}
+            jobDataSheets={jobDataSheets}
+            currentUser={currentUser}
+            onSaveJobDataSheet={handleAddJobDataSheet}
+            onDeleteJobDataSheet={handleDeleteJobDataSheet}
+          />
+        )}
+
         {/* TAB: CLIENTS */}
-        {activeTab === 'clients' && (
+        {moduleOpen && activeTab === 'clients' && (
           <ClientManagement 
             urlParams={urlParams}
             clients={clients}
@@ -4796,7 +4959,7 @@ export default function App() {
         )}
 
         {/* TAB: JOB MASTER DIRECTORY */}
-        {activeTab === 'job_masters' && (
+        {moduleOpen && activeTab === 'job_masters' && (
           <JobMasterDirectory 
             urlParams={urlParams}
             jobMasters={jobMasters}
@@ -4821,18 +4984,19 @@ export default function App() {
 
 
         {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
-        {activeTab === 'job_punching' && (
+        {moduleOpen && activeTab === 'job_punching' && (
           <JobPunchingForm 
+            key={selectedJobMasterForPunch?.id || urlParams.jobMasterId || 'punch'}
             onSaveOrder={handleAddOrder} 
             onNavigateToDashboard={() => handleTabChange('dashboard')} 
-            initialJobMasterData={selectedJobMasterForPunch}
+            initialJobMasterData={selectedJobMasterForPunch || (jobMasters || []).find((job) => String(job.id) === String(urlParams.jobMasterId)) || null}
             clients={clients}
             jobMasters={jobMasters}
           />
         )}
 
         {/* TAB 2: ORDER MANAGEMENT */}
-        {activeTab === 'orders' && (
+        {moduleOpen && activeTab === 'orders' && (
           <OrderManagement 
             urlParams={urlParams}
             orders={orders} 
@@ -4856,7 +5020,7 @@ export default function App() {
         )}
 
         {/* TAB 5: VENDOR MANAGEMENT */}
-        {activeTab === 'vendors' && (
+        {moduleOpen && activeTab === 'vendors' && (
           <VendorManagement 
             urlParams={urlParams} 
             vendors={vendors} 
@@ -4868,7 +5032,7 @@ export default function App() {
         )}
 
         {/* TAB: PURCHASE ORDER MANAGEMENT */}
-        {activeTab === 'purchase_orders' && (
+        {moduleOpen && activeTab === 'purchase_orders' && (
           <PurchaseOrderManagement 
             urlParams={urlParams}
             purchaseOrders={purchaseOrders}
@@ -4890,7 +5054,7 @@ export default function App() {
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
-        {activeTab === 'inventory' && (
+        {moduleOpen && activeTab === 'inventory' && (
           <InventoryManagement 
             urlParams={urlParams}
             inventory={inventory}
@@ -4927,7 +5091,7 @@ export default function App() {
         )}
 
         {/* TAB: DEDICATED SFG STORE MANAGEMENT */}
-        {activeTab === 'sfg_store' && (
+        {moduleOpen && activeTab === 'sfg_store' && (
           <SFGStoreManagement 
             urlParams={urlParams}
             sfgGoods={sfgGoods}
@@ -4945,7 +5109,7 @@ export default function App() {
         )}
 
         {/* TAB: INK MASTER & COSTING */}
-        {activeTab === 'ink_management' && (
+        {moduleOpen && activeTab === 'ink_management' && (
           <InkManagement 
             urlParams={urlParams}
             inks={inks}
@@ -4965,11 +5129,11 @@ export default function App() {
         )}
 
         {/* TAB: MATERIAL INDENTS & CONSUMABLE STORE */}
-        {activeTab === 'material_indents' && (
+        {moduleOpen && activeTab === 'material_indents' && (
           <ConsumablesAndIndents 
             urlParams={urlParams}
-            userRole={currentUser?.role || "Admin"}
-            userName={currentUser?.name || "Samyak Jain"}
+            userRole={currentUser?.role || ""}
+            userName={currentUser?.name || ""}
             vendors={vendors}
             orders={orders}
             machines={machines}
@@ -4989,14 +5153,15 @@ export default function App() {
             onDeletePelletInward={handleDeletePelletInward}
             onSavePelletConsumption={handleSavePelletConsumption}
             onDeletePelletConsumption={handleDeletePelletConsumption}
+            onNavigateTab={handleTabChange}
           />
         )}
 
         {/* TAB: BOILER PELLET FUEL STOCK & CONSUMPTION */}
-        {activeTab === 'pellet_fuel' && (
+        {moduleOpen && activeTab === 'pellet_fuel' && (
           <PelletFuelManagement 
             urlParams={urlParams}
-            userRole={currentUser?.role || "Admin"}
+            userRole={currentUser?.role || ""}
             userName={fuelActorName(currentUser)}
             vendors={vendors}
             machines={machines}
@@ -5013,7 +5178,7 @@ export default function App() {
         )}
 
         {/* TAB: DISPATCH, DELIVERY CHALLAN & COA HUB */}
-        {activeTab === 'dispatch' && (
+        {moduleOpen && activeTab === 'dispatch' && (
           <DispatchManagement 
             urlParams={urlParams}
             deliveryChallans={deliveryChallans}
@@ -5038,7 +5203,7 @@ export default function App() {
         )}
 
         {/* TAB 7: USER MANAGEMENT (RBAC) */}
-        {activeTab === 'user_management' && (
+        {moduleOpen && activeTab === 'user_management' && (
           <UserManagement 
             users={users}
             currentUser={currentUser}
@@ -5047,11 +5212,12 @@ export default function App() {
             onUpdateUser={handleUpdateUser}
             onDeleteUser={handleDeleteUser}
             onUpdateRolePermissions={setRolePermissions}
+            urlParams={urlParams}
           />
         )}
 
         {/* TAB: EMPLOYEE MANAGEMENT & PAYROLL HR */}
-        {activeTab === 'employees' && (
+        {moduleOpen && activeTab === 'employees' && (
           <EmployeeManagement 
             urlParams={urlParams}
             employees={employees}
@@ -5071,7 +5237,7 @@ export default function App() {
         )}
 
         {/* TAB 8: CYLINDER DATABASE & UTILISATION */}
-        {activeTab === 'cylinders' && (
+        {moduleOpen && activeTab === 'cylinders' && (
           <CylinderManagement 
             urlParams={urlParams}
             cylinders={cylinders}
@@ -5094,7 +5260,7 @@ export default function App() {
         )}
 
         {/* TAB 9: PRINTING MACHINE PRODUCTION SCHEDULER */}
-        {activeTab === 'printing_scheduler' && (
+        {moduleOpen && activeTab === 'printing_scheduler' && (
           <ProductionScheduler 
             orders={orders}
             inventory={inventory}
@@ -5121,25 +5287,27 @@ export default function App() {
             onReorderQueue={handleReorderQueue}
             onMachineAssignmentChange={handleMachineAssignmentsChange}
             onActiveRunningJobChange={handleActiveRunningJobChange}
+            urlParams={urlParams}
           />
         )}
 
         {/* TAB 10: SUPABASE DATABASE INTEGRATION */}
-        {activeTab === 'supabase' && (
-          <SupabaseManagement />
+        {moduleOpen && activeTab === 'supabase' && (
+          <SupabaseManagement urlParams={urlParams} />
         )}
 
         {/* TAB 11: LETTERHEAD & SIGNATURE SETTINGS */}
-        {activeTab === 'doc_settings' && (
+        {moduleOpen && activeTab === 'doc_settings' && (
           <DocumentSettings
             machines={machines}
             onSaveMachine={handleSaveMachine}
             onDeleteMachine={handleDeleteMachine}
+            urlParams={urlParams}
           />
         )}
 
         {/* TAB: SCRAP & WASTAGE ANALYSIS */}
-        {activeTab === 'scrap_analytics' && (
+        {moduleOpen && activeTab === 'scrap_analytics' && (
           <ScrapWastageAnalysis 
             productionRecords={productionRecords}
             orders={orders}
@@ -5147,7 +5315,7 @@ export default function App() {
         )}
 
         {/* TAB: SYSTEM AUDIT LOGS (ADMIN ONLY) */}
-        {activeTab === 'audit_logs' && (
+        {moduleOpen && activeTab === 'audit_logs' && (
           <AuditLogsManagement 
             auditLogs={auditLogs}
             currentUser={currentUser}
@@ -5180,7 +5348,12 @@ export default function App() {
         vendors={vendors}
         onNavigateToProductionRecord={(jobName, params) => {
           setIsBarcodeScannerOpen(false);
-          handleTabChange('production_records', { jobName, ...params });
+          const recordId = params?.id || params?.recordId;
+          handleTabChange('production_records', {
+            jobName,
+            ...params,
+            ...(recordId ? { id: recordId, section: params?.section || params?.tab || 'list' } : {}),
+          });
         }}
       />
 

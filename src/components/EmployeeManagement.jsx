@@ -227,7 +227,7 @@ export default function EmployeeManagement({
   salaryAdvances = [],
   salaryPayments = [],
   currentUser,
-  userRole = "Admin",
+  userRole = "",
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee,
@@ -267,7 +267,7 @@ export default function EmployeeManagement({
 
   const handleSubTabChange = (sub) => {
     setActiveSubTab(sub);
-    pushSlugState('employees', { subTab: sub });
+    pushSlugState('employees', { section: sub });
   };
 
   // Search & Filter States

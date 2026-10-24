@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   Users, 
   UserPlus, 
@@ -18,7 +19,7 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
-import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS } from '../factoryStore';
+import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary } from '../factoryStore';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
 
@@ -29,13 +30,22 @@ export default function UserManagement({
   onAddUser,
   onUpdateUser,
   onDeleteUser,
-  onUpdateRolePermissions
+  onUpdateRolePermissions,
+  urlParams = {}
 }) {
   const isAuthorized = currentUser?.role === 'Admin';
   const isAdmin = currentUser?.role === 'Admin';
   const [saveNotification, setSaveNotification] = useState(null);
+  const [saveNotificationError, setSaveNotificationError] = useState(false);
 
-  const [activeSubTab, setActiveSubTab] = useState('directory'); // 'directory' | 'rbac'
+  const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab || 'directory');
+  useEffect(() => {
+    if (urlParams?.subTab === 'directory' || urlParams?.subTab === 'rbac') setActiveSubTab(urlParams.subTab);
+  }, [urlParams?.subTab]);
+  const chooseUserTab = (subTab) => {
+    setActiveSubTab(subTab);
+    pushSlugState('user_management', { section: subTab });
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -129,16 +139,26 @@ export default function UserManagement({
     }
   };
 
-  const triggerSaveNotification = (msg) => {
+  const triggerSaveNotification = (msg, isError = false) => {
+    setSaveNotificationError(isError);
     setSaveNotification(msg);
     setTimeout(() => setSaveNotification(null), 4000);
   };
 
+  const persistPermissions = async (permsToSave, successMessage) => {
+    const bounded = applyAuditLogBoundary(permsToSave);
+    if (onUpdateRolePermissions) onUpdateRolePermissions(bounded);
+    try {
+      await saveRolePermissionsToSupabase(bounded);
+      triggerSaveNotification(successMessage, false);
+    } catch (err) {
+      triggerSaveNotification(err?.message || 'The permission matrix was not saved.', true);
+    }
+  };
+
   const handleSavePermissionsMatrix = (permsToSave = rolePermissions) => {
     if (!isAdmin) return;
-    if (onUpdateRolePermissions) onUpdateRolePermissions(permsToSave);
-    saveRolePermissionsToSupabase(permsToSave);
-    triggerSaveNotification("✅ RBAC Permissions Matrix Saved & Synced to Database Successfully!");
+    persistPermissions(permsToSave, 'RBAC permissions matrix saved.');
   };
 
   const togglePermission = (roleName, moduleKey) => {
@@ -154,27 +174,20 @@ export default function UserManagement({
         [moduleKey]: !currentVal
       }
     };
-    if (onUpdateRolePermissions) onUpdateRolePermissions(updated);
-    saveRolePermissionsToSupabase(updated);
+    persistPermissions(updated, 'RBAC permissions matrix saved.');
   };
 
   const handleAllowAllPermissions = () => {
     if (!isAdmin) return;
     if (window.confirm("Grant FULL ACCESS to all modules for ALL system roles?")) {
-      const fullPerms = generateFullRolePermissions(true);
-      if (onUpdateRolePermissions) onUpdateRolePermissions(fullPerms);
-      saveRolePermissionsToSupabase(fullPerms);
-      triggerSaveNotification("⚡ Full Access granted to all roles & synced to Database!");
+      persistPermissions(grantAllRolePermissions(), 'Full access granted to all roles.');
     }
   };
 
   const handleResetPermissions = () => {
     if (!isAdmin) return;
     if (window.confirm("Reset RBAC permissions to default configuration?")) {
-      const defaultPerms = generateFullRolePermissions(true);
-      if (onUpdateRolePermissions) onUpdateRolePermissions(defaultPerms);
-      saveRolePermissionsToSupabase(defaultPerms);
-      triggerSaveNotification("🔄 Role permissions reset & synced to Database!");
+      persistPermissions(generateFullRolePermissions(false), 'Role permissions reset to the default matrix.');
     }
   };
 
@@ -191,8 +204,8 @@ export default function UserManagement({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
       {saveNotification && (
-        <div style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '12px 20px', borderRadius: '8px', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <CheckCircle2 size={20} />
+        <div style={{ background: saveNotificationError ? '#fef2f2' : '#ecfdf5', color: saveNotificationError ? '#b91c1c' : '#047857', border: `1px solid ${saveNotificationError ? '#fecaca' : '#a7f3d0'}`, padding: '12px 20px', borderRadius: '8px', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {saveNotificationError ? <ShieldAlert size={20} /> : <CheckCircle2 size={20} />}
           {saveNotification}
         </div>
       )}
@@ -214,14 +227,14 @@ export default function UserManagement({
             <button 
               className={`btn-secondary ${activeSubTab === 'directory' ? 'active' : ''}`}
               style={{ background: activeSubTab === 'directory' ? '#0f172a' : 'transparent', color: activeSubTab === 'directory' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
-              onClick={() => setActiveSubTab('directory')}
+              onClick={() => chooseUserTab('directory')}
             >
               <Users size={16} /> User Directory ({(users || []).length})
             </button>
             <button 
               className={`btn-secondary ${activeSubTab === 'rbac' ? 'active' : ''}`}
               style={{ background: activeSubTab === 'rbac' ? '#0f172a' : 'transparent', color: activeSubTab === 'rbac' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
-              onClick={() => setActiveSubTab('rbac')}
+              onClick={() => chooseUserTab('rbac')}
             >
               <ShieldCheck size={16} /> Role & Module Permissions Matrix
             </button>
@@ -291,7 +304,7 @@ export default function UserManagement({
                       <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Category: {mod.category}</span>
                     </td>
                     {SYSTEM_ROLES.map(r => {
-                      const isAllowed = rolePermissions[r]?.[mod.key] ?? true;
+                      const isAllowed = rolePermissions[r]?.[mod.key] === true;
                       return (
                         <td key={r} style={{ textAlign: 'center', verticalAlign: 'middle', background: isAllowed ? '#f0fdf4' : '#fef2f2' }}>
                           <button

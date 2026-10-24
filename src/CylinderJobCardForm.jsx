@@ -10,6 +10,7 @@ import { saveJobMasterToSupabase, saveCylinderToSupabase } from './services/supa
 import { supabase } from './services/supabaseClient';
 import { fetchJobCardSpec, saveJobCardSpec } from './services/businessRecords';
 import ArtworkModal from './components/ArtworkModal';
+import StorageImage from './components/StorageImage';
 import SearchableSelect from './components/SearchableSelect';
 
 function parseStructureToLayers(structStr) {
@@ -215,7 +216,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
           </div>
           <div style={{ flex: 1, padding: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' }}>
             {imagePreview ? (
-              <img src={imagePreview} alt="Artwork" style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain' }} />
+              <StorageImage src={imagePreview} alt="Artwork" style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain' }} />
             ) : (
               <div style={{ color: '#94a3b8', fontSize: '10px' }}>No Artwork Preview</div>
             )}
@@ -285,7 +286,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
 
 export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [], cylinders = [] }) {
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
-  const userRole = currentUser?.role || 'Admin';
+  const userRole = currentUser?.role || '';
   const canEdit = EDIT_ROLES.includes(userRole);
   const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
   const componentRef = useRef();
@@ -1236,7 +1237,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
               {imagePreview ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <img 
+                  <StorageImage 
                     src={imagePreview} 
                     alt="Artwork Preview" 
                     style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '4px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 

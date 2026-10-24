@@ -125,7 +125,7 @@ export default function CylinderManagement({
 }) {
   // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager'];
-  const userRole = currentUser?.role || 'Admin';
+  const userRole = currentUser?.role || '';
   const canEditCylinders = EDIT_ROLES.includes(userRole);
   const isAdminOrPlantManager = EDIT_ROLES.includes(userRole);
   const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
