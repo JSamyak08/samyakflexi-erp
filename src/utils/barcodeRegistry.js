@@ -464,3 +464,94 @@ export function filterBarcodeRows(rows, { query = '', sourceModule = '' } = {}) 
 export function barcodeSourceModules(rows) {
   return [...new Set((rows || []).map((row) => row?.sourceModule).filter(Boolean))].sort();
 }
+
+export const PRINT_STATUS = {
+  printed: 'Printed',
+  notPrinted: 'Not printed',
+};
+
+/**
+ * One attempt row per sticker sent to window.print.
+ * job_status stays sent_to_browser. A browser row never counts as Printed.
+ */
+export function stickerPrintLogs(rolls, { printedBy = 'Operator', printedAt = '', jobIds = [] } = {}) {
+  const when = printedAt || new Date().toISOString();
+  const who = plain(printedBy) || 'Operator';
+  return (rolls || []).flatMap((roll, index) => {
+    const barcode = plain(roll?.barcodeId, roll?.barcode, roll?.id);
+    if (!barcode) return [];
+    const jobId = plain(jobIds[index]) || `browser-${when}-${index + 1}-${barcode}`;
+    return [{
+      barcode,
+      sourceModule: plain(roll?.sourceModule) || '',
+      jobId,
+      jobStatus: 'sent_to_browser',
+      printer: 'browser',
+      printedAt: when,
+      printedBy: who,
+    }];
+  });
+}
+
+/** Printer-agent success values. Browser dialog results are not in this set. */
+const CONFIRMED_PRINT_STATUSES = new Set(['printed', 'success']);
+
+function logStatus(log) {
+  return codeKey(log?.jobStatus ?? log?.job_status);
+}
+
+function logWhen(log) {
+  return String(log?.printedAt || log?.printed_at || '');
+}
+
+function countsAsPrinted(log) {
+  if (!CONFIRMED_PRINT_STATUSES.has(logStatus(log))) return false;
+  return codeKey(log?.printer) !== 'browser';
+}
+
+/** Latest confirmed printer job per barcode. Browser, failed, and cancelled jobs are ignored. */
+export function confirmedPrintByBarcode(logs) {
+  const map = new Map();
+  (logs || []).forEach((log) => {
+    if (!countsAsPrinted(log)) return;
+    const barcode = codeKey(log?.barcode);
+    if (!barcode) return;
+    const prev = map.get(barcode);
+    if (!prev || logWhen(log) >= logWhen(prev)) map.set(barcode, log);
+  });
+  return map;
+}
+
+export function withPrintStatus(rows, logs) {
+  const confirmed = confirmedPrintByBarcode(logs);
+  const attempted = new Set();
+  (logs || []).forEach((log) => {
+    const barcode = codeKey(log?.barcode);
+    if (barcode) attempted.add(barcode);
+  });
+  return (rows || []).map((row) => {
+    const key = codeKey(row?.barcode);
+    const hit = confirmed.get(key);
+    const printAttempted = attempted.has(key);
+    if (!hit) {
+      return {
+        ...row,
+        printStatus: PRINT_STATUS.notPrinted,
+        printAttempted,
+        printJobId: '',
+        printedAt: '',
+        printedBy: '',
+        printer: '',
+      };
+    }
+    return {
+      ...row,
+      printStatus: PRINT_STATUS.printed,
+      printAttempted: true,
+      printJobId: plain(hit.jobId, hit.job_id),
+      printedAt: logWhen(hit),
+      printedBy: plain(hit.printedBy, hit.printed_by),
+      printer: plain(hit.printer),
+    };
+  });
+}

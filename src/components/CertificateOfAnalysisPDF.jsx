@@ -99,7 +99,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
           {/* Header */}
           <div className="letterhead-header" style={{ marginBottom: '10px' }}>
             <div className="letterhead-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '44px', objectFit: 'contain' }} />
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8.5px', fontWeight: '800', color: '#374151' }}>
                 {COMPANY_DETAILS.tagline} • GSTIN: {COMPANY_DETAILS.gstin}
               </p>
@@ -306,7 +306,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                 <div>
                   {signatureImage ? (
-                    <img src={signatureImage} alt="QA Head Signature" style={{ height: '36px', objectFit: 'contain', display: 'block', marginBottom: '2px' }} />
+                    <img src={signatureImage} alt="QA Head Signature" style={{ height: '36px', maxWidth: '140px', objectFit: 'contain', display: 'block', margin: '0 auto 2px' }} />
                   ) : (
                     <div style={{ height: '35px', fontStyle: 'italic', fontSize: '11px', color: '#047857', fontWeight: 'bold' }}>
                       Approved & Signed

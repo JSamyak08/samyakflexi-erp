@@ -31,22 +31,31 @@
 }
 
 .letterhead-header {
-  padding-bottom: 4px;
-  margin-bottom: 6px;
-  gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+  border-bottom: 2px solid #111;
 }
 
 .samyak-logo-img,
-.letterhead-logo-img {
-  height: 32px;
-  max-height: 32px;
-  width: auto;
-  object-fit: contain;
+.letterhead-logo-img,
+.printable-document img[alt*="ogo"],
+.printable-landscape-card img[alt*="ogo"] {
+  height: 36px !important;
+  max-height: 36px !important;
+  width: auto !important;
+  max-width: 188px !important;
+  object-fit: contain !important;
+  object-position: left center !important;
+  display: block !important;
 }
 
 .letterhead-company-name,
 .letterhead-brand-title {
-  font-size: 12pt;
+  font-size: 11pt;
   font-weight: 800;
   line-height: 1.15;
   margin: 0;
@@ -57,9 +66,17 @@
   margin-top: 1px;
 }
 
+.letterhead-doc-title {
+  flex: 0 1 auto;
+  max-width: 48%;
+  text-align: right;
+}
+
 .letterhead-doc-title h2 {
   font-size: 13pt;
-  line-height: 1.1;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.03em;
   margin: 0;
 }
 
@@ -176,16 +193,35 @@
 
 .totals-and-words-grid {
   gap: 8px;
-  padding: 6px;
+  padding: 12px 14px;
   margin-bottom: 6px;
   font-size: 8.5pt;
+  box-sizing: border-box;
 }
 
 .words-block {
-  gap: 3px;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px 2px 2px;
 }
 
-.word-line,
+.word-line {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  column-gap: 10px;
+  min-width: 0;
+  font-size: 8.5pt;
+}
+
+.word-label {
+  padding: 0 4px 0 0;
+}
+
+.word-value {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 .totals-summary-table {
   font-size: 8.5pt;
 }
@@ -219,13 +255,69 @@
   margin-bottom: 1px;
 }
 
-.letterhead-signatory-block,
-.pdf-signature-block {
-  margin-top: 6px;
-  padding-top: 2px;
+.letterhead-signatory-block {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-end !important;
+  width: 100% !important;
+  margin-top: 8px !important;
+  padding-top: 2px !important;
   font-size: 8.5pt;
   break-inside: avoid;
   page-break-inside: avoid;
+  break-before: avoid;
+  page-break-before: avoid;
+}
+
+.letterhead-signatory-block > * ,
+.pdf-sign-company {
+  width: 200px !important;
+  max-width: 200px !important;
+  align-self: flex-end !important;
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.pdf-sign-company {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+}
+
+.pdf-sign-slot,
+.letterhead-signatory-block > .pdf-sign-slot {
+  height: 42px !important;
+  min-height: 42px !important;
+  max-height: 42px !important;
+  display: flex !important;
+  align-items: flex-end !important;
+  justify-content: center !important;
+}
+
+.letterhead-signatory-block img,
+.pdf-sign-company img,
+.pdf-signature-block img[alt*="ignat"],
+.pdf-signature-block img[alt*="Signat"] {
+  display: block !important;
+  height: auto !important;
+  max-height: 38px !important;
+  width: auto !important;
+  max-width: 156px !important;
+  margin: 0 auto !important;
+  object-fit: contain !important;
+  object-position: center bottom !important;
+}
+
+.letterhead-signatory-block > *:last-child,
+.pdf-sign-company .pdf-sign-role {
+  border-top: 1px solid #111 !important;
+  padding-top: 3px !important;
+  margin-top: 2px !important;
+  font-size: 8.5pt !important;
+  font-weight: 700 !important;
+  width: 200px !important;
 }
 
 .signature-img-placeholder {
@@ -393,14 +485,32 @@
     max-width: 100% !important;
   }
 
+  .printable-document,
+  #printable-quotation,
+  #printable-po,
+  #printable-ocn,
+  #printable-jds,
+  #printable-packing-list,
+  #printable-payslip,
+  #printable-client-pending-orders,
+  #printable-indent {
+    font-size: 9.5pt !important;
+    line-height: 1.32 !important;
+  }
+
   .printable-document h1,
   .printable-document h2,
   .printable-document .letterhead-doc-title h2,
+  #printable-ocn .letterhead-doc-title h2,
+  #printable-quotation h1,
+  #printable-quotation h2,
   .printable-document .letterhead-company-name,
   .printable-document .letterhead-brand-title,
   .printable-document .pdf-doc-banner {
-    font-size: 12pt !important;
+    font-size: 13pt !important;
+    font-weight: 800 !important;
     line-height: 1.15 !important;
+    letter-spacing: 0.03em !important;
     margin: 0 0 2px !important;
   }
 
@@ -415,16 +525,41 @@
 
   .printable-document > * {
     margin-top: 0 !important;
-    margin-bottom: 4px !important;
+    margin-bottom: 6px !important;
   }
 
-  .printable-document table {
+  .printable-document table,
+  #printable-quotation table,
+  #printable-po table,
+  #printable-ocn table,
+  #printable-jds table,
+  #printable-packing-list table,
+  #printable-payslip table,
+  #printable-client-pending-orders table,
+  #printable-indent table {
     width: 100% !important;
     max-width: 100% !important;
     border-collapse: collapse !important;
     table-layout: auto !important;
     break-inside: auto !important;
     page-break-inside: auto !important;
+  }
+
+  .printable-document .address-grid-table,
+  .printable-document .details-grid-table,
+  .printable-document .items-table,
+  .printable-document .letterhead-table,
+  #printable-ocn .address-grid-table,
+  #printable-ocn .details-grid-table,
+  #printable-ocn .items-table,
+  #printable-po .address-grid-table,
+  #printable-po .items-table {
+    table-layout: fixed !important;
+  }
+
+  .printable-document .address-grid-table th,
+  .printable-document .address-grid-table td {
+    width: 33.33% !important;
   }
 
   .printable-document thead {
@@ -443,16 +578,77 @@
   }
 
   .printable-document th,
-  .printable-document td {
-    padding: 2px 4px !important;
-    font-size: 8pt !important;
+  .printable-document td,
+  #printable-quotation th,
+  #printable-quotation td,
+  #printable-po th,
+  #printable-po td,
+  #printable-ocn th,
+  #printable-ocn td,
+  #printable-jds th,
+  #printable-jds td,
+  #printable-packing-list th,
+  #printable-packing-list td,
+  #printable-payslip th,
+  #printable-payslip td,
+  #printable-client-pending-orders th,
+  #printable-client-pending-orders td,
+  #printable-indent th,
+  #printable-indent td {
+    padding: 3px 5px !important;
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
     white-space: normal !important;
     overflow-wrap: break-word !important;
     word-break: normal !important;
-    width: auto !important;
-    min-width: 0 !important;
-    max-width: none !important;
     height: auto !important;
+    vertical-align: top !important;
+  }
+
+  .printable-document thead th,
+  #printable-quotation thead th,
+  #printable-po thead th,
+  #printable-ocn thead th,
+  #printable-jds thead th,
+  #printable-packing-list thead th,
+  #printable-payslip thead th,
+  #printable-client-pending-orders thead th,
+  #printable-indent thead th,
+  .items-table th,
+  .letterhead-table th {
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+    hyphens: none !important;
+    line-height: 1.15 !important;
+  }
+
+  .totals-and-words-grid,
+  #printable-ocn .totals-and-words-grid,
+  #printable-po .totals-and-words-grid,
+  .printable-document .totals-and-words-grid {
+    padding: 12px 14px !important;
+  }
+
+  .word-line,
+  #printable-ocn .word-line,
+  #printable-po .word-line,
+  .printable-document .word-line {
+    column-gap: 10px !important;
+  }
+
+  .printable-document thead th,
+  #printable-ocn thead th,
+  #printable-po thead th,
+  #printable-quotation thead th,
+  .items-table th,
+  .address-grid-table th,
+  .letterhead-table th {
+    background: #e8eef4 !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 7.5pt !important;
+    letter-spacing: 0.02em !important;
+    text-align: center !important;
   }
 
   .printable-document td.right,
@@ -479,20 +675,51 @@
     object-fit: contain !important;
   }
 
+  .printable-document img.samyak-logo-img,
+  .printable-document img.letterhead-logo-img,
   .printable-document img[alt*="ogo"],
-  .printable-document .samyak-logo-img,
-  .printable-document .letterhead-logo-img {
-    height: 28px !important;
-    max-height: 28px !important;
+  #printable-quotation img[alt*="ogo"],
+  #printable-po img[alt*="ogo"],
+  #printable-ocn img[alt*="ogo"],
+  #printable-jds img[alt*="ogo"],
+  #printable-packing-list img[alt*="ogo"],
+  #printable-payslip img[alt*="ogo"],
+  #printable-client-pending-orders img[alt*="ogo"],
+  #printable-indent img[alt*="ogo"],
+  .printable-landscape-card img[alt*="ogo"] {
+    height: 36px !important;
+    max-height: 36px !important;
     width: auto !important;
+    max-width: 188px !important;
     margin: 0 0 2px !important;
+    object-fit: contain !important;
+    object-position: left center !important;
   }
 
-  .printable-document img[alt*="ignat"] {
-    height: 22px !important;
-    max-height: 22px !important;
+  .printable-document img[alt*="ignat"],
+  .printable-document img[alt*="Signat"],
+  #printable-quotation img[alt*="ignat"],
+  #printable-quotation img[alt*="Signat"],
+  #printable-po img[alt*="ignat"],
+  #printable-po img[alt*="Signat"],
+  #printable-ocn img[alt*="ignat"],
+  #printable-ocn img[alt*="Signat"],
+  #printable-jds img[alt*="ignat"],
+  #printable-jds img[alt*="Signat"],
+  #printable-payslip img[alt*="ignat"],
+  #printable-payslip img[alt*="Signat"],
+  #printable-client-pending-orders img[alt*="ignat"],
+  #printable-client-pending-orders img[alt*="Signat"],
+  .printable-landscape-card img[alt*="ignat"],
+  .printable-landscape-card img[alt*="Signat"] {
+    height: auto !important;
+    max-height: 38px !important;
     width: auto !important;
-    margin: 0 !important;
+    max-width: 156px !important;
+    margin: 0 auto !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+    display: block !important;
   }
 
   .printable-document .qr-code-2d-container,
@@ -517,14 +744,71 @@
   }
 
   .letterhead-signatory-block,
+  #printable-ocn .letterhead-signatory-block,
+  #printable-po .letterhead-signatory-block,
+  #printable-jds .letterhead-signatory-block,
   .pdf-signature-block,
   .pdf-closing {
     break-inside: avoid !important;
     page-break-inside: avoid !important;
     break-before: avoid !important;
     page-break-before: avoid !important;
-    margin-top: 4px !important;
+  }
+
+  .letterhead-signatory-block,
+  #printable-ocn .letterhead-signatory-block,
+  #printable-po .letterhead-signatory-block,
+  #printable-jds .letterhead-signatory-block {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-end !important;
+    justify-content: flex-start !important;
+    width: 100% !important;
+    margin-top: 8px !important;
     padding-top: 2px !important;
+    text-align: center !important;
+  }
+
+  .letterhead-signatory-block > *,
+  #printable-ocn .letterhead-signatory-block > *,
+  #printable-po .letterhead-signatory-block > *,
+  #printable-jds .letterhead-signatory-block > *,
+  .pdf-sign-company,
+  #printable-quotation .pdf-sign-company,
+  #printable-payslip .pdf-sign-company,
+  #printable-client-pending-orders .pdf-sign-company {
+    width: 200px !important;
+    max-width: 200px !important;
+    align-self: flex-end !important;
+    margin-left: auto !important;
+    margin-right: 0 !important;
+    text-align: center !important;
+    box-sizing: border-box !important;
+  }
+
+  .pdf-sign-slot,
+  #printable-ocn .pdf-sign-slot,
+  #printable-po .pdf-sign-slot,
+  #printable-jds .pdf-sign-slot,
+  .pdf-sign-company .pdf-sign-slot {
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    display: flex !important;
+    align-items: flex-end !important;
+    justify-content: center !important;
+  }
+
+  .letterhead-signatory-block > *:last-child,
+  #printable-ocn .letterhead-signatory-block > *:last-child,
+  #printable-po .letterhead-signatory-block > *:last-child,
+  #printable-jds .letterhead-signatory-block > *:last-child,
+  .pdf-sign-role {
+    border-top: 1px solid #111 !important;
+    padding-top: 3px !important;
+    margin-top: 2px !important;
+    font-size: 8.5pt !important;
+    font-weight: 700 !important;
   }
 
   .printable-landscape-card {
@@ -567,15 +851,20 @@
   }
 
   .printable-landscape-card img[alt*="ogo"] {
-    height: 28px !important;
-    max-height: 28px !important;
+    height: 34px !important;
+    max-height: 34px !important;
+    max-width: 160px !important;
     width: auto !important;
   }
 
-  .printable-landscape-card img[alt*="ignat"] {
-    height: 22px !important;
-    max-height: 22px !important;
+  .printable-landscape-card img[alt*="ignat"],
+  .printable-landscape-card img[alt*="Signat"] {
+    height: auto !important;
+    max-height: 36px !important;
+    max-width: 140px !important;
     width: auto !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
   }
 
   .printable-landscape-card .pdf-signature-block {

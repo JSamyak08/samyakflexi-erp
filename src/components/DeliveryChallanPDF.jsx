@@ -141,7 +141,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
           {/* Header */}
           <div className="letterhead-header" style={{ paddingBottom: '8px', marginBottom: '8px' }}>
             <div className="letterhead-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', objectFit: 'contain' }} />
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8px', fontWeight: '800', color: '#374151' }}>
                 {COMPANY_DETAILS.tagline}
               </p>

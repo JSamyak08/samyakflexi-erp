@@ -121,7 +121,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
           {/* Executive Header Banner */}
           <div className="letterhead-header" style={{ borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <div className="letterhead-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '50px', objectFit: 'contain' }} />
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
               <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '8.5px', fontWeight: '800', color: '#475569', letterSpacing: '0.5px' }}>
                 {COMPANY_DETAILS.tagline}
               </p>
@@ -257,9 +257,9 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
             <thead>
               <tr style={{ background: '#0f172a', color: '#ffffff' }}>
                 <th style={{ width: '4%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'center' }}>#</th>
-                <th style={{ width: '32%', padding: '8px 8px', border: '1px solid #0f172a', textAlign: 'left' }}>Item Description & Make</th>
+                <th style={{ width: '30%', padding: '8px 8px', border: '1px solid #0f172a', textAlign: 'left' }}>Item Description & Make</th>
                 <th style={{ width: '10%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'center' }}>HSN Code</th>
-                <th style={{ width: '10%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Quantity</th>
+                <th style={{ width: '12%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Quantity</th>
                 <th style={{ width: '10%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Unit Rate</th>
                 <th style={{ width: '12%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Taxable Amt</th>
                 <th style={{ width: '11%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>CGST<br/><span style={{ fontSize: '7.5pt', opacity: 0.8 }}>Rate / Amt</span></th>
@@ -447,16 +447,16 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
           </div>
 
           {/* Authorised Signatory */}
-          <div className="letterhead-signatory-block pdf-signature-block" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: '6px', textAlign: 'right' }}>
+          <div className="letterhead-signatory-block pdf-signature-block">
             <div style={{ fontWeight: '800', fontSize: '9.5pt', color: '#0f172a' }}>For {COMPANY_DETAILS.name}</div>
-            <div style={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', margin: '4px 0' }}>
+            <div className="pdf-sign-slot">
               {signatureImage ? (
-                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '42px', objectFit: 'contain' }} />
+                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
               ) : (
                 <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>Sy</span>
               )}
             </div>
-            <div style={{ fontSize: '9pt', fontWeight: '800', color: '#475569', borderTop: '1px solid #0f172a', paddingTop: '3px', minWidth: '150px' }}>Authorised Signatory</div>
+            <div className="pdf-sign-role">Authorised Signatory</div>
           </div>
 
         </div>
