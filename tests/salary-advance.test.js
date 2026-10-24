@@ -3,11 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { register } from 'node:module';
 import {
+  buildApprovedSalaryAdvance,
+  buildDisbursedSalaryAdvance,
   canApproveSalaryAdvanceRole,
   findUnsettledAdvance,
   isExactAdminRole,
   isPayrollRecoverableAdvance,
   isUnsettledSalaryAdvance,
+  salaryAdvancePrimaryAction,
+  salaryAdvanceSaveErrorText,
+  saveSalaryAdvanceRecord,
+  toSalaryAdvanceRow,
 } from '../src/services/salaryAdvance.js';
 
 await register(new URL('../scripts/resolve-js-hook.mjs', import.meta.url));
@@ -86,8 +92,97 @@ test('the advance screen does not approve and disburse in one step', () => {
   assert.match(ui, /status: 'Requested'/);
   assert.match(ui, /isExactAdmin && showOverrideModal/);
   assert.equal((ui.match(/salary-advance-override-control/g) || []).length, 1);
+  assert.match(ui, /buildDisbursedSalaryAdvance/);
+  assert.match(ui, /Could not disburse this salary advance/);
+  assert.match(ui, /Could not approve this salary advance/);
+  assert.equal(ui.includes('saveSalaryAdvanceToSupabase('), false);
   const service = fs.readFileSync(new URL('../src/services/supabaseDataService.js', import.meta.url), 'utf8');
-  assert.match(service, /payment_reference/);
-  assert.match(service, /policy_override_by/);
+  assert.match(service, /toSalaryAdvanceRow\(adv\)/);
+  assert.match(service, /onConflict: 'id'/);
   assert.match(service, /policy_override_at/);
+});
+
+test('an approved advance offers Disburse even when another advance is unsettled', () => {
+  const sibling = {
+    id: 'ADV-OLD',
+    employeeId: 'EMP-9',
+    status: 'Disbursed',
+    advanceAmount: 10000,
+    remainingBalance: 4000,
+  };
+  const requested = {
+    id: 'ADV-NEXT',
+    employeeId: 'EMP-9',
+    status: 'Requested',
+    advanceAmount: 8000,
+    remainingBalance: 8000,
+  };
+  const open = [sibling, requested];
+  assert.equal(salaryAdvancePrimaryAction(requested, open, 'Admin'), 'approve-override');
+  assert.equal(salaryAdvancePrimaryAction(requested, open, 'HR & Payroll Manager'), 'awaiting-admin');
+
+  const approved = buildApprovedSalaryAdvance(requested, {
+    withOverride: true,
+    actorName: 'Samyak Jain',
+    approvedDate: '2026-10-24',
+    overrideAt: '2026-10-24T13:00:00.000Z',
+  });
+  assert.equal(approved.status, 'Approved');
+  assert.equal(salaryAdvancePrimaryAction(approved, [sibling, approved], 'Admin'), 'disburse');
+  assert.equal(salaryAdvancePrimaryAction(approved, [sibling, approved], 'HR & Payroll Manager'), 'disburse');
+
+  const plain = buildApprovedSalaryAdvance({ ...requested, id: 'ADV-LONE', employeeId: 'EMP-1' }, {
+    withOverride: false,
+    actorName: 'Payroll Lead',
+    approvedDate: '2026-10-24',
+  });
+  assert.equal(plain.policyOverride, false);
+  assert.equal(salaryAdvancePrimaryAction(plain, [plain], 'HR & Payroll Manager'), 'disburse');
+  assert.equal(salaryAdvancePrimaryAction(plain, [plain], 'Admin'), 'disburse');
+});
+
+test('disbursing sends status Disbursed and a rejected save is not swallowed', async () => {
+  const approved = buildApprovedSalaryAdvance({
+    id: 'ADV-NEXT',
+    employeeId: 'EMP-9',
+    employeeName: 'Neha',
+    status: 'Requested',
+    advanceAmount: 8000,
+    remainingBalance: 8000,
+    monthlyEmiAmount: 2000,
+    policyOverride: true,
+    policyOverrideBy: 'Samyak Jain',
+    policyOverrideAt: '2026-10-24T13:00:00.000Z',
+  }, { withOverride: true, actorName: 'Samyak Jain', approvedDate: '2026-10-24', overrideAt: '2026-10-24T13:00:00.000Z' });
+
+  const disbursed = buildDisbursedSalaryAdvance(approved, {
+    paymentReference: '  UTR-99  ',
+    disbursedDate: '2026-10-24',
+    disbursedBy: 'Payroll Lead',
+  });
+  assert.equal(disbursed.status, 'Disbursed');
+  const row = toSalaryAdvanceRow(disbursed, { updatedAt: '2026-10-24T13:14:10.000Z' });
+  assert.equal(row.status, 'Disbursed');
+  assert.equal(row.payment_reference, 'UTR-99');
+  assert.equal(row.policy_override, true);
+  assert.equal(isPayrollRecoverableAdvance(disbursed), true);
+  assert.equal(isPayrollRecoverableAdvance(approved), false);
+
+  assert.throws(
+    () => buildDisbursedSalaryAdvance(approved, { paymentReference: '   ' }),
+    /payment reference is required/,
+  );
+
+  let directCalls = 0;
+  const databaseError = { message: 'A new salary advance must start as Requested' };
+  await assert.rejects(
+    () => saveSalaryAdvanceRecord(disbursed, {
+      mode: 'update',
+      onUpdate: async () => { throw databaseError; },
+      direct: async () => { directCalls += 1; },
+    }),
+    (error) => error === databaseError,
+  );
+  assert.equal(directCalls, 0);
+  assert.match(salaryAdvanceSaveErrorText(databaseError), /must start as Requested/);
 });
