@@ -1,8 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   applyMultiLineQc,
   findDuplicateInvoice,
+  grnIdentityProblems,
+  grnLineIdentityGaps,
   mergeRollsIntoList,
   oneLineFromReceipt,
   pdfLinesFromGrn,
@@ -226,6 +229,59 @@ test('QC posts each line onto its own stock item', () => {
   assert.equal(rollPatches[0].itemName, 'PET verified');
   assert.equal(rollPatches[1].itemName, 'Solvent');
   assert.notEqual(rollPatches[0].filmType, rollPatches[1].itemName);
+});
+
+test('a new receipt starts with no vendor, category, or stock item', () => {
+  assert.deepEqual(grnIdentityProblems({
+    vendor: '',
+    lines: [{ category: '', itemName: '', itemSearchTerm: '', stockItemId: '' }]
+  }), [
+    'Select a vendor.',
+    'Select an item category.',
+    'Select or search a stock item.'
+  ]);
+  assert.deepEqual(grnLineIdentityGaps({ category: '', filmType: 'PET', micron: 12, widthMm: 1000 }), [
+    'missing category',
+    'missing stock item'
+  ]);
+  assert.deepEqual(grnIdentityProblems({
+    vendor: 'Aksh Impex',
+    lines: [{ category: 'Printing Inks', itemName: 'Flint Process cyan', stockItemId: 'WCL4-50JK-01FW' }]
+  }), []);
+  assert.deepEqual(grnIdentityProblems({
+    vendor: 'Agroha Marketing',
+    lines: [
+      { category: 'Film Substrates', itemName: 'METPET 12µ x 910mm', stockItemId: 'INVT-0147' },
+      { category: '', itemName: '', stockItemId: '' }
+    ]
+  }), [
+    'Item 2: select an item category.',
+    'Item 2: select or search a stock item.'
+  ]);
+  assert.deepEqual(grnIdentityProblems({
+    vendor: 'Aksh Impex',
+    lines: [{ category: 'Film Substrates', itemName: 'METPET 12µ x 910mm', stockItemId: '' }]
+  }), []);
+});
+
+test('the new GRN form does not preselect the first vendor or category', () => {
+  const source = fs.readFileSync(new URL('../src/components/InventoryManagement.jsx', import.meta.url), 'utf8');
+  assert.match(source, /const \[grnVendor, setGrnVendor\] = useState\(''\)/);
+  assert.match(source, /const \[grnCategory, setGrnCategory\] = useState\(''\)/);
+  assert.doesNotMatch(source, /useState\(vendors\[0\]/);
+  assert.match(source, /placeholder="Select or search vendor"/);
+  assert.match(source, /placeholder="Select item category"/);
+  assert.match(source, /placeholder="Select or search stock item"/);
+  const opener = source.slice(source.indexOf('const openNewGRNModal'), source.indexOf('const filteredStockItemsForGrn'));
+  assert.match(opener, /setGrnVendor\(''\)/);
+  assert.match(opener, /setGrnCategory\(''\)/);
+  assert.match(opener, /setGrnSelectedStockItemId\(''\)/);
+  assert.doesNotMatch(opener, /handleSelectPoForGrn/);
+  assert.doesNotMatch(opener, /setGrnCategory\('Film Substrates'\)/);
+  const blank = source.slice(source.indexOf('const blankGrnLineFields'), source.indexOf('const handleAddAnotherGrnItem'));
+  assert.match(blank, /setGrnCategory\(''\)/);
+  assert.match(blank, /setGrnSelectedStockItemId\(''\)/);
+  assert.doesNotMatch(blank, /setGrnVendor/);
 });
 
 test('new roll barcodes are inserted into the on-screen list', () => {
