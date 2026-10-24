@@ -26,7 +26,7 @@ export function buildLegacySubstrateInfo(barcode, filmType, initialKg, consumedK
   const subRemainingVal = Math.max(0, subInitialVal - subConsumedVal);
   if (!(barcode || subConsumedVal > 0)) return null;
   return {
-    barcode: (barcode || '').trim(),
+    barcode: String(barcode || '').trim(),
     filmType: (filmType || '').trim(),
     initialKg: subInitialVal,
     consumedKg: subConsumedVal,

@@ -259,7 +259,7 @@ export default function OrderManagement({
     setEditJobName(selectedVal);
     const jm = (jobMasters || []).find(j => 
       (j.jobName || '').toLowerCase().trim() === (selectedVal || '').toLowerCase().trim() ||
-      (j.id || '').toLowerCase().trim() === (selectedVal || '').toLowerCase().trim()
+      String(j.id || '').toLowerCase().trim() === (selectedVal || '').toLowerCase().trim()
     );
     if (jm) {
       if (jm.clientName) setEditClientName(jm.clientName);
