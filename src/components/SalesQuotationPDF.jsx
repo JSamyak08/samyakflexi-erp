@@ -43,11 +43,12 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
     <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.8)', zIndex: 1100 }}>
       <div 
         className="modal-content glass-panel" 
-        style={{ 
-          width: '900px', 
+          style={{ 
+          width: '210mm', 
+          maxWidth: '96vw',
           maxHeight: '92vh', 
           overflowY: 'auto', 
-          padding: '30px',
+          padding: '16px 12px',
           background: '#ffffff',
           color: '#0f172a',
           boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
@@ -76,7 +77,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
         </div>
 
         {/* PRINTABLE LETTERHEAD AREA */}
-        <div id="printable-quotation" className="printable-document" style={{ padding: '20px', background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div id="printable-quotation" className="printable-document" style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Company Banner */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '3px solid #1e293b', paddingBottom: '16px', marginBottom: '20px' }}>
@@ -145,8 +146,8 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Structure / Description</th>
                   <th style={{ padding: '8px 10px', textAlign: 'left' }}>Material Format</th>
                   <th style={{ padding: '8px 10px', textAlign: 'right' }}>Quantity</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: '120px', whiteSpace: 'nowrap' }}>Rate / UOM</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: '130px', whiteSpace: 'nowrap' }}>Taxable Amt (₹)</th>
+                  <th style={{ padding: '4px 5px', textAlign: 'right' }}>Rate / UOM</th>
+                  <th style={{ padding: '4px 5px', textAlign: 'right' }}>Taxable Amt (₹)</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,13 +163,13 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
                         {it.materialFormat || 'Roll Form'}
                       </span>
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: '800' }}>
                       {(parseFloat(it.quantity) || 0).toLocaleString()} {it.uom}
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '700', minWidth: '120px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: '700' }}>
                       ₹ {(parseFloat(it.ratePerUom) || 0).toFixed(2)}
                     </td>
-                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', color: '#1e293b', minWidth: '130px', whiteSpace: 'nowrap' }}>
+                    <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: '800', color: '#1e293b' }}>
                       ₹ {((parseFloat(it.quantity) || 0) * (parseFloat(it.ratePerUom) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                   </tr>
@@ -221,7 +222,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           </div>
 
           {/* Standard Terms & Conditions Bullet Points */}
-          <div style={{ marginBottom: '20px', fontSize: '0.8rem', background: '#fafafa', padding: '12px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+          <div className="pdf-keep-with-next" style={{ marginBottom: '8px', fontSize: '0.8rem', background: '#fafafa', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
             <div style={{ fontWeight: '800', color: '#1e293b', marginBottom: '6px' }}>TERMS & CONDITIONS</div>
             <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', lineHeight: '1.5' }}>
               {termsAndConditions.map((term, i) => (
@@ -237,7 +238,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           )}
 
           {/* Signatures & Authorization Section */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '20px', borderTop: '1px dashed #cbd5e1', marginTop: '24px' }}>
+          <div className="pdf-signature-block" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '6px', borderTop: '1px dashed #cbd5e1', marginTop: '6px' }}>
             <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
               <div><b>Prepared By:</b> {salesManager}</div>
               <div><b>Issued On:</b> {enquiryDate}</div>

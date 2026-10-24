@@ -22,7 +22,7 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
 
   return (
     <div className="modal-overlay" style={{ zIndex: 3000, background: 'rgba(15, 23, 42, 0.75)' }}>
-      <div className="modal-content" style={{ width: '920px', maxWidth: '95vw', background: '#f8fafc', padding: '24px' }}>
+        <div className="modal-content" style={{ width: '210mm', maxWidth: '96vw', background: '#f8fafc', padding: '16px 12px' }}>
         
         {/* Action Header Controls */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid var(--border-color)' }}>
@@ -43,10 +43,10 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
           className="printable-document"
           style={{
             background: '#ffffff',
-            padding: '32px 36px',
-            borderRadius: '8px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-            border: '1px solid #cbd5e1',
+            padding: 0,
+            borderRadius: 0,
+            boxShadow: 'none',
+            border: 'none',
             fontFamily: 'Inter, sans-serif',
             color: '#0f172a'
           }}
@@ -212,7 +212,7 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
           </table>
 
           {/* Signatures & Footer */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '30px', paddingTop: '12px', borderTop: '1px dashed #cbd5e1', fontSize: '0.78rem', textAlign: 'center' }}>
+          <div className="pdf-signature-block" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed #cbd5e1', fontSize: '8pt', textAlign: 'center' }}>
             <div>
               <div style={{ height: '30px' }} />
               <div style={{ borderTop: '1px solid #0f172a', paddingTop: '4px', fontWeight: '700' }}>

@@ -437,7 +437,8 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
           )}
 
           {/* Editable Terms & Conditions Section */}
-          <div className="terms-section" style={{ marginTop: '8px' }}>
+          <div className="pdf-closing">
+          <div className="terms-section pdf-keep-with-next" style={{ marginTop: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #cbd5e1', paddingBottom: '2px', marginBottom: '4px' }}>
               <div style={{ fontSize: '9px', fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>
                 Terms & Conditions of Dispatch & Supply
@@ -479,7 +480,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
           </div>
 
           {/* Dual Seal & Signature Boxes (Company Dispatch vs Receiving Company) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '10px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+          <div className="pdf-signature-block" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
             {/* Left Box: Receiving Company Seal & Signature */}
             <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '8px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '90px', background: '#fafafa' }}>
               <div>
@@ -528,6 +529,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                 </div>
               </div>
             </div>
+          </div>
           </div>
 
         </div>

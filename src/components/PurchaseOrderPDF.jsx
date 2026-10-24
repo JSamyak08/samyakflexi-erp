@@ -447,7 +447,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
           </div>
 
           {/* Authorised Signatory */}
-          <div className="letterhead-signatory-block" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: '16px', textAlign: 'right' }}>
+          <div className="letterhead-signatory-block pdf-signature-block" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: '6px', textAlign: 'right' }}>
             <div style={{ fontWeight: '800', fontSize: '9.5pt', color: '#0f172a' }}>For {COMPANY_DETAILS.name}</div>
             <div style={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', margin: '4px 0' }}>
               {signatureImage ? (

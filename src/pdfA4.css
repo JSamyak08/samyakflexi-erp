@@ -1,0 +1,600 @@
+/*
+ * A4 print fit for every generated document.
+ * Screen preview uses the same 210mm sheet and 11–12mm margins.
+ * Print rules beat inline spacing so a typical note stays on one page,
+ * tables fragment by row, and the signature block stays with the last rows.
+ */
+
+.pdf-paper-container {
+  width: 210mm;
+  max-width: 100%;
+  min-height: 0;
+  height: auto;
+  padding: 11mm 12mm;
+  box-sizing: border-box;
+  font-size: 9pt;
+  line-height: 1.25;
+}
+
+.printable-document {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: none;
+  box-sizing: border-box;
+  font-size: 9pt;
+  line-height: 1.25;
+  overflow: visible;
+}
+
+.letterhead-header {
+  padding-bottom: 4px;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+.samyak-logo-img,
+.letterhead-logo-img {
+  height: 32px;
+  max-height: 32px;
+  width: auto;
+  object-fit: contain;
+}
+
+.letterhead-company-name,
+.letterhead-brand-title {
+  font-size: 12pt;
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 0;
+}
+
+.letterhead-company-sub {
+  font-size: 8pt;
+  margin-top: 1px;
+}
+
+.letterhead-doc-title h2 {
+  font-size: 13pt;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.letterhead-doc-title .doc-ref-no {
+  font-size: 9pt;
+  margin-top: 2px;
+}
+
+.letterhead-logo-column {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 58%;
+  min-width: 0;
+}
+
+.letterhead-contact-column {
+  text-align: right;
+  font-size: 8pt;
+  line-height: 1.3;
+  max-width: 40%;
+  min-width: 0;
+}
+
+.pdf-doc-banner {
+  text-align: center;
+  font-weight: 800;
+  font-size: 11pt;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 1px solid #000;
+  background: #f1f5f9;
+  padding: 3px 6px;
+  margin: 4px 0 6px;
+}
+
+.address-grid-table {
+  margin-bottom: 6px;
+  font-size: 8.5pt;
+}
+
+.address-grid-table th {
+  padding: 3px 5px;
+  font-size: 7.5pt;
+}
+
+.address-grid-table td {
+  padding: 4px 6px;
+}
+
+.address-box-title {
+  font-size: 9pt;
+  margin-bottom: 2px;
+  padding-bottom: 2px;
+}
+
+.address-line {
+  margin: 1px 0;
+  overflow-wrap: break-word;
+}
+
+.details-section-container {
+  margin-bottom: 6px;
+}
+
+.details-section-header {
+  font-size: 9pt;
+  padding: 3px 4px;
+  letter-spacing: 0.03em;
+}
+
+.details-grid-table {
+  font-size: 8.5pt;
+}
+
+.details-grid-table td {
+  padding: 3px 5px;
+}
+
+.items-table,
+.letterhead-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8.5pt;
+  margin-bottom: 6px;
+}
+
+.letterhead-table th,
+.letterhead-table td,
+.items-table th,
+.items-table td {
+  border: 1px solid #000;
+  padding: 3px 4px;
+  vertical-align: top;
+}
+
+.items-table th,
+.letterhead-table th {
+  background: #f1f5f9;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-align: center;
+}
+
+.items-table .item-name {
+  font-size: 9pt;
+  font-weight: 700;
+}
+
+.items-table .item-meta {
+  font-size: 8pt;
+  margin-top: 1px;
+}
+
+.totals-and-words-grid {
+  gap: 8px;
+  padding: 6px;
+  margin-bottom: 6px;
+  font-size: 8.5pt;
+}
+
+.words-block {
+  gap: 3px;
+}
+
+.word-line,
+.totals-summary-table {
+  font-size: 8.5pt;
+}
+
+.totals-summary-table td {
+  padding: 2px 4px;
+}
+
+.tax-subtable {
+  margin: 3px 0;
+  font-size: 8pt;
+}
+
+.tax-subtable th,
+.tax-subtable td {
+  padding: 2px 3px;
+}
+
+.letterhead-terms-box {
+  padding: 5px 8px;
+  margin-bottom: 6px;
+  font-size: 8.5pt;
+}
+
+.letterhead-terms-box h4 {
+  font-size: 9pt;
+  margin: 0 0 2px;
+}
+
+.letterhead-terms-box li {
+  margin-bottom: 1px;
+}
+
+.letterhead-signatory-block,
+.pdf-signature-block {
+  margin-top: 6px;
+  padding-top: 2px;
+  font-size: 8.5pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.signature-img-placeholder {
+  height: 26px;
+  margin: 2px 0;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 11mm 12mm;
+  }
+
+  @page jobcard-sheet {
+    size: A4 landscape;
+    margin: 10mm 12mm;
+  }
+
+  html, body, #root {
+    background: #fff !important;
+    color: #000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /*
+   * Collapse the live ERP screen so a tall form behind the modal
+   * cannot invent blank pages. Ancestors of the sheet stay open so
+   * the document itself can flow and break across real A4 pages.
+   */
+  body * {
+    visibility: hidden !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  #root,
+  .app-container,
+  .main-content,
+  .pdf-modal-overlay,
+  .modal-overlay,
+  .modal-content,
+  .glass-panel,
+  .pdf-paper-container,
+  .printable-jobcard-host,
+  div:has(.printable-document),
+  div:has(.printable-landscape-card),
+  div:has(.printable-barcode-container) {
+    visibility: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .printable-document,
+  .printable-document *,
+  #printable-quotation,
+  #printable-quotation *,
+  #printable-po,
+  #printable-po *,
+  #printable-ocn,
+  #printable-ocn *,
+  #printable-jds,
+  #printable-jds *,
+  #printable-packing-list,
+  #printable-packing-list *,
+  #printable-payslip,
+  #printable-payslip *,
+  #printable-client-pending-orders,
+  #printable-client-pending-orders *,
+  #printable-indent,
+  #printable-indent * {
+    visibility: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .printable-landscape-card,
+  .printable-landscape-card * {
+    visibility: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .no-print,
+  .pdf-modal-toolbar,
+  button,
+  .btn-primary,
+  .btn-secondary,
+  aside,
+  header,
+  nav,
+  .sidebar,
+  .header,
+  .mobile-header-bar,
+  .Toastify {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .printable-document,
+  #printable-quotation,
+  #printable-po,
+  #printable-ocn,
+  #printable-jds,
+  #printable-packing-list,
+  #printable-payslip,
+  #printable-client-pending-orders,
+  #printable-indent {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    color: #111 !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 9pt !important;
+    line-height: 1.25 !important;
+  }
+
+  .printable-document *,
+  #printable-quotation *,
+  #printable-po *,
+  #printable-ocn *,
+  #printable-jds *,
+  #printable-packing-list *,
+  #printable-payslip *,
+  #printable-client-pending-orders *,
+  #printable-indent * {
+    line-height: 1.22 !important;
+    box-sizing: border-box !important;
+    max-width: 100% !important;
+  }
+
+  .printable-document h1,
+  .printable-document h2,
+  .printable-document .letterhead-doc-title h2,
+  .printable-document .letterhead-company-name,
+  .printable-document .letterhead-brand-title,
+  .printable-document .pdf-doc-banner {
+    font-size: 12pt !important;
+    line-height: 1.15 !important;
+    margin: 0 0 2px !important;
+  }
+
+  .printable-document h3,
+  .printable-document h4,
+  .printable-document .details-section-header,
+  .printable-document .address-box-title {
+    font-size: 9pt !important;
+    margin: 0 0 2px !important;
+    line-height: 1.2 !important;
+  }
+
+  .printable-document > * {
+    margin-top: 0 !important;
+    margin-bottom: 4px !important;
+  }
+
+  .printable-document table {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: auto !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .printable-document thead {
+    display: table-header-group !important;
+  }
+
+  .printable-document tfoot {
+    display: table-row-group !important;
+    break-before: avoid !important;
+    page-break-before: avoid !important;
+  }
+
+  .printable-document tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .printable-document th,
+  .printable-document td {
+    padding: 2px 4px !important;
+    font-size: 8pt !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+  }
+
+  .printable-document td.right,
+  .printable-document td.center,
+  .printable-document td.amount,
+  .printable-document td[style*="text-align: right"],
+  .printable-document td[style*="text-align:right"],
+  .printable-document td[style*="text-align: center"],
+  .printable-document td[style*="text-align:center"] {
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+
+  .printable-document .items-table,
+  .printable-document .letterhead-table,
+  .printable-document table.data-table {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .printable-document img {
+    max-width: 100% !important;
+    object-fit: contain !important;
+  }
+
+  .printable-document img[alt*="ogo"],
+  .printable-document .samyak-logo-img,
+  .printable-document .letterhead-logo-img {
+    height: 28px !important;
+    max-height: 28px !important;
+    width: auto !important;
+    margin: 0 0 2px !important;
+  }
+
+  .printable-document img[alt*="ignat"] {
+    height: 22px !important;
+    max-height: 22px !important;
+    width: auto !important;
+    margin: 0 !important;
+  }
+
+  .printable-document .qr-code-2d-container,
+  .printable-document .qr-code-2d-container * {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .printable-document .qr-code-2d-container > div,
+  .printable-document .qr-code-2d-container svg {
+    width: 34px !important;
+    height: 34px !important;
+    max-width: 34px !important;
+    max-height: 34px !important;
+  }
+
+  .letterhead-terms-box,
+  .pdf-keep-with-next {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .letterhead-signatory-block,
+  .pdf-signature-block,
+  .pdf-closing {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-before: avoid !important;
+    page-break-before: avoid !important;
+    margin-top: 4px !important;
+    padding-top: 2px !important;
+  }
+
+  .printable-landscape-card {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+    break-inside: auto !important;
+  }
+
+  .printable-landscape-card table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: auto !important;
+  }
+
+  .printable-landscape-card thead {
+    display: table-header-group !important;
+  }
+
+  .printable-landscape-card tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .printable-landscape-card th,
+  .printable-landscape-card td {
+    padding: 2px 4px !important;
+    font-size: 8pt !important;
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+  }
+
+  .printable-landscape-card img[alt*="ogo"] {
+    height: 28px !important;
+    max-height: 28px !important;
+    width: auto !important;
+  }
+
+  .printable-landscape-card img[alt*="ignat"] {
+    height: 22px !important;
+    max-height: 22px !important;
+    width: auto !important;
+  }
+
+  .printable-landscape-card .pdf-signature-block {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-before: avoid !important;
+    page-break-before: avoid !important;
+  }
+
+  /* 4×4 barcode stickers keep their own page size. Do not force them onto A4. */
+  .printable-barcode-container,
+  .printable-barcode-container * {
+    visibility: visible !important;
+    overflow: visible !important;
+  }
+
+  .printable-barcode-single-label {
+    height: 3.9in !important;
+    max-height: 3.9in !important;
+    min-height: 0 !important;
+  }
+}
