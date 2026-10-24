@@ -55,6 +55,8 @@ import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumb
 import {
   applyMultiLineQc,
   findDuplicateInvoice,
+  grnIdentityProblems,
+  grnLineIdentityGaps,
   oneLineFromReceipt,
   pendingQcKgForItem,
   prepareMultiLineReceipt,
@@ -116,10 +118,13 @@ export function summarizeGrnLineDraft(line) {
   const net = netFromRolls > 0 ? netFromRolls : (Number(line?.weightKg) || 0);
   const rate = Number(line?.purchaseRate) || 0;
   const rollsCount = rolls.length || Number(line?.rollsCount) || 0;
-  const isFilm = (line?.category || 'Film Substrates') === 'Film Substrates';
-  const name = isFilm
-    ? (line?.filmType || line?.itemName || 'New item')
-    : (line?.itemName || line?.itemSearchTerm || 'New item');
+  const category = String(line?.category ?? '').trim();
+  const isFilm = category === 'Film Substrates';
+  const name = !category
+    ? (line?.itemName || line?.itemSearchTerm || 'New item')
+    : (isFilm
+      ? (line?.filmType || line?.itemName || 'New item')
+      : (line?.itemName || line?.itemSearchTerm || 'New item'));
   const batch = String(line?.batchNo || '').trim();
   const spec = [
     ...(isFilm
@@ -127,16 +132,16 @@ export function summarizeGrnLineDraft(line) {
         line?.micron !== '' && line?.micron !== null && line?.micron !== undefined ? `${line.micron}µ` : '',
         line?.widthMm !== '' && line?.widthMm !== null && line?.widthMm !== undefined ? `${line.widthMm} mm` : ''
       ]
-      : [line?.packagingType || line?.category || '']),
+      : [line?.packagingType || category || '']),
     batch ? `Batch ${batch}` : ''
   ].filter(Boolean).join(' · ');
-  const problems = [];
+  const problems = [...grnLineIdentityGaps(line)];
   if (!(net > 0)) problems.push('missing weight');
   if (!String(line?.batchNo || '').trim()) problems.push('missing batch');
   if (isFilm) {
     if (line?.micron === '' || line?.micron === null || line?.micron === undefined) problems.push('missing micron');
     if (line?.widthMm === '' || line?.widthMm === null || line?.widthMm === undefined) problems.push('missing width');
-  } else if (!String(line?.itemName || '').trim()) {
+  } else if (category && !String(line?.itemName || '').trim() && String(line?.stockItemId || '').trim()) {
     problems.push('missing description');
   }
   return {
@@ -1004,11 +1009,11 @@ export default function InventoryManagement({
   const [stockCategoryFilter, setStockCategoryFilter] = useState('ALL');
 
   // Inward GRN Form State
-  const [grnVendor, setGrnVendor] = useState(vendors[0]?.companyName || '');
+  const [grnVendor, setGrnVendor] = useState('');
   const [grnPoNo, setGrnPoNo] = useState('');
   const [isManualPoEntry, setIsManualPoEntry] = useState(false);
   const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
-  const [grnCategory, setGrnCategory] = useState('Film Substrates');
+  const [grnCategory, setGrnCategory] = useState('');
   const [grnItemName, setGrnItemName] = useState('');
   const [grnFilmType, setGrnFilmType] = useState('PET');
   const [grnMetallocenePct, setGrnMetallocenePct] = useState('');
@@ -1898,6 +1903,8 @@ export default function InventoryManagement({
       ? formatFilmItemName(filmTypeVal, widthVal, micronVal)
       : (firstItem.itemDesc || firstItem.description || `${categoryVal} Inward Item`).replace(/µ/g, 'Micron');
     setGrnItemName(generatedTitle);
+    setGrnItemSearchTerm(generatedTitle);
+    setGrnSelectedStockItemId('');
     setGrnRolls('1');
     
     // Weight must be entered by user, not pre-filled
@@ -1963,6 +1970,15 @@ export default function InventoryManagement({
     setGrnLineOrder([freshLineId]);
     setIsNewGRNModalOpen(true);
     setIsManualPoEntry(false);
+    setGrnVendor('');
+    setGrnPoNo('');
+    setGrnCategory('');
+    setGrnItemName('');
+    setGrnItemSearchTerm('');
+    setGrnSelectedStockItemId('');
+    setGrnMicron('');
+    setGrnWidthMm('');
+    setIsGrnItemDropdownOpen(false);
     setGrnRolls('1');
     setGrnItemsList([
       {
@@ -1977,31 +1993,6 @@ export default function InventoryManagement({
     ]);
     if (preselectedItem) {
       handleSelectStockItemForGrn(preselectedItem);
-    } else {
-      setGrnCategory('Film Substrates');
-      setGrnFilmType('PET');
-      setGrnMicron(12);
-      setGrnWidthMm(1000);
-      setGrnItemName(formatFilmItemName('PET', 1000, 12));
-      setGrnItemSearchTerm('');
-      setGrnSelectedStockItemId('');
-      setIsGrnItemDropdownOpen(false);
-    }
-
-    if (grnVendor) {
-      const matching = (unifiedIssuedPOs || []).filter(po => {
-        if (!po || !po.poNumber) return false;
-        if (!isPoVendorMatch(po, grnVendor)) return false;
-        const info = getPoDeliveryInfo(po);
-        return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
-      });
-      if (matching.length === 1) {
-        handleSelectPoForGrn(matching[0].poNumber);
-      } else {
-        setGrnPoNo('');
-      }
-    } else {
-      setGrnPoNo('');
     }
   };
 
@@ -2281,7 +2272,7 @@ export default function InventoryManagement({
 
   const applyGrnLineToForm = (line) => {
     if (!line) return;
-    setGrnCategory(line.category || 'Film Substrates');
+    setGrnCategory(line.category || '');
     setGrnItemName(line.itemName || '');
     setGrnFilmType(line.filmType || 'PET');
     setGrnMetallocenePct(line.metallocenePct || '');
@@ -2306,6 +2297,7 @@ export default function InventoryManagement({
   const blankGrnLineFields = (keepBatch = true) => {
     const freshId = `line-${Date.now()}`;
     setActiveGrnLineKey(freshId);
+    setGrnCategory('');
     setGrnItemName('');
     setGrnItemSearchTerm('');
     setGrnSelectedStockItemId('');
@@ -2479,6 +2471,11 @@ export default function InventoryManagement({
     const capturedLines = orderedGrnLineViews
       .map((view) => linesById.get(view.id))
       .filter(Boolean);
+    const identityProblems = grnIdentityProblems({ vendor: grnVendor, lines: capturedLines });
+    if (identityProblems.length > 0) {
+      alert(identityProblems.join('\n'));
+      return;
+    }
     if (capturedLines.length > 1) {
       if (!grnInvoiceNo.trim()) {
         alert('Invoice Number is required.');
@@ -2956,6 +2953,11 @@ export default function InventoryManagement({
     setGrnFreightAmount('');
     setGrnTransporterName('');
     setGrnItemRemarks('');
+    setGrnVendor('');
+    setGrnCategory('');
+    setGrnItemName('');
+    setGrnItemSearchTerm('');
+    setGrnSelectedStockItemId('');
     setGrnInvoiceNo('');
     setGrnBatchNo('');
     setGrnPoNo('');
@@ -6583,7 +6585,7 @@ export default function InventoryManagement({
                     </div>
                     <SearchableSelect 
                       className="form-control" 
-                      placeholder="-- Select Vendor --"
+                      placeholder="Select or search vendor"
                       searchPlaceholder="Search vendor name or GSTIN..."
                       value={grnVendor} 
                       onChange={e => {
@@ -6844,16 +6846,16 @@ export default function InventoryManagement({
                     </label>
                     <SearchableSelect 
                       className="form-control" 
-                      placeholder="-- Select Category --"
+                      placeholder="Select item category"
                       searchPlaceholder="Search inward categories (e.g. Film, Inks, Cylinders, Solvents)..."
                       value={grnCategory} 
                       onChange={e => setGrnCategory(e.target.value)}
-                      triggerStyle={{ 
-                        fontWeight: '600', 
-                        color: '#0284c7', 
-                        background: '#f0f9ff', 
-                        borderColor: '#bae6fd' 
-                      }}
+                      triggerStyle={grnCategory ? {
+                        fontWeight: '600',
+                        color: '#0284c7',
+                        background: '#f0f9ff',
+                        borderColor: '#bae6fd'
+                      } : { fontWeight: '500' }}
                     >
                       <option value="Film Substrates" data-subtitle="PET, METPET, LDPE, BOPP, CPP, Foil">Film Substrates (PET, METPET, LDPE, BOPP, CPP, Foil)</option>
                       <option value="Rotogravure Cylinders" data-subtitle="Engraved Cylinder Sets & Tooling">Rotogravure Cylinders (Engraved Cylinder Sets)</option>
@@ -6889,7 +6891,7 @@ export default function InventoryManagement({
                         id="grn-active-item-search"
                         className="form-control"
                         style={{ paddingLeft: '36px', paddingRight: '36px', fontWeight: grnSelectedStockItemId ? '700' : 'normal' }}
-                        placeholder="Search existing stock items (e.g. Doctor Blade, Cyan Ink, PET 12µ)..."
+                        placeholder="Select or search stock item"
                         value={grnItemSearchTerm}
                         onChange={e => {
                           const val = e.target.value;
@@ -7119,7 +7121,7 @@ export default function InventoryManagement({
                         <input 
                           type="text" 
                           className="form-control" 
-                          required 
+                          required={Boolean(grnCategory)}
                           placeholder="e.g. Process Cyan Ink / Ethyl Acetate Solvent / Doctor Blades 0.15mm" 
                           value={grnItemName} 
                           onChange={e => setGrnItemName(e.target.value)} 
@@ -7151,7 +7153,7 @@ export default function InventoryManagement({
                           type="number" 
                           step="any" 
                           className="form-control" 
-                          required 
+                          required={Boolean(grnCategory)}
                           placeholder="e.g. 280.00" 
                           value={grnPurchaseRate} 
                           onChange={e => setGrnPurchaseRate(e.target.value)} 

@@ -104,6 +104,40 @@ export function findDuplicateInvoice(existing, candidate) {
   }) || null;
 }
 
+/** Phrases for a line whose category or stock item was never chosen. */
+export function grnLineIdentityGaps(line) {
+  const gaps = [];
+  const category = String(line?.category ?? '').trim();
+  if (!category) gaps.push('missing category');
+  const stockId = String(line?.stockItemId ?? '').trim();
+  const named = String(line?.itemName ?? line?.itemSearchTerm ?? '').trim();
+  if (!stockId && !named) gaps.push('missing stock item');
+  return gaps;
+}
+
+/**
+ * A new receipt must not save until the store clerk has chosen a vendor,
+ * a category, and a stock item (a typed custom name counts as the stock item).
+ * An empty category is not treated as film.
+ */
+export function grnIdentityProblems({ vendor, lines } = {}) {
+  const problems = [];
+  if (!String(vendor ?? '').trim()) problems.push('Select a vendor.');
+  const usable = Array.isArray(lines) ? lines.filter(Boolean) : [];
+  usable.forEach((line, index) => {
+    const labeled = usable.length > 1;
+    const prefix = labeled ? `Item ${index + 1}: ` : '';
+    grnLineIdentityGaps(line).forEach((gap) => {
+      if (gap === 'missing category') {
+        problems.push(`${prefix}${labeled ? 'select an item category.' : 'Select an item category.'}`);
+      } else {
+        problems.push(`${prefix}${labeled ? 'select or search a stock item.' : 'Select or search a stock item.'}`);
+      }
+    });
+  });
+  return problems;
+}
+
 export function validateCapturedLines(lines) {
   const errors = [];
   const usable = Array.isArray(lines) ? lines.filter(Boolean) : [];
