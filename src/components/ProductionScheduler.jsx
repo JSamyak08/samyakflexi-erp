@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import StorageImage from './StorageImage';
 import { 
   Printer, 
@@ -173,10 +174,22 @@ export default function ProductionScheduler({
   onMachineAssignmentChange,
   onActiveRunningJobChange,
   onAddRoll,
-  onSaveInventoryItem
+  onSaveInventoryItem,
+  urlParams = {},
+  onSectionChange
 }) {
   // Navigation Tabs: 'queue' (Ready Queue - Default) | 'completed' (Completed Jobs) | 'machines' (Press Configuration)
-  const [activeTab, setActiveTab] = useState('queue');
+  const [activeTab, setActiveTab] = useState(urlParams?.tab || 'queue');
+  useEffect(() => {
+    if (urlParams?.tab === 'queue' || urlParams?.tab === 'completed' || urlParams?.tab === 'machines') {
+      setActiveTab(urlParams.tab);
+    }
+  }, [urlParams?.tab]);
+  const choosePressTab = (tab) => {
+    setActiveTab(tab);
+    if (onSectionChange) onSectionChange(tab);
+    else if (urlParams && Object.keys(urlParams).length > 0) pushSlugState('printing_scheduler', { section: tab });
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMachineFilter, setSelectedMachineFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'In Production' | 'Ready' | 'Overdue' | 'Material Pending'
@@ -1297,7 +1310,7 @@ export default function ProductionScheduler({
         {/* View Switcher Tabs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
           <button 
-            onClick={() => setActiveTab('queue')}
+            onClick={() => choosePressTab('queue')}
             style={{ 
               background: activeTab === 'queue' ? '#0284c7' : 'transparent', 
               color: activeTab === 'queue' ? '#ffffff' : '#475569',
@@ -1321,7 +1334,7 @@ export default function ProductionScheduler({
           </button>
 
           <button 
-            onClick={() => setActiveTab('completed')}
+            onClick={() => choosePressTab('completed')}
             style={{ 
               background: activeTab === 'completed' ? '#059669' : 'transparent', 
               color: activeTab === 'completed' ? '#ffffff' : '#475569',
@@ -1345,7 +1358,7 @@ export default function ProductionScheduler({
           </button>
 
           <button 
-            onClick={() => setActiveTab('machines')}
+            onClick={() => choosePressTab('machines')}
             style={{ 
               background: activeTab === 'machines' ? '#0f172a' : 'transparent', 
               color: activeTab === 'machines' ? '#ffffff' : '#475569',

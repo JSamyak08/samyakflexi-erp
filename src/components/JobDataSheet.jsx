@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { pushSlugState } from '../utils/slugRouter';
 import { 
   FileSpreadsheet, 
   DollarSign, 
@@ -31,12 +32,13 @@ export default function JobDataSheet({
   jobDataSheets = [],
   currentUser, 
   onSaveJobDataSheet,
-  onDeleteJobDataSheet 
+  onDeleteJobDataSheet,
+  urlParams = {}
 }) {
   const isAdmin = currentUser?.role === 'Admin';
   const isAuthorizedToViewProfit = isAdmin || currentUser?.role === 'Plant Manager';
 
-  const [activeTab, setActiveTab] = useState('records'); // 'records', 'form'
+  const [activeTab, setActiveTab] = useState(urlParams?.section === 'sheet-new' ? 'form' : 'records');
   const [selectedJobId, setSelectedJobId] = useState((orders || [])[0]?.id || '');
   const [sellingPricePerKg, setSellingPricePerKg] = useState(245);
   
@@ -118,7 +120,23 @@ export default function JobDataSheet({
     setActualScrapKg(sheet.actualScrapWastageKg || 125);
     setOperatorNotes(sheet.operatorNotes || '');
     setActiveTab('form');
+    if (sheet?.id) pushSlugState('job_datasheet', { id: sheet.id });
   };
+
+  const openedSheetRef = useRef(null);
+  useEffect(() => {
+    if (urlParams?.section === 'sheet-new') {
+      setEditingSheetId(null);
+      setActiveTab('form');
+      return;
+    }
+    if (!urlParams?.id || openedSheetRef.current === urlParams.id) return;
+    const match = (jobDataSheets || []).find((sheet) => String(sheet.id) === String(urlParams.id));
+    if (match && isAdmin) {
+      openedSheetRef.current = urlParams.id;
+      handleEditSheet(match);
+    }
+  }, [urlParams?.id, urlParams?.section, jobDataSheets]);
 
   const handleDeleteSheet = (sheetId) => {
     if (!isAdmin) {
@@ -208,7 +226,7 @@ export default function JobDataSheet({
         {/* View Mode Tabs */}
         <div style={{ display: 'flex', gap: '12px', marginTop: '20px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
           <button
-            onClick={() => setActiveTab('records')}
+            onClick={() => { setActiveTab('records'); pushSlugState('job_datasheet'); }}
             className={`btn-secondary ${activeTab === 'records' ? 'btn-primary' : ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.85rem' }}
           >
@@ -219,6 +237,7 @@ export default function JobDataSheet({
             onClick={() => {
               setEditingSheetId(null);
               setActiveTab('form');
+              pushSlugState('job_datasheet', { section: 'sheet-new' });
             }}
             className={`btn-secondary ${activeTab === 'form' ? 'btn-primary' : ''}`}
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.85rem' }}

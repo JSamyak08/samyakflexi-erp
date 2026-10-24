@@ -4,6 +4,7 @@ import { openArtworkViewer } from '../services/supabaseStorageService';
 import StorageImage from './StorageImage';
 import ArtworkModal from './ArtworkModal';
 import TablePagination, { usePagination } from './TablePagination';
+import { pushSlugState } from '../utils/slugRouter';
 import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
 
 export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], jobMasters = [], onAddClient, onUpdateClient, onDeleteClient }) {
@@ -171,7 +172,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {/* Detail Header */}
         <div className="glass-panel" style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer', color: 'var(--primary-brand)', fontWeight: '600' }} onClick={() => setSelectedClient(null)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer', color: 'var(--primary-brand)', fontWeight: '600' }} onClick={() => { setSelectedClient(null); pushSlugState('clients'); }}>
             <ChevronRight size={18} style={{ transform: 'rotate(180deg)' }} /> Back to Clients List
           </div>
           
@@ -530,7 +531,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                   const cylCount = (cylinders || []).filter(cyl => cyl.clientGroup === c.name || cyl.clientName === c.name || (cyl.jobName && cyl.jobName.includes(c.name))).length;
 
                   return (
-                    <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedClient(c)}>
+                    <tr key={c.id} style={{ cursor: 'pointer' }} onClick={() => { setSelectedClient(c); if (c?.id) pushSlugState('clients', { id: c.id }); }}>
                       <td style={{ fontWeight: '600', color: 'var(--primary-brand)' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <Building2 size={16} /> {c.name}
@@ -551,7 +552,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }} onClick={e => e.stopPropagation()}>
-                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={() => setSelectedClient(c)}>
+                          <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={() => { setSelectedClient(c); if (c?.id) pushSlugState('clients', { id: c.id }); }}>
                             View
                           </button>
                           <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }} onClick={() => openModal(c)}>

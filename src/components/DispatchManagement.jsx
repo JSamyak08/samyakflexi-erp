@@ -27,6 +27,7 @@ import {
   Copy
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
+import { pushSlugState } from '../utils/slugRouter';
 import DeliveryChallanPDF from './DeliveryChallanPDF';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateOfAnalysisPDF';
@@ -165,15 +166,7 @@ export default function DispatchManagement({
 
   const handleTabSwitch = (tabKey) => {
     setActiveTab(tabKey);
-    try {
-      if (typeof window !== 'undefined' && window.history) {
-        const url = new URL(window.location.href);
-        url.searchParams.set('subTab', tabKey);
-        window.history.replaceState({ subTab: tabKey }, '', url.toString());
-      }
-    } catch (e) {
-      console.warn("Failed to push subTab to URL", e);
-    }
+    pushSlugState('dispatch', { section: tabKey });
   };
 
   // Modal States

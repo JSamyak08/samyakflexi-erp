@@ -1071,7 +1071,7 @@ export default function InkManagement({
           <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
             <button
               className={`btn-subtab ${activeSubTab === 'directory' ? 'active' : ''}`}
-              onClick={() => setActiveSubTab('directory')}
+              onClick={() => { setActiveSubTab('directory'); onNavigateTab?.('ink_management', { section: 'directory' }); }}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',
@@ -1092,7 +1092,7 @@ export default function InkManagement({
 
             <button
               className={`btn-subtab ${activeSubTab === 'calculator' ? 'active' : ''}`}
-              onClick={() => setActiveSubTab('calculator')}
+              onClick={() => { setActiveSubTab('calculator'); onNavigateTab?.('ink_management', { section: 'calculator' }); }}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',
@@ -1113,7 +1113,7 @@ export default function InkManagement({
 
             <button
               className={`btn-subtab ${activeSubTab === 'stock' ? 'active' : ''}`}
-              onClick={() => setActiveSubTab('stock')}
+              onClick={() => { setActiveSubTab('stock'); onNavigateTab?.('ink_management', { section: 'stock' }); }}
               style={{
                 padding: '8px 16px',
                 borderRadius: '8px',

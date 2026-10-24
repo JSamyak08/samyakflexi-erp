@@ -1095,7 +1095,7 @@ export default function ProductionRecordManagement({
       setTargetAdhesiveGsm(String(existingRec.targetAdhesiveGsm || existingRec.adhesiveGsm || defaultTargetAdhesive));
 
       setActiveTab('new_record');
-      pushSlugState('production_records', { id: existingRec.id, tab: 'list' });
+      pushSlugState('production_records', { id: existingRec.id, section: 'list' });
       return;
     }
 
@@ -1344,30 +1344,30 @@ export default function ProductionRecordManagement({
     setTargetAdhesiveGsm(String(defaultTargetAdhesive));
     setRecordNotes('');
     setActiveTab('new_record');
-    pushSlugState('production_records', { orderId: ord.id, tab: 'new_record' });
+    pushSlugState('production_records', { orderId: ord.id, section: 'new_record' });
   };
 
   const handleSelectRecord = (rec) => {
     setSelectedRecord(rec);
-    pushSlugState('production_records', { id: rec.id, tab: 'list' });
+    pushSlugState('production_records', { id: rec.id, section: 'list' });
   };
 
   const handleCloseRecord = () => {
     setSelectedRecord(null);
-    pushSlugState('production_records', { tab: activeTab === 'new_record' ? 'punched_jobs' : activeTab });
+    pushSlugState('production_records', { section: activeTab === 'new_record' ? 'punched_jobs' : activeTab });
   };
 
   const handleTabSwitch = (newTab) => {
     setActiveTab(newTab);
     setSelectedRecord(null);
-    pushSlugState('production_records', { tab: newTab });
+    pushSlugState('production_records', { section: newTab });
   };
 
   const handleOpenSfgModal = () => {
     setSfgFgModalMode('SFG');
     setIsSfgFgModalOpen(true);
     pushSlugState('production_records', { 
-      tab: activeTab, 
+      section: activeTab, 
       action: 'add_sfg', 
       ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
     });
@@ -1377,7 +1377,7 @@ export default function ProductionRecordManagement({
     setSfgFgModalMode('FG');
     setIsSfgFgModalOpen(true);
     pushSlugState('production_records', { 
-      tab: activeTab, 
+      section: activeTab, 
       action: 'add_fg', 
       ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
     });
@@ -1386,19 +1386,19 @@ export default function ProductionRecordManagement({
   const handleCloseSfgFgModal = () => {
     setIsSfgFgModalOpen(false);
     pushSlugState('production_records', { 
-      tab: activeTab, 
+      section: activeTab, 
       ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
     });
   };
 
   const handleReviewJobCard = (cardData) => {
     setActiveJobCardData(cardData);
-    pushSlugState('production_records', { tab: 'job_cards', jobCardId: cardData.skuCode || cardData.jobMasterId });
+    pushSlugState('production_records', { section: 'job_cards', jobCardId: cardData.skuCode || cardData.jobMasterId });
   };
 
   const handleCloseJobCard = () => {
     setActiveJobCardData(null);
-    pushSlugState('production_records', { tab: 'job_cards' });
+    pushSlugState('production_records', { section: 'job_cards' });
   };
 
   // Comprehensive Deep-Link Synchronization on mount & URL changes
