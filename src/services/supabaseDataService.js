@@ -7,6 +7,7 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 import { assertPersistableMeasures } from '../utils/productionRecordQuality';
+import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -255,7 +256,7 @@ export async function saveOrderToSupabase(order) {
     printWidthMm: order.printWidthMm || order.jobDetails?.printWidthMm || null,
     repeatLengthMm: order.repeatLengthMm || order.jobDetails?.repeatLengthMm || null,
     colorsCount: order.colorsCount || order.jobDetails?.colorsCount || 6,
-    orderDate: order.orderDate || order.jobDetails?.orderDate || new Date().toLocaleDateString('en-GB'),
+    orderDate: order.orderDate || order.jobDetails?.orderDate || new Date().toISOString().split('T')[0],
     wastagePct: Number(order.wastagePct) || Number(order.calculationDetails?.wastagePct) || 5,
     wastageKg: Number(order.wastageKg) || Number(order.calculationDetails?.wastageKg) || 0,
     calculationDetails: order.calculationDetails || order.jobDetails?.calculationDetails || null,
@@ -1567,7 +1568,7 @@ export async function saveProductionRecordToSupabase(record) {
     client_name: record.clientName || '',
     operator_name: record.operatorName || record.filledBy || '',
     shift: record.shift || 'Day Shift',
-    date_filled: record.dateFilled || new Date().toISOString().split('T')[0],
+    date_filled: toDatabaseDate(record.dateFilled),
     actual_ink_gsm: Number(record.actualInkGsm || 0),
     actual_adhesive_gsm: Number(record.actualAdhesiveGsm || 0),
     target_ink_gsm: Number(record.targetInkGsm || 1.5),
@@ -1890,8 +1891,7 @@ export async function saveInventoryRollToSupabase(roll) {
     micron: Number(roll.micron) || 0,
     width_mm: Number(roll.widthMm) || 0,
     metallocene_pct: roll.metallocenePct || roll.metallocene_pct || null,
-    inward_datetime: roll.inwardDatetime || new Date().toISOString(),
-    production_date: roll.productionDate || (roll.inwardDatetime ? roll.inwardDatetime.split('T')[0] : new Date().toISOString().split('T')[0]),
+    ...inventoryRollDateFields(roll),
     vendor_name: roll.vendorName || roll.vendor || '',
     invoice_no: roll.invoiceNo || roll.invoice_no || '',
     batch_no: roll.batchNo || roll.lotNo || roll.grnNo || roll.grn_no || '',
@@ -2002,6 +2002,12 @@ export async function saveDispatchShipmentToSupabase(shipment) {
   await ensureValidSession();
 
   const primaryKey = String(shipment.id || shipment.dispatchId || `DISP-PL-${Date.now()}`);
+  const dispatchDate = toDatabaseTimestamp(shipment.dispatchDate);
+  const storedShipment = {
+    ...shipment,
+    dispatchDate,
+    createdAt: shipment.createdAt ? toDatabaseTimestamp(shipment.createdAt) : dispatchDate
+  };
   const fullPayload = {
     id: primaryKey,
     dispatch_id: shipment.dispatchId || primaryKey,
@@ -2013,13 +2019,13 @@ export async function saveDispatchShipmentToSupabase(shipment) {
     transporter_name: shipment.transporterName || '',
     po_no: shipment.poNo || '',
     invoice_no: shipment.invoiceNo || '',
-    dispatch_date: shipment.dispatchDate || new Date().toISOString(),
+    dispatch_date: dispatchDate,
     total_rolls: Number(shipment.totalRolls) || 0,
     total_net_weight_kg: Number(shipment.totalNetWeightKg) || 0,
     total_gross_weight_kg: Number(shipment.totalGrossWeightKg) || 0,
     items: shipment.items || [],
     hide_branding: Boolean(shipment.hideBranding),
-    payload: shipment,
+    payload: storedShipment,
     updated_at: new Date().toISOString()
   };
 
@@ -2464,7 +2470,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
     approved_by_head: pressMarks.approvedByHead,
     approved_head_name: pressMarks.approvedHeadName,
     approved_head_date: pressMarks.approvedHeadDate,
-    creation_date: jobMaster.creationDate || new Date().toISOString().split('T')[0]
+    creation_date: toDatabaseDate(jobMaster.creationDate)
   };
 
   // 1. Try extended payload with new columns (including press marks & layers) FIRST
@@ -3485,7 +3491,7 @@ export async function saveSFGGoodToSupabase(item) {
     operator_name: item.operatorName || '',
     shift: item.shift || '',
     storage_bay: item.storageBay || (isFg ? 'FG Warehouse' : 'Bay A'),
-    production_date: item.productionDate || new Date().toISOString().split('T')[0],
+    production_date: toDatabaseDate(item.productionDate),
     status: computedStatus,
     notes: notesEnvelope,
     updated_at: new Date().toISOString()

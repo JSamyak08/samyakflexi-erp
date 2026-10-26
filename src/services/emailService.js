@@ -5,6 +5,7 @@
  */
 
 import { getEmailTemplates, interpolateTemplate } from './settingsService';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { supabase } from './supabaseClient';
 import { legacyFilterInternalRecipients, normalizeKind } from './emailPolicy';
 
@@ -231,7 +232,7 @@ export const notifyProductionRecordApproved = async (record, customTo) => {
     totalProductionQtyKg: (record.totalProductionQtyKg || 0).toLocaleString(),
     finalProductionCostRs: (record.finalProductionCostRs || 0).toLocaleString(),
     approvedBy: record.approvedBy || 'Admin',
-    approvalDate: record.approvalDate || new Date().toISOString().split('T')[0]
+    approvalDate: formatPlantDateTime(record.approvalDate) || formatPlantDateTime(new Date().toISOString())
   };
 
   const tmpl = getActiveTemplate('production_approved', vars);

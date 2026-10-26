@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { formatPlantDateTime } from '../utils/dbDates';
 import SearchableSelect from './SearchableSelect';
 import { 
   FileSpreadsheet, 
@@ -2628,7 +2629,7 @@ export default function ProductionRecordManagement({
                     <CheckCircle2 size={16} /> Fully Approved by Admin
                   </div>
                   <div style={{ fontSize: '0.75rem', marginTop: '2px', color: '#065f46' }}>
-                    Approved by: {selectedRecord.approvedBy} on {selectedRecord.approvalDate}
+                    Approved by: {selectedRecord.approvedBy} on {formatPlantDateTime(selectedRecord.approvalDate)}
                   </div>
                 </div>
               ) : selectedRecord.status === 'Filled by Plant Manager' ? (
@@ -2649,7 +2650,7 @@ export default function ProductionRecordManagement({
                             ...selectedRecord,
                             status: 'Approved by Admin',
                             approvedBy: `${currentUser.name} (Admin)`,
-                            approvalDate: new Date().toLocaleString()
+                            approvalDate: new Date().toISOString()
                           };
                           setSelectedRecord(updated);
                           notifyProductionRecordApproved(updated).catch(err => console.error("Production approval email error:", err));

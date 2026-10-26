@@ -13,6 +13,7 @@ import ArtworkModal from './components/ArtworkModal';
 import StorageImage from './components/StorageImage';
 import SearchableSelect from './components/SearchableSelect';
 import { applySavedJobCardSpec, buildCylinderJobCardDraft, findMatchingJobMaster, parseStructureToLayers } from './utils/cylinderJobCardDraft';
+import { formatPlantDate } from './utils/dbDates';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, ref) => {
   const letterhead = loadLetterhead();
@@ -121,7 +122,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
             CYLINDER JOB CARD
           </div>
           <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px', fontWeight: '600' }}>
-            Job Master ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{data.creationDate || new Date().toLocaleDateString('en-GB')}</strong>
+            Job Master ID: <strong>{data.jobMasterId || data.id || 'JM-2026-089'}</strong> | Date: <strong>{formatPlantDate(data.creationDate) || new Date().toLocaleDateString('en-GB')}</strong>
           </div>
         </div>
       </div>
@@ -251,7 +252,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
                       ✓ Verified & Approved
                     </div>
                     <div style={{ fontSize: '9px', color: '#334155', fontWeight: '700', marginTop: '2px' }}>
-                      {data.approvedHeadName || 'Production Head'} • {data.approvedHeadDate || data.creationDate}
+                      {data.approvedHeadName || 'Production Head'} • {formatPlantDate(data.approvedHeadDate || data.creationDate)}
                     </div>
                   </div>
                 ) : (
@@ -295,7 +296,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     jobMasterId: initialData?.jobMasterId || initialData?.id || '',
     skuCode: '',
     jobName: '',
-    creationDate: new Date().toLocaleDateString('en-GB'),
+    creationDate: new Date().toISOString().split('T')[0],
     partyName: '',
     invoiceTo: 'Samyak International Ltd',
     variant: '',
@@ -611,7 +612,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           approvedByHead: customData.approvedByHead ?? false,
           approvedHeadName: customData.approvedHeadName || '',
           approvedHeadDate: customData.approvedHeadDate || '',
-          creationDate: customData.creationDate || new Date().toLocaleDateString('en-GB')
+          creationDate: customData.creationDate || new Date().toISOString().split('T')[0]
         };
       }
 
@@ -684,7 +685,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
         shellSize: customData.shellSize || `${faceLengthNum} mm`,
         petSize: customData.petSize || `${faceLengthNum + 10} mm`,
-        creationDate: customData.creationDate || new Date().toLocaleDateString('en-GB')
+        creationDate: customData.creationDate || new Date().toISOString().split('T')[0]
       };
 
       const specPayload = { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` };
@@ -716,7 +717,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
 
   const handleToggleApproval = async (shouldApprove) => {
     const approverName = shouldApprove ? (currentUser?.name || 'Production Head') : '';
-    const dateStr = shouldApprove ? new Date().toLocaleDateString('en-IN') : '';
+    const dateStr = shouldApprove ? new Date().toISOString().split('T')[0] : '';
 
     const updatedFormData = {
       ...formData,
@@ -833,7 +834,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             </div>
             <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px' }}>
               {formData.approvedByHead 
-                ? `Approved by ${formData.approvedHeadName || 'Production Head'} on ${formData.approvedHeadDate || formData.creationDate}`
+                ? `Approved by ${formData.approvedHeadName || 'Production Head'} on ${formatPlantDate(formData.approvedHeadDate || formData.creationDate)}`
                 : 'Requires Production Head or Admin sign-off to finalize Job Card specs for shop floor execution.'}
             </div>
           </div>

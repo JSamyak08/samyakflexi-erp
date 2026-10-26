@@ -1068,6 +1068,7 @@ export default function ProductionScheduler({
 
         if (balW > 0) {
           const balBarcodeId = inRoll.barcodeId ? `${inRoll.barcodeId}-BAL` : `RM-BAL-${grnCode}-${idx + 1}`;
+          const inwardDatetime = new Date().toISOString();
           const remainingRollObj = {
             id: balBarcodeId,
             barcodeId: balBarcodeId,
@@ -1093,7 +1094,8 @@ export default function ProductionScheduler({
             operatorName: machineOperator || 'Operator',
             status: 'In Stock (RM)',
             qcStatus: 'Approved',
-            inwardDatetime: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+            inwardDatetime,
+            productionDate: inwardDatetime.split('T')[0],
             locationBay: 'RM Store - Substrate Rolls'
           };
 

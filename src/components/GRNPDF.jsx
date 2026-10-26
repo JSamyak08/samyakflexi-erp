@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { pdfLinesFromGrn, taxableAmountFromLines } from '../services/grnDocument';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
@@ -441,7 +442,7 @@ export default function GRNPDF({ grnData, onClose }) {
                 </div>
               )}
               <div style={{ fontSize: '7.5pt', color: '#64748b', marginTop: '3px' }}>
-                Resolved by: <strong>{grnData.priceDiscrepancyResolution.resolvedBy}</strong> on {grnData.priceDiscrepancyResolution.resolvedAt} • PO Contract Ref: <strong>{grnData.priceDiscrepancyResolution.poNumber || grnData.poNumber}</strong>
+                Resolved by: <strong>{grnData.priceDiscrepancyResolution.resolvedBy}</strong> on {formatPlantDateTime(grnData.priceDiscrepancyResolution.resolvedAt)} • PO Contract Ref: <strong>{grnData.priceDiscrepancyResolution.poNumber || grnData.poNumber}</strong>
               </div>
             </div>
           )}

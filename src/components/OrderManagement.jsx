@@ -830,7 +830,7 @@ export default function OrderManagement({
       poNumber: order.poNumber || `PO-CYL-${order.id}`,
       vendorName: engraverName,
       invoiceNo: `INV-CYL-${Math.floor(1000 + Math.random() * 9000)}`,
-      receivedDate: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      receivedDate: new Date().toISOString(),
       category: 'Rotogravure Cylinders',
       itemName: order.jobName || 'Rotogravure Cylinder Set',
       cylinderSku: order.cylinderDetails?.sku || `CYL-${order.id}`,

@@ -52,7 +52,7 @@ export function buildCylinderJobCardDraft(initialData, matchingJM) {
       jobMasterId: src.jobMasterId || src.id || '',
       skuCode: src.sku || src.skuCode || '',
       jobName: src.jobName || '',
-      creationDate: src.creationDate || new Date().toLocaleDateString('en-GB'),
+      creationDate: src.creationDate || new Date().toISOString().split('T')[0],
       partyName: src.clientGroup || src.partyName || src.clientName || '',
       invoiceTo: src.invoiceTo || 'Samyak International Ltd',
       variant: src.variant || '',
