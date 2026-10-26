@@ -37,6 +37,8 @@ import {
   calculateOrderStockReservations
 } from '../factoryStore';
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
+import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
+import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
 import { saveOrderToSupabase, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
@@ -149,9 +151,54 @@ export default function OrderManagement({
     return 'Reel Form';
   };
 
-  // Helper: ensure Itemized Raw Material Requirements are always calculated and loaded up
-  const getOrderMaterialRequirements = (order) => {
-    return getOrderMaterialRequirementsFromStore(order, jobMasters);
+  const [allocationDrafts, setAllocationDrafts] = useState({});
+
+  const choiceForOrder = (order) => {
+    const draft = allocationDrafts[order?.id];
+    if (draft) return { mode: draft.mode || 'all', kg: draft.kg, explicit: true };
+    if (order?.printedSfgUse) return { mode: order.printedSfgUse.mode, kg: order.printedSfgUse.allocatedKg, explicit: false };
+    return { mode: 'all', explicit: true };
+  };
+
+  const baseRequirementsFor = (order) => {
+    const stored = getOrderMaterialRequirementsFromStore(order, jobMasters);
+    const saved = order?.printedSfgUse;
+    if (!saved?.printLineId || saved.baseQtyKg === undefined || saved.baseQtyKg === null) return stored;
+    return stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req));
+  };
+
+  const materialPlanFor = (order) => planPrintedSfgAllocation({
+    order,
+    orders,
+    sfgGoods,
+    requirements: baseRequirementsFor(order),
+    choice: choiceForOrder(order)
+  });
+
+  // Requirements shown for PO release. A printed SFG balance reduces the print film by default.
+  const getOrderMaterialRequirements = (order) => materialPlanFor(order).requirements;
+
+  const reservePrintedSfg = async (order, choice) => {
+    const plan = planPrintedSfgAllocation({
+      order: { ...order, printedSfgUse: null },
+      orders,
+      sfgGoods,
+      requirements: baseRequirementsFor(order),
+      choice: { mode: choice?.mode || 'all', kg: choice?.kg, explicit: true }
+    });
+    const updated = {
+      ...order,
+      materialRequirements: plan.requirements,
+      rawMaterialRequirements: plan.requirements,
+      printedSfgUse: plan.use
+    };
+    if (onUpdateOrder) await onUpdateOrder(updated);
+    else await saveOrderToSupabase(updated);
+    setAllocationDrafts((prev) => {
+      const next = { ...prev };
+      delete next[order.id];
+      return next;
+    });
   };
 
   // Handler to edit Raw Material Size Width, Micron, Quantity or Preferred Vendor for any itemized requirement
@@ -159,7 +206,11 @@ export default function OrderManagement({
     const ord = orders.find(o => o.id === orderId);
     if (!ord) return;
 
-    const currentReqs = getOrderMaterialRequirements(ord);
+    const preview = materialPlanFor(ord);
+    const typedValue = field === 'qtyKg' && preview.printLineId === reqId
+      ? (parseFloat(value) || 0) + (preview.allocatedKg || 0)
+      : value;
+    const currentReqs = baseRequirementsFor(ord);
     const updatedReqs = currentReqs.map(r => {
       if (r.id !== reqId) return r;
 
@@ -187,8 +238,8 @@ export default function OrderManagement({
           updatedQty = Math.round((r.qtyKg * ratio) * 10) / 10;
         }
       } else if (field === 'qtyKg') {
-        const newQty = parseFloat(value);
-        updatedQty = isNaN(newQty) ? value : newQty;
+        const newQty = parseFloat(typedValue);
+        updatedQty = isNaN(newQty) ? typedValue : newQty;
       } else if (field === 'preferredVendor') {
         return { ...r, preferredVendor: value };
       }
@@ -201,11 +252,27 @@ export default function OrderManagement({
       };
     });
 
-    const updatedOrder = {
+    let updatedOrder = {
       ...ord,
       materialRequirements: updatedReqs,
       rawMaterialRequirements: updatedReqs
     };
+    if (ord.printedSfgUse) {
+      const baseQty = updatedReqs.find((req) => req.id === ord.printedSfgUse.printLineId)?.qtyKg;
+      const replanned = planPrintedSfgAllocation({
+        order: { ...ord, printedSfgUse: { ...ord.printedSfgUse, baseQtyKg: baseQty } },
+        orders,
+        sfgGoods,
+        requirements: updatedReqs,
+        choice: { explicit: false }
+      });
+      updatedOrder = {
+        ...updatedOrder,
+        materialRequirements: replanned.requirements,
+        rawMaterialRequirements: replanned.requirements,
+        printedSfgUse: replanned.use
+      };
+    }
 
     try {
       if (onUpdateOrder) await onUpdateOrder(updatedOrder);
@@ -411,8 +478,27 @@ export default function OrderManagement({
 
   // Multi-order coordinated stock reservation engine
   const stockReservations = useMemo(() => {
-    return calculateOrderStockReservations(orders, inventory, jobMasters);
-  }, [orders, inventory, jobMasters]);
+    const withPrintedSfg = (orders || []).map((order) => {
+      const plan = planPrintedSfgAllocation({
+        order,
+        orders,
+        sfgGoods,
+        requirements: (() => {
+          const stored = getOrderMaterialRequirementsFromStore(order, jobMasters);
+          const saved = order?.printedSfgUse;
+          if (!saved?.printLineId || saved.baseQtyKg == null) return stored;
+          return stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req));
+        })(),
+        choice: allocationDrafts[order.id]
+          ? { mode: allocationDrafts[order.id].mode || 'all', kg: allocationDrafts[order.id].kg, explicit: true }
+          : (order.printedSfgUse
+            ? { mode: order.printedSfgUse.mode, kg: order.printedSfgUse.allocatedKg, explicit: false }
+            : { mode: 'all', explicit: true })
+      });
+      return { ...order, materialRequirements: plan.requirements, rawMaterialRequirements: plan.requirements };
+    });
+    return calculateOrderStockReservations(withPrintedSfg, inventory, jobMasters);
+  }, [orders, inventory, jobMasters, sfgGoods, allocationDrafts]);
 
   const getStockCheckForReq = (req, orderId) => {
     return stockReservations.getReqStockInfo(req, orderId);
@@ -459,7 +545,7 @@ export default function OrderManagement({
       });
     });
     return list;
-  }, [orders, jobMasters, inventory, stockReservations]);
+  }, [orders, jobMasters, inventory, stockReservations, sfgGoods, allocationDrafts]);
 
   // Summary Metrics for Requirements
   const reqMetrics = useMemo(() => {
@@ -679,10 +765,17 @@ export default function OrderManagement({
 
   const selectedRequirements = getSelectedRequirementsList();
 
-  const handleOpenPoModal = () => {
+  const handleOpenPoModal = async () => {
     if (selectedRequirements.length === 0) {
       alert("Please select at least one raw material requirement line to issue a Purchase Order!");
       return;
+    }
+    const involved = (orders || []).filter((order) => (
+      materialPlanFor(order).offers.length > 0
+      && getOrderMaterialRequirements(order).some((req) => selectedReqIds[req.id])
+    ));
+    for (const order of involved) {
+      await reservePrintedSfg(order, choiceForOrder(order));
     }
     // Auto-select preferred vendor if available
     const firstReq = selectedRequirements[0];
@@ -1453,7 +1546,9 @@ export default function OrderManagement({
                 const isOverdue = statusInfo.isOverdue;
                 const isNearing = statusInfo.isNearingDeadline;
                 const isExpanded = expandedOrders[order.id];
-                const reqs = getOrderMaterialRequirements(order);
+                const printedSfgPlan = materialPlanFor(order);
+                const reqs = printedSfgPlan.requirements;
+                const allocationChoice = choiceForOrder(order);
                 const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
 
                 const cardBorder = isOverdue ? '2px solid #ef4444' : (isNearing ? '2px solid #f59e0b' : '1px solid var(--border-color)');
@@ -2000,6 +2095,14 @@ export default function OrderManagement({
                                 </div>
                               )}
                             </div>
+
+                            <PrintedSfgAllocationPanel
+                              plan={printedSfgPlan}
+                              mode={allocationChoice.mode}
+                              partKg={allocationChoice.kg ?? ''}
+                              onChange={(choice) => setAllocationDrafts((prev) => ({ ...prev, [order.id]: choice }))}
+                              onReserve={(choice) => reservePrintedSfg(order, choice)}
+                            />
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

@@ -176,6 +176,8 @@ export async function fetchOrders() {
         printWidthMm: jd.printWidthMm || null,
         repeatLengthMm: jd.repeatLengthMm || null,
         colorsCount: jd.colorsCount || o.colors_count || 6,
+        jobMasterId: jd.jobMasterId || '',
+        printedSfgUse: jd.printedSfgUse || null,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
         inkGsm: inkGsm,
@@ -281,7 +283,9 @@ export async function saveOrderToSupabase(order) {
     overDispatchWarning: order.overDispatchWarning ?? order.jobDetails?.overDispatchWarning ?? null,
     reopenedBy: order.reopenedBy ?? order.jobDetails?.reopenedBy ?? null,
     reopenedAt: order.reopenedAt ?? order.jobDetails?.reopenedAt ?? null,
-    reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null
+    reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null,
+    jobMasterId: order.jobMasterId || order.jobDetails?.jobMasterId || null,
+    printedSfgUse: order.printedSfgUse || order.jobDetails?.printedSfgUse || null
   };
 
   const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];
@@ -1410,7 +1414,7 @@ export async function fetchProductionRecords() {
         operatorName: r.operator_name || extra.operatorName || '',
         shift: r.shift || extra.shift || 'Day Shift',
         dateFilled: r.date_filled || extra.dateFilled || (r.recorded_at ? r.recorded_at.split('T')[0] : new Date().toISOString().split('T')[0]),
-        materialsList: Array.isArray(r.materials_list) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
+        materialsList: (Array.isArray(r.materials_list) && r.materials_list.length > 0) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
         qtyFirstPassL1: Number(extra.qtyFirstPassL1 || extra.qtyPrinting || 0),
         qtyPrinting: Number(extra.qtyPrinting || extra.qtyFirstPassL1 || 0),
         qtyInspection: Number(extra.qtyInspection || 0),
@@ -1434,7 +1438,7 @@ export async function fetchProductionRecords() {
         netUsableKg: Number(r.net_usable_kg) || Number(extra.qtyDispatch) || 0,
         outputRolls: extra.outputRolls || extra.rollsBreakdown || [],
         rollsBreakdown: extra.rollsBreakdown || extra.outputRolls || [],
-        inputRollsList: extra.inputRollsList || [],
+        inputRollsList: (Array.isArray(r.input_rolls_list) && r.input_rolls_list.length > 0) ? r.input_rolls_list : (extra.inputRollsList || []),
         createdBalanceRolls: extra.createdBalanceRolls || [],
         stages: extra.stages || {},
         actualMetersPrinted: Number(extra.actualMetersPrinted || 0),
@@ -1595,6 +1599,8 @@ export async function saveProductionRecordToSupabase(record) {
     approval_date: record.approvalDate || '',
     notes: record.notes || '',
     status: record.status || 'Filled by Plant Manager',
+    materials_list: Array.isArray(record.materialsList) ? record.materialsList : [],
+    input_rolls_list: Array.isArray(record.inputRollsList) ? record.inputRollsList : [],
     process_logs: extra
   };
   
@@ -1935,6 +1941,18 @@ export async function saveInventoryRollToSupabase(roll) {
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
   const { error: fullErr } = await supabase.from('inventory_rolls').upsert(fullPayload, { onConflict: 'barcode_id' });
   if (fullErr) handleSupabaseError(fullErr, 'inventory_rolls');
+}
+
+/** Sets available weight and status without replacing the rest of the roll. */
+export async function setInventoryRollAvailability(barcodeId, { availableWeightKg, status } = {}) {
+  if (!isSupabaseConfigured() || !barcodeId) {
+    throw new Error('Cannot update inventory roll: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const patch = { available_weight_kg: Number(availableWeightKg) || 0 };
+  if (status) patch.status = status;
+  const { error } = await supabase.from('inventory_rolls').update(patch).eq('barcode_id', barcodeId);
+  if (error) handleSupabaseError(error, 'inventory_rolls');
 }
 
 // ============================================================================
@@ -3365,7 +3383,12 @@ export async function fetchSFGGoodsFromSupabase() {
         ...(extra.parentSfgBatchCode ? {
           parentSfgBatchCode: extra.parentSfgBatchCode,
           parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode
-        } : {})
+        } : {}),
+        isPrintedLot: Boolean(extra.isPrintedLot) || String(item.sfg_batch_code || '').startsWith('SFG-LOT-'),
+        childRolls: Array.isArray(extra.childRolls) ? extra.childRolls : [],
+        inputBarcodeIds: Array.isArray(extra.inputBarcodeIds) ? extra.inputBarcodeIds : [],
+        printedAllocations: Array.isArray(extra.printedAllocations) ? extra.printedAllocations : [],
+        jobMasterId: extra.jobMasterId || ''
       };
     });
   } catch (err) {
@@ -3427,7 +3450,12 @@ export function buildSfgNotesEnvelope(item, overrides = {}) {
     productionDate: item?.productionDate,
     status: computedStatus,
     notesText: item?.notes || '',
-    consumptionHistory: item?.consumptionHistory || []
+    consumptionHistory: item?.consumptionHistory || [],
+    isPrintedLot: Boolean(item?.isPrintedLot),
+    childRolls: Array.isArray(item?.childRolls) ? item.childRolls : [],
+    inputBarcodeIds: Array.isArray(item?.inputBarcodeIds) ? item.inputBarcodeIds : [],
+    printedAllocations: Array.isArray(item?.printedAllocations) ? item.printedAllocations : [],
+    jobMasterId: item?.jobMasterId || item?.jobId || ''
   };
   if (item?.parentSfgBatchCode) {
     notesBody.parentSfgBatchCode = item.parentSfgBatchCode;
@@ -3471,7 +3499,7 @@ export async function saveSFGGoodToSupabase(item) {
   const payload = {
     sfg_batch_code: sfgBatchCode,
     sfg_type: item.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
-    job_id: item.jobId || null,
+    job_id: item.jobId || item.jobMasterId || null,
     order_id: item.orderId || null,
     job_name: item.jobName || 'Untitled Job',
     job_code: item.jobCode || '',

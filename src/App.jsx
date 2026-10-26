@@ -102,7 +102,7 @@ import {
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
   fetchUsers,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
-  fetchInventoryRolls, saveInventoryRollToSupabase,
+  fetchInventoryRolls, saveInventoryRollToSupabase, setInventoryRollAvailability,
   fetchDispatchShipments, saveDispatchShipmentToSupabase, deleteDispatchShipmentFromSupabase,
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
@@ -142,6 +142,15 @@ import {
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 import { buildChildStockRecords, saveConsumeChildRolls } from './services/consumeChildRolls';
 import { planPrintingScrap } from './utils/printingScrap';
+import {
+  PRINTING_FILM_SOURCE,
+  LAMINATION_FILM_SOURCE,
+  planPrintingFilmIssue,
+  planLaminationFilmIssue,
+  planSubstrateBalanceRolls,
+  substrateRollsFromLog
+} from './utils/printingFilmIssue';
+import { planPrintingSfgLot, printingSfgLotCode } from './utils/printingSfgLot';
 import { parseOptionalKg } from './utils/productionRecordQuality';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
@@ -1774,6 +1783,7 @@ export default function App() {
       setInventory(prevInv => {
         let updatedInv = [...prevInv];
         newRecord.materialsList.forEach(mat => {
+          if (mat.ledgerSource === PRINTING_FILM_SOURCE || mat.ledgerSource === LAMINATION_FILM_SOURCE) return;
           const netQty = parseFloat(mat.netConsumedQtyKg) || Math.max(0, (parseFloat(mat.issueQtyKg) || 0) - (parseFloat(mat.returnQtyKg) || 0));
           if (netQty > 0 && mat?.filmType) {
             const matName = String(mat.filmType || '').toLowerCase();
@@ -1797,6 +1807,7 @@ export default function App() {
       setInventoryRolls(prevRolls => {
         let updatedRolls = [...prevRolls];
         newRecord.materialsList.forEach(mat => {
+          if (mat.ledgerSource === PRINTING_FILM_SOURCE || mat.ledgerSource === LAMINATION_FILM_SOURCE) return;
           if (mat.barcode) {
             const returnQty = parseFloat(mat.returnQtyKg) || 0;
             updatedRolls = updatedRolls.map(roll => {
@@ -2281,8 +2292,9 @@ export default function App() {
       printedOutputKg,
       inputRollsList: endData.inputRollsList || baseRecord.inputRollsList || [],
       rollsBreakdown: endData.rollsBreakdown || baseRecord.rollsBreakdown || [],
-      outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
-      totalInputConsumedKg: endData.totalInputConsumedKg || 0,
+        outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
+        materialsList: baseRecord.materialsList || [],
+        totalInputConsumedKg: endData.totalInputConsumedKg || 0,
       printWidthMm: endData.printWidthMm || order.printWidthMm || null,
       inputRollWidthMm: endData.inputRollWidthMm || null,
       isBiggerSize: endData.isBiggerSize || false,
@@ -2308,10 +2320,18 @@ export default function App() {
           printingPlainSettingWastageKg: parseOptionalKg(endData.printingPlainSettingWastageKg) || 0,
           printingWastageKg: parseOptionalKg(endData.printingWastageKg) || 0,
           outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
-          sfgBarcodes: (endData.rollsBreakdown || []).map(r => r.barcodeId || r.id)
+          sfgBarcodes: [printingSfgLotCode(order.id)]
         }
       }
     };
+    const filmPlan = planPrintingFilmIssue({
+      orderId: order.id,
+      jobName: order.jobName,
+      inputRolls: endData.inputRollsList || updatedRecord.inputRollsList || [],
+      existingMaterials: updatedRecord.materialsList,
+      inventoryItems: inventory
+    });
+    updatedRecord.materialsList = filmPlan.materialsList;
     await handleSaveProductionRecord(updatedRecord);
     const scrapRecordedAt = new Date().toISOString();
     const scrapPlan = planPrintingScrap({
@@ -2348,59 +2368,73 @@ export default function App() {
       totalDurationMins: computedDurationMinutes || 0
     });
 
-    // Store each printed roll in SFG stock. The job row is already saved above.
-    // A failed roll is not added to the board. If the database already has it, a
-    // reload keeps that roll and drops the failure from the message.
-    const failedSfgRolls = [];
-    if (Array.isArray(endData.rollsBreakdown) && endData.rollsBreakdown.length > 0) {
-      for (const r of endData.rollsBreakdown) {
-        const barcodeId = r.barcodeId || r.id;
-        const sfgItemRecord = {
-          id: barcodeId,
-          sfgBatchCode: barcodeId,
-          orderId: order.id,
-          jobName: r.itemName || `${order.jobName} - Roll #${r.rollNo || 1}`,
-          jobCode: order.jobCode || order.id,
-          clientName: order.clientName || order.customerName || '',
-          sfgType: 'Printed Rolls',
-          filmType: r.filmType || order.printFilmType || '',
-          widthMm: Number(r.widthMm || order.widthMm || 0) || null,
-          micron: Number(r.micron || order.micron || 0) || null,
-          totalNetKg: Number(r.netWeightKg || 0),
-          availableKg: Number(r.availableWeightKg || r.netWeightKg || 0),
-          consumedKg: 0,
-          status: 'In Stock',
-          location: r.locationBay || 'SFG Store (Pre-Lamination)',
-          storageBay: r.locationBay || 'SFG Store (Pre-Lamination)',
-          productionDate: new Date().toISOString().split('T')[0],
-          createdDate: new Date().toISOString().split('T')[0]
-        };
-        try {
-          await writeWithRetry(() => saveSFGGoodToSupabase(sfgItemRecord));
-          setSfgGoods(prev => [sfgItemRecord, ...prev.filter(s => (s.sfgBatchCode || s.id) !== barcodeId)]);
-        } catch (sfgErr) {
-          failedSfgRolls.push({ label: `printed roll ${barcodeId} in sfg_goods`, error: sfgErr, barcodeId });
-        }
+    const filmFollowUps = [];
+    for (const update of filmPlan.rollUpdates) {
+      try {
+        await writeWithRetry(() => setInventoryRollAvailability(update.barcodeId, {
+          availableWeightKg: update.availableWeightKg,
+          status: update.status
+        }));
+        setInventoryRolls(prev => prev.map(roll => (
+          roll.barcodeId === update.barcodeId
+            ? { ...roll, availableWeightKg: 0, status: update.status }
+            : roll
+        )));
+      } catch (rollErr) {
+        filmFollowUps.push({ label: `input roll ${update.barcodeId}`, error: rollErr });
       }
     }
-    if (failedSfgRolls.length > 0) {
-      let stillMissing = failedSfgRolls;
+    const stockDeltas = new Map();
+    filmPlan.inventoryAdjustments.forEach((adjustment) => {
+      if (!adjustment?.stockItemId || !adjustment.deltaKg) return;
+      stockDeltas.set(adjustment.stockItemId, (stockDeltas.get(adjustment.stockItemId) || 0) + adjustment.deltaKg);
+    });
+    for (const [stockItemId, deltaKg] of stockDeltas) {
+      const item = (inventory || []).find(row => row.id === stockItemId);
+      if (!item) continue;
+      const nextAvailable = Math.max(0, Math.round(((Number(item.availableQtyKg) || 0) - deltaKg) * 100) / 100);
+      const nextStock = Math.max(0, Math.round(((Number(item.stockQtyKg ?? item.availableQtyKg) || 0) - deltaKg) * 100) / 100);
+      const next = { ...item, availableQtyKg: nextAvailable, stockQtyKg: nextStock };
       try {
-        const freshSfg = await fetchSFGGoodsFromSupabase();
-        if (Array.isArray(freshSfg)) {
-          setSfgGoods(freshSfg);
-          const present = new Set(freshSfg.map(s => String(s.sfgBatchCode || s.id)));
-          stillMissing = failedSfgRolls.filter(item => !present.has(String(item.barcodeId)));
-        }
-      } catch (refetchErr) {
-        console.error('[handleEndPrintingJob] Could not reload SFG stock after a failed save:', refetchErr);
+        await writeWithRetry(() => saveInventoryItemToSupabase(next));
+        setInventory(prev => prev.map(row => (row.id === stockItemId ? next : row)));
+      } catch (stockErr) {
+        filmFollowUps.push({ label: `film stock ${stockItemId}`, error: stockErr });
       }
-      if (stillMissing.length > 0) {
-        throw new PartialSaveError(unsavedItemsMessage({
-          completed: `Printing job "${order.jobName}" (${order.id}) was marked complete. The order, production record, and schedule were saved. Retry End Job to store the missing printed rolls. They are not shown in the SFG store.`,
-          failed: stillMissing
-        }));
+    }
+
+    const outputRolls = Array.isArray(endData.rollsBreakdown) ? endData.rollsBreakdown : [];
+    if (outputRolls.length > 0) {
+      const existingLot = (sfgGoods || []).find(item => item?.sfgBatchCode === printingSfgLotCode(order.id));
+      const lot = planPrintingSfgLot({
+        orderId: order.id,
+        jobName: order.jobName,
+        jobCode: order.jobCode || order.id,
+        jobMasterId: order.jobMasterId || order.jobDetails?.jobMasterId || '',
+        clientName: order.clientName || order.customerName || '',
+        filmType: order.printFilmType || order.filmType || outputRolls[0]?.filmType || '',
+        micron: order.micron || outputRolls[0]?.micron,
+        widthMm: endData.printWidthMm || order.printWidthMm || order.widthMm || outputRolls[0]?.widthMm,
+        outputRolls,
+        inputRolls: endData.inputRollsList || [],
+        meters: actualMetersPrinted,
+        existingLot
+      });
+      lot.storageBay = outputRolls[0]?.storageBay || outputRolls[0]?.locationBay || 'SFG Store (Pre-Lamination)';
+      lot.location = lot.storageBay;
+      lot.productionDate = new Date().toISOString().split('T')[0];
+      try {
+        await writeWithRetry(() => saveSFGGoodToSupabase(lot));
+        setSfgGoods(prev => [lot, ...prev.filter(item => item.sfgBatchCode !== lot.sfgBatchCode)]);
+      } catch (sfgErr) {
+        filmFollowUps.push({ label: `printed lot ${lot.sfgBatchCode}`, error: sfgErr });
       }
+    }
+    if (filmFollowUps.length > 0) {
+      throw new PartialSaveError(unsavedItemsMessage({
+        completed: `Printing job "${order.jobName}" (${order.id}) was marked complete. Retry End Job to finish the film ledger and the printed SFG lot. Saving the same rolls again is safe.`,
+        failed: filmFollowUps
+      }));
     }
 
     logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
@@ -3462,53 +3496,64 @@ export default function App() {
       }
     }
 
-    // 4. Synchronize Substrate 2 / Substrate 3 roll deduction if provided.
-    // Several substrate 2 rolls deduct one by one. A single substrate 2 or substrate 3 roll uses the original path.
-    const multiSubstrate2 = Array.isArray(logEntry.substrate2Rolls) && logEntry.substrate2Rolls.length > 0
-      ? logEntry.substrate2Rolls
-      : null;
-    if (multiSubstrate2) {
-      for (const subInfo of multiSubstrate2) {
-        if (!subInfo || !subInfo.barcode) continue;
-        const subBarcode = String(subInfo.barcode).trim();
-        const subConsumed = Number(subInfo.consumedKg) || 0;
-        const subRollMatch = (inventoryRolls || []).find(r => (r.barcodeId || r.id) === subBarcode);
-        if (subRollMatch && subConsumed > 0) {
-          const prevAvail = Number(subRollMatch.availableWeightKg ?? subRollMatch.netWeightKg ?? 0);
-          const newSubAvail = Math.max(0, prevAvail - subConsumed);
-          const updatedSubRoll = {
-            ...subRollMatch,
-            availableWeightKg: newSubAvail,
-            status: newSubAvail <= 0 ? 'Consumed' : (subRollMatch.status || 'In Stock')
-          };
-          try {
-            await writeWithRetry(() => saveInventoryRollToSupabase(updatedSubRoll));
-            setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
-          } catch (e) {
-            followUpFailures.push({ label: `substrate roll ${subBarcode}`, error: e });
-          }
-        }
-      }
-    }
-    const subInfo = multiSubstrate2 ? null : (logEntry.substrate2 || logEntry.substrate3);
-    if (subInfo && subInfo.barcode) {
-      const subBarcode = String(subInfo.barcode).trim();
-      const subConsumed = Number(subInfo.consumedKg) || 0;
-      const subRollMatch = (inventoryRolls || []).find(r => (r.barcodeId || r.id) === subBarcode);
-      if (subRollMatch && subConsumed > 0) {
-        const prevAvail = Number(subRollMatch.availableWeightKg ?? subRollMatch.netWeightKg ?? 0);
-        const newSubAvail = Math.max(0, prevAvail - subConsumed);
-        const updatedSubRoll = {
-          ...subRollMatch,
-          availableWeightKg: newSubAvail,
-          status: newSubAvail <= 0 ? 'Consumed' : (subRollMatch.status || 'In Stock')
+    // 4. Substrate 2 and 3 leftovers return as -BAL rolls. The parent available weight is set to 0.
+    const substrateRolls = substrateRollsFromLog(logEntry).map((roll) => {
+      const match = (inventoryRolls || []).find(item => (item.barcodeId || item.id) === roll.barcode);
+      return {
+        ...roll,
+        filmType: roll.filmType || match?.filmType || '',
+        micron: roll.micron ?? match?.micron,
+        widthMm: roll.widthMm ?? match?.widthMm,
+        itemId: roll.itemId || match?.itemId || '',
+        initialKg: roll.initialKg || Number(match?.availableWeightKg ?? match?.netWeightKg) || roll.consumedKg
+      };
+    });
+    const balancePlan = planSubstrateBalanceRolls(substrateRolls, {
+      orderId: updatedSfgItem.orderId || logEntry.orderId,
+      jobName: updatedSfgItem.jobName,
+      stage: logEntry.targetProcess
+    });
+    for (const balance of balancePlan) {
+      try {
+        await writeWithRetry(() => setInventoryRollAvailability(balance.parentBarcodeId, {
+          availableWeightKg: 0,
+          status: balance.status
+        }));
+        setInventoryRolls(prev => prev.map(roll => (
+          (roll.barcodeId || roll.id) === balance.parentBarcodeId
+            ? { ...roll, availableWeightKg: 0, status: balance.status }
+            : roll
+        )));
+        if (!(balance.balanceKg > 0) || !balance.balanceBarcodeId) continue;
+        const parent = (inventoryRolls || []).find(roll => (roll.barcodeId || roll.id) === balance.parentBarcodeId);
+        const inwardDatetime = new Date().toISOString();
+        const balanceRoll = {
+          id: balance.balanceBarcodeId,
+          barcodeId: balance.balanceBarcodeId,
+          parentBarcodeId: balance.parentBarcodeId,
+          rollType: 'RAW_MATERIAL',
+          category: 'Raw Material (RM)',
+          itemId: balance.itemId || parent?.itemId || '',
+          itemName: parent?.itemName || `${balance.filmType || 'Film'} - Remaining Balance Roll`,
+          filmType: balance.filmType || parent?.filmType || '',
+          micron: balance.micron ?? parent?.micron ?? null,
+          widthMm: balance.widthMm ?? parent?.widthMm ?? null,
+          netWeightKg: balance.balanceKg,
+          availableWeightKg: balance.balanceKg,
+          grossWeightKg: balance.balanceKg,
+          orderId: balance.orderId || parent?.orderId || '',
+          jobName: balance.jobName || parent?.jobName || '',
+          jobCode: parent?.jobCode || '',
+          status: 'In Stock (RM)',
+          qcStatus: 'Approved',
+          inwardDatetime,
+          productionDate: inwardDatetime.split('T')[0],
+          locationBay: parent?.locationBay || 'RM Store - Substrate Rolls'
         };
-        try {
-          await writeWithRetry(() => saveInventoryRollToSupabase(updatedSubRoll));
-          setInventoryRolls(prev => prev.map(r => ((r.barcodeId || r.id) === subBarcode) ? updatedSubRoll : r));
-        } catch (e) {
-          followUpFailures.push({ label: `substrate roll ${subBarcode}`, error: e });
-        }
+        await writeWithRetry(() => saveInventoryRollToSupabase(balanceRoll));
+        setInventoryRolls(prev => [balanceRoll, ...prev.filter(roll => (roll.barcodeId || roll.id) !== balance.balanceBarcodeId)]);
+      } catch (e) {
+        followUpFailures.push({ label: `substrate balance ${balance.parentBarcodeId}`, error: e });
       }
     }
 
@@ -3721,6 +3766,15 @@ export default function App() {
     }
 
     const existingLogs = Array.isArray(matchedRec?.sfgConsumptions) ? matchedRec.sfgConsumptions : [];
+    const lamPlan = substrateRolls.length > 0 ? planLaminationFilmIssue({
+      orderId: targetOrderId,
+      jobName: updatedSfgItem.jobName,
+      logId: logEntry.id,
+      stage: logEntry.targetProcess,
+      rolls: substrateRolls,
+      existingMaterials: matchedRec?.materialsList || [],
+      inventoryItems: inventory
+    }) : null;
     const updatedRec = {
       ...(matchedRec || {
         id: `PROD-REC-${Date.now()}`,
@@ -3733,6 +3787,7 @@ export default function App() {
         dateFilled: logEntry.date || new Date().toISOString().split('T')[0]
       }),
       ...stageUpdates,
+      ...(lamPlan ? { materialsList: lamPlan.materialsList } : {}),
       outputRolls: newOutputRolls,
       rollsBreakdown: newOutputRolls,
       sfgConsumptions: [logEntry, ...existingLogs]
@@ -3740,6 +3795,22 @@ export default function App() {
 
     try {
       await writeWithRetry(() => saveProductionRecordToSupabase(updatedRec));
+      if (lamPlan) {
+        const lamDeltas = new Map();
+        lamPlan.inventoryAdjustments.forEach((adjustment) => {
+          if (!adjustment?.stockItemId || !adjustment.deltaKg) return;
+          lamDeltas.set(adjustment.stockItemId, (lamDeltas.get(adjustment.stockItemId) || 0) + adjustment.deltaKg);
+        });
+        for (const [stockItemId, deltaKg] of lamDeltas) {
+          const item = (inventory || []).find(row => row.id === stockItemId);
+          if (!item) continue;
+          const nextAvailable = Math.max(0, Math.round(((Number(item.availableQtyKg) || 0) - deltaKg) * 100) / 100);
+          const nextStock = Math.max(0, Math.round(((Number(item.stockQtyKg ?? item.availableQtyKg) || 0) - deltaKg) * 100) / 100);
+          const next = { ...item, availableQtyKg: nextAvailable, stockQtyKg: nextStock };
+          await writeWithRetry(() => saveInventoryItemToSupabase(next));
+          setInventory(prev => prev.map(row => (row.id === stockItemId ? next : row)));
+        }
+      }
       if (matchedRec) {
         setProductionRecords(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
       } else {
