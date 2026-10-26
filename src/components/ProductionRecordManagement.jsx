@@ -1414,6 +1414,11 @@ export default function ProductionRecordManagement({
     pushSlugState('production_records', { section: 'job_cards' });
   };
 
+  // One order id per open form. Repeating this writes the same URL, the router
+  // echoes it, and the echo starts the form again — which puts this page back
+  // on top of a sidebar click.
+  const appliedProductionOrderRef = React.useRef('');
+
   // Comprehensive Deep-Link Synchronization on mount & URL changes
   React.useEffect(() => {
     if (!urlParams || Object.keys(urlParams).length === 0) return;
@@ -1454,7 +1459,8 @@ export default function ProductionRecordManagement({
         if (existingRecord) {
           setSelectedRecord(existingRecord);
           setActiveTab('list');
-        } else {
+        } else if (appliedProductionOrderRef.current !== String(matchOrder.id)) {
+          appliedProductionOrderRef.current = String(matchOrder.id);
           handleStartProductionForOrder(matchOrder);
         }
       }
