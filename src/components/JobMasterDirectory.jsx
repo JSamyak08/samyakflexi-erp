@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { formatPlantDate } from '../utils/dbDates';
 import SearchableSelect from './SearchableSelect';
 import TablePagination, { usePagination } from './TablePagination';
 import { 
@@ -1161,7 +1162,7 @@ export default function JobMasterDirectory({
       cylinderCost: job.cylinderCost || (linkedCyl ? linkedCyl.cylinderCost : ''),
       engravuresName: job.engravuresName || (linkedCyl ? linkedCyl.engravuresName : ''),
       costBorneBy: job.costBorneBy || (linkedCyl ? linkedCyl.costBorneBy : 'Client (100%)'),
-      creationDate: job.creationDate || new Date().toLocaleDateString('en-GB'),
+      creationDate: job.creationDate || new Date().toISOString().split('T')[0],
       jobCardFileUrl: job.jobCardFileUrl || job.artworkUrl || '',
       artworkUrl: job.jobCardFileUrl || job.artworkUrl || '',
       silLogo: job.silLogo || (linkedCyl ? linkedCyl.silLogo : "Yes - 'Pkg Material Mfg by - Samyak International Ltd'"),
@@ -2173,7 +2174,7 @@ export default function JobMasterDirectory({
               <div style={{ display: 'flex', gap: '20px', marginTop: '10px', flexWrap: 'wrap', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                 <span><Building2 size={16} inline /> Client: <strong>{selectedJob.clientName}</strong></span>
                 <span><Layers size={16} inline /> Structure: <strong>{selectedJob.structure}</strong></span>
-                <span><Clock size={16} inline /> Created: <strong>{selectedJob.creationDate}</strong></span>
+                <span><Clock size={16} inline /> Created: <strong>{formatPlantDate(selectedJob.creationDate)}</strong></span>
               </div>
             </div>
 

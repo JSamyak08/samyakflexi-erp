@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getCompanyLogo } from '../services/settingsService';
 import { toTitleCase } from '../utils/pdfHelpers';
+import { formatPlantDateTime } from '../utils/dbDates';
 
 export default function DispatchPackingListPDF({ shipment, onClose }) {
   const letterhead = loadLetterhead();
@@ -91,7 +92,7 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
                 </div>
               )}
               <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                Date & Time: <strong>{shipment.dispatchDate || shipment.createdAt || new Date().toLocaleString()}</strong>
+                Date & Time: <strong>{formatPlantDateTime(shipment.dispatchDate || shipment.createdAt) || new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</strong>
               </div>
             </div>
           </div>

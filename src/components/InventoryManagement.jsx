@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { 
   Package, 
   Plus, 
@@ -838,7 +839,7 @@ export default function InventoryManagement({
       filmType: item.filmType,
       micron: item.micron,
       widthMm: item.widthMm,
-      date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      date: new Date().toISOString(),
       type: adjType,
       qtyKg: qty,
       barcode: adjBarcode.trim() || generateBarcodeId('ADJ'),
@@ -952,7 +953,7 @@ export default function InventoryManagement({
       clientName: dispatchClientName,
       vehicleNo: dispatchVehicleNo,
       lrNo: dispatchLrNo || '',
-      dispatchDate: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+      dispatchDate: new Date().toISOString(),
       totalRolls: dispatchRollsList.length,
       totalNetWeightKg: parseFloat(totalNetWeight.toFixed(2)),
       totalGrossWeightKg: parseFloat(totalGrossWeight.toFixed(2)),
@@ -1421,8 +1422,8 @@ export default function InventoryManagement({
 
             list.push({
               poNumber: poNo,
-              poDate: ord.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-              promisedDeliveryDate: ord.targetDeliveryDate || new Date(Date.now() + 5*86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+              poDate: ord.date || new Date().toISOString().split('T')[0],
+              promisedDeliveryDate: ord.targetDeliveryDate || new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0],
               vendor: vendorObj,
               category: 'Film Substrates',
               source: `Order #${ord.id} (${ord.jobName || 'Substrate Requirements'})`,
@@ -1458,8 +1459,8 @@ export default function InventoryManagement({
           };
           list.push({
             poNumber: poNo,
-            poDate: ind.date || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-            promisedDeliveryDate: ind.promisedDeliveryDate || new Date(Date.now() + 3*86400000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+            poDate: ind.date || new Date().toISOString().split('T')[0],
+            promisedDeliveryDate: ind.promisedDeliveryDate || new Date(Date.now() + 3 * 86400000).toISOString().split('T')[0],
             vendor: vendorObj,
             category: ind.category || 'Store Consumables & Spares',
             source: `Material Indent ${ind.indentNo || ind.id}`,
@@ -1765,7 +1766,7 @@ export default function InventoryManagement({
     const po = resolvingPoDiscrepancy;
     const mismatch = po.priceDiscrepancy || po.historicalMismatch || {};
     const adminUser = currentUser?.name || 'Administrator';
-    const resolvedAt = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+    const resolvedAt = new Date().toISOString();
 
     const resolutionObj = {
       id: po.poNumber,
@@ -3123,7 +3124,6 @@ export default function InventoryManagement({
     const verifiedRollsCount = parseInt(qcEditRollsReceived, 10) || qcInspectingGRN.rollsReceived || 1;
     const inspectorName = currentUser?.name || 'Quality QC Chemist';
     const inspectionNowIso = new Date().toISOString();
-    const inspectionDateStr = new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 
     // Compute verified item name for films or keep item name
     const mPct = (isFilm && isMetalloceneEligibleFilm(verifiedFilmType)) ? (qcInspectingGRN.metallocenePct || '') : '';
@@ -3160,7 +3160,7 @@ export default function InventoryManagement({
       storeLocation: isApproved ? (qcInspectingGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
       qcNotes: qcNotesInput || (isApproved ? 'Inspected and passed all laboratory parameters.' : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.'),
       inspectedBy: inspectorName,
-      inspectedDate: inspectionDateStr,
+      inspectedDate: inspectionNowIso,
       qcVerifiedAt: inspectionNowIso,
       // Verified Specs:
       netWeightKg: verifiedNetWeight,
@@ -3838,7 +3838,7 @@ export default function InventoryManagement({
             filmType: item.filmType,
             micron: item.micron,
             widthMm: item.widthMm,
-            date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+            date: new Date().toISOString(),
             type: variance > 0 ? 'Physical Audit (+)' : 'Physical Audit (-)',
             qtyKg: variance,
             barcode: `BAR-AUDIT-${item.id}-${Math.floor(100 + Math.random() * 900)}`,
@@ -4380,7 +4380,7 @@ export default function InventoryManagement({
               filmType: existing.filmType || existing.substrateOrGrade || '',
               micron: existing.micron || '-',
               widthMm: existing.widthMm || '-',
-              date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+              date: new Date().toISOString(),
               type: 'Stock Adjustment (Bulk Upload)',
               qtyKg: variance,
               barcode: `ADJ-BULK-${Date.now()}`,
@@ -9837,7 +9837,7 @@ export default function InventoryManagement({
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
                           <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.isRejected ? '#fef2f2' : (tx.category === 'reservation' ? '#f0fdf4' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent')))) }}>
-                            <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{tx.date}</td>
+                            <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{formatPlantDateTime(tx.date)}</td>
                             
                             {/* Category Badge */}
                             <td>

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { formatPlantDateTime } from '../utils/dbDates';
 import SearchableSelect from './SearchableSelect';
 import { 
   Truck, 
@@ -730,7 +731,7 @@ export default function DispatchManagement({
       invoiceNo: dcInvoiceNo,
       lrNo: dcLrNo,
       linkedPackingListIds: dcSelectedPackingListIds,
-      dispatchDateTime: dcDispatchDateTime || new Date().toLocaleDateString('en-IN'),
+      dispatchDateTime: dcDispatchDateTime || new Date().toISOString(),
       partyType: dcPartyType,
       clientName: dcSelectedClientName,
       partyName: dcSelectedClientName,
@@ -1505,8 +1506,8 @@ export default function DispatchManagement({
       lrNo: pktLrNo || '',
       transporterName: pktTransporterName || '',
       poNo: pktPoNo || matchedOrder?.poNo || '',
-      dispatchDate: exactTimestamp,
-      createdAt: exactTimestamp,
+      dispatchDate: now.toISOString(),
+      createdAt: now.toISOString(),
       totalRolls: rollsToSave.length,
       totalNetWeightKg: Number(totalNetWeightKg.toFixed(2)),
       totalGrossWeightKg: Number(totalGrossWeightKg.toFixed(2)),
@@ -1810,7 +1811,7 @@ export default function DispatchManagement({
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             <div style={{ fontSize: '0.82rem', fontWeight: '600', color: '#334155' }}>
-                              {dc.dispatchDateTime ? new Date(dc.dispatchDateTime).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                              {dc.dispatchDateTime ? formatPlantDateTime(dc.dispatchDateTime) : '—'}
                             </div>
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
@@ -2033,7 +2034,7 @@ export default function DispatchManagement({
                           <strong style={{ color: '#2563eb', fontFamily: 'monospace', fontSize: '0.88rem' }}>{ds.dispatchId || ds.id}</strong>
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
-                          {ds.dispatchDate}
+                          {formatPlantDateTime(ds.dispatchDate)}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '700', color: '#0f172a' }}>
                           {ds.clientName}

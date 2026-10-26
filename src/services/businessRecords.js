@@ -4,6 +4,8 @@
  * uploaded when the row is missing, then removed.
  */
 
+import { toDatabaseTimestamp } from '../utils/dbDates.js';
+
 export const PLANT_PRESS_ID = 'plant';
 
 export const PAYLOAD_TABLES = [
@@ -549,6 +551,12 @@ function scrapToRow(item) {
 
 function dispatchToRow(item) {
   const id = String(item.dispatchId || item.id);
+  const dispatchDate = toDatabaseTimestamp(item.dispatchDate);
+  const stored = {
+    ...item,
+    dispatchDate,
+    ...(item.createdAt ? { createdAt: toDatabaseTimestamp(item.createdAt) } : {})
+  };
   return {
     dispatch_id: id,
     id,
@@ -560,13 +568,13 @@ function dispatchToRow(item) {
     transporter_name: item.transporterName || null,
     po_no: item.poNo || null,
     invoice_no: item.invoiceNo || null,
-    dispatch_date: item.dispatchDate || new Date().toISOString(),
+    dispatch_date: dispatchDate,
     total_rolls: Number(item.totalRolls) || 0,
     total_net_weight_kg: Number(item.totalNetWeightKg) || 0,
     total_gross_weight_kg: Number(item.totalGrossWeightKg) || 0,
     items: item.items || [],
     hide_branding: Boolean(item.hideBranding),
-    payload: item
+    payload: stored
   };
 }
 

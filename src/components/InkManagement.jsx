@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { 
   Droplet, 
   Plus, 
@@ -1975,7 +1976,7 @@ export default function InkManagement({
                       (inks || []).some(k => k.productCode === tx.itemCode || k.shade === tx.itemName)
                     ).slice(0, 10).map(tx => (
                       <tr key={tx.id || Math.random()}>
-                        <td style={{ fontSize: '0.8rem' }}>{new Date(tx.timestamp || tx.date).toLocaleString()}</td>
+                        <td style={{ fontSize: '0.8rem' }}>{formatPlantDateTime(tx.timestamp || tx.date)}</td>
                         <td>
                           <span className={`badge ${tx.issueType === 'return' ? 'badge-info' : 'badge-purple'}`} style={{ fontSize: '0.7rem' }}>
                             {tx.issueType === 'return' ? '↩️ Job Return' : '📤 Job Issue'}
@@ -2165,7 +2166,7 @@ export default function InkManagement({
                       {(selectedInkForHistory.matchingJobIssues || []).length > 0 ? (
                         selectedInkForHistory.matchingJobIssues.map(tx => (
                           <tr key={tx.id || Math.random()}>
-                            <td>{new Date(tx.timestamp || tx.date).toLocaleDateString()}</td>
+                            <td>{formatPlantDateTime(tx.timestamp || tx.date)}</td>
                             <td>
                               <span className={`badge ${tx.issueType === 'return' ? 'badge-info' : 'badge-purple'}`} style={{ fontSize: '0.7rem' }}>
                                 {tx.issueType === 'return' ? '↩️ Return' : '📤 Issue'}
