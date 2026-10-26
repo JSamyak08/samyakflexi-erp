@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
+import { quotationLineDescription } from '../utils/quotationLineDescription';
 import './salesQuotationPrint.css';
 
 function money(amount) {
@@ -175,7 +176,12 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
               {items.map((it, idx) => (
                 <tr key={idx}>
                   <td>{idx + 1}</td>
-                  <td className="text job">{it.jobTitle}</td>
+                  <td className="text job">
+                    {it.jobTitle}
+                    {quotationLineDescription(it.lineDescription) ? (
+                      <div className="quote-line-desc">{quotationLineDescription(it.lineDescription)}</div>
+                    ) : null}
+                  </td>
                   <td className="text pre">{structureText(it)}</td>
                   <td className="text">{it.materialFormat || 'Roll Form'}</td>
                   <td className="num"><span className="quote-money">{(parseFloat(it.quantity) || 0).toLocaleString('en-IN')} {it.uom}</span></td>
