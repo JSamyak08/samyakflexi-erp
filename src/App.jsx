@@ -141,7 +141,7 @@ import {
 } from './services/guardedWrite';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 import { buildChildStockRecords, saveConsumeChildRolls } from './services/consumeChildRolls';
-import { planPrintingScrap } from './utils/printingScrap';
+import { planJobWastage } from './utils/jobWastage';
 import {
   PRINTING_FILM_SOURCE,
   LAMINATION_FILM_SOURCE,
@@ -161,7 +161,7 @@ import {
   replacePayloadRecords,
   fetchPressBoard,
   savePressBoard,
-  savePrintingScrapEntries,
+  saveJobWastagePlan,
   describeSaveError,
   localKeysToClear,
   snapshotBrowserStorage,
@@ -1771,12 +1771,27 @@ export default function App() {
 
 
   // Handlers for Production Records
+  const syncRecordedWastage = async (record) => {
+    if (!record?.orderId) return;
+    const order = (orders || []).find((row) => String(row.id) === String(record.orderId)) || null;
+    const recordedAt = new Date().toISOString();
+    const plan = planJobWastage({
+      record,
+      order,
+      scrappedBy: currentUser?.name || currentUser?.fullName || record.filledBy || 'Operator',
+      date: record.dateFilled || recordedAt.slice(0, 10),
+      timestamp: recordedAt
+    });
+    await saveJobWastagePlan(supabase, plan);
+  };
+
   const handleSaveProductionRecord = async (newRecord) => {
     requireDatabaseConnection('save production record');
     await saveProductionRecordToSupabase(newRecord);
 
     setProductionRecords(prev => [newRecord, ...prev.filter(r => r.orderId !== newRecord.orderId)]);
     logAudit('CREATE', 'Production Records', `Logged production record ${newRecord.id} for "${newRecord.jobName}" (Usable: ${newRecord.netUsableKg} kg, Wastage: ${newRecord.totalWastageKg} kg)`, newRecord.id);
+    await syncRecordedWastage(newRecord);
 
     // Update Inventory available stock for materials consumed
     if (newRecord.materialsList && newRecord.materialsList.length > 0) {
@@ -2333,23 +2348,6 @@ export default function App() {
     });
     updatedRecord.materialsList = filmPlan.materialsList;
     await handleSaveProductionRecord(updatedRecord);
-    const scrapRecordedAt = new Date().toISOString();
-    const scrapPlan = planPrintingScrap({
-      orderId: order.id,
-      productionRecordId: updatedRecord.id,
-      jobName: order.jobName,
-      jobCode: order.jobCode || order.id,
-      clientName: order.clientName || order.customerName || '',
-      filmType: order.printFilmType || order.filmType || (endData.inputRollsList || [])[0]?.filmType || '',
-      micron: order.micron || (endData.inputRollsList || [])[0]?.micron || null,
-      widthMm: endData.printWidthMm || order.printWidthMm || order.widthMm || null,
-      plainSettingKg: updatedRecord.printingPlainSettingWastageKg,
-      printingWastageKg: updatedRecord.printingWastageKg,
-      scrappedBy: currentUser?.name || currentUser?.fullName || 'Operator',
-      date: scrapRecordedAt.split('T')[0],
-      timestamp: scrapRecordedAt
-    });
-    await writeWithRetry(() => savePrintingScrapEntries(supabase, scrapPlan));
     await handleSaveSchedule({
       id: `SCHED-${order.id}`,
       orderId: order.id,
@@ -3795,6 +3793,7 @@ export default function App() {
 
     try {
       await writeWithRetry(() => saveProductionRecordToSupabase(updatedRec));
+      await writeWithRetry(() => syncRecordedWastage(updatedRec));
       if (lamPlan) {
         const lamDeltas = new Map();
         lamPlan.inventoryAdjustments.forEach((adjustment) => {

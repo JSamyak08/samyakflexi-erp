@@ -74,7 +74,8 @@ export default function SFGStoreManagement({
   urlParams = {},
   onSaveSFGGood,
   onConsumeSFG,
-  onDeleteSFGGood
+  onDeleteSFGGood,
+  previewScrapItems = null
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'In Stock (WIP)', 'Partially Consumed', 'Fully Consumed'
@@ -94,9 +95,10 @@ export default function SFGStoreManagement({
 
   // QC Hold Store & Scrap Store Persisted State
   const [qcHoldItems, setQcHoldItems] = useState([]);
-  const [scrapItems, setScrapItems] = useState([]);
+  const [scrapItems, setScrapItems] = useState(Array.isArray(previewScrapItems) ? previewScrapItems : []);
 
   useEffect(() => {
+    if (Array.isArray(previewScrapItems)) return undefined;
     let active = true;
     async function loadHoldAndScrap() {
       try {
@@ -113,7 +115,7 @@ export default function SFGStoreManagement({
     }
     loadHoldAndScrap();
     return () => { active = false; };
-  }, []);
+  }, [previewScrapItems]);
 
   const persistQcHold = async (next) => {
     await replacePayloadRecords(supabase, 'sfg_qc_hold_items', next);
@@ -2452,7 +2454,7 @@ export default function SFGStoreManagement({
                 <Trash2 size={20} color="#64748b" /> Scrap Store Inventory Log ({scrapItems.length})
               </h3>
               <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                Record of all defective materials rejected and transferred to Scrap Store from QC Hold Quarantine.
+                Process wastage for each job, tagged by stage and type, plus QC hold material sent to scrap. A zero quantity is removed.
               </p>
             </div>
             <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#dc2626', background: '#fef2f2', padding: '8px 16px', borderRadius: '10px', border: '1px solid #fca5a5' }}>
@@ -2467,14 +2469,15 @@ export default function SFGStoreManagement({
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <table data-testid="scrap-store-log" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                     <th style={{ padding: '10px 14px' }}>Original Tag Ref</th>
                     <th style={{ padding: '10px 14px' }}>Job Name & Order</th>
+                    <th style={{ padding: '10px 14px' }}>Stage</th>
                     <th style={{ padding: '10px 14px' }}>Substrate & Size</th>
                     <th style={{ padding: '10px 14px', textAlign: 'right' }}>Scrap Weight (kg)</th>
-                    <th style={{ padding: '10px 14px' }}>Defect Category</th>
+                    <th style={{ padding: '10px 14px' }}>Type</th>
                     <th style={{ padding: '10px 14px' }}>Scrap Reason & Remarks</th>
                     <th style={{ padding: '10px 14px' }}>Transferred By & Date</th>
                   </tr>
@@ -2489,15 +2492,18 @@ export default function SFGStoreManagement({
                         <div style={{ fontWeight: '700', color: '#0f172a' }}>{item.jobName}</div>
                         <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderId || '—'} | Client: {displayPartyName(item.clientName)}</div>
                       </td>
+                      <td style={{ padding: '10px 14px', fontWeight: '700', color: '#1e3a8a' }}>
+                        {item.stage || 'QC Hold'}
+                      </td>
                       <td style={{ padding: '10px 14px', color: '#334155' }}>
                         {item.filmType} ({item.micron}µm × {item.widthMm}mm)
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '900', color: '#dc2626' }}>
-                        {item.scrapQtyKg.toFixed(2)} kg
+                        {Number(item.scrapQtyKg || 0).toFixed(2)} kg
                       </td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', border: '1px solid #fca5a5' }}>
-                          {item.defectCategory}
+                          {item.type || item.defectCategory}
                         </span>
                       </td>
                       <td style={{ padding: '10px 14px', color: '#475569', fontSize: '0.8rem' }}>
