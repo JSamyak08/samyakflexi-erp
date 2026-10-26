@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { displayAmendmentLabel, revisionNumber } from '../utils/poAmendment';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
 
@@ -30,7 +31,6 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
     ocDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     indentDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     indentNumber = "IND/107",
-    amendmentNo = "0",
     logisticDetails = "Freight Included within Indore",
     vendor = {},
     items = []
@@ -98,6 +98,9 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   }, 0);
 
   // Indian GST Calculation (Vendor in 23 MP: CGST 9% + SGST 9% vs Inter-state: IGST 18%)
+  const amendmentRevision = revisionNumber(poData);
+  const amendmentLabel = displayAmendmentLabel(poData);
+  const amendmentDate = amendmentRevision > 0 ? formatPlantDateTime(poData.amendedAt || poData.amended_at) : '';
   const gstInfo = calculateGSTBreakdown(supplier.gstin, supplier.address, totalTaxable, 18, COMPANY_DETAILS.gstin);
   const totalCgst = gstInfo.cgstAmount;
   const totalSgst = gstInfo.sgstAmount;
@@ -153,6 +156,9 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                       <Edit3 size={12} className="no-print" style={{ opacity: 0.8, color: '#4f46e5' }} />
                     </span>
                   )}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '11px', fontWeight: '800', color: '#1e293b' }}>
+                  Amendment: {amendmentLabel}{amendmentDate ? ` · ${amendmentDate}` : ''}
                 </div>
               </div>
               <div style={{ background: '#ffffff', padding: '2px', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
@@ -215,8 +221,10 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 <tr>
                   <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Delivery Date</td>
                   <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{deliveryDate}</td>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>PO Amendment</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{amendmentNo}</td>
+                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Amendment</td>
+                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>
+                    {amendmentLabel}{amendmentDate ? ` · ${amendmentDate}` : ''}
+                  </td>
                 </tr>
                 <tr>
                   <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>OC Date</td>

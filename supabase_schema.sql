@@ -932,7 +932,26 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
     linked_requirements JSONB DEFAULT '[]'::jsonb,
     created_by TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    revision_no INTEGER,
+    amendment_no TEXT,
+    amended_at TIMESTAMPTZ,
+    amended_by TEXT,
+    amendment_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS public.purchase_order_revisions (
+    id TEXT PRIMARY KEY,
+    po_id TEXT,
+    po_number TEXT,
+    revision_no INTEGER,
+    amendment_no TEXT,
+    payload JSONB,
+    amended_by TEXT,
+    amended_at TIMESTAMPTZ,
+    reason TEXT,
+    change_summary TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- =========================================================================

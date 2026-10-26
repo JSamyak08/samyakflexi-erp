@@ -19,6 +19,7 @@ import {
   ArrowUpRight,
   Printer,
   ChevronDown,
+  RotateCcw,
   RefreshCw,
   ShoppingBag,
   Layers,
@@ -36,7 +37,19 @@ import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { getCompanyProfile } from '../services/companyProfile';
 import { generateDocRefNumber, getDocumentPrefixes, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { allocateGrnNumber } from '../services/supabaseDataService';
+import { allocateGrnNumber, fetchPurchaseOrderRevisions, saveAmendedPurchaseOrderToSupabase } from '../services/supabaseDataService';
+import {
+  amendmentActorName,
+  buildPurchaseOrderAmendment,
+  canAmendPurchaseOrder,
+  displayAmendmentLabel,
+  documentHistoryEntries,
+  formatAmendmentLabel,
+  mergeRevisionLists,
+  nextRevisionNumber,
+  revisionNumber,
+} from '../utils/poAmendment';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
 import { generateInventoryId } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
@@ -56,7 +69,8 @@ export default function PurchaseOrderManagement({
   onUpdateGRN,
   onSaveInventoryItem,
   onUpdateInventory,
-  onUpdateInventoryRolls
+  onUpdateInventoryRolls,
+  onSaveAmendment
 }) {
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,9 +142,14 @@ export default function PurchaseOrderManagement({
     linkedOrderName: null,
     linkedRequirements: []
   }));
+  const [amendingFrom, setAmendingFrom] = useState(null);
+  const [amendmentReason, setAmendmentReason] = useState('');
+  const [revisionCache, setRevisionCache] = useState({});
 
   // Helper: Open Create PO Modal with fresh sequential PO Number
   const handleOpenCreateModal = () => {
+    setAmendingFrom(null);
+    setAmendmentReason('');
     let nextNum;
     try {
       nextNum = getNextDocRefNumber('po');
@@ -168,6 +187,45 @@ export default function PurchaseOrderManagement({
       linkedOrderId: null,
       linkedOrderName: null,
       linkedRequirements: []
+    });
+    setIsCreateModalOpen(true);
+  };
+
+  // Same purchase order, next revision. Lines are copied the way a quotation amend copies them.
+  const handleOpenAmendForm = (po) => {
+    const gate = canAmendPurchaseOrder(po, grns);
+    if (!gate.ok) {
+      alert(gate.reason);
+      return;
+    }
+    const vendor = po.vendor && typeof po.vendor === 'object' ? po.vendor : {};
+    setActivePoForDetails(null);
+    setAmendingFrom(po);
+    setAmendmentReason('');
+    setPoForm({
+      poNumber: po.poNumber,
+      poDate: po.poDate || new Date().toISOString().split('T')[0],
+      promisedDeliveryDate: po.promisedDeliveryDate || po.deliveryDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      vendorId: po.vendorId || vendor.id || '',
+      vendorName: po.vendorName || vendor.companyName || vendor.name || '',
+      vendorDetails: {
+        id: po.vendorId || vendor.id || '',
+        companyName: po.vendorName || vendor.companyName || vendor.name || '',
+        contactPerson: vendor.contactPerson || vendor.contact_person || '',
+        phone: vendor.phone || vendor.contactNo || '',
+        email: vendor.email || '',
+        gstin: vendor.gstin || '',
+        address: vendor.address || ''
+      },
+      category: po.category || 'Film Substrates',
+      paymentTerms: po.paymentTerms || defaultTerms?.paymentTerms || '30 Days Net',
+      logisticDetails: po.logisticDetails || 'Freight Included within Indore',
+      notes: po.notes || po.remarks || '',
+      items: (po.items || []).map((item) => ({ ...item })),
+      source: po.source || 'Direct PO Module',
+      linkedOrderId: po.linkedOrderId || null,
+      linkedOrderName: po.linkedOrderName || null,
+      linkedRequirements: po.linkedRequirements || []
     });
     setIsCreateModalOpen(true);
   };
@@ -389,6 +447,57 @@ export default function PurchaseOrderManagement({
       return;
     }
 
+    if (amendingFrom) {
+      const result = buildPurchaseOrderAmendment({
+        previous: amendingFrom,
+        draft: {
+          poNumber: poForm.poNumber,
+          poDate: poForm.poDate,
+          promisedDeliveryDate: poForm.promisedDeliveryDate,
+          vendorId: poForm.vendorId || null,
+          vendorName: poForm.vendorName,
+          vendor: poForm.vendorDetails,
+          category: poForm.category,
+          items: poForm.items,
+          totalQtyKg: formCalculations.totalQty,
+          subtotal: formCalculations.subtotal,
+          taxAmount: formCalculations.taxAmount,
+          totalAmount: formCalculations.totalAmount,
+          paymentTerms: poForm.paymentTerms,
+          logisticDetails: poForm.logisticDetails,
+          notes: poForm.notes
+        },
+        grns,
+        actor: amendmentActorName(currentUser),
+        now: new Date().toISOString(),
+        reason: amendmentReason
+      });
+      if (!result.ok) {
+        alert(result.reason);
+        return;
+      }
+      try {
+        if (onSaveAmendment) {
+          await onSaveAmendment(result.updated, [result.superseded, result.current]);
+        } else {
+          const saved = await saveAmendedPurchaseOrderToSupabase(result.updated, result.superseded, result.current);
+          if (onUpdatePurchaseOrder) await onUpdatePurchaseOrder({ ...result.updated, ...saved });
+        }
+        setRevisionCache((prev) => ({
+          ...prev,
+          [result.updated.poNumber]: mergeRevisionLists(prev[result.updated.poNumber], [result.superseded, result.current])
+        }));
+        setIsCreateModalOpen(false);
+        setAmendingFrom(null);
+        setAmendmentReason('');
+        alert(`Purchase order ${result.updated.poNumber} saved as ${result.updated.amendmentNo}. The PO number is unchanged, and the previous revision stays in document history.`);
+      } catch (err) {
+        console.error('Error amending purchase order:', err);
+        alert(`Failed to save the amendment: ${err.message}`);
+      }
+      return;
+    }
+
     const payload = {
       id: poForm.poNumber.trim(),
       poNumber: poForm.poNumber.trim(),
@@ -476,7 +585,8 @@ export default function PurchaseOrderManagement({
       return `${idx + 1}. *${desc}*${spec}\n   Qty: ${qty}${rate}`;
     }).join('\n');
 
-    const message = `*PURCHASE ORDER: ${po.poNumber}*
+    const amendmentLine = revisionNumber(po) > 0 ? `\nAmendment: *${displayAmendmentLabel(po)}*` : '';
+    const message = `*PURCHASE ORDER: ${po.poNumber}*${amendmentLine}
 From: *${COMPANY_DETAILS.name}*
 To: *${vendorName}*
 Date: ${po.poDate}
@@ -580,6 +690,20 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     ) || activePoForDetails;
   }, [activePoForDetails, enrichedPurchaseOrders]);
 
+  useEffect(() => {
+    const poNumber = activePoForDetails?.poNumber;
+    if (!poNumber) return undefined;
+    let cancelled = false;
+    fetchPurchaseOrderRevisions(poNumber).then((rows) => {
+      if (cancelled) return;
+      setRevisionCache((prev) => ({
+        ...prev,
+        [poNumber]: mergeRevisionLists(prev[poNumber], rows)
+      }));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [activePoForDetails?.poNumber]);
+
   // Filter enriched Purchase Orders
   const filteredPurchaseOrders = useMemo(() => {
     return enrichedPurchaseOrders.filter(po => {
@@ -679,6 +803,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
     const headers = [
       "PO Number",
+      "Amendment",
       "PO Date",
       "Vendor Name",
       "Vendor Phone",
@@ -702,6 +827,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
       return [
         `"${po.poNumber}"`,
+        `"${displayAmendmentLabel(po)}"`,
         `"${po.poDate}"`,
         `"${po.vendorName || po.vendor?.companyName || ''}"`,
         `"${po.vendor?.phone || ''}"`,
@@ -1588,6 +1714,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
               ) : (
                 (paginatedPOs || []).map(po => {
                   if (!po) return null;
+                  const amendGate = canAmendPurchaseOrder(po, grns);
                   const itemsCount = (po.items || []).length;
                   const firstItem = po.items && po.items[0];
                   const itemSummaryText = firstItem 
@@ -1607,8 +1734,11 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                             {po.poNumber}
                           </span>
                         </div>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
-                          📅 {po.poDate}
+                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                          <span>📅 {po.poDate}</span>
+                          <span style={{ fontSize: '0.68rem', fontWeight: '700', padding: '1px 6px', borderRadius: '999px', background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe' }}>
+                            {displayAmendmentLabel(po)}
+                          </span>
                         </div>
                         {po.source && po.source !== 'Direct PO Module' && (
                           <div style={{ marginTop: '4px' }}>
@@ -1871,6 +2001,27 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                             <Eye size={14} />
                           </button>
 
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => handleOpenAmendForm(po)}
+                            title={amendGate.ok ? `Amend ${po.poNumber} to ${formatAmendmentLabel(nextRevisionNumber(po))}` : amendGate.reason}
+                            aria-label={`Amend purchase order ${po.poNumber}`}
+                            style={{
+                              padding: '6px 8px',
+                              fontSize: '0.75rem',
+                              fontWeight: '700',
+                              color: amendGate.ok ? '#9a3412' : '#94a3b8',
+                              borderColor: amendGate.ok ? '#fdba74' : '#e2e8f0',
+                              background: amendGate.ok ? '#fff7ed' : '#f8fafc',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                          >
+                            <RotateCcw size={13} /> Amend
+                          </button>
+
                           {/* Cancel button if no inward received yet */}
                           {po.deliveryStatus !== 'Cancelled' && po.totalInwardQty === 0 && (
                             <button
@@ -1933,10 +2084,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                 </div>
                 <div>
                   <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#ffffff', letterSpacing: '-0.01em' }}>
-                    Create Purchase Order
+                    {amendingFrom ? `Amend Purchase Order (${formatAmendmentLabel(nextRevisionNumber(amendingFrom))})` : 'Create Purchase Order'}
                   </h3>
                   <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>
-                    Issue official vendor order with live stock check & automated GRN tracking
+                    {amendingFrom
+                      ? `${displayAmendmentLabel(amendingFrom)} becomes ${formatAmendmentLabel(nextRevisionNumber(amendingFrom))}. The PO number stays ${amendingFrom.poNumber}.`
+                      : 'Issue official vendor order with live stock check & automated GRN tracking'}
                   </p>
                 </div>
               </div>
@@ -1952,6 +2105,15 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
             {/* Modal Form */}
             <form onSubmit={handleSavePurchaseOrder}>
+              {amendingFrom && (
+                <div style={{ background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', borderRadius: '10px', padding: '12px 14px', fontSize: '0.82rem', lineHeight: 1.45 }}>
+                  <strong>Amendment {displayAmendmentLabel(amendingFrom)} → {formatAmendmentLabel(nextRevisionNumber(amendingFrom))}.</strong>
+                  {' '}Change vendor terms, items, quantity, rate, or the delivery date. Saving keeps {amendingFrom.poNumber} and files the previous revision in document history.
+                  {(Number(amendingFrom.totalInwardQty) || 0) > 0 && (
+                    <> {' '}<strong>{Number(amendingFrom.totalInwardQty).toLocaleString()} kg</strong> is already on a GRN for this PO number. Those receipts stay linked, and the amended quantity cannot go below them.</>
+                  )}
+                </div>
+              )}
               
               {/* Section 1: Purchase Order Basics */}
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -1968,9 +2130,14 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       type="text"
                       required
                       value={poForm.poNumber}
-                      onChange={(e) => setPoForm({ ...poForm, poNumber: e.target.value })}
+                      onChange={(e) => {
+                        if (amendingFrom) return;
+                        setPoForm({ ...poForm, poNumber: e.target.value });
+                      }}
+                      readOnly={Boolean(amendingFrom)}
                       className="form-control"
-                      style={{ fontWeight: '700', color: '#1e293b' }}
+                      style={{ fontWeight: '700', color: '#1e293b', background: amendingFrom ? '#f1f5f9' : undefined }}
+                      title={amendingFrom ? 'The purchase order number does not change on an amendment' : undefined}
                     />
                   </div>
 
@@ -2360,6 +2527,20 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         className="form-control"
                       />
                     </div>
+                    {amendingFrom && (
+                      <div className="form-group" style={{ margin: '12px 0 0 0' }}>
+                        <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
+                          Amendment reason / remarks
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={amendmentReason}
+                          onChange={(e) => setAmendmentReason(e.target.value)}
+                          placeholder="Optional. Why this purchase order is being amended."
+                          className="form-control"
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Subtotal & Tax Calculation Box */}
@@ -2434,7 +2615,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                     gap: '8px'
                   }}
                 >
-                  <PackageCheck size={18} /> Issue & Save Purchase Order
+                  <PackageCheck size={18} /> {amendingFrom ? `Save Amendment (${formatAmendmentLabel(nextRevisionNumber(amendingFrom))})` : 'Issue & Save Purchase Order'}
                 </button>
               </div>
 
@@ -2719,6 +2900,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           >
             {(() => {
               const currentPo = detailedPo || activePoForDetails;
+              const detailAmendGate = canAmendPurchaseOrder(currentPo, grns);
+              const historyEntries = documentHistoryEntries(currentPo, revisionCache[currentPo.poNumber] || []);
               return (
                 <>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px' }}>
@@ -2726,6 +2909,9 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '1.3rem', fontWeight: '800', color: '#0f172a' }}>
                           {currentPo.poNumber}
+                        </span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: '800', padding: '3px 8px', borderRadius: '999px', background: '#eef2ff', color: '#3730a3' }}>
+                          {displayAmendmentLabel(currentPo)}
                         </span>
                         <span 
                           style={{ 
@@ -2757,6 +2943,25 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                         <PackagePlus size={15} /> Create Inward GRN
                       </button>
 
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleOpenAmendForm(currentPo)}
+                        title={detailAmendGate.ok ? `Amend to ${formatAmendmentLabel(nextRevisionNumber(currentPo))}` : detailAmendGate.reason}
+                        aria-label={`Amend purchase order ${currentPo.poNumber}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontSize: '0.8rem',
+                          fontWeight: '700',
+                          color: detailAmendGate.ok ? '#9a3412' : '#94a3b8',
+                          borderColor: detailAmendGate.ok ? '#fdba74' : '#e2e8f0',
+                          background: detailAmendGate.ok ? '#fff7ed' : '#f8fafc'
+                        }}
+                      >
+                        <RotateCcw size={14} /> Amend
+                      </button>
                       <button
                         type="button"
                         className="btn-secondary"
@@ -2979,6 +3184,39 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       No GRN inward receipts recorded for this PO number yet. Click the <strong>'Create Inward GRN'</strong> button above to issue a receipt directly.
                     </div>
                   )}
+
+                  <h4 style={{ fontSize: '0.88rem', fontWeight: '800', color: '#0f172a', margin: '20px 0 8px' }}>
+                    Document history
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {historyEntries.map((entry) => (
+                      <div key={entry.id || entry.amendmentNo} style={{ border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 12px', background: entry.isCurrent ? '#f8fafc' : '#ffffff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ fontWeight: '800', color: '#3730a3' }}>
+                            {entry.amendmentNo}{entry.isCurrent ? ' · current' : ''}
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            aria-label={`View ${entry.amendmentNo} of ${currentPo.poNumber}`}
+                            onClick={() => setActivePoForPdf(entry.payload || currentPo)}
+                            style={{ padding: '3px 8px', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <Printer size={12} /> View / print
+                          </button>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#475569', marginTop: '4px' }}>
+                          {formatPlantDateTime(entry.amendedAt) || '—'} · {entry.amendedBy || '—'}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#334155', marginTop: '4px' }}>
+                          <strong>Reason:</strong> {entry.reason || '—'}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#334155', marginTop: '2px', whiteSpace: 'normal' }}>
+                          <strong>What changed:</strong> {entry.changeSummary || '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </>
               );
             })()}

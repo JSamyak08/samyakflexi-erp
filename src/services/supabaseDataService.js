@@ -39,6 +39,7 @@ import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
 import { linesForSave, stampLineIds } from './grnDocument';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
+import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
 export { sanitizeGRN };
 
 /**
@@ -3856,7 +3857,8 @@ export function sanitizePurchaseOrder(raw) {
     linkedRequirements: Array.isArray(raw.linked_requirements || raw.linkedRequirements) ? (raw.linked_requirements || raw.linkedRequirements) : [],
     createdBy: raw.created_by || raw.createdBy || 'Operations Desk',
     createdAt: raw.created_at || raw.createdAt || new Date().toISOString(),
-    updatedAt: raw.updated_at || raw.updatedAt || new Date().toISOString()
+    updatedAt: raw.updated_at || raw.updatedAt || new Date().toISOString(),
+    ...revisionFieldsForStorage(raw)
   };
 }
 
@@ -3926,12 +3928,59 @@ export async function savePurchaseOrderToSupabase(po) {
     updated_at: new Date().toISOString()
   };
 
+  // Leave revision columns off the write until an amendment sets them.
+  // A routine GRN update of an original PO then matches the previous payload.
+  if (clean.revisionNo != null || clean.amendmentNo || clean.amendedAt || clean.amendedBy || clean.amendmentReason) {
+    dbPayload.revision_no = clean.revisionNo;
+    dbPayload.amendment_no = clean.amendmentNo;
+    dbPayload.amended_at = clean.amendedAt;
+    dbPayload.amended_by = clean.amendedBy;
+    dbPayload.amendment_reason = clean.amendmentReason;
+  }
+
   const { error } = await supabase
     .from('purchase_orders')
     .upsert(dbPayload, { onConflict: 'po_number' });
 
   if (error) handleSupabaseError(error, 'purchase_orders');
   return clean;
+}
+
+export async function fetchPurchaseOrderRevisions(poNumber) {
+  if (!isSupabaseConfigured() || !poNumber) return [];
+  const { data, error } = await supabase
+    .from('purchase_order_revisions')
+    .select('*')
+    .eq('po_number', String(poNumber))
+    .order('revision_no', { ascending: true });
+  if (error) {
+    if (isMissingRelationError(error)) return [];
+    handleSupabaseError(error, 'purchase_order_revisions');
+  }
+  return (data || []).map(revisionFromRow).filter(Boolean);
+}
+
+export async function savePurchaseOrderRevision(entry) {
+  if (!isSupabaseConfigured() || !entry) {
+    throw new Error('Cannot save the purchase order revision: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const { error } = await supabase
+    .from('purchase_order_revisions')
+    .upsert(revisionToRow(entry), { onConflict: 'id' });
+  if (error) handleSupabaseError(error, 'purchase_order_revisions');
+  return entry;
+}
+
+/**
+ * Writes the superseded snapshot before the live row changes, then the new revision.
+ * The PO number is unchanged, so GRNs that point at it stay linked.
+ */
+export async function saveAmendedPurchaseOrderToSupabase(updated, superseded, current) {
+  if (superseded) await savePurchaseOrderRevision(superseded);
+  const saved = await savePurchaseOrderToSupabase(updated);
+  if (current) await savePurchaseOrderRevision(current);
+  return saved;
 }
 
 export async function deletePurchaseOrderFromSupabase(poIdOrNumber) {
