@@ -265,6 +265,15 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
 initSafeStorage();
 
 
+const e2eRoleAtBoot = (() => {
+  if (typeof window === 'undefined' || import.meta.env.VITE_E2E_STUB_AUTH !== '1') return '';
+  try {
+    return new URLSearchParams(window.location.search).get('e2eRole') || '';
+  } catch {
+    return '';
+  }
+})();
+
 function e2eStubUser() {
   if (import.meta.env.VITE_E2E_STUB_AUTH !== '1') return null;
   try {
@@ -272,14 +281,13 @@ function e2eStubUser() {
   } catch {
     /* session storage can be blocked */
   }
-  let role = 'Admin';
-  try {
-    const requested = new URLSearchParams(window.location.search).get('e2eRole');
-    if (requested) role = requested;
-  } catch {
-    /* location can be unavailable */
-  }
-  return { id: 'e2e-admin', name: 'E2E Admin', fullName: 'E2E Admin', email: 'e2e@samyakinternational.in', role };
+  return {
+    id: 'e2e-admin',
+    name: 'E2E Admin',
+    fullName: 'E2E Admin',
+    email: 'e2e@samyakinternational.in',
+    role: e2eRoleAtBoot || 'Admin'
+  };
 }
 
 function routeFromHref(href) {
