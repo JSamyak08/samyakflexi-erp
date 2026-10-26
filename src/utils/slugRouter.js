@@ -962,10 +962,30 @@ export function getTabFromUrl() {
   return getRouteFromUrl().tab;
 }
 
+export function locationHref(loc) {
+  const source = loc || (typeof window !== 'undefined' ? window.location : null);
+  if (!source) return '';
+  return `${source.pathname || ''}${source.search || ''}${source.hash || ''}`;
+}
+
+/** True when two parsed routes are the same page, including the query string. */
+export function sameRoute(a, b) {
+  if (!a || !b) return false;
+  if (Boolean(a.unknown) !== Boolean(b.unknown)) return false;
+  if (Boolean(a.recovery) !== Boolean(b.recovery)) return false;
+  if ((a.tab || null) !== (b.tab || null)) return false;
+  if ((a.section || null) !== (b.section || null)) return false;
+  return (a.canonical || '') === (b.canonical || '');
+}
+
 export function pushSlugState(tabKey, queryParams = {}, replace = false) {
   try {
     const finalUrl = buildHref(tabKey, queryParams);
     if (typeof window !== 'undefined' && window.history) {
+      // Writing the address that is already open used to dispatch
+      // erp-slug-navigate anyway. The production-record screen listens for
+      // that and writes the same address again, so a sidebar click never sticks.
+      if (locationHref() === finalUrl) return finalUrl;
       const state = { tab: tabKey, params: queryParams };
       if (replace && window.history.replaceState) window.history.replaceState(state, '', finalUrl);
       else if (window.history.pushState) window.history.pushState(state, '', finalUrl);

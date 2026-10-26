@@ -6,6 +6,8 @@ import {
   buildHref,
   getRouteFromUrl,
   parseLocation,
+  pushSlugState,
+  sameRoute,
   isRecoveryLocation,
   rememberReturnTo,
   consumeReturnTo,
@@ -353,6 +355,147 @@ test('getRouteFromUrl keeps an unknown path instead of sending it to the dashboa
     if (previous === undefined) delete globalThis.window;
     else globalThis.window = previous;
   }
+});
+
+function installHistory(initialHref) {
+  const url = new URL(initialHref, 'http://erp.local');
+  const loc = { pathname: url.pathname, search: url.search, hash: url.hash };
+  const entries = [initialHref.startsWith('/') ? initialHref : `${url.pathname}${url.search}${url.hash}`];
+  let index = 0;
+  const listeners = { 'erp-slug-navigate': [], popstate: [] };
+  const previous = globalThis.window;
+  const apply = (next) => {
+    const parsed = new URL(next, 'http://erp.local');
+    loc.pathname = parsed.pathname;
+    loc.search = parsed.search;
+    loc.hash = parsed.hash;
+  };
+  globalThis.window = {
+    location: loc,
+    history: {
+      pushState(_state, _title, next) {
+        entries.splice(index + 1);
+        entries.push(next);
+        index = entries.length - 1;
+        apply(next);
+      },
+      replaceState(_state, _title, next) {
+        entries[index] = next;
+        apply(next);
+      },
+      back() {
+        if (index > 0) {
+          index -= 1;
+          apply(entries[index]);
+          listeners.popstate.forEach((fn) => fn());
+        }
+      },
+      forward() {
+        if (index < entries.length - 1) {
+          index += 1;
+          apply(entries[index]);
+          listeners.popstate.forEach((fn) => fn());
+        }
+      },
+    },
+    addEventListener(type, fn) {
+      (listeners[type] ||= []).push(fn);
+    },
+    removeEventListener(type, fn) {
+      listeners[type] = (listeners[type] || []).filter((item) => item !== fn);
+    },
+    dispatchEvent(event) {
+      (listeners[event.type] || []).forEach((fn) => fn(event));
+      return true;
+    },
+  };
+  return {
+    listeners,
+    entries: () => entries.slice(),
+    index: () => index,
+    href: () => `${loc.pathname}${loc.search}${loc.hash}`,
+    restore() {
+      if (previous === undefined) delete globalThis.window;
+      else globalThis.window = previous;
+    },
+  };
+}
+
+test('an open production record does not echo its own URL', () => {
+  const history = installHistory('/production/records/new?orderId=ORD-2026-198');
+  let echoes = 0;
+  try {
+    window.addEventListener('erp-slug-navigate', () => {
+      echoes += 1;
+      if (echoes > 5) throw new Error('production deep link echoed its URL in a loop');
+      const route = getRouteFromUrl();
+      if (route.tab === 'production_records' && route.params.orderId) {
+        pushSlugState('production_records', { orderId: route.params.orderId, section: 'new_record' });
+      }
+    });
+    const href = pushSlugState('production_records', { orderId: 'ORD-2026-198', section: 'new_record' });
+    assert.equal(href, '/production/records/new?orderId=ORD-2026-198');
+    assert.equal(echoes, 0);
+    assert.deepEqual(history.entries(), ['/production/records/new?orderId=ORD-2026-198']);
+  } finally {
+    history.restore();
+  }
+});
+
+test('sidebar navigation leaves a production record and back returns to it', () => {
+  const history = installHistory('/production/records/new?orderId=ORD-2026-198');
+  let route = getRouteFromUrl();
+  const sync = () => {
+    const next = getRouteFromUrl();
+    route = sameRoute(route, next) ? route : next;
+  };
+  try {
+    window.addEventListener('erp-slug-navigate', sync);
+    window.addEventListener('popstate', sync);
+    window.addEventListener('erp-slug-navigate', () => {
+      if (route.tab === 'production_records' && route.params.orderId) {
+        pushSlugState('production_records', { orderId: route.params.orderId, section: 'new_record' });
+      }
+    });
+
+    pushSlugState('dashboard');
+    sync();
+    assert.equal(route.tab, 'dashboard');
+    assert.equal(history.href(), '/dashboard');
+
+    pushSlugState('printing_scheduler');
+    sync();
+    assert.equal(route.tab, 'printing_scheduler');
+    assert.equal(history.href(), '/printing');
+
+    pushSlugState('sales');
+    sync();
+    assert.equal(route.tab, 'sales');
+    assert.equal(history.href(), '/sales');
+
+    window.history.back();
+    assert.equal(route.tab, 'printing_scheduler');
+    assert.equal(history.href(), '/printing');
+    window.history.back();
+    assert.equal(route.tab, 'dashboard');
+    window.history.back();
+    assert.equal(route.tab, 'production_records');
+    assert.equal(route.params.orderId, 'ORD-2026-198');
+    assert.equal(history.href(), '/production/records/new?orderId=ORD-2026-198');
+    window.history.forward();
+    assert.equal(route.tab, 'dashboard');
+    assert.equal(history.href(), '/dashboard');
+  } finally {
+    history.restore();
+  }
+});
+
+test('sameRoute ignores a fresh parse of the page that is already open', () => {
+  const left = parse('/production/records/new?orderId=ORD-2026-198');
+  const right = parse('/production/records/new?orderId=ORD-2026-198');
+  assert.equal(sameRoute(left, right), true);
+  assert.equal(sameRoute(left, parse('/dashboard')), false);
+  assert.equal(sameRoute(left, parse('/printing')), false);
 });
 
 test('canonical table covers every module that the sidebar can open', () => {

@@ -79,7 +79,7 @@ import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
-import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo } from './utils/slugRouter';
+import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
 import { assertPersistableMeasures } from './utils/productionRecordQuality';
 import {
@@ -362,14 +362,17 @@ export default function App() {
         /* keep the requested tab */
       }
     }
-    setRouteInfo(next);
+    setRouteInfo((prev) => (sameRoute(prev, next) ? prev : next));
     setIsMobileMenuOpen(false);
   };
 
   // Sync state when user uses browser Back / Forward buttons
   useEffect(() => {
     const handlePopState = () => {
-      setRouteInfo(getRouteFromUrl());
+      setRouteInfo((prev) => {
+        const next = getRouteFromUrl();
+        return sameRoute(prev, next) ? prev : next;
+      });
     };
 
     window.addEventListener('popstate', handlePopState);
