@@ -1,0 +1,559 @@
+/* Sales quotation only. Shared A4 rules stay as they are for the other documents. */
+
+.quote-sheet {
+  font-size: 10.5pt;
+  line-height: 1.38;
+  color: #111;
+}
+
+.quote-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(72mm, 0.8fr);
+  column-gap: 8mm;
+  align-items: start;
+  padding-bottom: 3.5mm;
+  margin-bottom: 4mm;
+  border-bottom: 1.5px solid #111;
+}
+
+.quote-address {
+  margin-top: 1.6mm;
+  max-width: 118mm;
+  font-size: 9.5pt;
+  line-height: 1.38;
+  color: #1e293b;
+}
+
+.quote-ids {
+  margin-top: 1.2mm;
+  font-size: 9.5pt;
+  color: #1e293b;
+}
+
+.quote-kicker {
+  margin: 0 0 2mm;
+  font-size: 14pt;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  text-align: right;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.quote-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.quote-meta-table th,
+.quote-meta-table td {
+  padding: 0.6mm 0;
+  font-size: 9.5pt;
+  line-height: 1.3;
+  vertical-align: baseline;
+  border: none;
+  background: transparent;
+}
+
+.quote-meta-table th {
+  width: 42%;
+  padding-right: 3mm;
+  text-align: left;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.quote-meta-table td {
+  text-align: right;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.quote-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 0;
+  margin-bottom: 4.5mm;
+  padding: 3mm 3.5mm;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.quote-party {
+  min-width: 0;
+  padding: 0 3.5mm 0 0;
+}
+
+.quote-party + .quote-party {
+  position: relative;
+  padding: 0 0 0 6mm;
+  border-left: none;
+}
+
+.quote-party + .quote-party::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5.5mm;
+  bottom: 3mm;
+  width: 1px;
+  background: #94a3b8;
+}
+
+.quote-label {
+  margin: 0 0 0.8mm;
+  padding: 0;
+  font-size: 8pt;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: #334155;
+}
+
+.quote-party + .quote-party .quote-label {
+  margin-bottom: 1.6mm;
+}
+
+.quote-client {
+  margin: 0;
+  font-size: 12pt;
+  font-weight: 800;
+  line-height: 1.25;
+  color: #0f172a;
+}
+
+.quote-party p {
+  margin: 0;
+  font-size: 10pt;
+  line-height: 1.38;
+  color: #1e293b;
+}
+
+.quote-party + .quote-party p {
+  margin: 0 0 1.2mm;
+  line-height: 1.5;
+}
+
+.quote-party p:last-child {
+  margin-bottom: 0;
+}
+
+.quote-section {
+  margin: 0 0 2mm;
+  font-size: 10pt;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0f172a;
+}
+
+.quote-lines {
+  width: 100%;
+  margin: 0 0 4.5mm;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.quote-lines col.c-sn { width: 5%; }
+.quote-lines col.c-job { width: 22%; }
+.quote-lines col.c-spec { width: 22%; }
+.quote-lines col.c-fmt { width: 13%; }
+.quote-lines col.c-qty { width: 11%; }
+.quote-lines col.c-rate { width: 12%; }
+.quote-lines col.c-amt { width: 15%; }
+
+.quote-lines th,
+.quote-lines td {
+  padding: 1.7mm 1.6mm;
+  border-bottom: 1px solid #d5dde6;
+  vertical-align: top;
+  font-size: 9.5pt;
+  line-height: 1.32;
+}
+
+.quote-lines thead th {
+  background: #e8eef4;
+  color: #0f172a;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-align: left;
+  border-bottom: 1px solid #94a3b8;
+}
+
+.quote-lines .text {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.quote-lines .pre {
+  white-space: pre-wrap;
+}
+
+.quote-lines .num,
+.quote-money {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.quote-lines thead th.num {
+  text-align: right;
+}
+
+.quote-lines td.job {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.quote-totals {
+  width: 118mm;
+  max-width: 100%;
+  margin: 0 0 5mm auto;
+  padding: 2.5mm 3.5mm 2mm;
+  border: 1px solid #cbd5e1;
+}
+
+.quote-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6mm;
+  padding: 0.7mm 0;
+  font-size: 10pt;
+  white-space: nowrap;
+}
+
+.quote-total-row b,
+.quote-money {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  white-space: nowrap;
+}
+
+.quote-grand {
+  margin-top: 1.2mm;
+  padding-top: 1.6mm;
+  border-top: 1.5px solid #111;
+  font-size: 12pt;
+  font-weight: 800;
+}
+
+.quote-gst-note {
+  margin: 1mm 0 0.4mm;
+  text-align: right;
+  font-size: 8.5pt;
+  font-style: italic;
+  color: #475569;
+}
+
+.quote-terms {
+  margin: 0 0 3.5mm;
+  font-size: 10pt;
+  line-height: 1.42;
+  color: #1e293b;
+}
+
+.quote-term-line {
+  margin: 0 0 1.1mm;
+}
+
+.quote-conditions {
+  margin: 0;
+  padding-left: 4.5mm;
+}
+
+.quote-conditions li {
+  margin: 0 0 0.9mm;
+}
+
+.quote-comments {
+  margin: 0 0 4mm;
+  padding: 2mm 3mm;
+  border-left: 3px solid #1e293b;
+  background: #f8fafc;
+  font-size: 10pt;
+  font-style: italic;
+  color: #1e293b;
+}
+
+.quote-sign {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 8mm;
+  margin-top: 5mm;
+  padding-top: 3mm;
+  border-top: 1px solid #cbd5e1;
+}
+
+.quote-prepared {
+  font-size: 9.5pt;
+  line-height: 1.4;
+  color: #334155;
+}
+
+@media print {
+  #printable-quotation.quote-sheet {
+    font-size: 10.5pt !important;
+    line-height: 1.38 !important;
+    color: #111 !important;
+  }
+
+  #printable-quotation .quote-head {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.4fr) minmax(68mm, 0.82fr) !important;
+    column-gap: 8mm !important;
+    align-items: start !important;
+    padding: 0 0 3.5mm !important;
+    margin: 0 0 4mm !important;
+    border-bottom: 1.5px solid #111 !important;
+  }
+
+  #printable-quotation .quote-address,
+  #printable-quotation .quote-ids,
+  #printable-quotation .quote-party p,
+  #printable-quotation .quote-term-line,
+  #printable-quotation .quote-conditions,
+  #printable-quotation .quote-prepared,
+  #printable-quotation .quote-comments {
+    font-size: 10pt !important;
+    line-height: 1.38 !important;
+  }
+
+  #printable-quotation .quote-address {
+    max-width: 115mm !important;
+    font-size: 9.5pt !important;
+  }
+
+  #printable-quotation .quote-kicker {
+    font-size: 14pt !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.04em !important;
+    text-align: right !important;
+    line-height: 1.1 !important;
+    margin: 0 0 2mm !important;
+  }
+
+  #printable-quotation .quote-meta-table {
+    table-layout: fixed !important;
+  }
+
+  #printable-quotation .quote-meta-table th,
+  #printable-quotation .quote-meta-table td {
+    padding: 0.5mm 0 !important;
+    font-size: 9.5pt !important;
+    line-height: 1.3 !important;
+    background: transparent !important;
+    border: none !important;
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #printable-quotation .quote-meta-table th {
+    width: 46% !important;
+    text-align: left !important;
+    font-weight: 600 !important;
+    color: #334155 !important;
+  }
+
+  #printable-quotation .quote-meta-table td {
+    text-align: right !important;
+    font-weight: 700 !important;
+  }
+
+  #printable-quotation .quote-parties {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    column-gap: 0 !important;
+    margin: 0 0 4.5mm !important;
+    padding: 3mm 3.5mm !important;
+    border: 1px solid #cbd5e1 !important;
+    background: #f8fafc !important;
+  }
+
+  #printable-quotation .quote-party {
+    padding: 0 3.5mm 0 0 !important;
+    min-width: 0 !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party {
+    position: relative !important;
+    padding: 0 0 0 6mm !important;
+    border-left: none !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party::before {
+    content: '' !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 5.5mm !important;
+    bottom: 3mm !important;
+    width: 1px !important;
+    height: auto !important;
+    background: #94a3b8 !important;
+  }
+
+  #printable-quotation .quote-label {
+    display: block !important;
+    margin: 0 0 0.8mm !important;
+    padding: 0 !important;
+    border-bottom: none !important;
+    line-height: 1.35 !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party .quote-label {
+    margin: 0 0 1.6mm !important;
+  }
+
+  #printable-quotation .quote-party p {
+    margin: 0 !important;
+    line-height: 1.38 !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party p {
+    margin: 0 0 1.2mm !important;
+    line-height: 1.5 !important;
+  }
+
+  #printable-quotation .quote-party p:last-child {
+    margin-bottom: 0 !important;
+  }
+
+  #printable-quotation .quote-client {
+    display: block !important;
+    margin: 0 !important;
+    font-size: 12pt !important;
+    font-weight: 800 !important;
+    line-height: 1.25 !important;
+  }
+
+  #printable-quotation .quote-section {
+    font-size: 10pt !important;
+    font-weight: 800 !important;
+    line-height: 1.2 !important;
+    margin: 0 0 2mm !important;
+  }
+
+  #printable-quotation table.quote-lines {
+    table-layout: fixed !important;
+    width: 100% !important;
+    margin: 0 0 4.5mm !important;
+  }
+
+  #printable-quotation .quote-lines th,
+  #printable-quotation .quote-lines td {
+    padding: 1.6mm 1.5mm !important;
+    font-size: 9.5pt !important;
+    line-height: 1.3 !important;
+    vertical-align: top !important;
+  }
+
+  #printable-quotation .quote-lines thead th {
+    font-size: 8pt !important;
+    font-weight: 700 !important;
+    text-align: left !important;
+    background: #e8eef4 !important;
+    color: #0f172a !important;
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #printable-quotation .quote-lines thead th.num,
+  #printable-quotation .quote-lines td.num,
+  #printable-quotation .quote-money {
+    text-align: right !important;
+    white-space: nowrap !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+    font-variant-numeric: tabular-nums !important;
+    font-feature-settings: "tnum" 1 !important;
+    max-width: none !important;
+  }
+
+  #printable-quotation .quote-lines td.text {
+    white-space: normal !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+  }
+
+  #printable-quotation .quote-lines td.pre {
+    white-space: pre-wrap !important;
+  }
+
+  #printable-quotation .quote-totals {
+    width: 118mm !important;
+    max-width: 100% !important;
+    margin: 0 0 5mm auto !important;
+    padding: 2.5mm 3.5mm 2mm !important;
+    border: 1px solid #cbd5e1 !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #printable-quotation .quote-total-row {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 6mm !important;
+    padding: 0.6mm 0 !important;
+    font-size: 10pt !important;
+    white-space: nowrap !important;
+  }
+
+  #printable-quotation .quote-total-row span,
+  #printable-quotation .quote-total-row b {
+    white-space: nowrap !important;
+    max-width: none !important;
+    overflow-wrap: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #printable-quotation .quote-grand {
+    font-size: 12pt !important;
+    font-weight: 800 !important;
+    border-top: 1.5px solid #111 !important;
+    margin-top: 1.2mm !important;
+    padding-top: 1.5mm !important;
+  }
+
+  #printable-quotation .quote-gst-note {
+    font-size: 8.5pt !important;
+    text-align: right !important;
+    white-space: normal !important;
+  }
+
+  #printable-quotation .quote-terms {
+    margin: 0 0 3.5mm !important;
+    font-size: 10pt !important;
+    line-height: 1.42 !important;
+  }
+
+  #printable-quotation .quote-comments {
+    margin: 0 0 4mm !important;
+    padding: 2mm 3mm !important;
+    border-left: 3px solid #1e293b !important;
+    line-height: 1.4 !important;
+  }
+
+  #printable-quotation .quote-sign {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-end !important;
+    margin-top: 6mm !important;
+    padding-top: 3mm !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #printable-quotation .pdf-sign-role {
+    font-size: 9pt !important;
+  }
+}
