@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { NOT_RECORDED, computeDryInkSolids, finiteNumber } from '../utils/productionRecordQuality';
+import { NOT_RECORDED, computeDryInkSolids, finiteNumber, parseOptionalKg } from '../utils/productionRecordQuality';
 import { pushSlugState } from '../utils/slugRouter';
 import StorageImage from './StorageImage';
 import { 
@@ -88,7 +88,7 @@ const parseStructureLayers = (structureStr = '') => {
   });
 };
 
-function printDryInk({ inputRollsList, outputKg, meters, printWidthMm }) {
+function printDryInk({ inputRollsList, outputKg, meters, printWidthMm, plainSettingKg, printingWastageKg }) {
   const consumed = (inputRollsList || []).reduce((sum, roll) => sum + (parseFloat(roll.consumedWeightKg) || 0), 0);
   const widths = (inputRollsList || []).map((roll) => finiteNumber(roll.widthMm)).filter((value) => value !== null);
   return computeDryInkSolids({
@@ -96,11 +96,13 @@ function printDryInk({ inputRollsList, outputKg, meters, printWidthMm }) {
     outputKg,
     inputWidthMm: widths.length ? Math.max(...widths) : null,
     printWidthMm,
-    meters
+    meters,
+    plainSettingKg,
+    printingWastageKg
   });
 }
 
-function EndJobCalculationsBadges({ endJobTargetOrder, inputRollsList, jobMasters, inputPrintedOutputKg, inputActualMeters }) {
+function EndJobCalculationsBadges({ endJobTargetOrder, inputRollsList, jobMasters, inputPrintedOutputKg, inputActualMeters, plainSettingKg, printingWastageKg }) {
   if (!endJobTargetOrder) return null;
   const totalInputConsumedKg = (inputRollsList || []).reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
   const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
@@ -109,7 +111,9 @@ function EndJobCalculationsBadges({ endJobTargetOrder, inputRollsList, jobMaster
     inputRollsList,
     outputKg: inputPrintedOutputKg,
     meters: finiteNumber(inputActualMeters) ?? finiteNumber(endJobTargetOrder.actualMetersPrinted),
-    printWidthMm
+    printWidthMm,
+    plainSettingKg,
+    printingWastageKg
   });
   const showTrim = dry.trimKg > 0;
 
@@ -252,6 +256,8 @@ export default function ProductionScheduler({
   const [endJobStep, setEndJobStep] = useState('input'); // 'input' | 'confirm'
   const [inputActualMeters, setInputActualMeters] = useState('');
   const [inputInkGsm, setInputInkGsm] = useState('');
+  const [inputPlainSettingKg, setInputPlainSettingKg] = useState('');
+  const [inputPrintingWastageKg, setInputPrintingWastageKg] = useState('');
   const [inputPrintedOutputKg, setInputPrintedOutputKg] = useState('');
   const [inputOperatorNotes, setInputOperatorNotes] = useState('');
   const [printLessApproved, setPrintLessApproved] = useState(false);
@@ -859,6 +865,8 @@ export default function ProductionScheduler({
     setEndJobTargetOrder(order);
     setInputActualMeters('');
     setInputInkGsm('');
+    setInputPlainSettingKg('');
+    setInputPrintingWastageKg('');
 
     const matchingJM = (jobMasters || []).find(j => j.id === order.jobMasterId || j.jobCode === order.jobCode);
     const printWidth = order.widthMm || order.printWidthMm || matchingJM?.printWidthMm || matchingJM?.cylinderData?.widthMm || 460;
@@ -908,6 +916,16 @@ export default function ProductionScheduler({
     }
     if (!inputInkGsm || parseFloat(inputInkGsm) <= 0) {
       alert("Please enter a valid 'Ink GSM (In Speed)'.");
+      return;
+    }
+    const plainSettingKg = parseOptionalKg(inputPlainSettingKg);
+    const printingWastageKg = parseOptionalKg(inputPrintingWastageKg);
+    if (plainSettingKg === null) {
+      alert("Printing Plain Setting (kg) must be a number that is zero or greater.");
+      return;
+    }
+    if (printingWastageKg === null) {
+      alert("Printing Wastage (kg) must be a number that is zero or greater.");
       return;
     }
 
@@ -1117,11 +1135,15 @@ export default function ProductionScheduler({
       const printWidthMm = finiteNumber(endJobTargetOrder.printWidthMm ?? matchingJM?.printWidthMm ?? endJobTargetOrder.widthMm);
       const inputWidths = inputRollsList.map((roll) => finiteNumber(roll.widthMm)).filter((value) => value !== null);
       const maxInputWidth = inputWidths.length ? Math.max(...inputWidths) : null;
+      const plainSettingKg = parseOptionalKg(inputPlainSettingKg) || 0;
+      const printingWastageKg = parseOptionalKg(inputPrintingWastageKg) || 0;
       const dryInk = printDryInk({
         inputRollsList,
         outputKg: outputKgNum,
         meters: actualMetersNum,
-        printWidthMm
+        printWidthMm,
+        plainSettingKg,
+        printingWastageKg
       });
       const excessFilmWastageKg = dryInk.trimKg || 0;
       const excessFilmWastagePct = totalInputConsumedKg > 0 && excessFilmWastageKg
@@ -1149,6 +1171,8 @@ export default function ProductionScheduler({
         excessFilmWastagePct: excessFilmWastagePct,
         inkWeightGainKg: inkWeightGainKg,
         actualCalculatedInkGsm: actualCalculatedInkGsm,
+        printingPlainSettingWastageKg: plainSettingKg,
+        printingWastageKg: printingWastageKg,
         notes: inputOperatorNotes
       };
 
@@ -2794,6 +2818,45 @@ export default function ProductionScheduler({
                     </span>
                   </div>
 
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                    <div style={{ background: '#fffbeb', padding: '16px', borderRadius: '10px', border: '1px solid #fde68a' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'block', marginBottom: '6px' }}>
+                        Printing Plain Setting (kg)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="form-control"
+                        style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', border: '1.5px solid #d97706', background: '#ffffff' }}
+                        placeholder="0"
+                        value={inputPlainSettingKg}
+                        onChange={e => setInputPlainSettingKg(e.target.value)}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                        Unprinted film used to set the press. Leave blank for 0.
+                      </span>
+                    </div>
+                    <div style={{ background: '#fffbeb', padding: '16px', borderRadius: '10px', border: '1px solid #fde68a' }}>
+                      <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'block', marginBottom: '6px' }}>
+                        Printing Wastage (kg)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="form-control"
+                        style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', border: '1.5px solid #d97706', background: '#ffffff' }}
+                        placeholder="0"
+                        value={inputPrintingWastageKg}
+                        onChange={e => setInputPrintingWastageKg(e.target.value)}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px', display: 'block' }}>
+                        Printed or spoiled film that is not in the good output. Leave blank for 0.
+                      </span>
+                    </div>
+                  </div>
+
                   {/* Field 3: Printed Output (Roll-Wise Sequence in kgs) */}
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -3002,6 +3065,22 @@ export default function ProductionScheduler({
                     <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Measured on running web</span>
                   </div>
 
+                  <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Printing Plain Setting (kg)</span>
+                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#b45309', marginTop: '2px' }}>
+                      {(parseOptionalKg(inputPlainSettingKg) || 0).toFixed(2)} kg
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Sent to the scrap store when above 0</span>
+                  </div>
+
+                  <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #fde68a' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Printing Wastage (kg)</span>
+                    <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#b45309', marginTop: '2px' }}>
+                      {(parseOptionalKg(inputPrintingWastageKg) || 0).toFixed(2)} kg
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b' }}>Sent to the scrap store when above 0</span>
+                  </div>
+
                   <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Substrate Layer</span>
                     <div style={{ fontSize: '1.05rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
@@ -3073,7 +3152,9 @@ export default function ProductionScheduler({
                     inputRollsList={inputRollsList} 
                     jobMasters={jobMasters} 
                     inputPrintedOutputKg={inputPrintedOutputKg} 
-                    inputActualMeters={inputActualMeters} 
+                    inputActualMeters={inputActualMeters}
+                    plainSettingKg={inputPlainSettingKg}
+                    printingWastageKg={inputPrintingWastageKg}
                   />
                 </div>
 

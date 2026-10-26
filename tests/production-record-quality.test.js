@@ -30,6 +30,48 @@ test('dry ink solids are the dried weight gain and ignore a 0.20 factor', () => 
   assert.notEqual(result.dryInkSolidsKg, 1);
 });
 
+test('Nyra print mass balance keeps 0.4 GSM when plain setting and wastage are blank', () => {
+  const oldFormula = computeDryInkSolids({
+    inputKg: 249.6,
+    outputKg: 254.7,
+    inputWidthMm: 730,
+    printWidthMm: 730,
+    meters: 17478
+  });
+  const withZeros = computeDryInkSolids({
+    inputKg: 249.6,
+    outputKg: 254.7,
+    inputWidthMm: 730,
+    printWidthMm: 730,
+    meters: 17478,
+    plainSettingKg: 0,
+    printingWastageKg: ''
+  });
+  assert.equal(oldFormula.dryInkSolidsKg, 5.1);
+  assert.equal(oldFormula.gsm, 0.4);
+  assert.deepEqual(
+    { dryInkSolidsKg: withZeros.dryInkSolidsKg, gsm: withZeros.gsm, trimKg: withZeros.trimKg },
+    { dryInkSolidsKg: oldFormula.dryInkSolidsKg, gsm: oldFormula.gsm, trimKg: oldFormula.trimKg }
+  );
+});
+
+test('plain setting and printing wastage are film off the good roll, not missing ink', () => {
+  const result = computeDryInkSolids({
+    inputKg: 249.6,
+    outputKg: 254.7,
+    inputWidthMm: 730,
+    printWidthMm: 730,
+    meters: 17478,
+    plainSettingKg: 8,
+    printingWastageKg: 4
+  });
+  // 254.7 + 8 + 4 - 249.6 = 17.1 kg of ink. Area stays 17,478 m × 0.730 m.
+  assert.equal(result.dryInkSolidsKg, 17.1);
+  assert.equal(result.gsm, 1.34);
+  assert.equal(result.plainSettingKg, 8);
+  assert.equal(result.printingWastageKg, 4);
+});
+
 test('missing print input is not treated as zero ink gain', () => {
   const result = computeDryInkSolids({ inputKg: null, outputKg: 975.6, meters: 1000, printWidthMm: 710 });
   assert.equal(result.status, NOT_RECORDED);
