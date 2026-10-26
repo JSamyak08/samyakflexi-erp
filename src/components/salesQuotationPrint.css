@@ -76,28 +76,51 @@
 .quote-parties {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  column-gap: 6mm;
+  column-gap: 0;
   margin-bottom: 4.5mm;
   padding: 3mm 3.5mm;
   border: 1px solid #cbd5e1;
   background: #f8fafc;
 }
 
+.quote-party {
+  min-width: 0;
+  padding: 0 3.5mm 0 0;
+}
+
 .quote-party + .quote-party {
-  border-left: 1px solid #d5dde6;
-  padding-left: 5mm;
+  position: relative;
+  padding: 0 0 0 6mm;
+  border-left: none;
+}
+
+.quote-party + .quote-party::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5.5mm;
+  bottom: 3mm;
+  width: 1px;
+  background: #94a3b8;
 }
 
 .quote-label {
-  margin: 0 0 1.2mm;
+  margin: 0 0 0.8mm;
+  padding: 0;
   font-size: 8pt;
   font-weight: 800;
   letter-spacing: 0.05em;
+  line-height: 1.35;
   text-transform: uppercase;
   color: #334155;
 }
 
+.quote-party + .quote-party .quote-label {
+  margin-bottom: 1.6mm;
+}
+
 .quote-client {
+  margin: 0;
   font-size: 12pt;
   font-weight: 800;
   line-height: 1.25;
@@ -105,10 +128,19 @@
 }
 
 .quote-party p {
-  margin: 1mm 0 0;
+  margin: 0;
   font-size: 10pt;
   line-height: 1.38;
   color: #1e293b;
+}
+
+.quote-party + .quote-party p {
+  margin: 0 0 1.2mm;
+  line-height: 1.5;
+}
+
+.quote-party p:last-child {
+  margin-bottom: 0;
 }
 
 .quote-section {
@@ -340,14 +372,64 @@
   #printable-quotation .quote-parties {
     display: grid !important;
     grid-template-columns: 1fr 1fr !important;
-    column-gap: 6mm !important;
+    column-gap: 0 !important;
     margin: 0 0 4.5mm !important;
     padding: 3mm 3.5mm !important;
     border: 1px solid #cbd5e1 !important;
     background: #f8fafc !important;
   }
 
+  #printable-quotation .quote-party {
+    padding: 0 3.5mm 0 0 !important;
+    min-width: 0 !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party {
+    position: relative !important;
+    padding: 0 0 0 6mm !important;
+    border-left: none !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party::before {
+    content: '' !important;
+    position: absolute !important;
+    left: 0 !important;
+    top: 5.5mm !important;
+    bottom: 3mm !important;
+    width: 1px !important;
+    height: auto !important;
+    background: #94a3b8 !important;
+  }
+
+  #printable-quotation .quote-label {
+    display: block !important;
+    margin: 0 0 0.8mm !important;
+    padding: 0 !important;
+    border-bottom: none !important;
+    line-height: 1.35 !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party .quote-label {
+    margin: 0 0 1.6mm !important;
+  }
+
+  #printable-quotation .quote-party p {
+    margin: 0 !important;
+    line-height: 1.38 !important;
+  }
+
+  #printable-quotation .quote-party + .quote-party p {
+    margin: 0 0 1.2mm !important;
+    line-height: 1.5 !important;
+  }
+
+  #printable-quotation .quote-party p:last-child {
+    margin-bottom: 0 !important;
+  }
+
   #printable-quotation .quote-client {
+    display: block !important;
+    margin: 0 !important;
     font-size: 12pt !important;
     font-weight: 800 !important;
     line-height: 1.25 !important;
@@ -452,6 +534,13 @@
     margin: 0 0 3.5mm !important;
     font-size: 10pt !important;
     line-height: 1.42 !important;
+  }
+
+  #printable-quotation .quote-comments {
+    margin: 0 0 4mm !important;
+    padding: 2mm 3mm !important;
+    border-left: 3px solid #1e293b !important;
+    line-height: 1.4 !important;
   }
 
   #printable-quotation .quote-sign {

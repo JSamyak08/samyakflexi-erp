@@ -10,6 +10,11 @@ function money(amount) {
   return formatINR(amount);
 }
 
+function printedContactEmail(value) {
+  const email = String(value ?? '').trim();
+  return email || 'Not Available';
+}
+
 function lineAmount(item) {
   return (parseFloat(item.quantity) || 0) * (parseFloat(item.ratePerUom) || 0);
 }
@@ -41,7 +46,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
     clientGstin = "23AABCB1234F1Z1",
     contactPerson = "Rajesh Sharma",
     contactPhone = "+91 98260 11223",
-    contactEmail = "rsharma@britannia.co.in",
+    contactEmail,
     paymentTerms = "30 Days Net from date of Invoice",
     cylinderTerms = "Cylinder Development Cost borne by Client @ ₹6,500/cylinder",
     transportTerms = "Freight Included (FOR Pithampur Factory)",
@@ -140,7 +145,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
               <div className="quote-label">Contact person details</div>
               <p>Contact person: <b>{contactPerson}</b></p>
               <p>Phone: <b>{contactPhone}</b></p>
-              <p>Email: <b>{contactEmail}</b></p>
+              <p>Email: <b>{printedContactEmail(contactEmail)}</b></p>
             </div>
           </section>
 
