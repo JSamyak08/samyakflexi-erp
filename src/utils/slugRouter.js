@@ -258,6 +258,7 @@ export const MODULES = [
       { section: 'coa-new', segs: ['coas', 'new'], legacy: { subTab: 'coas', tab: 'coas' } },
       { section: 'coa', segs: ['coas', ':coaId'], idParam: 'coaId', legacy: { subTab: 'coas', tab: 'coas' } },
       { section: 'coas', segs: ['coas'], legacy: { subTab: 'coas', tab: 'coas' } },
+      { section: 'gain-loss', segs: ['gain-loss'], legacy: { subTab: 'gain-loss', tab: 'gain-loss' } },
     ],
   },
   {
@@ -313,6 +314,7 @@ export const MODULES = [
       { section: 'inventory-ageing', segs: ['inventory-ageing'], legacy: { tab: 'inventory_ageing' } },
       { section: 'email', segs: ['email'], legacy: { tab: 'email_config' } },
       { section: 'email-templates', segs: ['email-templates'], legacy: { tab: 'email_templates' } },
+      { section: 'dispatch-gain-loss', segs: ['dispatch-gain-loss'], legacy: { tab: 'dispatch_gain_loss' } },
     ],
   },
   {
