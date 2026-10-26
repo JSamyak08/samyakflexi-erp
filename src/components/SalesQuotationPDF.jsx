@@ -3,7 +3,23 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
-import { calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
+import './salesQuotationPrint.css';
+
+function money(amount) {
+  return formatINR(amount);
+}
+
+function lineAmount(item) {
+  return (parseFloat(item.quantity) || 0) * (parseFloat(item.ratePerUom) || 0);
+}
+
+function structureText(item) {
+  if (item.materialFormat === 'Rotogravure Cylinder') {
+    return item.description || item.structure || 'Rotogravure Cylinder Description N/A';
+  }
+  return item.structure || 'N/A';
+}
 
 export default function SalesQuotationPDF({ quotationData, onClose }) {
   const letterhead = loadLetterhead();
@@ -29,7 +45,6 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
     paymentTerms = "30 Days Net from date of Invoice",
     cylinderTerms = "Cylinder Development Cost borne by Client @ ₹6,500/cylinder",
     transportTerms = "Freight Included (FOR Pithampur Factory)",
-    status = "Sent to Client",
     items = [],
     termsAndConditions = [],
     comments = ""
@@ -41,13 +56,13 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
 
   return (
     <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.8)', zIndex: 1100 }}>
-      <div 
-        className="modal-content glass-panel" 
-          style={{ 
-          width: '210mm', 
+      <div
+        className="modal-content glass-panel"
+          style={{
+          width: '210mm',
           maxWidth: '96vw',
-          maxHeight: '92vh', 
-          overflowY: 'auto', 
+          maxHeight: '92vh',
+          overflowY: 'auto',
           padding: '16px 12px',
           background: '#ffffff',
           color: '#0f172a',
@@ -55,10 +70,9 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* Top Control Bar (Non-Printable) */}
         <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px' }}>
-          <button 
-            className="btn-secondary" 
+          <button
+            className="btn-secondary"
             style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontWeight: '700' }}
             onClick={onClose}
           >
@@ -66,8 +80,8 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           </button>
 
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button 
-              className="btn-primary" 
+            <button
+              className="btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 20px', background: '#1e293b', borderColor: '#1e293b', fontWeight: '800' }}
               onClick={() => window.print()}
             >
@@ -76,187 +90,168 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
           </div>
         </div>
 
-        {/* PRINTABLE LETTERHEAD AREA */}
-        <div id="printable-quotation" className="printable-document" style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
-          
-          {/* Header Company Banner */}
-          <div className="letterhead-header">
+        <div id="printable-quotation" className="printable-document quote-sheet">
+          <header className="quote-head">
             <div>
               {logoImage ? (
-                <img src={logoImage} alt="Company Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain', marginBottom: '4px' }} />
+                <img src={logoImage} alt="Company Logo" className="samyak-logo-img" />
               ) : (
-                <h1 style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b', margin: 0, letterSpacing: '-0.5px' }}>
-                  {COMPANY_DETAILS.name}
-                </h1>
+                <h1 className="letterhead-company-name">{COMPANY_DETAILS.name}</h1>
               )}
-              <div style={{ fontSize: '0.82rem', color: '#475569', marginTop: '4px', maxWidth: '420px', lineHeight: '1.4' }}>
-                {COMPANY_DETAILS.address}<br />
+              <div className="quote-address">{COMPANY_DETAILS.address}</div>
+              <div className="quote-ids">
                 <b>GSTIN:</b> {COMPANY_DETAILS.gstin} | <b>CIN:</b> {COMPANY_DETAILS.cin}
               </div>
             </div>
 
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ background: '#1e293b', color: '#ffffff', padding: '6px 16px', borderRadius: '6px', fontWeight: '900', fontSize: '1.05rem', letterSpacing: '0.5px', display: 'inline-block' }}>
-                SALES QUOTATION
-              </div>
-              <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#334155' }}>
-                <div>Quotation No: <b style={{ color: '#1e293b' }}>{quotationNo}</b></div>
-                <div>Amendment / Rev: <b style={{ color: '#047857' }}>{amendmentNo}</b></div>
-                <div>Date: <b>{enquiryDate}</b></div>
-                <div>Est. Delivery: <b>{estimatedDeliveryDate}</b></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Customer & Sales Details Box */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
             <div>
-              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                CLIENT / CUSTOMER DETAILS
-              </div>
-              <div style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a' }}>{clientName}</div>
-              <div style={{ fontSize: '0.85rem', color: '#475569', marginTop: '4px', lineHeight: '1.4' }}>{clientAddress}</div>
-              <div style={{ fontSize: '0.85rem', color: '#334155', marginTop: '6px' }}>
-                <b>GSTIN:</b> {clientGstin}
-              </div>
-            </div>
-
-            <div style={{ borderLeft: '1px solid #cbd5e1', paddingLeft: '16px' }}>
-              <div style={{ fontSize: '0.75rem', fontWeight: '800', color: '#1e293b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
-                CONTACT PERSON DETAILS
-              </div>
-              <div style={{ fontSize: '0.85rem', color: '#334155' }}>
-                <div>Contact Person: <b>{contactPerson}</b></div>
-                <div>Phone: <b>{contactPhone}</b></div>
-                <div>Email: <b>{contactEmail}</b></div>
-              </div>
-            </div>
-          </div>
-
-          {/* Product Specifications & Pricing Table */}
-          <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ fontSize: '0.92rem', fontWeight: '800', color: '#1e293b', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              📦 Product Specifications & Commercial Rate Sheet
-            </h4>
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: '#1e293b', color: '#ffffff' }}>
-                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>S.N</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Product / Job Description</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Structure / Description</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'left' }}>Material Format</th>
-                  <th style={{ padding: '8px 10px', textAlign: 'right' }}>Quantity</th>
-                  <th style={{ padding: '4px 5px', textAlign: 'right' }}>Rate / UOM</th>
-                  <th style={{ padding: '4px 5px', textAlign: 'right' }}>Taxable Amt (₹)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it, idx) => (
-                  <tr key={idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '10px' }}>{idx + 1}</td>
-                    <td style={{ padding: '10px', fontWeight: '700', color: '#0f172a' }}>{it.jobTitle}</td>
-                    <td style={{ padding: '10px', fontSize: '0.8rem', color: '#334155', whiteSpace: 'pre-wrap' }}>
-                      {it.materialFormat === 'Rotogravure Cylinder' ? (it.description || it.structure || 'Rotogravure Cylinder Description N/A') : (it.structure || 'N/A')}
-                    </td>
-                    <td style={{ padding: '10px' }}>
-                      <span className="badge badge-info" style={{ fontSize: '0.72rem', background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1' }}>
-                        {it.materialFormat || 'Roll Form'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: '800' }}>
-                      {(parseFloat(it.quantity) || 0).toLocaleString()} {it.uom}
-                    </td>
-                    <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: '700' }}>
-                      ₹ {(parseFloat(it.ratePerUom) || 0).toFixed(2)}
-                    </td>
-                    <td style={{ padding: '4px 5px', textAlign: 'right', fontWeight: '800', color: '#1e293b' }}>
-                      ₹ {((parseFloat(it.quantity) || 0) * (parseFloat(it.ratePerUom) || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
+              <div className="quote-kicker">SALES QUOTATION</div>
+              <table className="quote-meta-table">
+                <tbody>
+                  <tr>
+                    <th>Quotation no.</th>
+                    <td>{quotationNo}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  <tr>
+                    <th>Amendment</th>
+                    <td>{amendmentNo}</td>
+                  </tr>
+                  <tr>
+                    <th>Date</th>
+                    <td>{enquiryDate}</td>
+                  </tr>
+                  <tr>
+                    <th>Est. delivery</th>
+                    <td>{estimatedDeliveryDate}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </header>
 
-          {/* Tax Breakdown & Commercial Calculation */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
-            <div style={{ width: '55%', fontSize: '0.82rem', background: '#f8fafc', padding: '12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
-              <div style={{ fontWeight: '800', color: '#1e293b', marginBottom: '6px' }}>COMMERCIAL & LOGISTICS TERMS</div>
-              <div style={{ marginBottom: '4px' }}><b>Payment Terms:</b> {paymentTerms}</div>
-              <div style={{ marginBottom: '4px' }}><b>Cylinder Terms:</b> {cylinderTerms}</div>
-              <div><b>Freight & Transport:</b> {transportTerms}</div>
+          <section className="quote-parties">
+            <div className="quote-party">
+              <div className="quote-label">Client / customer details</div>
+              <div className="quote-client">{clientName}</div>
+              <p>{clientAddress}</p>
+              <p><b>GSTIN:</b> {clientGstin}</p>
+            </div>
+            <div className="quote-party">
+              <div className="quote-label">Contact person details</div>
+              <p>Contact person: <b>{contactPerson}</b></p>
+              <p>Phone: <b>{contactPhone}</b></p>
+              <p>Email: <b>{contactEmail}</b></p>
+            </div>
+          </section>
+
+          <h2 className="quote-section">Product specifications and commercial rate sheet</h2>
+          <table className="quote-lines">
+            <colgroup>
+              <col className="c-sn" />
+              <col className="c-job" />
+              <col className="c-spec" />
+              <col className="c-fmt" />
+              <col className="c-qty" />
+              <col className="c-rate" />
+              <col className="c-amt" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>Product / job</th>
+                <th>Structure</th>
+                <th>Format</th>
+                <th className="num">Qty</th>
+                <th className="num">Rate</th>
+                <th className="num">Taxable amt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, idx) => (
+                <tr key={idx}>
+                  <td>{idx + 1}</td>
+                  <td className="text job">{it.jobTitle}</td>
+                  <td className="text pre">{structureText(it)}</td>
+                  <td className="text">{it.materialFormat || 'Roll Form'}</td>
+                  <td className="num"><span className="quote-money">{(parseFloat(it.quantity) || 0).toLocaleString('en-IN')} {it.uom}</span></td>
+                  <td className="num"><span className="quote-money">{money(it.ratePerUom)}</span></td>
+                  <td className="num"><span className="quote-money">{money(lineAmount(it))}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <section className="quote-totals">
+            <div className="quote-total-row">
+              <span>Subtotal (Taxable Value)</span>
+              <b className="quote-money">{money(totalTaxable)}</b>
             </div>
 
-            <div style={{ width: '42%', fontSize: '0.85rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}>
-                <span>Subtotal (Taxable Value):</span>
-                <b>₹ {(totalTaxable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
-              </div>
-
-              {gstBreakdown?.isIntraState ? (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#334155' }}>
-                    <span>CGST ({gstBreakdown?.cgstRatePct || 0}% Central Tax):</span>
-                    <b>₹ {(gstBreakdown?.cgstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', color: '#334155' }}>
-                    <span>SGST ({gstBreakdown?.sgstRatePct || 0}% State Tax - MP):</span>
-                    <b>₹ {(gstBreakdown?.sgstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
-                  </div>
-                </>
-              ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#334155' }}>
-                  <span>IGST ({gstBreakdown?.igstRatePct || 0}% Integrated Tax):</span>
-                  <b>₹ {(gstBreakdown?.igstAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
+            {gstBreakdown?.isIntraState ? (
+              <>
+                <div className="quote-total-row">
+                  <span>CGST ({gstBreakdown?.cgstRatePct || 0}% Central Tax)</span>
+                  <b className="quote-money">{money(gstBreakdown?.cgstAmount)}</b>
                 </div>
-              )}
+                <div className="quote-total-row">
+                  <span>SGST ({gstBreakdown?.sgstRatePct || 0}% State Tax - MP)</span>
+                  <b className="quote-money">{money(gstBreakdown?.sgstAmount)}</b>
+                </div>
+              </>
+            ) : (
+              <div className="quote-total-row">
+                <span>IGST ({gstBreakdown?.igstRatePct || 0}% Integrated Tax)</span>
+                <b className="quote-money">{money(gstBreakdown?.igstAmount)}</b>
+              </div>
+            )}
 
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '2px solid #1e293b', fontSize: '1.05rem', fontWeight: '900', color: '#1e293b', marginTop: '4px' }}>
-                <span>Total Quotation Amount:</span>
-                <span>₹ {(totalGrand || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#64748b', fontStyle: 'italic', marginTop: '2px', textAlign: 'right' }}>
-                ({gstBreakdown.label})
-              </div>
+            <div className="quote-total-row quote-grand">
+              <span>Total Quotation Amount</span>
+              <span className="quote-money">{money(totalGrand)}</span>
             </div>
-          </div>
+            <div className="quote-gst-note">({gstBreakdown.label})</div>
+          </section>
 
-          {/* Standard Terms & Conditions Bullet Points */}
-          <div className="pdf-keep-with-next" style={{ marginBottom: '8px', fontSize: '0.8rem', background: '#fafafa', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontWeight: '800', color: '#1e293b', marginBottom: '6px' }}>TERMS & CONDITIONS</div>
-            <ul style={{ margin: 0, paddingLeft: '18px', color: '#475569', lineHeight: '1.5' }}>
+          <section className="quote-terms">
+            <h2 className="quote-section">Commercial and logistics terms</h2>
+            <p className="quote-term-line"><b>Payment terms:</b> {paymentTerms}</p>
+            <p className="quote-term-line"><b>Cylinder terms:</b> {cylinderTerms}</p>
+            <p className="quote-term-line"><b>Freight and transport:</b> {transportTerms}</p>
+          </section>
+
+          <section className="quote-terms pdf-keep-with-next">
+            <h2 className="quote-section">Terms and conditions</h2>
+            <ul className="quote-conditions">
               {termsAndConditions.map((term, i) => (
                 <li key={i}>{term}</li>
               ))}
             </ul>
-          </div>
+          </section>
 
           {comments && (
-            <div style={{ marginBottom: '24px', fontSize: '0.82rem', color: '#334155', fontStyle: 'italic', background: '#f8fafc', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #1e293b' }}>
-              <b>Special Comments:</b> {comments}
+            <div className="quote-comments">
+              <b>Special comments:</b> {comments}
             </div>
           )}
 
-          {/* Signatures & Authorization Section */}
-          <div className="pdf-signature-block" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', paddingTop: '6px', borderTop: '1px dashed #cbd5e1', marginTop: '6px' }}>
-            <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              <div><b>Prepared By:</b> {salesManager}</div>
-              <div><b>Issued On:</b> {enquiryDate}</div>
+          <div className="quote-sign pdf-signature-block">
+            <div className="quote-prepared">
+              <div><b>Prepared by:</b> {salesManager}</div>
+              <div><b>Issued on:</b> {enquiryDate}</div>
             </div>
 
             <div className="pdf-sign-company">
-              <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a' }}>For Samyak International Ltd</div>
+              <div>For {COMPANY_DETAILS.name}</div>
               <div className="pdf-sign-slot">
                 {signatureImage ? (
-                  <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
+                  <img src={signatureImage} alt="Authorised Signature" />
                 ) : (
                   <span style={{ fontFamily: 'serif', fontStyle: 'italic' }}>Sy</span>
                 )}
               </div>
-              <div className="pdf-sign-role">Authorized Signature</div>
+              <div className="pdf-sign-role">Authorised Signatory</div>
             </div>
           </div>
-
         </div>
       </div>
     </div>
