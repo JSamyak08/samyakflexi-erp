@@ -344,6 +344,17 @@ SELECT private.install_module_access('public.press_board'::regclass, ARRAY['prin
 SELECT private.install_module_access('public.pellet_inwards'::regclass, ARRAY['pellet_fuel','inventory']);
 SELECT private.install_module_access('public.pellet_consumptions'::regclass, ARRAY['pellet_fuel','inventory']);
 
+-- Added after this lockdown shipped. Re-applying the lockdown still covers it.
+DO $$
+BEGIN
+  IF to_regclass('public.purchase_order_revisions') IS NOT NULL THEN
+    PERFORM private.install_module_access(
+      'public.purchase_order_revisions'::regclass,
+      ARRAY['purchase_orders','inventory']
+    );
+  END IF;
+END $$;
+
 
 -- Pellet GRN numbers are issued by SECURITY INVOKER functions. The counter
 -- table is created with RLS and no policy, so the allocator cannot see it
