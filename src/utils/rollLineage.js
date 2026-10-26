@@ -149,7 +149,9 @@ export function buildRollLineage(record = {}) {
     outputKg: record.printedOutputKg,
     inputWidthMm: widths.length ? Math.max(...widths) : null,
     printWidthMm: record.printWidthMm,
-    meters: record.actualMetersPrinted
+    meters: record.actualMetersPrinted,
+    plainSettingKg: record.printingPlainSettingWastageKg,
+    printingWastageKg: record.printingWastageKg
   });
 
   const printing = emptyStep('printing', 'Printing');

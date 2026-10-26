@@ -141,6 +141,8 @@ import {
 } from './services/guardedWrite';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 import { buildChildStockRecords, saveConsumeChildRolls } from './services/consumeChildRolls';
+import { planPrintingScrap } from './utils/printingScrap';
+import { parseOptionalKg } from './utils/productionRecordQuality';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
@@ -150,6 +152,7 @@ import {
   replacePayloadRecords,
   fetchPressBoard,
   savePressBoard,
+  savePrintingScrapEntries,
   describeSaveError,
   localKeysToClear,
   snapshotBrowserStorage,
@@ -2284,6 +2287,8 @@ export default function App() {
       excessFilmWastagePct: endData.excessFilmWastagePct || 0,
       inkWeightGainKg: endData.inkWeightGainKg ?? null,
       actualCalculatedInkGsm: endData.actualCalculatedInkGsm ?? null,
+      printingPlainSettingWastageKg: parseOptionalKg(endData.printingPlainSettingWastageKg) || 0,
+      printingWastageKg: parseOptionalKg(endData.printingWastageKg) || 0,
       notes: endData.notes || baseRecord.notes || '',
       stages: {
         ...(baseRecord.stages || {}),
@@ -2297,12 +2302,31 @@ export default function App() {
           inkGsmInSpeed,
           printedOutputKg,
           actualCalculatedInkGsm: endData.actualCalculatedInkGsm || 0,
+          printingPlainSettingWastageKg: parseOptionalKg(endData.printingPlainSettingWastageKg) || 0,
+          printingWastageKg: parseOptionalKg(endData.printingWastageKg) || 0,
           outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
           sfgBarcodes: (endData.rollsBreakdown || []).map(r => r.barcodeId || r.id)
         }
       }
     };
     await handleSaveProductionRecord(updatedRecord);
+    const scrapRecordedAt = new Date().toISOString();
+    const scrapPlan = planPrintingScrap({
+      orderId: order.id,
+      productionRecordId: updatedRecord.id,
+      jobName: order.jobName,
+      jobCode: order.jobCode || order.id,
+      clientName: order.clientName || order.customerName || '',
+      filmType: order.printFilmType || order.filmType || (endData.inputRollsList || [])[0]?.filmType || '',
+      micron: order.micron || (endData.inputRollsList || [])[0]?.micron || null,
+      widthMm: endData.printWidthMm || order.printWidthMm || order.widthMm || null,
+      plainSettingKg: updatedRecord.printingPlainSettingWastageKg,
+      printingWastageKg: updatedRecord.printingWastageKg,
+      scrappedBy: currentUser?.name || currentUser?.fullName || 'Operator',
+      date: scrapRecordedAt.split('T')[0],
+      timestamp: scrapRecordedAt
+    });
+    await writeWithRetry(() => savePrintingScrapEntries(supabase, scrapPlan));
     await handleSaveSchedule({
       id: `SCHED-${order.id}`,
       orderId: order.id,

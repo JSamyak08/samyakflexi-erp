@@ -697,3 +697,28 @@ export async function saveJobCardSpec(supabase, id, payload) {
   }, { onConflict: 'id' });
   if (error) throw error;
 }
+
+/** Insert or update payload rows without deleting the rest of the table. */
+export async function upsertPayloadRecords(supabase, table, records) {
+  const rows = (records || []).filter(Boolean).map((record) => ({
+    ...payloadRow(record, table),
+    updated_at: new Date().toISOString()
+  }));
+  if (!rows.length) return [];
+  const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' });
+  if (error) throw error;
+  return rows.map((row) => row.payload);
+}
+
+/**
+ * Scrap store write used by End Job. Same sfg_scrap_items payload shape as the
+ * SFG store. Zero quantities are skipped, and a retry upserts the same ids.
+ */
+export async function savePrintingScrapEntries(supabase, plan) {
+  const deleteIds = (plan?.deleteIds || []).map(String).filter(Boolean);
+  if (deleteIds.length) {
+    const { error } = await supabase.from('sfg_scrap_items').delete().in('id', deleteIds);
+    if (error) throw error;
+  }
+  return upsertPayloadRecords(supabase, 'sfg_scrap_items', plan?.upserts || []);
+}

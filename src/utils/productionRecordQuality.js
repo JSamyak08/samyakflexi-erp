@@ -243,11 +243,44 @@ export function compareSubstrate({ spec, actual }) {
 }
 
 /**
- * Dried mass gained on the print web is the dry ink solids.
- * Do not multiply by 0.20. Do not treat a missing input as zero.
- * Trim is removed only when both widths are recorded and the input is wider.
+ * Blank or missing optional kilograms count as 0.
+ * A negative or non-numeric entry is invalid and returns null.
  */
-export function computeDryInkSolids({ inputKg, outputKg, inputWidthMm, printWidthMm, meters } = {}) {
+export function parseOptionalKg(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return 0;
+  const number = finiteNumber(value);
+  if (number === null || number < 0) return null;
+  return roundMeasure(number);
+}
+
+function nonNegativeKg(value) {
+  const parsed = parseOptionalKg(value);
+  return parsed === null ? 0 : parsed;
+}
+
+/**
+ * Dry ink solids are the mass that is not substrate.
+ *
+ * Edge trim is removed first, and only when the input roll is wider than the
+ * print width. Plain setting and printing wastage are substrate that left the
+ * roll and is not in the good printed output (wastage may also carry ink).
+ * They are added back so that film is not treated as missing ink.
+ *
+ * dry ink = printed output + plain setting + printing wastage − substrate after trim
+ *
+ * Missing plain setting or printing wastage counts as 0, so an older record
+ * with neither value keeps the previous result: printed output − substrate after trim.
+ * Do not multiply by 0.20. Do not treat a missing input weight as zero.
+ */
+export function computeDryInkSolids({
+  inputKg,
+  outputKg,
+  inputWidthMm,
+  printWidthMm,
+  meters,
+  plainSettingKg,
+  printingWastageKg
+} = {}) {
   const input = finiteNumber(inputKg);
   const output = finiteNumber(outputKg);
   if (input === null || input <= 0 || output === null) {
@@ -256,6 +289,8 @@ export function computeDryInkSolids({ inputKg, outputKg, inputWidthMm, printWidt
       dryInkSolidsKg: null,
       trimKg: null,
       effectiveInputKg: null,
+      plainSettingKg: nonNegativeKg(plainSettingKg),
+      printingWastageKg: nonNegativeKg(printingWastageKg),
       gsm: null,
       areaM2: null
     };
@@ -270,7 +305,9 @@ export function computeDryInkSolids({ inputKg, outputKg, inputWidthMm, printWidt
     effectiveInput = input - trimKg;
   }
 
-  const dryInkSolidsKg = roundMeasure(output - effectiveInput);
+  const plainSetting = nonNegativeKg(plainSettingKg);
+  const printingWastage = nonNegativeKg(printingWastageKg);
+  const dryInkSolidsKg = roundMeasure(output - effectiveInput + plainSetting + printingWastage);
   const meterValue = finiteNumber(meters);
   const areaM2 = meterValue !== null && meterValue > 0 && printWidth !== null && printWidth > 0
     ? (meterValue * printWidth) / 1000
@@ -282,6 +319,8 @@ export function computeDryInkSolids({ inputKg, outputKg, inputWidthMm, printWidt
     dryInkSolidsKg,
     trimKg: roundMeasure(trimKg),
     effectiveInputKg: roundMeasure(effectiveInput),
+    plainSettingKg: plainSetting,
+    printingWastageKg: printingWastage,
     gsm,
     areaM2: areaM2 === null ? null : roundMeasure(areaM2)
   };
@@ -474,7 +513,9 @@ export function describeSubstrateAnalysis({ record = {}, order = {}, jobMaster =
     outputKg: record.printedOutputKg,
     inputWidthMm: actual.widthMm,
     printWidthMm: spec?.printWidthMm,
-    meters: record.actualMetersPrinted
+    meters: record.actualMetersPrinted,
+    plainSettingKg: record.printingPlainSettingWastageKg,
+    printingWastageKg: record.printingWastageKg
   });
   return { spec, actual, match, dry, inputKg, inputCount: inputs.length };
 }

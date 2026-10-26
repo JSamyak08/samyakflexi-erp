@@ -1840,7 +1840,9 @@ export default function ProductionRecordManagement({
         inputRollsList: printInputs,
         printedOutputKg: selectedRecord?.printedOutputKg || selectedOrder?.printedOutputKg,
         actualMetersPrinted: selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted,
-        printWidthMm: selectedOrder?.printWidthMm
+        printWidthMm: selectedOrder?.printWidthMm,
+        printingPlainSettingWastageKg,
+        printingWastageKg
       },
       order: selectedOrder
     }).dry;
@@ -1867,6 +1869,8 @@ export default function ProductionRecordManagement({
       printedOutputKg: selectedRecord?.printedOutputKg || selectedOrder?.printedOutputKg,
       actualMetersPrinted: selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted,
       printWidthMm: selectedOrder?.printWidthMm,
+      printingPlainSettingWastageKg,
+      printingWastageKg,
       sfgConsumptions: selectedRecord?.sfgConsumptions || [],
       orderId: selectedOrder?.id
     });
