@@ -31,6 +31,7 @@ import {
 import SalesQuotationPDF from './SalesQuotationPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
+import { applyQuotationLineDescription } from '../utils/quotationLineDescription';
 import { 
   calculateJobRawMaterials,
   isLDFilm,
@@ -726,14 +727,14 @@ export default function SalesManagement({
       const gst = (taxable * (parseFloat(it.gstPct) || 18)) / 100;
       const isCylinder = it.materialFormat === 'Rotogravure Cylinder';
       const computedStructure = isCylinder ? (it.description || it.structure || 'Rotogravure Cylinder Set') : getStructureString(it);
-      return {
+      return applyQuotationLineDescription({
         ...it,
         structure: computedStructure,
         description: isCylinder ? (it.description || computedStructure) : undefined,
         taxableAmount: taxable,
         gstAmount: gst,
         totalAmount: taxable + gst
-      };
+      });
     });
 
     const finalQtnNo = editingQuotationId ? quotationNo : getNextDocRefNumber('qtn');
@@ -1975,6 +1976,23 @@ export default function SalesManagement({
                               </div>
                             </div>
                           )}
+                          <div style={{ marginTop: '8px' }}>
+                            <label style={{ fontSize: '0.72rem', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '3px' }}>
+                              Description (optional)
+                            </label>
+                            <textarea
+                              className="form-control"
+                              rows={2}
+                              value={it.lineDescription || ''}
+                              placeholder="Printed under the product name. Leave blank to omit."
+                              onChange={e => {
+                                const updated = [...items];
+                                updated[idx].lineDescription = e.target.value;
+                                setItems(updated);
+                              }}
+                              style={{ padding: '6px 8px', fontSize: '0.78rem', minHeight: '52px', resize: 'vertical', lineHeight: '1.35' }}
+                            />
+                          </div>
                         </td>
                         <td style={{ verticalAlign: 'top', background: isCylinder ? '#f0f9ff' : '#fafafa', padding: '8px' }}>
                           {isCylinder ? (

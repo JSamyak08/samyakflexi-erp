@@ -212,6 +212,17 @@
   color: #0f172a;
 }
 
+.quote-line-desc {
+  display: block;
+  margin-top: 0.7mm;
+  font-size: 8pt;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #475569;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
 .quote-totals {
   width: 118mm;
   max-width: 100%;
@@ -481,6 +492,19 @@
 
   #printable-quotation .quote-lines td.text {
     white-space: normal !important;
+    overflow-wrap: break-word !important;
+    word-break: normal !important;
+  }
+
+  #printable-quotation .quote-line-desc {
+    display: block !important;
+    margin: 0.7mm 0 0 !important;
+    padding: 0 !important;
+    font-size: 8pt !important;
+    font-weight: 500 !important;
+    line-height: 1.35 !important;
+    color: #475569 !important;
+    white-space: pre-wrap !important;
     overflow-wrap: break-word !important;
     word-break: normal !important;
   }
