@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { pushSlugState } from '../utils/slugRouter';
 import SearchableSelect from './SearchableSelect';
 import { 
@@ -333,8 +334,8 @@ export default function ConsumablesAndIndents({
     // Formatted PO Object for PurchaseOrderPDF viewer & central store
     const poPayload = {
       poNumber: finalPoNum,
-      poDate: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
-      deliveryDate: new Date(poDeliveryDate || new Date()).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      poDate: new Date().toISOString().split('T')[0],
+      deliveryDate: (poDeliveryDate ? String(poDeliveryDate).slice(0, 10) : new Date().toISOString().split('T')[0]),
       indentNumber: targetIndentForPO ? targetIndentForPO.indentNo : "IND-2026-001",
       paymentTerms: poPaymentTerms,
       logisticDetails: "Freight Included to Pithampur Factory",
@@ -1444,7 +1445,7 @@ export default function ConsumablesAndIndents({
                 {machineIssues.map(issue => (
                   <tr key={issue.id}>
                     <td><strong style={{ color: 'var(--primary-brand)' }}>{issue.issueNo}</strong></td>
-                    <td style={{ fontSize: '0.85rem' }}>{issue.date}</td>
+                    <td style={{ fontSize: '0.85rem' }}>{formatPlantDateTime(issue.date)}</td>
                     <td><span className="badge badge-both">{issue.indentNo}</span></td>
                     <td style={{ fontWeight: '700' }}>{issue.itemName}</td>
                     <td><b style={{ color: '#047857', fontSize: '0.95rem' }}>{issue.qtyIssued} {issue.unit}</b></td>

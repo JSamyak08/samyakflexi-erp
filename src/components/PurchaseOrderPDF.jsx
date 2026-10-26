@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { formatPlantDateTime } from '../utils/dbDates';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
 
@@ -402,7 +403,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 </div>
               )}
               <div style={{ fontSize: '7.5pt', color: '#64748b', marginTop: '3px' }}>
-                Authorized by: <strong>{poData.priceDiscrepancyResolution.resolvedBy}</strong> on {poData.priceDiscrepancyResolution.resolvedAt} • Linked GRN: <strong>{poData.priceDiscrepancyResolution.grnNo || 'Inward GRN'}</strong>
+                Authorized by: <strong>{poData.priceDiscrepancyResolution.resolvedBy}</strong> on {formatPlantDateTime(poData.priceDiscrepancyResolution.resolvedAt)} • Linked GRN: <strong>{poData.priceDiscrepancyResolution.grnNo || 'Inward GRN'}</strong>
               </div>
             </div>
           )}

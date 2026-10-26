@@ -1821,7 +1821,7 @@ export default function App() {
       ...existing,
       status: 'Approved by Admin',
       approvedBy: adminName,
-      approvalDate: new Date().toLocaleString()
+      approvalDate: new Date().toISOString()
     };
     await saveProductionRecordToSupabase(updated);
     setProductionRecords(prev => prev.map(r => r.id === recordId ? updated : r));
@@ -1883,7 +1883,7 @@ export default function App() {
       batchNo: batchNo || item.lastBatch || '',
       vendorName: vendorName || item.lastVendor || '',
       grnNo: grnNo || '',
-      date: new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }),
+      date: new Date().toISOString(),
       issuedBy: user || currentUser?.name || 'Store Manager',
       notes: notes || (issueType === 'issue'
         ? `Issued ${qty} ${unitStr} from Batch [${batchNo || 'Main Lot'}] to Job: ${jobName}`
