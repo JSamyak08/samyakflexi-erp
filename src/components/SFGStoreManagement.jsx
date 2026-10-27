@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { displayPartyName } from '../utils/textHelpers';
 import { isDispatchPacking } from '../utils/dispatchPacking';
+import {
+  NO_MACHINE_FOR_PROCESS_HINT,
+  defaultMachineForProcess,
+  machinesForProcess
+} from '../utils/machineForProcess';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -187,6 +192,10 @@ export default function SFGStoreManagement({
   const [consumedWeightKg, setConsumedWeightKg] = useState('');
   const [targetProcess, setTargetProcess] = useState('Lamination (Pass 1)');
   const [targetMachine, setTargetMachine] = useState('');
+  const processMachines = useMemo(
+    () => machinesForProcess(machines, targetProcess),
+    [machines, targetProcess]
+  );
   const [operatorName, setOperatorName] = useState(currentUser?.fullName || currentUser?.username || '');
   const [shift, setShift] = useState('Day Shift');
   const [notes, setNotes] = useState('');
@@ -594,7 +603,7 @@ export default function SFGStoreManagement({
     setSelectedItemForConsume(item);
     setConsumedWeightKg('');
     setTargetProcess('Lamination (Pass 1)');
-    setTargetMachine(machines[0]?.name || '');
+    setTargetMachine(defaultMachineForProcess(machines, 'Lamination (Pass 1)')?.name || '');
     setOperatorName(currentUser?.fullName || currentUser?.username || '');
     setShift('Day Shift');
     setNotes('');
@@ -660,6 +669,7 @@ export default function SFGStoreManagement({
 
   const handleTargetProcessChange = (proc) => {
     setTargetProcess(proc);
+    setTargetMachine(defaultMachineForProcess(machines, proc)?.name || '');
     const cleanOrd = String(selectedItemForConsume?.orderId || 'ORD').replace(/[^a-zA-Z0-9]/g, '');
     if (proc === 'Slitting & Rewinding' || proc === 'Pouching / Bag Making') {
       setOutputType('FG');
@@ -3022,6 +3032,7 @@ export default function SFGStoreManagement({
                     Target Process / Stage <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <SearchableSelect
+                    id="consume-target-process"
                     value={targetProcess}
                     onChange={(e) => handleTargetProcessChange(e.target.value)}
                     style={{ width: '100%' }}
@@ -3156,16 +3167,22 @@ export default function SFGStoreManagement({
                     Target Machine / Line
                   </label>
                   <SearchableSelect
+                    id="consume-target-machine"
                     value={targetMachine}
                     onChange={(e) => setTargetMachine(e.target.value)}
                     placeholder="Search or Select Machine..."
                     style={{ width: '100%' }}
                   >
                     <option value="">Select Machine...</option>
-                    {machines.map(m => (
+                    {processMachines.map(m => (
                       <option key={m.id || m.name} value={m.name}>{m.name}</option>
                     ))}
                   </SearchableSelect>
+                  {processMachines.length === 0 && (
+                    <div data-testid="consume-machine-hint" style={{ fontSize: '0.76rem', color: '#b45309', marginTop: '6px', lineHeight: 1.4 }}>
+                      {NO_MACHINE_FOR_PROCESS_HINT}
+                    </div>
+                  )}
                 </div>
 
                 {/* Operator Name */}
