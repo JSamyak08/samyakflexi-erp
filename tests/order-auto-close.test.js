@@ -60,6 +60,29 @@ test('leftover SFG or FG keeps the order open', () => {
   assert.notEqual(fgLeft.order.status, 'Completed');
 });
 
+test('an open packing list is not dispatched weight until it is finalised', () => {
+  const settings = { enabled: true, tolerancePct: 10 };
+  const openList = {
+    id: 'PL-OPEN',
+    dispatchId: 'PL-OPEN',
+    orderId: 'ORD-1',
+    packingStatus: 'Open',
+    totalNetWeightKg: 1000,
+    items: [{ netWeightKg: 1000, unit: 'Kg', quantity: 1000 }]
+  };
+  const open = evaluateOrderAutoClose({ order: order(), shipments: [openList], settings });
+  assert.equal(open.changed, false);
+  assert.notEqual(open.order.status, 'Completed');
+
+  const finalised = evaluateOrderAutoClose({
+    order: order(),
+    shipments: [{ ...openList, packingStatus: 'Finalised' }],
+    settings
+  });
+  assert.equal(finalised.action, 'close');
+  assert.equal(finalised.order.status, 'Completed');
+});
+
 test('a challan is required and job names are not fuzzy matched', () => {
   const settings = { enabled: true };
   const noDoc = evaluateOrderAutoClose({

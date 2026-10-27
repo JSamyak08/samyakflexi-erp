@@ -35,6 +35,20 @@ import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateO
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import PackingGainLossReport from './PackingGainLossReport';
+import {
+  canSeePackingGainLoss,
+  consumedKgForList,
+  formatGainLossKg,
+  formatGainLossPct,
+  gainLossForShipment,
+  isOpenPackingList,
+  listConsumptions,
+  packedNetKgFromItems,
+  packingListStatus,
+  PACKING_STATUS_FINALISED,
+  PACKING_STATUS_OPEN
+} from '../utils/dispatchPacking';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getCompanyProfile } from '../services/companyProfile';
 import { supabase } from '../services/supabaseClient';
@@ -155,6 +169,7 @@ export default function DispatchManagement({
   onDeleteDispatchShipment,
   urlParams = {}
 }) {
+  const isAdmin = canSeePackingGainLoss(currentUser?.role);
   const [activeTab, setActiveTab] = useState(() => {
     if (urlParams.subTab === 'coas' || urlParams.tab === 'coas' || urlParams.coaId || urlParams.coaNo) {
       return 'coas';
@@ -162,8 +177,16 @@ export default function DispatchManagement({
     if (urlParams.subTab === 'challans' || urlParams.tab === 'challans' || urlParams.id || urlParams.challanNo) {
       return 'challans';
     }
+    if (canSeePackingGainLoss(currentUser?.role) && (urlParams.section === 'gain-loss' || urlParams.subTab === 'gain-loss' || urlParams.tab === 'gain-loss')) {
+      return 'gain-loss';
+    }
     return 'packing'; // Create Packing List is 1st position by default
   });
+
+  useEffect(() => {
+    if (urlParams.section !== 'gain-loss' && urlParams.subTab !== 'gain-loss' && urlParams.tab !== 'gain-loss') return;
+    setActiveTab(canSeePackingGainLoss(currentUser?.role) ? 'gain-loss' : 'packing');
+  }, [urlParams.section, urlParams.subTab, urlParams.tab, currentUser?.role]);
 
   const handleTabSwitch = (tabKey) => {
     setActiveTab(tabKey);
@@ -201,6 +224,10 @@ export default function DispatchManagement({
   const [pktUom, setPktUom] = useState('Kg');
   const [pktHideBranding, setPktHideBranding] = useState(false);
   const [pktRollsList, setPktRollsList] = useState([]);
+  const [pktInternalId, setPktInternalId] = useState('');
+  const [pktOrderId, setPktOrderId] = useState('');
+  const [pktPackingStatus, setPktPackingStatus] = useState(PACKING_STATUS_FINALISED);
+  const [pktConsumptions, setPktConsumptions] = useState([]);
   const [selectedFgRollForWeighing, setSelectedFgRollForWeighing] = useState(null);
 
   // Available Finished Goods (FG) in store for the selected production job
@@ -1359,8 +1386,61 @@ export default function DispatchManagement({
     setDcItems(generatedDcItems);
   };
 
-  const handleCreateDcFromPackingList = (shipment) => {
-    const plId = String(shipment.dispatchId || shipment.id);
+  const resetPackingDraft = () => {
+    setPktInternalId('');
+    setPktOrderId('');
+    setPktPackingStatus(PACKING_STATUS_FINALISED);
+    setPktConsumptions([]);
+    setPktInvoiceNo('');
+    setPktVehicleNo('');
+    setPktLrNo('');
+    setPktTransporterName('');
+    setPktPoNo('');
+    setPktCoreWeight(0);
+    setPktUom('Kg');
+    setPktHideBranding(false);
+    setCurrentPktNetWeight(0);
+    setPktRollsList([]);
+    setSelectedFgRollForWeighing(null);
+  };
+
+  const openPackingListForWeighing = (shipment) => {
+    const matchedOrder = (orders || []).find((order) => order.jobName === shipment.jobName || order.id === shipment.orderId);
+    setPktInternalId(shipment.id || `DISP-PL-${shipment.dispatchId}`);
+    setPktDispatchId(shipment.dispatchId || '');
+    setPktOrderId(shipment.orderId && shipment.orderId !== 'N/A' ? shipment.orderId : (matchedOrder?.id || ''));
+    setPktInvoiceNo(shipment.invoiceNo || '');
+    setPktJobName(shipment.jobName || '');
+    setPktClientName(shipment.clientName || '');
+    setPktVehicleNo(shipment.vehicleNo || '');
+    setPktLrNo(shipment.lrNo || '');
+    setPktTransporterName(shipment.transporterName || '');
+    setPktPoNo(shipment.poNo || matchedOrder?.poNo || '');
+    setPktCoreWeight(0);
+    setPktUom('Kg');
+    setPktHideBranding(Boolean(shipment.hideBranding));
+    setCurrentPktNetWeight(0);
+    setPktRollsList(Array.isArray(shipment.items) ? shipment.items : []);
+    setPktPackingStatus(packingListStatus(shipment));
+    setPktConsumptions(listConsumptions(shipment));
+    setSelectedFgRollForWeighing(null);
+    setIsPackingModalOpen(true);
+  };
+
+  const handleCreateDcFromPackingList = async (shipment) => {
+    let source = shipment;
+    if (isOpenPackingList(shipment) && onAddDispatchShipment) {
+      source = { ...shipment, packingStatus: PACKING_STATUS_FINALISED };
+      try {
+        await onAddDispatchShipment(source);
+      } catch (err) {
+        if (err?.name !== 'PartialSaveError') {
+          alert(err?.message || 'The packing list was not finalised.');
+          return;
+        }
+      }
+    }
+    const plId = String(source.dispatchId || source.id);
     handleImportMultiplePackingLists([plId]);
     handleTabSwitch('challans');
     setIsDcModalOpen(true);
@@ -1462,7 +1542,13 @@ export default function DispatchManagement({
 
     const coreW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 4.5;
     const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
-    const rollsToSave = pktRollsList.length > 0 ? pktRollsList : [
+    const hasConsumptions = pktConsumptions.length > 0;
+    const finalise = !hasConsumptions || e.nativeEvent?.submitter?.dataset?.finalise === 'true';
+    if (finalise && !String(pktVehicleNo || '').trim()) {
+      alert('Vehicle number is required to finalise the packing list.');
+      return;
+    }
+    const rollsToSave = pktRollsList.length > 0 ? pktRollsList : (hasConsumptions ? [] : [
       {
         rollNo: 1,
         barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-1`,
@@ -1471,12 +1557,17 @@ export default function DispatchManagement({
         coreWeightKg: coreW,
         netWeightKg: Number(currentPktNetWeight) || 0,
         grossWeightKg: Number(((Number(currentPktNetWeight) || 0) + coreW).toFixed(2)),
-        coreSize: '3 Inch'
+        coreSize: '3 Inch',
+        unit: pktUom || 'Kg'
       }
-    ];
+    ]);
 
-    const totalNetWeightKg = rollsToSave.reduce((sum, r) => sum + (Number(r.netWeightKg) || 0), 0);
+    const summedNet = rollsToSave.reduce((sum, r) => sum + (Number(r.netWeightKg) || 0), 0);
+    const totalNetWeightKg = hasConsumptions ? packedNetKgFromItems(rollsToSave) : summedNet;
     const totalGrossWeightKg = rollsToSave.reduce((sum, r) => sum + (Number(r.grossWeightKg) || 0), 0);
+    const packingStatus = finalise ? PACKING_STATUS_FINALISED : PACKING_STATUS_OPEN;
+    const consumedKg = consumedKgForList({ dispatchConsumptions: pktConsumptions });
+    const liveGain = gainLossForShipment({ dispatchConsumptions: pktConsumptions }, rollsToSave);
 
     const now = new Date();
     const exactTimestamp = now.toLocaleDateString('en-IN', {
@@ -1496,10 +1587,10 @@ export default function DispatchManagement({
     }
 
     const newShipment = {
-      id: `DISP-PL-${Date.now()}`,
+      id: pktInternalId || `DISP-PL-${Date.now()}`,
       dispatchId: finalDispatchId,
       invoiceNo: pktInvoiceNo || '',
-      orderId: matchedOrder?.id || 'N/A',
+      orderId: pktOrderId || matchedOrder?.id || 'N/A',
       jobName: pktJobName,
       clientName: pktClientName,
       vehicleNo: pktVehicleNo || '',
@@ -1508,6 +1599,9 @@ export default function DispatchManagement({
       poNo: pktPoNo || matchedOrder?.poNo || '',
       dispatchDate: now.toISOString(),
       createdAt: now.toISOString(),
+      packingStatus,
+      dispatchConsumptions: pktConsumptions,
+      stockApplied: hasConsumptions ? true : undefined,
       totalRolls: rollsToSave.length,
       totalNetWeightKg: Number(totalNetWeightKg.toFixed(2)),
       totalGrossWeightKg: Number(totalGrossWeightKg.toFixed(2)),
@@ -1528,7 +1622,9 @@ export default function DispatchManagement({
         { label: 'Transporter Name', value: pktTransporterName || 'N/A' },
         { label: 'Total Rolls / Reels', value: `${rollsToSave.length} Reels` },
         { label: 'Total Net Weight', value: `${totalNetWeightKg.toFixed(2)} Kg` },
-        { label: 'Total Gross Weight', value: `${totalGrossWeightKg.toFixed(2)} Kg` }
+        { label: 'Total Gross Weight', value: `${totalGrossWeightKg.toFixed(2)} Kg` },
+        ...(hasConsumptions ? [{ label: 'FG consumed into Dispatch Packing', value: `${consumedKg.toFixed(2)} Kg` }] : []),
+        ...(hasConsumptions && isAdmin ? [{ label: 'Gain / loss vs consumed FG', value: `${formatGainLossKg(liveGain.differenceKg)} (${formatGainLossPct(liveGain.differencePct)})` }] : [])
       ],
       items: rollsToSave.map(roll => ({
         col1: `Reel #${roll.rollNo} (${roll.barcodeId})`,
@@ -1695,6 +1791,28 @@ export default function DispatchManagement({
           >
             <Award size={16} /> Quality Test Reports (CoA) ({totalCoasCount})
           </button>
+
+          {isAdmin && (
+            <button
+              type="button"
+              className={`btn-subtab ${activeTab === 'gain-loss' ? 'active' : ''}`}
+              onClick={() => handleTabSwitch('gain-loss')}
+              style={{
+                background: activeTab === 'gain-loss' ? '#9a3412' : 'rgba(255, 255, 255, 0.05)',
+                color: '#ffffff',
+                border: activeTab === 'gain-loss' ? '1px solid #fdba74' : '1px solid rgba(255, 255, 255, 0.1)',
+                padding: '8px 18px',
+                borderRadius: '8px',
+                fontWeight: '700',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <TrendingUp size={16} /> Gain / Loss
+            </button>
+          )}
         </div>
       </div>
 
@@ -1981,21 +2099,13 @@ export default function DispatchManagement({
                 className="btn-primary" 
                 onClick={() => {
                   const autoPlId = generateDocRefNumber('pl');
-                  setPktDispatchId(autoPlId);
-                  setPktInvoiceNo('');
                   const firstOrder = (orders || [])[0];
+                  resetPackingDraft();
+                  setPktDispatchId(autoPlId);
                   setPktJobName(firstOrder?.jobName || '');
                   setPktClientName(firstOrder?.clientName || firstOrder?.customerName || '');
-                  setPktVehicleNo('');
-                  setPktLrNo('');
-                  setPktTransporterName('');
                   setPktPoNo(firstOrder?.poNo || '');
-                  setPktCoreWeight(0);
-                  setPktUom('Kg');
-                  setPktHideBranding(false);
-                  setCurrentPktNetWeight(0);
-                  setPktRollsList([]);
-                  setSelectedFgRollForWeighing(null);
+                  setPktOrderId(firstOrder?.id || '');
                   setIsPackingModalOpen(true);
                 }}
                 style={{ background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', fontSize: '0.86rem', padding: '8px 16px', fontWeight: '700', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -2009,29 +2119,48 @@ export default function DispatchManagement({
                 <thead>
                   <tr>
                     <th>Packing List ID</th>
+                    <th>Status</th>
                     <th>Date & Time</th>
                     <th>Customer / Client Name</th>
                     <th>Job Name</th>
                     <th>Vehicle & LR #</th>
                     <th style={{ textAlign: 'center' }}>Rolls Count</th>
+                    <th style={{ textAlign: 'right' }}>FG consumed (Kg)</th>
                     <th style={{ textAlign: 'right' }}>Total Net Wt (Kg)</th>
                     <th style={{ textAlign: 'right' }}>Total Gross Wt (Kg)</th>
+                    {isAdmin && <th style={{ textAlign: 'right' }}>Gain / loss</th>}
                     <th style={{ textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(packingPagination.paginatedItems || []).length === 0 ? (
                     <tr>
-                      <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+                      <td colSpan={isAdmin ? 12 : 11} style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
                         <Package size={38} style={{ opacity: 0.25, display: 'block', margin: '0 auto 8px' }} />
                         No Packing Lists found. Click <strong>"+ Create New Packing List"</strong> to record stock weights.
                       </td>
                     </tr>
                   ) : (
-                    (packingPagination.paginatedItems || []).map(ds => (
-                      <tr key={ds.dispatchId || ds.id}>
+                    (packingPagination.paginatedItems || []).map(ds => {
+                      const openList = isOpenPackingList(ds);
+                      const consumptions = listConsumptions(ds);
+                      const savedGain = gainLossForShipment(ds);
+                      const rollCount = openList
+                        ? (Array.isArray(ds.items) ? ds.items.length : 0)
+                        : (ds.totalRolls || (ds.items?.length || 1));
+                      const grossKg = openList
+                        ? (Number(ds.totalGrossWeightKg) || 0)
+                        : (Number(ds.totalGrossWeightKg || (Number(ds.totalNetWeightKg) + 4.5)) || 0);
+                      return (
+                      <React.Fragment key={ds.dispatchId || ds.id}>
+                      <tr>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
                           <strong style={{ color: '#2563eb', fontFamily: 'monospace', fontSize: '0.88rem' }}>{ds.dispatchId || ds.id}</strong>
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle' }}>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 800, padding: '3px 8px', borderRadius: '999px', background: openList ? '#fff7ed' : '#ecfdf5', color: openList ? '#9a3412' : '#047857' }}>
+                            {packingListStatus(ds)}
+                          </span>
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
                           {formatPlantDateTime(ds.dispatchDate)}
@@ -2046,16 +2175,35 @@ export default function DispatchManagement({
                           {ds.vehicleNo || '-'} {ds.lrNo ? `| LR: ${ds.lrNo}` : ''}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center', fontWeight: '700' }}>
-                          {ds.totalRolls || (ds.items?.length || 1)} rolls
+                          {rollCount} rolls
+                        </td>
+                        <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '700' }}>
+                          {consumptions.length ? `${consumedKgForList(ds).toFixed(2)} kg` : '—'}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#047857' }}>
                           {(Number(ds.totalNetWeightKg) || 0).toLocaleString()} kg
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#4338ca' }}>
-                          {(Number(ds.totalGrossWeightKg || (ds.totalNetWeightKg + 4.5)) || 0).toLocaleString()} kg
+                          {grossKg.toLocaleString()} kg
                         </td>
+                        {isAdmin && (
+                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800' }}>
+                            {consumptions.length ? `${formatGainLossKg(savedGain.differenceKg)} (${formatGainLossPct(savedGain.differencePct)})` : '—'}
+                          </td>
+                        )}
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
                           <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                            {openList && (
+                              <button
+                                type="button"
+                                data-testid="weigh-packages"
+                                className="btn-primary"
+                                style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                onClick={() => openPackingListForWeighing(ds)}
+                              >
+                                <Package size={14} /> Weigh packages
+                              </button>
+                            )}
                             <button 
                               type="button"
                               className="btn-primary" 
@@ -2092,7 +2240,24 @@ export default function DispatchManagement({
                           </div>
                         </td>
                       </tr>
-                    ))
+                      {consumptions.length > 0 && (
+                        <tr>
+                          <td colSpan={isAdmin ? 12 : 11} data-testid="dispatch-packing-consumptions" style={{ background: '#f8fafc', padding: '10px 14px' }}>
+                            {consumptions.map((row) => (
+                              <div key={row.id} style={{ fontSize: '0.78rem', color: '#334155', padding: '2px 0' }}>
+                                <strong style={{ fontFamily: 'monospace' }}>{row.barcode || row.id}</strong>
+                                {' · '}{row.jobName || '—'}
+                                {' · '}{Number(row.consumedKg || 0).toFixed(2)} kg
+                                {' · '}{row.consumedBy || row.operatorName || '—'}
+                                {' · '}{row.consumedAt ? formatPlantDateTime(row.consumedAt) : '—'}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
+                    );
+                    })
                   )}
                 </tbody>
               </table>
@@ -2106,6 +2271,10 @@ export default function DispatchManagement({
               onPageChange={packingPagination.setCurrentPage}
             />
           </>
+        )}
+
+        {activeTab === 'gain-loss' && (
+          <PackingGainLossReport shipments={dispatchShipments} isAdmin={isAdmin} />
         )}
 
         {/* TAB 2: CERTIFICATE OF ANALYSIS (COA) TABLE */}
@@ -3793,7 +3962,7 @@ export default function DispatchManagement({
       {/* ==================================================================== */}
       {isPackingModalOpen && (
         <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsPackingModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+          <div className="glass-card modal-content" style={{ width: pktConsumptions.length ? '920px' : '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3809,6 +3978,30 @@ export default function DispatchManagement({
             </div>
 
             <form onSubmit={handleSavePackingListSubmit}>
+              {pktConsumptions.length > 0 && (
+                <div style={{ marginBottom: '14px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '12px' }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.84rem', color: '#0f172a', marginBottom: '6px' }}>
+                    FG consumed into this packing list · {packingListStatus({ packingStatus: pktPackingStatus })}
+                  </div>
+                  {pktConsumptions.map((row) => (
+                    <div key={row.id} style={{ fontSize: '0.78rem', color: '#334155', padding: '2px 0' }}>
+                      <strong style={{ fontFamily: 'monospace' }}>{row.barcode || row.id}</strong>
+                      {' · '}{row.jobName || '—'}
+                      {' · '}{Number(row.consumedKg || 0).toFixed(2)} kg
+                      {' · '}{row.consumedBy || row.operatorName || '—'}
+                      {' · '}{row.consumedAt ? formatPlantDateTime(row.consumedAt) : '—'}
+                    </div>
+                  ))}
+                  {isAdmin && (() => {
+                    const live = gainLossForShipment({ dispatchConsumptions: pktConsumptions }, pktRollsList);
+                    return (
+                      <div data-testid="dispatch-gain-loss-live" style={{ marginTop: '8px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px', padding: '8px 10px', fontWeight: 800, color: '#9a3412' }}>
+                        Packed net {live.packedNetKg.toFixed(2)} kg · FG consumed {live.consumedKg.toFixed(2)} kg · Difference {formatGainLossKg(live.differenceKg)} ({formatGainLossPct(live.differencePct)})
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
               <div className="form-grid">
 
                 <div className="form-group">
@@ -3864,8 +4057,8 @@ export default function DispatchManagement({
                 </div>
 
                 <div className="form-group">
-                  <label>Vehicle Number *</label>
-                  <input type="text" className="form-control" required value={pktVehicleNo} onChange={e => setPktVehicleNo(e.target.value)} />
+                  <label>Vehicle Number{pktConsumptions.length ? '' : ' *'}</label>
+                  <input type="text" className="form-control" value={pktVehicleNo} onChange={e => setPktVehicleNo(e.target.value)} placeholder={pktConsumptions.length ? 'Required when the packing list is finalised' : ''} />
                 </div>
 
                 <div className="form-group">
@@ -4096,13 +4289,24 @@ export default function DispatchManagement({
                   <span>Hide Factory Branding & GSTIN on Barcode Stickers (for 3rd Party / White-Label Shipments)</span>
                 </label>
 
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   <button type="button" className="btn-secondary" onClick={() => setIsPackingModalOpen(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
-                    <Printer size={16} /> Save Packing List & Preview PDF
-                  </button>
+                  {pktConsumptions.length > 0 ? (
+                    <>
+                      <button type="submit" data-finalise="false" className="btn-secondary" style={{ fontWeight: 700 }}>
+                        Save packages
+                      </button>
+                      <button type="submit" data-finalise="true" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
+                        <Printer size={16} /> Finalise packing list
+                      </button>
+                    </>
+                  ) : (
+                    <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
+                      <Printer size={16} /> Save Packing List & Preview PDF
+                    </button>
+                  )}
                 </div>
               </div>
             </form>

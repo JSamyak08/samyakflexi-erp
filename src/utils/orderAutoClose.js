@@ -52,6 +52,13 @@ function isCancelled(doc) {
   return status === 'cancelled' || status === 'canceled' || doc?.cancelled === true || doc?.isCancelled === true;
 }
 
+function countsAsDispatchDocument(doc) {
+  if (!doc || isCancelled(doc)) return false;
+  const status = doc.packingStatus || doc.payload?.packingStatus || doc.packing_status;
+  if (status === 'Open') return false;
+  return true;
+}
+
 function itemKg(item) {
   if (!item) return 0;
   const unit = String(item.unit || 'Kg').trim().toLowerCase();
@@ -64,7 +71,7 @@ function itemKg(item) {
 }
 
 export function documentDispatchKg(doc) {
-  if (!doc || isCancelled(doc)) return 0;
+  if (!countsAsDispatchDocument(doc)) return 0;
   const items = doc.items || doc.payload?.items || [];
   if (Array.isArray(items) && items.length > 0) {
     const fromItems = items.reduce((sum, item) => sum + itemKg(item), 0);
@@ -84,14 +91,16 @@ function matchesOrder(order, doc) {
 }
 
 export function dispatchedKgForOrder(order, challans = [], shipments = []) {
-  const challanKg = (challans || [])
+  const eligibleChallans = (challans || []).filter(countsAsDispatchDocument);
+  const eligibleShipments = (shipments || []).filter(countsAsDispatchDocument);
+  const challanKg = eligibleChallans
     .filter((doc) => matchesOrder(order, doc))
     .reduce((sum, doc) => sum + documentDispatchKg(doc), 0);
-  const shipmentKg = (shipments || [])
+  const shipmentKg = eligibleShipments
     .filter((doc) => matchesOrder(order, doc))
     .reduce((sum, doc) => sum + documentDispatchKg(doc), 0);
-  const hasChallan = (challans || []).some((doc) => matchesOrder(order, doc) && !isCancelled(doc));
-  const hasShipment = (shipments || []).some((doc) => matchesOrder(order, doc) && !isCancelled(doc));
+  const hasChallan = eligibleChallans.some((doc) => matchesOrder(order, doc));
+  const hasShipment = eligibleShipments.some((doc) => matchesOrder(order, doc));
   let kg = 0;
   if (challanKg > 0 && shipmentKg > 0) kg = Math.max(challanKg, shipmentKg);
   else kg = challanKg + shipmentKg;

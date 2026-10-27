@@ -88,8 +88,10 @@ import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailS
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
 import { pushSlugState } from '../utils/slugRouter';
+import { canSeePackingGainLoss } from '../utils/dispatchPacking';
+import { DispatchGainLossSettings } from './PackingGainLossReport';
 
-export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine, urlParams = {} }) {
+export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine, urlParams = {}, currentUser = null }) {
   // Navigation Sub-tab State
   const [activeTab, setActiveTab] = useState(urlParams?.tab || 'general');
   useEffect(() => {
@@ -859,6 +861,16 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               >
                 ⏳ Inventory Ageing & FIFO
               </button>
+              {canSeePackingGainLoss(currentUser?.role) && (
+                <button
+                  type="button"
+                  className={`tab-button ${activeTab === 'dispatch_gain_loss' ? 'active' : ''}`}
+                  style={{ padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700', borderRadius: '6px', cursor: 'pointer', border: 'none', background: activeTab === 'dispatch_gain_loss' ? '#ffffff' : 'transparent', color: activeTab === 'dispatch_gain_loss' ? '#0f172a' : '#64748b', boxShadow: activeTab === 'dispatch_gain_loss' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+                  onClick={() => chooseSettingsTab('dispatch_gain_loss')}
+                >
+                  Dispatch gain/loss
+                </button>
+              )}
               <button
                 type="button"
                 className={`tab-button ${activeTab === 'email_config' ? 'active' : ''}`}
@@ -1659,6 +1671,16 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       {/* ========================================================================= */}
       {/* TAB: INVENTORY AGEING ALERTS & FIFO CONSUMPTION SETTINGS */}
       {/* ========================================================================= */}
+      {activeTab === 'dispatch_gain_loss' && (
+        canSeePackingGainLoss(currentUser?.role)
+          ? <DispatchGainLossSettings />
+          : (
+            <div data-testid="dispatch-gain-loss-settings-hidden" className="glass-panel" style={{ padding: '24px', color: '#334155' }}>
+              Only an Admin can change the dispatch packing gain/loss alert.
+            </div>
+          )
+      )}
+
       {activeTab === 'inventory_ageing' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <form onSubmit={handleSaveAgeingSettings} className="glass-panel" style={{ padding: '28px' }}>

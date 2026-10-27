@@ -91,6 +91,16 @@ import {
   ORDER_AUTO_CLOSE_SETTING,
   ORDER_CLOSE_TOLERANCE_SETTING
 } from './utils/orderAutoClose';
+import {
+  applyDispatchPackingConsumption,
+  consumptionFromLog,
+  findOpenPackingList,
+  isDispatchPacking,
+  listConsumptions,
+  nextDispatchQuantity,
+  shipmentWithoutGainLoss
+} from './utils/dispatchPacking';
+import { recordDispatchPackingConsumption } from './services/dispatchPacking';
 import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './services/supabaseClient';
 import { cancelQcOverdueEscalationDigest, runQcOverdueEscalationDigest } from './services/qcEscalationDigest';
 import { 
@@ -264,6 +274,15 @@ function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
 initSafeStorage();
 
 
+const e2eRoleAtBoot = (() => {
+  if (typeof window === 'undefined' || import.meta.env.VITE_E2E_STUB_AUTH !== '1') return '';
+  try {
+    return new URLSearchParams(window.location.search).get('e2eRole') || '';
+  } catch {
+    return '';
+  }
+})();
+
 function e2eStubUser() {
   if (import.meta.env.VITE_E2E_STUB_AUTH !== '1') return null;
   try {
@@ -271,7 +290,13 @@ function e2eStubUser() {
   } catch {
     /* session storage can be blocked */
   }
-  return { id: 'e2e-admin', name: 'E2E Admin', email: 'e2e@samyakinternational.in', role: 'Admin' };
+  return {
+    id: 'e2e-admin',
+    name: 'E2E Admin',
+    fullName: 'E2E Admin',
+    email: 'e2e@samyakinternational.in',
+    role: e2eRoleAtBoot || 'Admin'
+  };
 }
 
 function routeFromHref(href) {
@@ -685,6 +710,75 @@ export default function App() {
     return () => { isMounted = false; };
   }, []);
 
+
+  const [e2eDispatchPreview] = useState(() => {
+    if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('e2e') === 'dispatch-packing';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!e2eDispatchPreview) return;
+    const entry = consumptionFromLog({
+      id: 'SFG-LOG-1',
+      sfgBatchCode: 'SFG-BC-ORD-2026-107-2',
+      consumedKg: 107,
+      operatorName: 'Samyak Jain',
+      timestamp: '2026-10-26T09:13:00.000Z',
+      shift: 'Day Shift',
+      targetMachine: 'Expert 1000 Rotogravure Press',
+      notes: 'Bay A',
+      targetProcess: 'Dispatch Packing'
+    }, {
+      orderId: 'ORD-2026-107',
+      jobName: 'Sonu jaljeera shots inner - Printed SFG Roll 2',
+      clientName: 'Samyak International',
+      consumedBy: 'samyak.jain@samyakinternational.in',
+      suggestedDispatchId: 'PL-2026-606130'
+    });
+    const applied = applyDispatchPackingConsumption({ shipments: [], entry, now: '2026-10-26T09:13:00.000Z' });
+    const shipment = {
+      ...applied.shipment,
+      items: [{
+        rollNo: 1,
+        barcodeId: 'PKG-1',
+        substrateSpec: 'PET 12µm × 460mm',
+        tareWeightKg: 4.5,
+        coreWeightKg: 4.5,
+        netWeightKg: 50,
+        grossWeightKg: 54.5,
+        unit: 'Kg'
+      }],
+      totalRolls: 1,
+      totalNetWeightKg: 50,
+      totalGrossWeightKg: 54.5
+    };
+    setOrders([{
+      id: 'ORD-2026-107',
+      jobName: 'Sonu jaljeera shots inner - Printed SFG Roll 2',
+      clientName: 'Samyak International',
+      poNo: 'PO-107',
+      orderQtyKg: 500,
+      status: 'In Production'
+    }]);
+    setDispatchShipments([shipment]);
+    setSfgGoods([{
+      id: 'FG-READY-2',
+      sfgBatchCode: 'FG-READY-2',
+      jobName: 'Sonu jaljeera shots inner - Printed SFG Roll 2',
+      orderId: 'ORD-2026-107',
+      clientName: 'Samyak International',
+      rollType: 'FG',
+      sfgType: 'Finished Goods',
+      totalNetKg: 40,
+      consumedKg: 0,
+      availableKg: 40,
+      status: 'In Stock'
+    }]);
+  }, []);
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
@@ -2999,29 +3093,50 @@ export default function App() {
 
   const handleAddDispatchShipment = async (newShipment) => {
     requireDatabaseConnection('create dispatch shipment');
-    await saveDispatchShipmentToSupabase(newShipment);
-    const nextShipments = [newShipment, ...dispatchShipments.filter(s => s.id !== newShipment.id)];
+    const cleanShipment = shipmentWithoutGainLoss({ ...newShipment });
+    const shipmentKey = String(cleanShipment.dispatchId || cleanShipment.id || '');
+    const previous = (dispatchShipments || []).find((row) => String(row.dispatchId || row.id || '') === shipmentKey);
+    const linkedConsumption = listConsumptions(cleanShipment).length > 0;
+    const skipStock = linkedConsumption || previous?.stockApplied === true;
+    const shipmentToSave = skipStock ? { ...cleanShipment, stockApplied: true } : cleanShipment;
+    await saveDispatchShipmentToSupabase(shipmentToSave);
+    const nextShipments = [
+      shipmentToSave,
+      ...dispatchShipments.filter((row) => {
+        const key = String(row.dispatchId || row.id || '');
+        return key !== shipmentKey && row.id !== shipmentToSave.id;
+      })
+    ];
     setDispatchShipments(nextShipments);
-    logAudit('CREATE', 'Dispatch', `Created client dispatch shipment ${newShipment.id} for "${newShipment.clientName}"`, newShipment.id);
+    logAudit(
+      previous ? 'UPDATE' : 'CREATE',
+      'Dispatch',
+      previous
+        ? `Updated packing list ${shipmentKey} for "${shipmentToSave.clientName}"`
+        : `Created client dispatch shipment ${shipmentToSave.id} for "${shipmentToSave.clientName}"`,
+      shipmentToSave.id
+    );
     reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
 
     // 1. Reduce dispatched FG quantities from sfgGoods (FG Store)
-    const shipmentItems = Array.isArray(newShipment.items) ? newShipment.items : [];
-    const totalDispatchNetKg = Number(newShipment.totalNetWeightKg) || shipmentItems.reduce((s, it) => s + (Number(it.netWeightKg) || 0), 0);
-    const shipJobName = (newShipment.jobName || '').trim().toLowerCase();
-    const shipOrderId = newShipment.orderId;
+    const shipmentItems = Array.isArray(shipmentToSave.items) ? shipmentToSave.items : [];
+    const totalDispatchNetKg = Number(shipmentToSave.totalNetWeightKg) || shipmentItems.reduce((s, it) => s + (Number(it.netWeightKg) || 0), 0);
+    const shipJobName = (shipmentToSave.jobName || '').trim().toLowerCase();
+    const shipOrderId = shipmentToSave.orderId;
 
     const failedFollowUps = [];
-    const sfgPlan = planDispatchSfgDeductions(sfgGoods, newShipment);
-    const sfgResult = await commitSequentialUpdates(sfgPlan.updates, (row) => saveSFGGoodToSupabase(row));
-    setSfgGoods(applyCommittedByIndex(sfgGoods, sfgResult.committed));
-    failedFollowUps.push(...sfgResult.failed);
+    if (!skipStock) {
+      const sfgPlan = planDispatchSfgDeductions(sfgGoods, shipmentToSave);
+      const sfgResult = await commitSequentialUpdates(sfgPlan.updates, (row) => saveSFGGoodToSupabase(row));
+      setSfgGoods(applyCommittedByIndex(sfgGoods, sfgResult.committed));
+      failedFollowUps.push(...sfgResult.failed);
 
-    // 2. Synchronize to inventoryRolls (Finished Goods inventory)
-    const rollPlan = planDispatchRollDeductions(inventoryRolls, newShipment);
-    const rollResult = await commitSequentialUpdates(rollPlan.updates, (row) => saveInventoryRollToSupabase(row));
-    setInventoryRolls(applyCommittedByIndex(inventoryRolls, rollResult.committed));
-    failedFollowUps.push(...rollResult.failed);
+      // 2. Synchronize to inventoryRolls (Finished Goods inventory)
+      const rollPlan = planDispatchRollDeductions(inventoryRolls, shipmentToSave);
+      const rollResult = await commitSequentialUpdates(rollPlan.updates, (row) => saveInventoryRollToSupabase(row));
+      setInventoryRolls(applyCommittedByIndex(inventoryRolls, rollResult.committed));
+      failedFollowUps.push(...rollResult.failed);
+    }
 
     // 3. Synchronize to respective Job Production Record
     const matchedRec = (productionRecords || []).find(r => 
@@ -3030,13 +3145,13 @@ export default function App() {
     );
 
     if (matchedRec) {
-      const prevDispatchKg = Number(matchedRec.qtyDispatch) || 0;
-      const newDispatchKg = Math.round((prevDispatchKg + totalDispatchNetKg) * 100) / 100;
+      const dispatchQty = nextDispatchQuantity(matchedRec.qtyDispatch, matchedRec.dispatchHistory, shipmentToSave);
 
-      // Update outputRolls status to 'Dispatched'
+      // Update outputRolls status to 'Dispatched' only for a manual packing list.
+      // Dispatch Packing consumption already reduced the FG balance.
       const existingOutputRolls = Array.isArray(matchedRec.outputRolls) ? matchedRec.outputRolls : [];
       let remDispatchForRolls = totalDispatchNetKg;
-      const updatedOutputRolls = existingOutputRolls.map(or => {
+      const updatedOutputRolls = skipStock ? existingOutputRolls : existingOutputRolls.map(or => {
         const isMatch = shipmentItems.some(it => 
           (it.barcodeId && (or.barcodeId === it.barcodeId || or.rollId === it.barcodeId)) ||
           (it.sourceFgBarcode && (or.barcodeId === it.sourceFgBarcode || or.rollId === it.sourceFgBarcode))
@@ -3064,23 +3179,12 @@ export default function App() {
         return or;
       });
 
-      const existingDispatches = Array.isArray(matchedRec.dispatchHistory) ? matchedRec.dispatchHistory : [];
       const updatedRec = {
         ...matchedRec,
-        qtyDispatch: newDispatchKg,
+        qtyDispatch: dispatchQty.qtyDispatch,
         outputRolls: updatedOutputRolls,
         rollsBreakdown: updatedOutputRolls,
-        dispatchHistory: [
-          {
-            dispatchId: newShipment.dispatchId || newShipment.id,
-            date: newShipment.dispatchDate || new Date().toISOString(),
-            netWeightKg: totalDispatchNetKg,
-            vehicleNo: newShipment.vehicleNo || '',
-            clientName: newShipment.clientName || '',
-            totalRolls: shipmentItems.length
-          },
-          ...existingDispatches
-        ]
+        dispatchHistory: dispatchQty.dispatchHistory
       };
 
       try {
@@ -3091,7 +3195,19 @@ export default function App() {
       }
     }
 
-    const packingId = newShipment.dispatchId || newShipment.id;
+    if (!skipStock && failedFollowUps.length === 0) {
+      const marked = { ...shipmentToSave, stockApplied: true };
+      try {
+        await writeWithRetry(() => saveDispatchShipmentToSupabase(marked));
+        setDispatchShipments((prev) => prev.map((row) => (
+          String(row.dispatchId || row.id || '') === shipmentKey ? marked : row
+        )));
+      } catch (e) {
+        failedFollowUps.push({ label: `packing list stock flag ${shipmentKey}`, error: e });
+      }
+    }
+
+    const packingId = shipmentToSave.dispatchId || shipmentToSave.id;
     assertAllSaved(
       `Packing list ${packingId} was saved. Do not create this packing list again. The shipment is on the dispatch list, but the stock balances below were left unchanged.`,
       failedFollowUps
@@ -3819,11 +3935,53 @@ export default function App() {
       followUpFailures.push({ label: `production record ${updatedRec.id || updatedSfgItem.jobName || 'stage quantities'}`, error: e });
     }
 
+    let packingResult = null;
+    if (isDispatchPacking(logEntry.targetProcess)) {
+      try {
+        const orderId = updatedSfgItem.orderId || logEntry.orderId || '';
+        const jobName = updatedSfgItem.jobName || logEntry.jobName || '';
+        const openList = findOpenPackingList(dispatchShipments, { orderId, jobName });
+        let suggestedDispatchId = null;
+        if (!openList) {
+          try { suggestedDispatchId = getNextDocRefNumber('pl'); } catch { suggestedDispatchId = null; }
+        }
+        const entry = consumptionFromLog(logEntry, {
+          orderId,
+          jobName,
+          jobCode: updatedSfgItem.jobCode || logEntry.jobCode || '',
+          clientName: updatedSfgItem.clientName || '',
+          poNo: updatedSfgItem.poNo || '',
+          consumedBy: currentUser?.fullName || currentUser?.name || currentUser?.email || logEntry.operatorName || '',
+          suggestedDispatchId
+        });
+        const recorded = await recordDispatchPackingConsumption(entry);
+        const shipment = recorded?.shipment;
+        if (shipment?.dispatchId || shipment?.id) {
+          const recordedKey = String(shipment.dispatchId || shipment.id);
+          setDispatchShipments((prev) => [
+            shipment,
+            ...(prev || []).filter((row) => String(row.dispatchId || row.id || '') !== recordedKey && row.id !== shipment.id)
+          ]);
+        }
+        packingResult = {
+          packingListId: recorded?.dispatchId || shipment?.dispatchId || null,
+          created: Boolean(recorded?.created),
+          idempotent: Boolean(recorded?.idempotent)
+        };
+      } catch (e) {
+        followUpFailures.push({
+          label: `dispatch packing list for ${updatedSfgItem.sfgBatchCode || updatedSfgItem.id || 'this lot'}`,
+          error: e
+        });
+      }
+    }
+
     logAudit('UPDATE', 'SFG Store', `Consumed ${logEntry.consumedKg} kg SFG from batch "${updatedSfgItem.sfgBatchCode}" for stage "${logEntry.targetProcess}". Remaining Balance: ${updatedSfgItem.availableKg} kg`, updatedSfgItem.sfgBatchCode);
     assertAllSaved(
       `SFG consumption for ${updatedSfgItem.sfgBatchCode} was saved (${updatedSfgItem.availableKg} kg remaining). Do not submit this consumption again.`,
       followUpFailures
     );
+    return packingResult;
   };
 
   const handleDeleteSFGGood = async (sfgId) => {
@@ -5601,6 +5759,7 @@ export default function App() {
             onSaveMachine={handleSaveMachine}
             onDeleteMachine={handleDeleteMachine}
             urlParams={urlParams}
+            currentUser={currentUser}
           />
         )}
 

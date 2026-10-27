@@ -8,6 +8,7 @@ import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 import { assertPersistableMeasures } from '../utils/productionRecordQuality';
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
+import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -1977,11 +1978,13 @@ export async function fetchDispatchShipments() {
       const { data, error } = await supabase.from('dispatch_shipments').select('*').order('dispatch_date', { ascending: false });
       if (!error && Array.isArray(data)) {
         tableRecords = data.map(d => {
+          const columnStatus = d.packing_status ?? null;
           if (d.payload && typeof d.payload === 'object') {
             return {
               ...d.payload,
               id: d.payload.id || d.id || d.dispatch_id,
-              dispatchId: d.payload.dispatchId || d.dispatch_id
+              dispatchId: d.payload.dispatchId || d.dispatch_id,
+              packing_status: columnStatus
             };
           }
           return {
@@ -2000,7 +2003,9 @@ export async function fetchDispatchShipments() {
             totalNetWeightKg: Number(d.total_net_weight_kg) || 0,
             totalGrossWeightKg: Number(d.total_gross_weight_kg) || 0,
             items: Array.isArray(d.items) ? d.items : [],
-            hideBranding: d.hide_branding || false
+            hideBranding: d.hide_branding || false,
+            packing_status: columnStatus,
+            packingStatus: columnStatus
           };
         });
       } else if (error) {
@@ -2015,7 +2020,14 @@ export async function fetchDispatchShipments() {
       const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
       return timeB - timeA;
     });
-    return tableRecords;
+    let consumptionRows = [];
+    try {
+      const { data: rows, error: consumptionError } = await supabase.from('packing_list_consumptions').select('*');
+      if (!consumptionError && Array.isArray(rows)) consumptionRows = rows;
+    } catch (consumptionErr) {
+      console.warn('[dispatch] packing list consumptions are not available yet:', consumptionErr?.message || consumptionErr);
+    }
+    return mergeConsumptionsIntoShipments(tableRecords, consumptionRows);
   } catch (err) {
     console.error("Error fetching dispatch shipments from Supabase:", err);
     throw err;
@@ -2030,11 +2042,11 @@ export async function saveDispatchShipmentToSupabase(shipment) {
 
   const primaryKey = String(shipment.id || shipment.dispatchId || `DISP-PL-${Date.now()}`);
   const dispatchDate = toDatabaseTimestamp(shipment.dispatchDate);
-  const storedShipment = {
+  const storedShipment = shipmentWithoutGainLoss({
     ...shipment,
     dispatchDate,
     createdAt: shipment.createdAt ? toDatabaseTimestamp(shipment.createdAt) : dispatchDate
-  };
+  });
   const fullPayload = {
     id: primaryKey,
     dispatch_id: shipment.dispatchId || primaryKey,
@@ -2052,6 +2064,7 @@ export async function saveDispatchShipmentToSupabase(shipment) {
     total_gross_weight_kg: Number(shipment.totalGrossWeightKg) || 0,
     items: shipment.items || [],
     hide_branding: Boolean(shipment.hideBranding),
+    packing_status: shipment.packingStatus || null,
     payload: storedShipment,
     updated_at: new Date().toISOString()
   };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { displayPartyName } from '../utils/textHelpers';
+import { isDispatchPacking } from '../utils/dispatchPacking';
 import SearchableSelect from './SearchableSelect';
 import { 
   Layers, 
@@ -1069,9 +1070,10 @@ export default function SFGStoreManagement({
       };
 
       let consumeWarning = null;
+      let consumeResult = null;
       try {
         if (onConsumeSFG) {
-          await onConsumeSFG(updatedItem, logEntry);
+          consumeResult = await onConsumeSFG(updatedItem, logEntry);
         } else if (onSaveSFGGood) {
           await onSaveSFGGood(updatedItem);
         }
@@ -1155,6 +1157,16 @@ export default function SFGStoreManagement({
 
       setSelectedItemForConsume(null);
       if (consumeWarning) alert(consumeWarning.message);
+      else if (consumeResult?.packingListId && isDispatchPacking(targetProcess)) {
+        const listId = consumeResult.packingListId;
+        if (consumeResult.idempotent) {
+          alert(`This consumption is already on packing list ${listId}.`);
+        } else if (consumeResult.created) {
+          alert(`Opened packing list ${listId} and recorded ${qtyVal.toFixed(2)} kg on it.`);
+        } else {
+          alert(`Added ${qtyVal.toFixed(2)} kg to open packing list ${listId}.`);
+        }
+      }
     } catch (err) {
       console.error("Error confirming SFG consumption:", err);
       setFormError(err.message || 'Failed to record consumption');
@@ -3030,6 +3042,11 @@ export default function SFGStoreManagement({
                     <option value="QC Hold Store">🚨 QC Hold Store (Quarantine)</option>
                     <option value="Custom Stage">Other Process Stage</option>
                   </SearchableSelect>
+                  {targetProcess === 'Dispatch Packing' && (
+                    <div data-testid="dispatch-packing-consume-banner" style={{ marginTop: '8px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e3a8a', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                      This weight is recorded on the order’s open packing list. A new list is opened when none is open. The same consumption is saved once. Weigh and label each package on that packing list.
+                    </div>
+                  )}
                 </div>
 
                 {/* Conditional QC Hold Quarantine Controls */}
