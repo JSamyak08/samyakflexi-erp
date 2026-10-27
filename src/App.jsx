@@ -720,6 +720,55 @@ export default function App() {
     }
   });
 
+  const [e2eMachinePreview] = useState(() => {
+    if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('e2e') === 'machine-for-process';
+    } catch {
+      return false;
+    }
+  });
+
+  const applyE2eMachinePreview = () => {
+    setMachines([
+      { id: 'press', name: 'Expert 1000 Rotogravure Press', type: 'Rotogravure', status: 'Active' },
+      { id: 'lam-b', name: 'Nordmeccanica Super Simplex', type: 'Lamination', status: 'Active' },
+      { id: 'lam-a', name: 'Nordmeccanica Duplex', type: 'Lamination', status: 'Active' },
+      { id: 'lam-down', name: 'Old Laminator', type: 'Lamination', status: 'Maintenance' },
+      { id: 'slit', name: 'Titan Slitter', type: 'Slitting', status: 'Active' },
+      { id: 'pouch', name: 'Mamta Pouch Line', type: 'Pouching', status: 'Inactive' },
+      { id: 'flexo', name: 'Bobst Flexo', type: 'Flexographic Printing Press', status: 'Active', isPrimary: true },
+      { id: 'spare-press', name: 'Alpha Gravure', type: 'Rotogravure', status: 'Active' }
+    ]);
+    setOrders([{
+      id: 'ORD-2026-210',
+      jobName: 'Machine mapping preview pouch',
+      clientName: 'Samyak International',
+      poNo: 'PO-210',
+      orderQtyKg: 200,
+      status: 'In Production'
+    }]);
+    setSfgGoods([{
+      id: 'SFG-MAP-1',
+      sfgBatchCode: 'SFG-MAP-1',
+      jobName: 'Machine mapping preview pouch',
+      orderId: 'ORD-2026-210',
+      clientName: 'Samyak International',
+      rollType: 'SFG',
+      sfgType: 'Printed Rolls',
+      totalNetKg: 80,
+      consumedKg: 0,
+      availableKg: 80,
+      status: 'In Stock',
+      storageBay: 'Bay A'
+    }]);
+  };
+
+  useEffect(() => {
+    if (!e2eMachinePreview) return;
+    applyE2eMachinePreview();
+  }, [e2eMachinePreview]);
+
   useEffect(() => {
     if (!e2eDispatchPreview) return;
     const entry = consumptionFromLog({
@@ -1315,6 +1364,7 @@ export default function App() {
           setIsDataLoading(false);
           setOrdersLoading(false);
           setIsDataFetched(true);
+          if (e2eMachinePreview) applyE2eMachinePreview();
         }
       }
     }
