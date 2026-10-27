@@ -12,7 +12,9 @@ import {
   trimKgForWiderRoll,
   validateProductionEntry,
   decideGuardrailSave,
+  applyGuardrailFields,
   dispatchReadyKg,
+  measureColumnsForSave,
   netUsableForSave,
   rollSfgScrapIntoRecord,
   canOverrideFilmType,
@@ -71,6 +73,9 @@ function rules(result, level) {
 
 test('film type normalisation treats PET Film as PET and leaves an unknown film without a density', () => {
   assert.equal(normalizeFilmType('PET Film'), 'PET');
+  assert.equal(normalizeFilmType('PETFILM'), 'PETFILM');
+  assert.equal(normalizeFilmType('Polyester'), 'PET');
+  assert.equal(normalizeFilmType('OPP'), 'BOPP');
   assert.equal(normalizeFilmType('Matte BOPP'), 'MATTEBOPP');
   assert.equal(normalizeFilmType('MATTEBOPP'), 'MATTEBOPP');
   assert.equal(densityForFilm('PET'), 1.40);
@@ -386,8 +391,31 @@ test('dispatch-ready kg ignores printing output and pouching pieces, and SFG scr
     printedOutputKg: 400,
     totalProductionQtyKg: 400,
     netUsableKg: 400
-  }), 0);
-  assert.equal(netUsableForSave({ netUsableKg: 80, printedOutputKg: 400 }), 80);
+  }), 400);
+  assert.equal(netUsableForSave({
+    deriveNetFromStages: true,
+    printedOutputKg: 400,
+    qtyFirstPassL1: 400
+  }), null);
+  assert.equal(netUsableForSave({
+    printedOutputKg: 400,
+    netUsableKg: 80,
+    qtyDispatch: null,
+    qtyPouching: '',
+    qtySlitting: undefined
+  }), 80);
+  assert.equal(netUsableForSave({ netUsableKg: 0, printedOutputKg: 400 }), 0);
+  assert.equal(netUsableForSave({ qtySlitting: 80, netUsableKg: 10, printedOutputKg: 400 }), 80);
+  assert.equal(netUsableForSave({ qtyDispatch: 65, qtyPouching: 70, netUsableKg: 10 }), 65);
+  const printingOnly = applyGuardrailFields({
+    deriveNetFromStages: true,
+    printedOutputKg: 400,
+    qtyFirstPassL1: 400,
+    qtyDispatch: null,
+    netUsableKg: 80
+  }, { fields: {} });
+  assert.equal(printingOnly.netUsableKg, 80);
+  assert.equal(printingOnly.qtyDispatch, null);
 
   const rolled = rollSfgScrapIntoRecord({
     printingWastageKg: 0,
@@ -397,6 +425,56 @@ test('dispatch-ready kg ignores printing output and pouching pieces, and SFG scr
   assert.equal(rolled.printingWastageKg, 8.6);
   assert.equal(rolled.laminateWastageKg, 1);
   assert.equal(rolled.totalScrapQtyKg, 9.6);
+});
+
+test('blank qty and metre fields stay null, and an entered number is sent as that number', () => {
+  const blank = measureColumnsForSave({
+    qtyDispatch: '',
+    qtyPouching: null,
+    qtySlitting: undefined,
+    qtyInspection: null,
+    qtyLaminationL1: '',
+    qtySecondPassL2: null,
+    qtyFirstPassL1: '',
+    qtyPrinting: '',
+    actualMetersPrinted: '',
+    qtyPouchingPcs: null,
+    zipperConsumedM: undefined
+  });
+  assert.equal(blank.qty_dispatch, null);
+  assert.equal(blank.qty_pouching, null);
+  assert.equal(blank.qty_slitting, null);
+  assert.equal(blank.qty_inspection, null);
+  assert.equal(blank.qty_lamination_l1, null);
+  assert.equal(blank.qty_second_pass_l2, null);
+  assert.equal(blank.qty_first_pass_l1, null);
+  assert.equal(blank.qty_printing, null);
+  assert.equal(blank.actual_meters_printed, null);
+  assert.equal(blank.qty_pouching_pcs, null);
+  assert.equal(blank.zipper_consumed_m, null);
+
+  const entered = measureColumnsForSave({
+    qtyDispatch: 0,
+    qtyPouching: '12.5',
+    actualMetersPrinted: '1000',
+    qtyPrinting: 0,
+    qtyFirstPassL1: 40,
+    qtyInspection: 0,
+    zipperConsumedM: '8'
+  });
+  assert.equal(entered.qty_dispatch, 0);
+  assert.equal(entered.qty_pouching, 12.5);
+  assert.equal(entered.actual_meters_printed, 1000);
+  assert.equal(entered.qty_printing, 0);
+  assert.equal(entered.qty_first_pass_l1, 40);
+  assert.equal(entered.qty_inspection, 0);
+  assert.equal(entered.zipper_consumed_m, 8);
+  assert.equal(entered.qty_slitting, null);
+
+  const fallback = measureColumnsForSave({ qtyFirstPassL1: 40 });
+  assert.equal(fallback.qty_printing, 40);
+  assert.equal(fallback.qty_first_pass_l1, 40);
+  assert.equal(fallback.qty_dispatch, null);
 });
 
 test('limit overrides replace defaults without dropping the rest', () => {

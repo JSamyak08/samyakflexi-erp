@@ -75,6 +75,35 @@ export function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+const MEASURE_COLUMN_FIELDS = [
+  ['qty_pouching_pcs', 'qtyPouchingPcs'],
+  ['zipper_consumed_m', 'zipperConsumedM'],
+  ['actual_meters_printed', 'actualMetersPrinted'],
+  ['qty_first_pass_l1', 'qtyFirstPassL1'],
+  ['qty_inspection', 'qtyInspection'],
+  ['qty_lamination_l1', 'qtyLaminationL1'],
+  ['qty_second_pass_l2', 'qtySecondPassL2'],
+  ['qty_slitting', 'qtySlitting'],
+  ['qty_pouching', 'qtyPouching'],
+  ['qty_dispatch', 'qtyDispatch']
+];
+
+/**
+ * Qty and metre columns for a production-record write.
+ * A blank field stays null. An entered number, including 0, is sent as that
+ * number. qty_printing uses qtyPrinting, and falls back to qtyFirstPassL1
+ * only when qtyPrinting was left blank.
+ */
+export function measureColumnsForSave(record = {}) {
+  const columns = {};
+  MEASURE_COLUMN_FIELDS.forEach(([column, field]) => {
+    columns[column] = finiteNumber(record[field]);
+  });
+  const printing = finiteNumber(record.qtyPrinting);
+  columns.qty_printing = printing !== null ? printing : finiteNumber(record.qtyFirstPassL1);
+  return columns;
+}
+
 export function round2(value) {
   const number = finiteNumber(value);
   if (number === null) return null;
@@ -443,16 +472,22 @@ export function dispatchReadyKg(record = {}) {
 }
 
 /**
- * Production-entry saves pass deriveNetFromStages so printing output is not
- * copied into net usable. Other saves (approval, dispatch) keep a stored net.
+ * Dispatch, pouching kg, then slitting, when one of those was entered (> 0).
+ * If none of them is present, keep the stored net usable value, including a
+ * stored 0. A new record with no stored net stays null. Printing output is
+ * never copied in, and a missing later stage is never written as 0.
+ * deriveNetFromStages does not change this.
  */
 export function netUsableForSave(record = {}) {
-  const ready = dispatchReadyKg(record);
-  if (record.deriveNetFromStages) return ready;
-  if (ready > 0) return ready;
+  const dispatch = finiteNumber(record.qtyDispatch ?? record.qty_dispatch);
+  if (dispatch !== null && dispatch > 0) return round2(dispatch);
+  const pouchKg = finiteNumber(record.qtyPouching ?? record.qty_pouching);
+  if (pouchKg !== null && pouchKg > 0) return round2(pouchKg);
+  const slit = finiteNumber(record.qtySlitting ?? record.qty_slitting);
+  if (slit !== null && slit > 0) return round2(slit);
   const stored = finiteNumber(record.netUsableKg ?? record.net_usable_kg);
   if (stored !== null && stored >= 0) return round2(stored);
-  return 0;
+  return null;
 }
 
 export function sumSfgScrapKg(logs) {
@@ -817,8 +852,7 @@ export function applyGuardrailFields(record, decision) {
     filmTypeOverrideReason: fields.filmTypeOverrideReason || '',
     filmTypeOverrideBy: fields.filmTypeOverrideBy || '',
     filmTypeOverrideRole: fields.filmTypeOverrideRole || '',
-    netUsableKg: netUsableForSave(record),
-    qtyDispatch: finiteNumber(record.qtyDispatch) === null ? 0 : finiteNumber(record.qtyDispatch)
+    netUsableKg: netUsableForSave(record)
   };
 }
 

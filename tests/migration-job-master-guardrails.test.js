@@ -125,10 +125,12 @@ test('exceptions script is read-only and flags a narrower roll and an ambiguous 
     INSERT INTO public.job_masters (id, sku_code, job_name, print_width_mm, layers, wastage_percentage) VALUES
       ('JM-1', 'SKU-1', 'Shared', 660, '[{"filmType":"PET","micron":12}]'::jsonb, 5),
       ('JM-2', 'SKU-2', 'Shared', 700, '[{"filmType":"BOPP","micron":18}]'::jsonb, 5),
-      ('JM-3', 'SKU-3', 'Unique Tea', 510, '[{"filmType":"METPET","micron":12}]'::jsonb, 5);
+      ('JM-3', 'SKU-3', 'Unique Tea', 510, '[{"filmType":"METPET","micron":12}]'::jsonb, 5),
+      ('JM-4', 'SKU-4', 'Plain Tea', 660, '[{"filmType":"PET","micron":12}]'::jsonb, 5);
     INSERT INTO public.orders (id, job_name, order_qty_kg, job_details) VALUES
       ('ORD-NARROW', 'Unique Tea', 100, '{}'::jsonb),
-      ('ORD-AMBIG', 'Shared', 100, '{}'::jsonb);
+      ('ORD-AMBIG', 'Shared', 100, '{}'::jsonb),
+      ('ORD-FILM', 'Plain Tea', 100, '{}'::jsonb);
     INSERT INTO public.production_records (
       id, order_id, job_name, gross_production_kg, net_usable_kg, qty_slitting, qty_pouching, qty_dispatch,
       process_logs, recorded_at
@@ -142,6 +144,11 @@ test('exceptions script is read-only and flags a narrower roll and an ambiguous 
         'REC-AMBIG', 'ORD-AMBIG', 'Shared', 10, 0, 0, 0, 0,
         '{"inputRollsList":[]}'::jsonb,
         '2026-10-27T09:00:00Z'
+      ),
+      (
+        'REC-FILM', 'ORD-FILM', 'Plain Tea', 20, 20, 0, 0, 0,
+        '{"inputRollsList":[{"filmType":"PET Film","micron":"12","widthMm":"660","consumedWeightKg":"10"},{"filmType":"Polyester","micron":"12","widthMm":"660","consumedWeightKg":"4"},{"filmType":"BOPP","micron":"12","widthMm":"660","consumedWeightKg":"5"},{"filmType":"PETFILM","micron":"12","widthMm":"660","consumedWeightKg":"3"}]}'::jsonb,
+        '2026-10-27T10:00:00Z'
       );
   `);
 
@@ -152,7 +159,14 @@ test('exceptions script is read-only and flags a narrower roll and an ambiguous 
 
   const narrow = flagged.rows.filter((row) => row.record_id === 'REC-NARROW').map((row) => row.rule);
   assert.ok(narrow.includes('width'));
+  assert.ok(!narrow.includes('film-type'));
   const ambiguous = flagged.rows.find((row) => row.record_id === 'REC-AMBIG' && row.rule === 'job-master');
   assert.equal(ambiguous.link_via, 'ambiguous');
   assert.match(ambiguous.detail, /not found \/ ambiguous/);
+
+  const film = flagged.rows.filter((row) => row.record_id === 'REC-FILM' && row.rule === 'film-type');
+  assert.equal(film.length, 2);
+  assert.ok(film.some((row) => /BOPP/.test(row.detail)));
+  assert.ok(film.some((row) => /PETFILM/.test(row.detail)));
+  assert.ok(film.every((row) => !/PET Film/.test(row.detail) && !/Polyester/.test(row.detail)));
 });

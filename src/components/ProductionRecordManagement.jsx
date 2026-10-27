@@ -86,6 +86,13 @@ import {
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 
+function measureInputValue(value, fallback) {
+  const primary = finiteNumber(value);
+  if (primary !== null) return primary;
+  const next = finiteNumber(fallback);
+  return next === null ? '' : next;
+}
+
 /**
  * Roll-Wise Input Vs Output Reconciliation Component for SFG / FG Output Barcode Master Rolls
  */
@@ -840,19 +847,19 @@ export default function ProductionRecordManagement({
   const [processingCostPerKg, setProcessingCostPerKg] = useState(25);
 
   // Stage-wise Production Quantities & Consumables (7 Stages)
-  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(0); // Stage 1: Printing Output (kg)
-  const [qtyInspection, setQtyInspection] = useState(0); // Stage 2: Printing Inspection Output (kg)
-  const [qtyLaminationL1, setQtyLaminationL1] = useState(0); // Stage 3: First Pass L1 Output (kg)
+  const [qtyFirstPassL1, setQtyFirstPassL1] = useState(''); // Stage 1: Printing Output (kg)
+  const [qtyInspection, setQtyInspection] = useState(''); // Stage 2: Printing Inspection Output (kg)
+  const [qtyLaminationL1, setQtyLaminationL1] = useState(''); // Stage 3: First Pass L1 Output (kg)
   const [adhesiveConsumedL1Kg, setAdhesiveConsumedL1Kg] = useState(0); // Stage 3: Adhesive Consumed (kg)
-  const [qtySecondPassL2, setQtySecondPassL2] = useState(0); // Stage 4: Second Pass L2 Output (kg)
+  const [qtySecondPassL2, setQtySecondPassL2] = useState(''); // Stage 4: Second Pass L2 Output (kg)
   const [laminationPlainSubstrateWastageL2Kg, setLaminationPlainSubstrateWastageL2Kg] = useState(0); // Stage 4: Lamination Scrap Pass 2 (kg)
   const [adhesiveConsumedL2Kg, setAdhesiveConsumedL2Kg] = useState(0); // Stage 4: Adhesive Consumed Pass 2 (kg)
-  const [qtySlitting, setQtySlitting] = useState(0); // Stage 5: Slitting Finished Output (kg)
+  const [qtySlitting, setQtySlitting] = useState(''); // Stage 5: Slitting Finished Output (kg)
   const [paperCoreConsumedKg, setPaperCoreConsumedKg] = useState(0); // Stage 5: Paper Core Consumed
-  const [qtyPouching, setQtyPouching] = useState(0); // Stage 6: Pouching finished output in kg
-  const [qtyPouchingPcs, setQtyPouchingPcs] = useState(0);
+  const [qtyPouching, setQtyPouching] = useState(''); // Stage 6: Pouching finished output in kg
+  const [qtyPouchingPcs, setQtyPouchingPcs] = useState('');
   const [zipperConsumedKg, setZipperConsumedKg] = useState(0);
-  const [zipperConsumedM, setZipperConsumedM] = useState(0);
+  const [zipperConsumedM, setZipperConsumedM] = useState('');
   const [recordMachineId, setRecordMachineId] = useState('');
   const [recordOperator, setRecordOperator] = useState('');
   const [recordShift, setRecordShift] = useState('');
@@ -861,7 +868,7 @@ export default function ProductionRecordManagement({
   const [guardrailPreview, setGuardrailPreview] = useState(null);
   const [guardrailLimits, setGuardrailLimits] = useState(null);
   const [pouchingScrapKg, setPouchingScrapKg] = useState(0); // Stage 6: Pouching Scrap (kg)
-  const [qtyDispatch, setQtyDispatch] = useState(0); // Stage 7: Final Dispatch Ready Quantity (kg)
+  const [qtyDispatch, setQtyDispatch] = useState(''); // Stage 7: Final Dispatch Ready Quantity (kg)
   const [showSfgConsumptionPreview, setShowSfgConsumptionPreview] = useState(false);
 
   // Stage-wise Scrap & Wastage Breakdown fields (in kg) — Clean 0 defaults for data entry
@@ -1091,26 +1098,32 @@ export default function ProductionRecordManagement({
 
       const outRolls = existingRec.outputRolls || existingRec.rollsBreakdown || ord.rollsBreakdown || ord.outputRolls || [];
       const totalOutKg = outRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-      const initialStage1Kg = existingRec.qtyFirstPassL1 || existingRec.qtyPrinting || totalOutKg || existingRec.printedOutputKg || ord.printedOutputKg || 0;
+      const initialStage1Kg = measureInputValue(
+        existingRec.qtyFirstPassL1,
+        measureInputValue(
+          existingRec.qtyPrinting,
+          totalOutKg > 0 ? totalOutKg : measureInputValue(existingRec.printedOutputKg, ord.printedOutputKg)
+        )
+      );
 
       setQtyFirstPassL1(initialStage1Kg);
-      setQtyInspection(existingRec.qtyInspection || 0);
-      setQtyLaminationL1(existingRec.qtyLaminationL1 || sfgQtyL1 || 0);
+      setQtyInspection(measureInputValue(existingRec.qtyInspection));
+      setQtyLaminationL1(measureInputValue(existingRec.qtyLaminationL1, sfgQtyL1 > 0 ? sfgQtyL1 : null));
       setAdhesiveConsumedL1Kg(existingRec.adhesiveConsumedL1Kg || sfgAdhesiveL1 || 0);
-      setQtySecondPassL2(existingRec.qtySecondPassL2 || sfgQtyL2 || 0);
+      setQtySecondPassL2(measureInputValue(existingRec.qtySecondPassL2, sfgQtyL2 > 0 ? sfgQtyL2 : null));
       setLaminationPlainSubstrateWastageL2Kg(existingRec.laminationPlainSubstrateWastageL2Kg || sfgLamPlainScrapL2 || 0);
       setAdhesiveConsumedL2Kg(existingRec.adhesiveConsumedL2Kg || sfgAdhesiveL2 || 0);
-      setQtySlitting(existingRec.qtySlitting || sfgQtySlitting || 0);
+      setQtySlitting(measureInputValue(existingRec.qtySlitting, sfgQtySlitting > 0 ? sfgQtySlitting : null));
       setPaperCoreConsumedKg(existingRec.paperCoreConsumedKg || 0);
-      setQtyPouching(existingRec.qtyPouching || sfgQtyPouching || 0);
-      setQtyPouchingPcs(existingRec.qtyPouchingPcs || 0);
+      setQtyPouching(measureInputValue(existingRec.qtyPouching, sfgQtyPouching > 0 ? sfgQtyPouching : null));
+      setQtyPouchingPcs(measureInputValue(existingRec.qtyPouchingPcs));
       setZipperConsumedKg(existingRec.zipperConsumedKg || sfgZipperConsumed || 0);
-      setZipperConsumedM(existingRec.zipperConsumedM || 0);
+      setZipperConsumedM(measureInputValue(existingRec.zipperConsumedM));
       setRecordMachineId(existingRec.machineId || '');
       setRecordOperator(existingRec.operatorName || '');
       setRecordShift(existingRec.shift || '');
       setPouchingScrapKg(existingRec.pouchingScrapKg || sfgPouchingScrap || 0);
-      setQtyDispatch(existingRec.qtyDispatch || 0);
+      setQtyDispatch(measureInputValue(existingRec.qtyDispatch));
       setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
 
       // Preserve historical snapshot rates for existing record:
@@ -1357,22 +1370,22 @@ export default function ProductionRecordManagement({
       }
     }
 
-    setQtyFirstPassL1(0);
-    setQtyInspection(0);
-    setQtyLaminationL1(sfgQtyL1 || 0);
+    setQtyFirstPassL1('');
+    setQtyInspection('');
+    setQtyLaminationL1(sfgQtyL1 > 0 ? sfgQtyL1 : '');
     setAdhesiveConsumedL1Kg(sfgAdhesiveL1 || 0);
-    setQtySecondPassL2(sfgQtyL2 || 0);
+    setQtySecondPassL2(sfgQtyL2 > 0 ? sfgQtyL2 : '');
     setLaminationPlainSubstrateWastageL2Kg(sfgLamPlainScrapL2 || 0);
     setAdhesiveConsumedL2Kg(sfgAdhesiveL2 || 0);
-    setQtySlitting(sfgQtySlitting || 0);
+    setQtySlitting(sfgQtySlitting > 0 ? sfgQtySlitting : '');
     setPaperCoreConsumedKg(0);
     // Newly created record inherits latest active settings from DB:
     setAdhesiveCostPerKg(activeMaterialRates.adhesiveCostPerKg);
     setPaperCoreCostPerKg(activeMaterialRates.paperCoreCostPerKg);
-    setQtyPouching(sfgQtyPouching || 0);
-    setQtyPouchingPcs(0);
+    setQtyPouching(sfgQtyPouching > 0 ? sfgQtyPouching : '');
+    setQtyPouchingPcs('');
     setZipperConsumedKg(sfgZipperConsumed || 0);
-    setZipperConsumedM(0);
+    setZipperConsumedM('');
     setRecordMachineId('');
     setRecordOperator('');
     setRecordShift('');
@@ -1380,7 +1393,7 @@ export default function ProductionRecordManagement({
     setFilmTypeOverrideReason('');
     setGuardrailPreview(null);
     setPouchingScrapKg(sfgPouchingScrap || 0);
-    setQtyDispatch(0);
+    setQtyDispatch('');
     setPrintingPlainSettingWastageKg(sfgPrintPlainScrap || 0);
     setPrintingWastageKg(sfgPrintScrap || 0);
     setLaminationPlainSubstrateWastageKg(sfgLamPlainScrapL1 || 0);
@@ -2031,7 +2044,7 @@ export default function ProductionRecordManagement({
       outputRolls: selectedRecord?.outputRolls || selectedOrder?.outputRolls || selectedOrder?.rollsBreakdown || [],
       rollsBreakdown: selectedRecord?.rollsBreakdown || selectedRecord?.outputRolls || selectedOrder?.rollsBreakdown || [],
       inputRollsList: selectedRecord?.inputRollsList || selectedOrder?.inputRollsList || [],
-      actualMetersPrinted: selectedRecord?.actualMetersPrinted || selectedOrder?.actualMetersPrinted || 0,
+      actualMetersPrinted: finiteNumber(selectedRecord?.actualMetersPrinted ?? selectedOrder?.actualMetersPrinted),
       printedOutputKg: selectedRecord?.printedOutputKg || selectedOrder?.printedOutputKg || 0,
       printingStartTime: selectedRecord?.printingStartTime || selectedOrder?.printingStartTime || null,
       printingEndTime: selectedRecord?.printingEndTime || selectedOrder?.printingEndTime || null,
@@ -2041,22 +2054,22 @@ export default function ProductionRecordManagement({
       sfgConsumptions: selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || [],
       
       // Stage-wise Quantities & Consumables (7 Stages)
-      qtyFirstPassL1: parseFloat(qtyFirstPassL1) || 0,
-      qtyPrinting: parseFloat(qtyFirstPassL1) || 0,
-      qtyInspection: parseFloat(qtyInspection) || 0,
-      qtyLaminationL1: parseFloat(qtyLaminationL1) || 0,
+      qtyFirstPassL1: finiteNumber(qtyFirstPassL1),
+      qtyPrinting: finiteNumber(qtyFirstPassL1),
+      qtyInspection: finiteNumber(qtyInspection),
+      qtyLaminationL1: finiteNumber(qtyLaminationL1),
       adhesiveConsumedL1Kg: parseFloat(adhesiveConsumedL1Kg) || 0,
-      qtySecondPassL2: parseFloat(qtySecondPassL2) || 0,
+      qtySecondPassL2: finiteNumber(qtySecondPassL2),
       laminationPlainSubstrateWastageL2Kg: parseFloat(laminationPlainSubstrateWastageL2Kg) || 0,
       adhesiveConsumedL2Kg: parseFloat(adhesiveConsumedL2Kg) || 0,
-      qtySlitting: parseFloat(qtySlitting) || 0,
+      qtySlitting: finiteNumber(qtySlitting),
       paperCoreConsumedKg: parseFloat(paperCoreConsumedKg) || 0,
-      qtyPouching: parseFloat(qtyPouching) || 0,
-      qtyPouchingPcs: parseFloat(qtyPouchingPcs) || 0,
+      qtyPouching: finiteNumber(qtyPouching),
+      qtyPouchingPcs: finiteNumber(qtyPouchingPcs),
       zipperConsumedKg: parseFloat(zipperConsumedKg) || 0,
-      zipperConsumedM: parseFloat(zipperConsumedM) || 0,
+      zipperConsumedM: finiteNumber(zipperConsumedM),
       pouchingScrapKg: parseFloat(pouchingScrapKg) || 0,
-      qtyDispatch: parseFloat(qtyDispatch) || 0,
+      qtyDispatch: finiteNumber(qtyDispatch),
       totalProductionQtyKg: roundToTwo(totalJobMaterialOutputKg),
 
       // Snapshot consumable material cost rates and totals
@@ -2082,7 +2095,7 @@ export default function ProductionRecordManagement({
       totalScrapQtyKg: roundToTwo(totalScrapQtyKg),
       totalWastageKg: roundToTwo(totalScrapQtyKg),
       grossProductionKg: roundToTwo(totalJobMaterialOutputKg),
-      netUsableKg: roundToTwo(totalNetQtyKg),
+      netUsableKg: finiteNumber(selectedRecord?.netUsableKg),
       deriveNetFromStages: true,
       overallScrapPctOfOutput: roundToTwo(overallScrapPctOfOutput),
       overallScrapPctOfDispatch: roundToTwo(overallScrapPctOfDispatch),

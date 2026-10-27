@@ -163,7 +163,7 @@ import {
 } from './utils/printingFilmIssue';
 import { planPrintingSfgLot, printingSfgLotCode } from './utils/printingSfgLot';
 import { parseOptionalKg } from './utils/productionRecordQuality';
-import { printLayerSpec, resolveJobMaster } from './utils/jobMasterGuardrails';
+import { finiteNumber, printLayerSpec, resolveJobMaster } from './utils/jobMasterGuardrails';
 import { factoryCalendarDate } from './services/employeeAttendance';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
@@ -2469,10 +2469,10 @@ export default function App() {
       printingEndTime: endIso,
       printingDurationMinutes: computedDurationMinutes,
       printingDurationFormatted: durationFormatted,
-      qtyFirstPassL1: printedOutputKg > 0 ? printedOutputKg : (baseRecord.qtyFirstPassL1 || 0),
+      qtyFirstPassL1: printedOutputKg > 0 ? printedOutputKg : finiteNumber(baseRecord.qtyFirstPassL1),
       totalProductionQtyKg: printedOutputKg > 0 ? printedOutputKg : (baseRecord.totalProductionQtyKg || 0),
       grossProductionKg: printedOutputKg > 0 ? printedOutputKg : (baseRecord.grossProductionKg || 0),
-      actualMetersPrinted,
+      actualMetersPrinted: finiteNumber(endData.actualMetersPrinted) ?? finiteNumber(order.targetMeters) ?? finiteNumber(baseRecord.actualMetersPrinted),
       inkGsmInSpeed,
       printedOutputKg,
       inputRollsList: endData.inputRollsList || baseRecord.inputRollsList || [],

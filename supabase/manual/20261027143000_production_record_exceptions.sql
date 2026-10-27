@@ -7,6 +7,20 @@
 -- A Job Master is used only when the record or order stores its id, or the SKU
 -- matches one row, or the job name matches exactly one row. Otherwise the
 -- check is "Job Master not found / ambiguous".
+--
+-- Film-type comparison follows normalizeFilmType in src/utils/jobMasterGuardrails.js:
+-- trim; blank, "-", "—", and "unknown" become empty; upper-case; drop a whole
+-- word FILM; strip non-alphanumerics; then the same ordered aliases
+-- (Pearl BOPP, Matte BOPP, MET BOPP, OPP, MET CPP, METPET, Polyester, LLDPE,
+-- LDPE, and the rest). The two tokens are compared for equality. A roll film
+-- that normalises to empty is left to the blank-roll check. A blank Job Master
+-- film with a present roll film is a film-type block.
+--
+-- Remaining difference from JavaScript: PostgreSQL \m and \M are ASCII word
+-- boundaries, and upper() follows the database locale. JavaScript \b and
+-- toUpperCase() follow Unicode. Film names in this ERP are ASCII, so that
+-- difference does not change current rows. "PETFILM" (no word break) stays
+-- PETFILM in both; "PET FILM" and "Polyester" both become PET.
 
 WITH jm AS (
   SELECT
@@ -157,6 +171,60 @@ roll_rows AS (
     END
   ) WITH ORDINALITY AS roll(roll, ordinality) ON true
 ),
+film_norm AS (
+  SELECT
+    rr.*,
+    norms.roll_norm,
+    norms.spec_norm
+  FROM roll_rows rr
+  CROSS JOIN LATERAL (
+    SELECT
+      MAX(CASE WHEN src.which = 'roll' THEN src.norm END) AS roll_norm,
+      MAX(CASE WHEN src.which = 'spec' THEN src.norm END) AS spec_norm
+    FROM (
+      SELECT
+        prepped.which,
+        CASE
+          WHEN prepped.token = '' THEN ''
+          WHEN position('PEARL' IN prepped.token) > 0 AND position('BOPP' IN prepped.token) > 0 THEN 'PEARLBOPP'
+          WHEN position('MATTE' IN prepped.token) > 0 AND position('BOPP' IN prepped.token) > 0 THEN 'MATTEBOPP'
+          WHEN position('MET' IN prepped.token) > 0 AND position('BOPP' IN prepped.token) > 0 THEN 'METBOPP'
+          WHEN position('BOPP' IN prepped.token) > 0 OR position('OPP' IN prepped.token) > 0 THEN 'BOPP'
+          WHEN position('MET' IN prepped.token) > 0 AND position('CPP' IN prepped.token) > 0 THEN 'METCPP'
+          WHEN position('CPP' IN prepped.token) > 0 THEN 'CPP'
+          WHEN position('METPET' IN prepped.token) > 0
+            OR (position('MET' IN prepped.token) > 0 AND position('PET' IN prepped.token) > 0) THEN 'METPET'
+          WHEN prepped.token = 'PET' OR position('POLYESTER' IN prepped.token) > 0 THEN 'PET'
+          WHEN position('LLDPE' IN prepped.token) > 0 THEN 'LLDPE'
+          WHEN position('LDPE' IN prepped.token) > 0 OR prepped.token = 'LD' OR position('NATURALLD' IN prepped.token) > 0 THEN 'LDPE'
+          WHEN prepped.token = 'PE' OR position('POLYETHYLENE' IN prepped.token) > 0 THEN 'PE'
+          WHEN position('MGP' IN prepped.token) > 0 THEN 'MGP'
+          WHEN position('NGP' IN prepped.token) > 0 THEN 'NGP'
+          WHEN position('MATTA' IN prepped.token) > 0 OR prepped.token = 'ATTA' THEN 'MATTA'
+          WHEN position('NMET' IN prepped.token) > 0 THEN 'NMET'
+          WHEN position('MMET' IN prepped.token) > 0 THEN 'MMET'
+          WHEN position('PVC' IN prepped.token) > 0 THEN 'PVC'
+          WHEN position('FOIL' IN prepped.token) > 0 OR position('ALU' IN prepped.token) > 0 THEN 'FOIL'
+          WHEN position('PAPER' IN prepped.token) > 0 THEN 'PAPER'
+          ELSE prepped.token
+        END AS norm
+      FROM (
+        SELECT
+          raw.which,
+          CASE
+            WHEN btrim(COALESCE(raw.value, '')) = '' THEN ''
+            WHEN btrim(raw.value) IN ('—', '-') THEN ''
+            WHEN lower(btrim(raw.value)) = 'unknown' THEN ''
+            ELSE regexp_replace(
+              regexp_replace(upper(btrim(raw.value)), '\mFILM\M', '', 'g'),
+              '[^A-Z0-9]', '', 'g'
+            )
+          END AS token
+        FROM (VALUES ('roll', rr.film_type), ('spec', rr.print_film_type)) AS raw(which, value)
+      ) prepped
+    ) src
+  ) norms
+),
 failures AS (
   SELECT record_id, 'order'::text AS rule, 'block'::text AS severity,
     'Record has no order.' AS detail
@@ -194,16 +262,12 @@ failures AS (
 
   UNION ALL
   SELECT record_id, 'film-type', 'block',
-    'Roll ' || roll_no || ' film ' || film_type || ' differs from Job Master ' || COALESCE(print_film_type, 'unknown') || '.'
-  FROM roll_rows
+    'Roll ' || roll_no || ' film ' || film_type || ' differs from Job Master ' || COALESCE(NULLIF(btrim(print_film_type), ''), 'unknown') || '.'
+  FROM film_norm
   WHERE roll_no IS NOT NULL
-    AND btrim(film_type) <> ''
-    AND (
-      print_film_type IS NULL
-      OR btrim(print_film_type) = ''
-      OR upper(regexp_replace(film_type, '[^A-Za-z0-9]', '', 'g')) NOT LIKE '%' || upper(regexp_replace(print_film_type, '[^A-Za-z0-9]', '', 'g')) || '%'
-         AND upper(regexp_replace(print_film_type, '[^A-Za-z0-9]', '', 'g')) NOT LIKE '%' || upper(regexp_replace(film_type, '[^A-Za-z0-9]', '', 'g')) || '%'
-    )
+    AND btrim(COALESCE(film_type, '')) <> ''
+    AND roll_norm <> ''
+    AND roll_norm IS DISTINCT FROM spec_norm
 
   UNION ALL
   SELECT record_id, 'micron', 'block',

@@ -7,7 +7,7 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 import { assertPersistableMeasures } from '../utils/productionRecordQuality';
-import { netUsableForSave } from '../utils/jobMasterGuardrails';
+import { measureColumnsForSave, netUsableForSave } from '../utils/jobMasterGuardrails';
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
@@ -1393,13 +1393,13 @@ export async function deleteCylinderFromSupabase(cylinderId) {
 // 6. PRODUCTION RECORDS
 // ============================================================================
 
-function firstStoredNumber(...values) {
+function storedMeasure(...values) {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue;
     const number = Number(value);
     if (Number.isFinite(number)) return number;
   }
-  return 0;
+  return null;
 }
 
 const GUARDRAIL_RECORD_COLUMNS = [
@@ -1453,20 +1453,20 @@ export async function fetchProductionRecords() {
         guardrailWarnings: extra.guardrailWarnings || [],
         filmTypeOverrideReason: r.film_type_override_reason || extra.filmTypeOverrideReason || '',
         filmTypeOverrideBy: r.film_type_override_by || extra.filmTypeOverrideBy || '',
-        qtyPouchingPcs: Number(r.qty_pouching_pcs ?? extra.qtyPouchingPcs ?? 0),
-        zipperConsumedM: Number(r.zipper_consumed_m ?? extra.zipperConsumedM ?? 0),
+        qtyPouchingPcs: storedMeasure(r.qty_pouching_pcs, extra.qtyPouchingPcs),
+        zipperConsumedM: storedMeasure(r.zipper_consumed_m, extra.zipperConsumedM),
         materialsList: (Array.isArray(r.materials_list) && r.materials_list.length > 0) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
-        qtyFirstPassL1: Number(extra.qtyFirstPassL1 || extra.qtyPrinting || 0),
-        qtyPrinting: Number(extra.qtyPrinting || extra.qtyFirstPassL1 || 0),
-        qtyInspection: Number(extra.qtyInspection || 0),
-        qtyLaminationL1: Number(extra.qtyLaminationL1 || 0),
+        qtyFirstPassL1: storedMeasure(extra.qtyFirstPassL1, extra.qtyPrinting, r.qty_first_pass_l1),
+        qtyPrinting: storedMeasure(extra.qtyPrinting, extra.qtyFirstPassL1, r.qty_printing),
+        qtyInspection: storedMeasure(extra.qtyInspection, r.qty_inspection),
+        qtyLaminationL1: storedMeasure(extra.qtyLaminationL1, r.qty_lamination_l1),
         adhesiveConsumedL1Kg: Number(extra.adhesiveConsumedL1Kg || 0),
-        qtySecondPassL2: Number(extra.qtySecondPassL2 || 0),
+        qtySecondPassL2: storedMeasure(extra.qtySecondPassL2, r.qty_second_pass_l2),
         laminationPlainSubstrateWastageL2Kg: Number(r.lamination_plain_substrate_wastage_l2_kg) || Number(extra.laminationPlainSubstrateWastageL2Kg) || 0,
         adhesiveConsumedL2Kg: Number(extra.adhesiveConsumedL2Kg || 0),
-        qtySlitting: Number(extra.qtySlitting || 0),
+        qtySlitting: storedMeasure(extra.qtySlitting, r.qty_slitting),
         paperCoreConsumedKg: Number(extra.paperCoreConsumedKg || 0),
-        qtyPouching: Number(extra.qtyPouching || 0),
+        qtyPouching: storedMeasure(extra.qtyPouching, r.qty_pouching),
         zipperConsumedKg: Number(extra.zipperConsumedKg || 0),
         pouchingScrapKg: Number(r.pouching_scrap_kg) || Number(extra.pouchingScrapKg) || 0,
         slittingSettingWastageKg: Number(extra.slittingSettingWastageKg) || 0,
@@ -1476,16 +1476,16 @@ export async function fetchProductionRecords() {
         actualAdhesiveGsm: Number(r.actual_adhesive_gsm ?? extra.actualAdhesiveGsm ?? 0),
         targetInkGsm: Number(r.target_ink_gsm ?? extra.targetInkGsm ?? 1.5),
         targetAdhesiveGsm: Number(r.target_adhesive_gsm ?? extra.targetAdhesiveGsm ?? 1.5),
-        qtyDispatch: firstStoredNumber(extra.qtyDispatch, r.qty_dispatch),
+        qtyDispatch: storedMeasure(extra.qtyDispatch, r.qty_dispatch),
         totalProductionQtyKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
         grossProductionKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
-        netUsableKg: firstStoredNumber(r.net_usable_kg, extra.netUsableKg),
+        netUsableKg: storedMeasure(r.net_usable_kg, extra.netUsableKg),
         outputRolls: extra.outputRolls || extra.rollsBreakdown || [],
         rollsBreakdown: extra.rollsBreakdown || extra.outputRolls || [],
         inputRollsList: (Array.isArray(r.input_rolls_list) && r.input_rolls_list.length > 0) ? r.input_rolls_list : (extra.inputRollsList || []),
         createdBalanceRolls: extra.createdBalanceRolls || [],
         stages: extra.stages || {},
-        actualMetersPrinted: firstStoredNumber(r.actual_meters_printed, extra.actualMetersPrinted),
+        actualMetersPrinted: storedMeasure(r.actual_meters_printed, extra.actualMetersPrinted),
         inkGsmInSpeed: Number(extra.inkGsmInSpeed || 0),
         printedOutputKg: Number(extra.printedOutputKg || 0),
         printingStartTime: extra.printingStartTime || null,
@@ -1543,6 +1543,7 @@ export async function saveProductionRecordToSupabase(record) {
   const scrapPctDispatch = Number(record.overallScrapPctOfDispatch ?? 0);
   const grossKg = Number(record.totalProductionQtyKg ?? record.grossProductionKg ?? 0);
   const netKg = netUsableForSave(record);
+  const measures = measureColumnsForSave(record);
 
   const extra = {
     orderId: record.orderId,
@@ -1555,32 +1556,32 @@ export async function saveProductionRecordToSupabase(record) {
     inputRollsList: record.inputRollsList || [],
     createdBalanceRolls: record.createdBalanceRolls || [],
     stages: record.stages || {},
-    actualMetersPrinted: record.actualMetersPrinted || 0,
+    actualMetersPrinted: measures.actual_meters_printed,
     inkGsmInSpeed: record.inkGsmInSpeed || 0,
     printedOutputKg: record.printedOutputKg || 0,
     printingStartTime: record.printingStartTime || null,
     printingEndTime: record.printingEndTime || null,
     printingDurationMinutes: record.printingDurationMinutes || 0,
     printingDurationFormatted: record.printingDurationFormatted || '',
-    qtyFirstPassL1: record.qtyFirstPassL1,
-    qtyPrinting: record.qtyPrinting || record.qtyFirstPassL1,
-    qtyInspection: record.qtyInspection,
-    qtyLaminationL1: record.qtyLaminationL1,
+    qtyFirstPassL1: measures.qty_first_pass_l1,
+    qtyPrinting: measures.qty_printing,
+    qtyInspection: measures.qty_inspection,
+    qtyLaminationL1: measures.qty_lamination_l1,
     adhesiveConsumedL1Kg: record.adhesiveConsumedL1Kg,
-    qtySecondPassL2: record.qtySecondPassL2,
+    qtySecondPassL2: measures.qty_second_pass_l2,
     laminationPlainSubstrateWastageL2Kg: record.laminationPlainSubstrateWastageL2Kg,
     adhesiveConsumedL2Kg: record.adhesiveConsumedL2Kg,
-    qtySlitting: record.qtySlitting,
+    qtySlitting: measures.qty_slitting,
     paperCoreConsumedKg: record.paperCoreConsumedKg,
-    qtyPouching: record.qtyPouching,
+    qtyPouching: measures.qty_pouching,
     zipperConsumedKg: record.zipperConsumedKg,
     pouchingScrapKg: record.pouchingScrapKg,
     slittingSettingWastageKg: Number(record.slittingSettingWastageKg || 0),
     excessFilmWastageKg: Number(record.excessFilmWastageKg || 0),
     excessFilmWastagePct: Number(record.excessFilmWastagePct || 0),
-    qtyDispatch: record.qtyDispatch,
-    qtyPouchingPcs: record.qtyPouchingPcs,
-    zipperConsumedM: record.zipperConsumedM,
+    qtyDispatch: measures.qty_dispatch,
+    qtyPouchingPcs: measures.qty_pouching_pcs,
+    zipperConsumedM: measures.zipper_consumed_m,
     jobMasterId: record.jobMasterId || null,
     jobCode: record.jobCode || '',
     printFilmType: record.printFilmType || null,
@@ -1638,17 +1639,17 @@ export async function saveProductionRecordToSupabase(record) {
     guardrail_warning_reason: record.guardrailWarningReason || null,
     film_type_override_reason: record.filmTypeOverrideReason || null,
     film_type_override_by: record.filmTypeOverrideBy || null,
-    qty_pouching_pcs: Number(record.qtyPouchingPcs || 0),
-    zipper_consumed_m: Number(record.zipperConsumedM || 0),
-    actual_meters_printed: Number(record.actualMetersPrinted || 0),
-    qty_first_pass_l1: Number(record.qtyFirstPassL1 || 0),
-    qty_printing: Number(record.qtyPrinting || record.qtyFirstPassL1 || 0),
-    qty_inspection: Number(record.qtyInspection || 0),
-    qty_lamination_l1: Number(record.qtyLaminationL1 || 0),
-    qty_second_pass_l2: Number(record.qtySecondPassL2 || 0),
-    qty_slitting: Number(record.qtySlitting || 0),
-    qty_pouching: Number(record.qtyPouching || 0),
-    qty_dispatch: Number(record.qtyDispatch || 0),
+    qty_pouching_pcs: measures.qty_pouching_pcs,
+    zipper_consumed_m: measures.zipper_consumed_m,
+    actual_meters_printed: measures.actual_meters_printed,
+    qty_first_pass_l1: measures.qty_first_pass_l1,
+    qty_printing: measures.qty_printing,
+    qty_inspection: measures.qty_inspection,
+    qty_lamination_l1: measures.qty_lamination_l1,
+    qty_second_pass_l2: measures.qty_second_pass_l2,
+    qty_slitting: measures.qty_slitting,
+    qty_pouching: measures.qty_pouching,
+    qty_dispatch: measures.qty_dispatch,
     adhesive_consumed_l1_kg: Number(record.adhesiveConsumedL1Kg || 0),
     adhesive_consumed_l2_kg: Number(record.adhesiveConsumedL2Kg || 0),
     zipper_consumed_kg: Number(record.zipperConsumedKg || 0),
