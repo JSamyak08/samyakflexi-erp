@@ -750,39 +750,9 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printed_output_kg NUMERIC;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_notes TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS machine_id TEXT;
 
--- VIEW: HIGH SCRAP & WASTAGE AUDIT REGISTRY (threshold >= 5.0%)
-CREATE OR REPLACE VIEW public.high_scrap_audit_registry AS
-SELECT 
-    pr.id AS record_id,
-    pr.order_id,
-    pr.job_name,
-    pr.client_name,
-    pr.operator_name,
-    pr.shift,
-    COALESCE(pr.date_filled, pr.recorded_at::date) AS record_date,
-    pr.gross_production_kg,
-    pr.net_usable_kg,
-    pr.total_wastage_kg,
-    pr.wastage_percentage,
-    pr.overall_scrap_pct_of_output,
-    pr.overall_scrap_pct_of_dispatch,
-    pr.printing_plain_setting_wastage_kg,
-    pr.printing_wastage_kg,
-    pr.lamination_plain_substrate_wastage_kg,
-    pr.printed_wastage_kg,
-    pr.laminate_wastage_kg,
-    pr.trim_wastage_kg,
-    pr.final_production_cost_rs,
-    pr.status,
-    pr.filled_by,
-    pr.approved_by,
-    pr.notes,
-    CASE 
-        WHEN pr.wastage_percentage >= 5.0 THEN TRUE 
-        ELSE FALSE 
-    END AS is_high_scrap_alert
-FROM public.production_records pr
-ORDER BY pr.recorded_at DESC;
+-- High scrap registry lives in supabase/migrations/20261026140000_job_wastage_scrap_registry.sql.
+-- A job is included only when total stage wastage is at least 5% of orders.order_qty_kg.
+-- Do not recreate the old view that flagged wastage_percentage of output.
 
 -- Access control lives in supabase/migrations. Do not recreate an anon full-access policy.
 

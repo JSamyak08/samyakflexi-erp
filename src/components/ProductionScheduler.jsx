@@ -54,7 +54,8 @@ import {
 } from '../factoryStore';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
-import { saveInventoryRollToSupabase, saveSFGGoodToSupabase } from '../services/supabaseDataService';
+import { saveInventoryRollToSupabase } from '../services/supabaseDataService';
+import { printingSfgLotCode } from '../utils/printingSfgLot';
 import { PartialSaveError, writeWithRetry, unsavedItemsMessage } from '../services/guardedWrite';
 
 // Helper: Resolve Film Density for flexible packaging substrates
@@ -1043,32 +1044,18 @@ export default function ProductionScheduler({
           locationBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
           storageBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
           inputSubstrateBarcodes: inputRollsList.map(r => r.barcodeId).filter(Boolean),
+          inputBarcodeIds: inputRollsList.map(r => r.barcodeId).filter(Boolean),
+          parentSfgBatchCode: printingSfgLotCode(endJobTargetOrder.id),
           inputRollsTraceability: inputRollsList
         };
 
-        const sfgPayload = {
-          ...sfgRollObj,
-          sfgBatchCode: barcodeId,
-          jobName: `${endJobTargetOrder.jobName} - Roll #${rollSeqNo}`,
-          totalNetKg: rollWeight,
-          availableKg: rollWeight,
-          consumedKg: 0,
-          storageBay: sfgRollObj.locationBay
-        };
-
-        // Both writes must succeed before the roll is shown or the job is completed.
-        let sfgSaved = false;
         try {
-          await writeWithRetry(() => saveSFGGoodToSupabase(sfgPayload));
-          sfgSaved = true;
           await writeWithRetry(() => saveInventoryRollToSupabase(sfgRollObj));
           createdSfgRolls.push(sfgRollObj);
           if (onAddRoll) await onAddRoll(sfgRollObj);
         } catch (dbErr) {
           unsavedRolls.push({
-            label: sfgSaved
-              ? `inventory roll ${barcodeId} (the SFG stock row was saved; the roll is not shown)`
-              : `printed roll ${barcodeId} in sfg_goods`,
+            label: `printed roll ${barcodeId}`,
             error: dbErr
           });
         }

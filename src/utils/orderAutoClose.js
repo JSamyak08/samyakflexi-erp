@@ -1,10 +1,15 @@
 /**
  * Order close rules.
  * Auto-close only when dispatched FG is within ±10% of the order quantity,
- * a challan or shipment exists, and no SFG or undispatched FG remains.
+ * a challan or shipment exists, and no blocking SFG or undispatched FG remains.
+ * A reusable printed lot (SFG-LOT-) is stock for the next order of the same
+ * product. It does not block this close and it is not written off.
+ * Other SFG and undispatched FG still keep the order open.
  * There is no 110% cap on SFG or FG quantity that may be produced.
  * A manual Admin close is sticky: auto-close must not reopen it or replace it.
  */
+
+import { isReusablePrintedLot } from './printingSfgLot.js';
 
 export const ORDER_CLOSE_TOLERANCE_PCT = 10;
 export const ORDER_AUTO_CLOSE_SETTING = 'order_auto_close_enabled';
@@ -135,6 +140,7 @@ export function remainingStockForOrder(order, sfgGoods = []) {
   let fgKg = 0;
   (sfgGoods || []).forEach((item) => {
     if (!stockMatches(order, item)) return;
+    if (isReusablePrintedLot(item)) return;
     const kg = availableKg(item);
     if (isFgLot(item)) fgKg += kg;
     else sfgKg += kg;
@@ -197,7 +203,7 @@ export function evaluateOrderAutoClose({
       closeMode: 'auto',
       closedBy: 'auto-close',
       closedAt: order.closeMode === 'auto' && order.closedAt ? order.closedAt : now,
-      closeReason: `Dispatched ${dispatched.kg} kg is within ±${config.tolerancePct}% of order quantity ${orderQty} kg, with no SFG or FG left on the order.`,
+      closeReason: `Dispatched ${dispatched.kg} kg is within ±${config.tolerancePct}% of order quantity ${orderQty} kg. Any printed-lot balance stays in the SFG store.`,
       overDispatchWarning: null
     };
     if (sameClose(order, next)) return unchanged(order, 'already-auto-closed');
