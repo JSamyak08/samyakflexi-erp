@@ -23,7 +23,8 @@ export function Substrate2ExtraRolls({
   onAdd,
   onRemove,
   onChange,
-  onSelectRoll
+  onSelectRoll,
+  layerName = 'Substrate 2'
 }) {
   const extraConsumed = rows.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0);
   const total = (parseFloat(firstConsumedKg) || 0) + extraConsumed;
@@ -38,7 +39,7 @@ export function Substrate2ExtraRolls({
           <div key={row.key} style={{ background: '#ffffff', border: '1px solid #f0abfc', borderRadius: '10px', padding: '12px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', gap: '8px' }}>
               <div style={{ fontWeight: '800', color: '#86198f', fontSize: '0.84rem' }}>
-                Substrate 2 roll {index + 2}
+                {layerName} roll {index + 2}
               </div>
               <button
                 type="button"
@@ -116,7 +117,7 @@ export function Substrate2ExtraRolls({
 
       {rows.length > 0 && (
         <div style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: '800', color: '#86198f' }}>
-          Substrate 2 total consumed: {total.toFixed(2)} kg
+          {layerName} total consumed: {total.toFixed(2)} kg
         </div>
       )}
 

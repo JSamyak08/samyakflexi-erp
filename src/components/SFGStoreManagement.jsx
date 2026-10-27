@@ -55,6 +55,7 @@ import TablePagination, { usePagination } from './TablePagination';
 import MeasureRangeHint from './MeasureRangeHint';
 import { assessConsumeStep } from '../utils/rollLineage';
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
+import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
@@ -73,7 +74,8 @@ export default function SFGStoreManagement({
   urlParams = {},
   onSaveSFGGood,
   onConsumeSFG,
-  onDeleteSFGGood
+  onDeleteSFGGood,
+  previewScrapItems = null
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'In Stock (WIP)', 'Partially Consumed', 'Fully Consumed'
@@ -93,9 +95,10 @@ export default function SFGStoreManagement({
 
   // QC Hold Store & Scrap Store Persisted State
   const [qcHoldItems, setQcHoldItems] = useState([]);
-  const [scrapItems, setScrapItems] = useState([]);
+  const [scrapItems, setScrapItems] = useState(Array.isArray(previewScrapItems) ? previewScrapItems : []);
 
   useEffect(() => {
+    if (Array.isArray(previewScrapItems)) return undefined;
     let active = true;
     async function loadHoldAndScrap() {
       try {
@@ -112,7 +115,7 @@ export default function SFGStoreManagement({
     }
     loadHoldAndScrap();
     return () => { active = false; };
-  }, []);
+  }, [previewScrapItems]);
 
   const persistQcHold = async (next) => {
     await replacePayloadRecords(supabase, 'sfg_qc_hold_items', next);
@@ -178,6 +181,7 @@ export default function SFGStoreManagement({
   const [tarePreset, setTarePreset] = useState('0.8');
   const [outputStorageBay, setOutputStorageBay] = useState('Bay A');
   const [extraSubstrate2, setExtraSubstrate2] = useState([]);
+  const [extraSubstrate3, setExtraSubstrate3] = useState([]);
   const [extraOutputs, setExtraOutputs] = useState([]);
   const [barcodePrintRolls, setBarcodePrintRolls] = useState(null);
   const extraRollSeq = useRef(1);
@@ -330,7 +334,7 @@ export default function SFGStoreManagement({
       const cat = String(roll.category || '').toLowerCase().trim();
       const isSfgRoll = rollType === 'SEMI_FINISHED_GOODS' || rollType === 'FINISHED_GOODS' || cat.includes('semi-finished') || cat.includes('finished');
 
-      if (isSfgRoll) {
+      if (isSfgRoll && !isPrintedLotChild(roll, list)) {
         const barcodeId = roll.barcodeId || roll.id;
         const exists = list.some(s => s.id === barcodeId || s.sfgBatchCode === barcodeId);
         if (!exists) {
@@ -367,7 +371,7 @@ export default function SFGStoreManagement({
       return !(isUntitledOrBlank && isZeroKg);
     });
 
-    return sortInventoryByFifo(cleanList);
+    return sortInventoryByFifo(omitPrintedLotChildren(cleanList));
   }, [sfgGoods, inventory, inventoryRolls, orders]);
 
 
@@ -583,6 +587,7 @@ export default function SFGStoreManagement({
     setTarePreset('0.8');
     setOutputStorageBay(item.storageBay || 'Bay A');
     setExtraSubstrate2([]);
+    setExtraSubstrate3([]);
     setExtraOutputs([]);
     setBarcodePrintRolls(null);
   };
@@ -681,6 +686,48 @@ export default function SFGStoreManagement({
       rollId,
       barcode: match.barcodeId || match.id,
       filmType: filmDesc,
+      micron: match.micron,
+      widthMm: match.widthMm,
+      itemId: match.itemId || '',
+      initialKg: availKg.toFixed(2),
+      consumedKg: availKg.toFixed(2)
+    });
+  };
+
+  const addExtraSubstrate3 = () => {
+    setExtraSubstrate3((prev) => [...prev, {
+      key: nextExtraKey('sub3'),
+      rollId: '',
+      barcode: '',
+      filmType: '',
+      initialKg: '',
+      consumedKg: ''
+    }]);
+  };
+
+  const updateExtraSubstrate3 = (key, patch) => {
+    setExtraSubstrate3((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
+  };
+
+  const selectExtraSubstrate3Roll = (key, rollId) => {
+    if (!rollId) {
+      updateExtraSubstrate3(key, { rollId: '', barcode: '', filmType: '', initialKg: '' });
+      return;
+    }
+    const match = availableSubstrateRolls.find((roll) => (roll.barcodeId || roll.id) === rollId);
+    if (!match) {
+      updateExtraSubstrate3(key, { rollId });
+      return;
+    }
+    const availKg = Number(match.availableWeightKg ?? match.netWeightKg ?? 0);
+    const filmDesc = `${match.filmType || match.itemName || 'Substrate Film'}${match.micron ? ` (${match.micron}µm` : ''}${match.widthMm ? ` × ${match.widthMm}mm)` : (match.micron ? ')' : '')}`;
+    updateExtraSubstrate3(key, {
+      rollId,
+      barcode: match.barcodeId || match.id,
+      filmType: filmDesc,
+      micron: match.micron,
+      widthMm: match.widthMm,
+      itemId: match.itemId || '',
       initialKg: availKg.toFixed(2),
       consumedKg: availKg.toFixed(2)
     });
@@ -824,6 +871,17 @@ export default function SFGStoreManagement({
         return;
       }
     }
+    if (isLaminationPass2 && extraSubstrate3.length > 0) {
+      const substrateCheck = validateAddedConsumeRows({
+        substrateExtras: extraSubstrate3,
+        firstSubstrateBarcode: subBarcode,
+        parentBatchCode: selectedItemForConsume.sfgBatchCode || selectedItemForConsume.id
+      });
+      if (!substrateCheck.ok) {
+        setFormError(substrateCheck.error);
+        return;
+      }
+    }
 
     const outGrossNum = parseFloat(outputGrossKg) || 0;
     const outTareNum = parseFloat(outputTareKg) || 0;
@@ -955,16 +1013,21 @@ export default function SFGStoreManagement({
         outputRoll: outputRollInfo
       };
 
-      if (isLaminationPass1 && extraSubstrate2.length > 0) {
+      if (isLaminationPass1) {
         const substrate2Rolls = buildSubstrate2RollList(subInfo, extraSubstrate2);
         if (substrate2Rolls.length > 0) logEntry.substrate2Rolls = substrate2Rolls;
+      }
+      if (isLaminationPass2) {
+        const substrate3Rolls = buildSubstrate2RollList(subInfo, extraSubstrate3);
+        if (substrate3Rolls.length > 0) logEntry.substrate3Rolls = substrate3Rolls;
       }
       if (multiOutputRolls && multiOutputRolls.length > 1) {
         logEntry.outputRoll = null;
         logEntry.outputRolls = multiOutputRolls;
       }
 
-      const substrateKg = (parseFloat(subConsumedKg) || 0) + extraSubstrate2.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0);
+      const substrateExtras = isLaminationPass2 ? extraSubstrate3 : extraSubstrate2;
+      const substrateKg = (parseFloat(subConsumedKg) || 0) + substrateExtras.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0);
       const outputKg = multiOutputRolls && multiOutputRolls.length > 1
         ? multiOutputRolls.reduce((sum, roll) => sum + (parseFloat(roll.netWeightKg) || 0), 0)
         : (outputRollInfo ? parseFloat(outputRollInfo.netWeightKg) : null);
@@ -1923,6 +1986,12 @@ export default function SFGStoreManagement({
                                 <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', fontSize: '0.84rem', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', display: 'inline-block' }}>
                                   {item.sfgBatchCode}
                                 </div>
+                                {Array.isArray(item.childRolls) && item.childRolls.length > 0 && (
+                                  <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#475569', whiteSpace: 'normal', maxWidth: '280px', lineHeight: 1.35 }}>
+                                    Rolls: {item.childRolls.map((roll) => roll.barcodeId).filter(Boolean).join(', ')}
+                                    {Number(item.totalMeters) > 0 ? ` · ${Number(item.totalMeters).toLocaleString()} m` : ''}
+                                  </div>
+                                )}
                                 <div style={{ marginTop: '4px' }}>
                                   <button
                                     type="button"
@@ -2378,14 +2447,14 @@ export default function SFGStoreManagement({
       {/* VIEW 3: SCRAP STORE SECTION                                          */}
       {/* ==================================================================== */}
       {activeStoreTab === 'scrap' && (
-        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+        <div data-testid="scrap-store-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <div>
               <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Trash2 size={20} color="#64748b" /> Scrap Store Inventory Log ({scrapItems.length})
               </h3>
               <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                Record of all defective materials rejected and transferred to Scrap Store from QC Hold Quarantine.
+                Process wastage for each job, tagged by stage and type, plus QC hold material sent to scrap. A zero quantity is removed.
               </p>
             </div>
             <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#dc2626', background: '#fef2f2', padding: '8px 16px', borderRadius: '10px', border: '1px solid #fca5a5' }}>
@@ -2400,14 +2469,15 @@ export default function SFGStoreManagement({
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <table data-testid="scrap-store-log" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                     <th style={{ padding: '10px 14px' }}>Original Tag Ref</th>
                     <th style={{ padding: '10px 14px' }}>Job Name & Order</th>
+                    <th style={{ padding: '10px 14px' }}>Stage</th>
                     <th style={{ padding: '10px 14px' }}>Substrate & Size</th>
                     <th style={{ padding: '10px 14px', textAlign: 'right' }}>Scrap Weight (kg)</th>
-                    <th style={{ padding: '10px 14px' }}>Defect Category</th>
+                    <th style={{ padding: '10px 14px' }}>Type</th>
                     <th style={{ padding: '10px 14px' }}>Scrap Reason & Remarks</th>
                     <th style={{ padding: '10px 14px' }}>Transferred By & Date</th>
                   </tr>
@@ -2422,15 +2492,18 @@ export default function SFGStoreManagement({
                         <div style={{ fontWeight: '700', color: '#0f172a' }}>{item.jobName}</div>
                         <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderId || '—'} | Client: {displayPartyName(item.clientName)}</div>
                       </td>
+                      <td style={{ padding: '10px 14px', fontWeight: '700', color: '#1e3a8a' }}>
+                        {item.stage || 'QC Hold'}
+                      </td>
                       <td style={{ padding: '10px 14px', color: '#334155' }}>
                         {item.filmType} ({item.micron}µm × {item.widthMm}mm)
                       </td>
                       <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '900', color: '#dc2626' }}>
-                        {item.scrapQtyKg.toFixed(2)} kg
+                        {Number(item.scrapQtyKg || 0).toFixed(2)} kg
                       </td>
                       <td style={{ padding: '10px 14px' }}>
                         <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', border: '1px solid #fca5a5' }}>
-                          {item.defectCategory}
+                          {item.type || item.defectCategory}
                         </span>
                       </td>
                       <td style={{ padding: '10px 14px', color: '#475569', fontSize: '0.8rem' }}>
@@ -3327,7 +3400,7 @@ export default function SFGStoreManagement({
                           {/* Live Remaining Balance Calculation */}
                           {parseFloat(subInitialKg) > 0 && (
                             <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', fontSize: '0.78rem' }}>
-                              <span style={{ color: '#701a75', fontWeight: '600' }}>Substrate Balance Remaining:</span>
+                              <span style={{ color: '#701a75', fontWeight: '600' }}>Substrate balance returned as a -BAL roll:</span>
                               <span style={{
                                 fontWeight: '900',
                                 color: Math.max(0, (parseFloat(subInitialKg) || 0) - (parseFloat(subConsumedKg) || 0)) > 0 ? '#15803d' : '#b45309',
@@ -3349,6 +3422,18 @@ export default function SFGStoreManagement({
                               onRemove={(key) => setExtraSubstrate2((prev) => prev.filter((row) => row.key !== key))}
                               onChange={updateExtraSubstrate2}
                               onSelectRoll={selectExtraSubstrateRoll}
+                            />
+                          )}
+                          {isLaminationPass2 && (
+                            <Substrate2ExtraRolls
+                              layerName="Substrate 3"
+                              rows={extraSubstrate3}
+                              rolls={availableSubstrateRolls}
+                              firstConsumedKg={subConsumedKg}
+                              onAdd={addExtraSubstrate3}
+                              onRemove={(key) => setExtraSubstrate3((prev) => prev.filter((row) => row.key !== key))}
+                              onChange={updateExtraSubstrate3}
+                              onSelectRoll={selectExtraSubstrate3Roll}
                             />
                           )}
                         </div>
@@ -3828,7 +3913,7 @@ export default function SFGStoreManagement({
                           warning={extraOutputs.length > 0 ? outputOverReferenceWarning({
                             outputNetKg: sumOutputNet(outputGrossKg, outputTareKg, extraOutputs),
                             consumedKg: parseFloat(consumedWeightKg) || 0,
-                            substrateConsumedKg: isLaminationPass1 ? sumSubstrateConsumed(subConsumedKg, extraSubstrate2) : 0
+                            substrateConsumedKg: isLaminationPass1 ? sumSubstrateConsumed(subConsumedKg, extraSubstrate2) : (isLaminationPass2 ? sumSubstrateConsumed(subConsumedKg, extraSubstrate3) : 0)
                           }) : ''}
                           onAdd={addExtraOutput}
                           onRemove={(key) => setExtraOutputs((prev) => prev.filter((row) => row.key !== key))}

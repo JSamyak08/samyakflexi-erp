@@ -722,3 +722,37 @@ export async function savePrintingScrapEntries(supabase, plan) {
   }
   return upsertPayloadRecords(supabase, 'sfg_scrap_items', plan?.upserts || []);
 }
+
+function isMissingRelation(error) {
+  const code = error?.code || error?.cause?.code;
+  const message = String(error?.message || error || '');
+  return code === '42P01' || (/high_scrap_registry/i.test(message) && /does not exist|schema cache|could not find/i.test(message));
+}
+
+/**
+ * Writes process-wastage scrap rows and the high-scrap registry row for one job.
+ * A missing high_scrap_registry table (migration not applied yet) does not
+ * block the scrap-store write. QC scrap rows are not in the delete list.
+ */
+export async function saveJobWastagePlan(supabase, plan) {
+  const scrap = await savePrintingScrapEntries(supabase, plan?.scrap || plan);
+  const deleteId = plan?.registry?.deleteId;
+  const upsert = plan?.registry?.upsert;
+  if (!deleteId && !upsert) return scrap;
+  try {
+    if (deleteId) {
+      const { error } = await supabase.from('high_scrap_registry').delete().eq('id', deleteId);
+      if (error) throw error;
+    }
+    if (upsert) {
+      await upsertPayloadRecords(supabase, 'high_scrap_registry', [upsert]);
+    }
+  } catch (error) {
+    if (isMissingRelation(error)) {
+      console.warn('[high scrap] registry table is not available yet; scrap store rows were saved.');
+      return scrap;
+    }
+    throw error;
+  }
+  return scrap;
+}

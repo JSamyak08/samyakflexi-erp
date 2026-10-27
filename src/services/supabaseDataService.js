@@ -176,6 +176,8 @@ export async function fetchOrders() {
         printWidthMm: jd.printWidthMm || null,
         repeatLengthMm: jd.repeatLengthMm || null,
         colorsCount: jd.colorsCount || o.colors_count || 6,
+        jobMasterId: jd.jobMasterId || '',
+        printedSfgUse: jd.printedSfgUse || null,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
         inkGsm: inkGsm,
@@ -281,7 +283,9 @@ export async function saveOrderToSupabase(order) {
     overDispatchWarning: order.overDispatchWarning ?? order.jobDetails?.overDispatchWarning ?? null,
     reopenedBy: order.reopenedBy ?? order.jobDetails?.reopenedBy ?? null,
     reopenedAt: order.reopenedAt ?? order.jobDetails?.reopenedAt ?? null,
-    reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null
+    reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null,
+    jobMasterId: order.jobMasterId || order.jobDetails?.jobMasterId || null,
+    printedSfgUse: order.printedSfgUse || order.jobDetails?.printedSfgUse || null
   };
 
   const matReqs = order.materialRequirements || order.rawMaterialRequirements || [];
@@ -1410,20 +1414,23 @@ export async function fetchProductionRecords() {
         operatorName: r.operator_name || extra.operatorName || '',
         shift: r.shift || extra.shift || 'Day Shift',
         dateFilled: r.date_filled || extra.dateFilled || (r.recorded_at ? r.recorded_at.split('T')[0] : new Date().toISOString().split('T')[0]),
-        materialsList: Array.isArray(r.materials_list) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
+        materialsList: (Array.isArray(r.materials_list) && r.materials_list.length > 0) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
         qtyFirstPassL1: Number(extra.qtyFirstPassL1 || extra.qtyPrinting || 0),
         qtyPrinting: Number(extra.qtyPrinting || extra.qtyFirstPassL1 || 0),
         qtyInspection: Number(extra.qtyInspection || 0),
         qtyLaminationL1: Number(extra.qtyLaminationL1 || 0),
         adhesiveConsumedL1Kg: Number(extra.adhesiveConsumedL1Kg || 0),
         qtySecondPassL2: Number(extra.qtySecondPassL2 || 0),
-        laminationPlainSubstrateWastageL2Kg: Number(extra.laminationPlainSubstrateWastageL2Kg || 0),
+        laminationPlainSubstrateWastageL2Kg: Number(r.lamination_plain_substrate_wastage_l2_kg) || Number(extra.laminationPlainSubstrateWastageL2Kg) || 0,
         adhesiveConsumedL2Kg: Number(extra.adhesiveConsumedL2Kg || 0),
         qtySlitting: Number(extra.qtySlitting || 0),
         paperCoreConsumedKg: Number(extra.paperCoreConsumedKg || 0),
         qtyPouching: Number(extra.qtyPouching || 0),
         zipperConsumedKg: Number(extra.zipperConsumedKg || 0),
-        pouchingScrapKg: Number(extra.pouchingScrapKg || 0),
+        pouchingScrapKg: Number(r.pouching_scrap_kg) || Number(extra.pouchingScrapKg) || 0,
+        slittingSettingWastageKg: Number(extra.slittingSettingWastageKg) || 0,
+        excessFilmWastageKg: Number(extra.excessFilmWastageKg) || 0,
+        excessFilmWastagePct: Number(extra.excessFilmWastagePct) || 0,
         actualInkGsm: Number(r.actual_ink_gsm ?? extra.actualInkGsm ?? 0),
         actualAdhesiveGsm: Number(r.actual_adhesive_gsm ?? extra.actualAdhesiveGsm ?? 0),
         targetInkGsm: Number(r.target_ink_gsm ?? extra.targetInkGsm ?? 1.5),
@@ -1434,7 +1441,7 @@ export async function fetchProductionRecords() {
         netUsableKg: Number(r.net_usable_kg) || Number(extra.qtyDispatch) || 0,
         outputRolls: extra.outputRolls || extra.rollsBreakdown || [],
         rollsBreakdown: extra.rollsBreakdown || extra.outputRolls || [],
-        inputRollsList: extra.inputRollsList || [],
+        inputRollsList: (Array.isArray(r.input_rolls_list) && r.input_rolls_list.length > 0) ? r.input_rolls_list : (extra.inputRollsList || []),
         createdBalanceRolls: extra.createdBalanceRolls || [],
         stages: extra.stages || {},
         actualMetersPrinted: Number(extra.actualMetersPrinted || 0),
@@ -1527,6 +1534,9 @@ export async function saveProductionRecordToSupabase(record) {
     qtyPouching: record.qtyPouching,
     zipperConsumedKg: record.zipperConsumedKg,
     pouchingScrapKg: record.pouchingScrapKg,
+    slittingSettingWastageKg: Number(record.slittingSettingWastageKg || 0),
+    excessFilmWastageKg: Number(record.excessFilmWastageKg || 0),
+    excessFilmWastagePct: Number(record.excessFilmWastagePct || 0),
     qtyDispatch: record.qtyDispatch,
     totalProductionQtyKg: grossKg,
     grossProductionKg: grossKg,
@@ -1586,6 +1596,8 @@ export async function saveProductionRecordToSupabase(record) {
     printed_wastage_kg: Number(record.printedWastageKg || 0),
     laminate_wastage_kg: Number(record.laminateWastageKg || 0),
     trim_wastage_kg: Number(record.trimWastageKg || 0),
+    lamination_plain_substrate_wastage_l2_kg: Number(record.laminationPlainSubstrateWastageL2Kg || 0),
+    pouching_scrap_kg: Number(record.pouchingScrapKg || 0),
     total_material_cost_rs: Number(record.totalMaterialCostRs || 0),
     processing_cost_per_kg: Number(record.processingCostPerKg || 25),
     total_processing_cost_rs: Number(record.totalProcessingCostRs || 0),
@@ -1595,6 +1607,8 @@ export async function saveProductionRecordToSupabase(record) {
     approval_date: record.approvalDate || '',
     notes: record.notes || '',
     status: record.status || 'Filled by Plant Manager',
+    materials_list: Array.isArray(record.materialsList) ? record.materialsList : [],
+    input_rolls_list: Array.isArray(record.inputRollsList) ? record.inputRollsList : [],
     process_logs: extra
   };
   
@@ -1935,6 +1949,18 @@ export async function saveInventoryRollToSupabase(roll) {
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
   const { error: fullErr } = await supabase.from('inventory_rolls').upsert(fullPayload, { onConflict: 'barcode_id' });
   if (fullErr) handleSupabaseError(fullErr, 'inventory_rolls');
+}
+
+/** Sets available weight and status without replacing the rest of the roll. */
+export async function setInventoryRollAvailability(barcodeId, { availableWeightKg, status } = {}) {
+  if (!isSupabaseConfigured() || !barcodeId) {
+    throw new Error('Cannot update inventory roll: Supabase database connection is not available.');
+  }
+  await ensureValidSession();
+  const patch = { available_weight_kg: Number(availableWeightKg) || 0 };
+  if (status) patch.status = status;
+  const { error } = await supabase.from('inventory_rolls').update(patch).eq('barcode_id', barcodeId);
+  if (error) handleSupabaseError(error, 'inventory_rolls');
 }
 
 // ============================================================================
@@ -3365,7 +3391,12 @@ export async function fetchSFGGoodsFromSupabase() {
         ...(extra.parentSfgBatchCode ? {
           parentSfgBatchCode: extra.parentSfgBatchCode,
           parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode
-        } : {})
+        } : {}),
+        isPrintedLot: Boolean(extra.isPrintedLot) || String(item.sfg_batch_code || '').startsWith('SFG-LOT-'),
+        childRolls: Array.isArray(extra.childRolls) ? extra.childRolls : [],
+        inputBarcodeIds: Array.isArray(extra.inputBarcodeIds) ? extra.inputBarcodeIds : [],
+        printedAllocations: Array.isArray(extra.printedAllocations) ? extra.printedAllocations : [],
+        jobMasterId: extra.jobMasterId || ''
       };
     });
   } catch (err) {
@@ -3427,7 +3458,12 @@ export function buildSfgNotesEnvelope(item, overrides = {}) {
     productionDate: item?.productionDate,
     status: computedStatus,
     notesText: item?.notes || '',
-    consumptionHistory: item?.consumptionHistory || []
+    consumptionHistory: item?.consumptionHistory || [],
+    isPrintedLot: Boolean(item?.isPrintedLot),
+    childRolls: Array.isArray(item?.childRolls) ? item.childRolls : [],
+    inputBarcodeIds: Array.isArray(item?.inputBarcodeIds) ? item.inputBarcodeIds : [],
+    printedAllocations: Array.isArray(item?.printedAllocations) ? item.printedAllocations : [],
+    jobMasterId: item?.jobMasterId || item?.jobId || ''
   };
   if (item?.parentSfgBatchCode) {
     notesBody.parentSfgBatchCode = item.parentSfgBatchCode;
@@ -3471,7 +3507,7 @@ export async function saveSFGGoodToSupabase(item) {
   const payload = {
     sfg_batch_code: sfgBatchCode,
     sfg_type: item.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
-    job_id: item.jobId || null,
+    job_id: item.jobId || item.jobMasterId || null,
     order_id: item.orderId || null,
     job_name: item.jobName || 'Untitled Job',
     job_code: item.jobCode || '',
