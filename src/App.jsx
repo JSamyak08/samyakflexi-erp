@@ -81,6 +81,7 @@ import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsSer
 import { mergeRollsIntoList } from './services/grnDocument';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
+import { readE2eScrapStorePreview } from './utils/scrapStoreFilters';
 import { assertPersistableMeasures } from './utils/productionRecordQuality';
 import {
   planAutoCloseUpdates,
@@ -720,6 +721,8 @@ export default function App() {
     }
   });
 
+  const [e2eScrapPreview] = useState(() => readE2eScrapStorePreview());
+
   useEffect(() => {
     if (!e2eDispatchPreview) return;
     const entry = consumptionFromLog({
@@ -779,6 +782,14 @@ export default function App() {
       status: 'In Stock'
     }]);
   }, []);
+
+  useEffect(() => {
+    if (!e2eScrapPreview) return;
+    setOrders(e2eScrapPreview.orders);
+    setJobMasters(e2eScrapPreview.jobMasters);
+    setMachines(e2eScrapPreview.machines);
+    setProductionRecords(e2eScrapPreview.productionRecords);
+  }, [e2eScrapPreview]);
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
@@ -5535,6 +5546,7 @@ export default function App() {
         {moduleOpen && activeTab === 'sfg_store' && (
           <SFGStoreManagement 
             urlParams={urlParams}
+            previewScrapItems={e2eScrapPreview?.rows || null}
             sfgGoods={sfgGoods}
             inventory={inventory}
             inventoryRolls={inventoryRolls}
