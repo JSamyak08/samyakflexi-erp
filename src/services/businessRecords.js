@@ -5,6 +5,14 @@
  */
 
 import { toDatabaseTimestamp } from '../utils/dbDates.js';
+import {
+  applyScrapFilters,
+  applyScrapServerPlan,
+  buildScrapFilterContext,
+  hasActiveScrapFilters,
+  normalizeScrapFilters,
+  planScrapServerQuery
+} from '../utils/scrapStoreFilters.js';
 
 export const PLANT_PRESS_ID = 'plant';
 
@@ -275,6 +283,61 @@ export async function fetchPayloadRecords(supabase, table) {
   const { data, error } = await supabase.from(table).select('id, payload').order('created_at', { ascending: false });
   if (error) throw error;
   return (data || []).map((row) => ({ ...(row.payload || {}), id: row.payload?.id || row.id }));
+}
+
+async function countPayloadRows(supabase, table) {
+  const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
+  if (error) throw error;
+  return count ?? 0;
+}
+
+function payloadRows(data) {
+  return (data || []).map((row) => ({ ...(row.payload || {}), id: row.payload?.id || row.id }));
+}
+
+/**
+ * Scrap store read. Equality, date, and high-scrap order filters run in
+ * Postgres. The same rules run again in the browser so a wider server result
+ * cannot show a row the screen should hide. A query the API rejects falls
+ * back to loading the table and filtering it here.
+ */
+export async function fetchScrapStoreItems(supabase, filters = {}, context = buildScrapFilterContext()) {
+  const normalized = normalizeScrapFilters(filters);
+  let totalCount = null;
+  try {
+    totalCount = await countPayloadRows(supabase, 'sfg_scrap_items');
+  } catch {
+    totalCount = null;
+  }
+  const plan = planScrapServerQuery(normalized, context);
+  if (plan.empty) {
+    const applied = applyScrapFilters([], normalized, context);
+    return { rows: applied.rows, summary: applied.summary, totalCount: totalCount ?? 0, source: 'server' };
+  }
+  const finish = (items, source) => {
+    const applied = applyScrapFilters(items, normalized, context);
+    return {
+      rows: applied.rows,
+      summary: applied.summary,
+      totalCount: totalCount ?? items.length,
+      source
+    };
+  };
+  if (!plan.narrowed || !hasActiveScrapFilters(normalized)) {
+    const rows = await fetchPayloadRecords(supabase, 'sfg_scrap_items');
+    return finish(rows, 'all');
+  }
+  try {
+    let query = supabase.from('sfg_scrap_items').select('id, payload').order('created_at', { ascending: false });
+    query = applyScrapServerPlan(query, plan);
+    const { data, error } = await query;
+    if (error) throw error;
+    return finish(payloadRows(data), 'server');
+  } catch (err) {
+    console.warn('[scrap store] server filter failed; filtering the full scrap store instead.', err?.message || err);
+    const rows = await fetchPayloadRecords(supabase, 'sfg_scrap_items');
+    return finish(rows, 'fallback');
+  }
 }
 
 export async function replacePayloadRecords(supabase, table, records) {

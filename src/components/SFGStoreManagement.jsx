@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { displayPartyName } from '../utils/textHelpers';
 import { isDispatchPacking } from '../utils/dispatchPacking';
 import {
@@ -58,6 +58,7 @@ import {
   validateAddedConsumeRows
 } from '../utils/consumeRollEntries';
 import TablePagination, { usePagination } from './TablePagination';
+import ScrapStorePanel from './ScrapStorePanel';
 import MeasureRangeHint from './MeasureRangeHint';
 import { assessConsumeStep } from '../utils/rollLineage';
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
@@ -66,7 +67,14 @@ import { pushSlugState } from '../utils/slugRouter';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { supabase } from '../services/supabaseClient';
-import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
+import { fetchPayloadRecords, fetchScrapStoreItems, replacePayloadRecords, upsertPayloadRecords, describeSaveError } from '../services/businessRecords';
+import {
+  applyScrapFilters,
+  buildScrapFilterContext,
+  patchScrapFilters,
+  scrapFiltersFromQuery,
+  scrapFiltersToQuery
+} from '../utils/scrapStoreFilters';
 
 export default function SFGStoreManagement({
   sfgGoods = [],
@@ -96,41 +104,79 @@ export default function SFGStoreManagement({
   }, [urlParams?.tab]);
   const chooseStoreTab = (tab) => {
     setActiveStoreTab(tab);
+    if (tab === 'scrap') {
+      pushSlugState('sfg_store', { section: 'scrap', ...scrapFiltersToQuery(scrapFiltersFromQuery(urlParams)) }, true);
+      return;
+    }
     pushSlugState('sfg_store', { section: tab });
   };
 
   // QC Hold Store & Scrap Store Persisted State
   const [qcHoldItems, setQcHoldItems] = useState([]);
   const [scrapItems, setScrapItems] = useState(Array.isArray(previewScrapItems) ? previewScrapItems : []);
+  const [scrapSummary, setScrapSummary] = useState(null);
+  const [scrapTotalCount, setScrapTotalCount] = useState(Array.isArray(previewScrapItems) ? previewScrapItems.length : 0);
+  const [scrapLoading, setScrapLoading] = useState(!Array.isArray(previewScrapItems));
+  const [scrapReloadKey, setScrapReloadKey] = useState(0);
+  const scrapFilters = useMemo(() => scrapFiltersFromQuery(urlParams), [urlParams]);
+  const scrapFilterKey = useMemo(() => JSON.stringify(scrapFiltersToQuery(scrapFilters)), [scrapFilters]);
+
+  const writeScrapFilters = useCallback((patch) => {
+    const next = patchScrapFilters(scrapFiltersFromQuery(urlParams), patch);
+    pushSlugState('sfg_store', { section: 'scrap', ...scrapFiltersToQuery(next) }, true);
+  }, [urlParams]);
 
   useEffect(() => {
     if (Array.isArray(previewScrapItems)) return undefined;
     let active = true;
-    async function loadHoldAndScrap() {
-      try {
-        const [hold, scrap] = await Promise.all([
-          fetchPayloadRecords(supabase, 'sfg_qc_hold_items'),
-          fetchPayloadRecords(supabase, 'sfg_scrap_items')
-        ]);
-        if (!active) return;
-        setQcHoldItems(hold || []);
-        setScrapItems(scrap || []);
-      } catch (err) {
-        alert(`QC hold and scrap records could not be loaded: ${describeSaveError(err)}`);
-      }
-    }
-    loadHoldAndScrap();
+    fetchPayloadRecords(supabase, 'sfg_qc_hold_items')
+      .then((hold) => { if (active) setQcHoldItems(hold || []); })
+      .catch((err) => alert(`QC hold records could not be loaded: ${describeSaveError(err)}`));
     return () => { active = false; };
   }, [previewScrapItems]);
+
+  useEffect(() => {
+    if (Array.isArray(previewScrapItems)) return undefined;
+    let active = true;
+    setScrapLoading(true);
+    (async () => {
+      let registryRows = [];
+      try {
+        registryRows = await fetchPayloadRecords(supabase, 'high_scrap_registry');
+      } catch {
+        registryRows = [];
+      }
+      if (!active) return;
+      const context = buildScrapFilterContext({
+        orders,
+        jobMasters,
+        productionRecords,
+        machines,
+        registryRows
+      });
+      try {
+        const result = await fetchScrapStoreItems(supabase, scrapFilters, context);
+        if (!active) return;
+        setScrapItems(result.rows || []);
+        setScrapSummary(result.summary);
+        setScrapTotalCount(result.totalCount ?? (result.rows || []).length);
+      } catch (err) {
+        if (active) alert(`Scrap store records could not be loaded: ${describeSaveError(err)}`);
+      } finally {
+        if (active) setScrapLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [previewScrapItems, scrapFilterKey, scrapFilters, orders, jobMasters, productionRecords, machines, scrapReloadKey]);
 
   const persistQcHold = async (next) => {
     await replacePayloadRecords(supabase, 'sfg_qc_hold_items', next);
     setQcHoldItems(next);
   };
 
-  const persistScrap = async (next) => {
-    await replacePayloadRecords(supabase, 'sfg_scrap_items', next);
-    setScrapItems(next);
+  const persistScrap = async (entry) => {
+    await upsertPayloadRecords(supabase, 'sfg_scrap_items', [entry]);
+    setScrapReloadKey((key) => key + 1);
   };
 
   // Inventory Ageing Settings Configuration
@@ -1346,7 +1392,7 @@ export default function SFGStoreManagement({
         };
       });
     try {
-      await persistScrap([scrapStoreEntry, ...scrapItems]);
+      await persistScrap(scrapStoreEntry);
       await persistQcHold(nextHold);
     } catch (err) {
       alert(`The scrap movement was not saved: ${describeSaveError(err)}`);
@@ -1355,6 +1401,18 @@ export default function SFGStoreManagement({
 
     setSelectedQcItemForScrap(null);
   };
+
+  const scrapContext = useMemo(
+    () => buildScrapFilterContext({ orders, jobMasters, productionRecords, machines }),
+    [orders, jobMasters, productionRecords, machines]
+  );
+  const previewScrap = useMemo(() => {
+    if (!Array.isArray(previewScrapItems)) return null;
+    return applyScrapFilters(previewScrapItems, scrapFilters, scrapContext);
+  }, [previewScrapItems, scrapFilters, scrapContext]);
+  const scrapRows = previewScrap ? previewScrap.rows : scrapItems;
+  const scrapViewSummary = previewScrap ? previewScrap.summary : (scrapSummary || { totalKg: 0, rowCount: 0, jobCount: 0, byStage: [] });
+  const scrapStoreTotal = Array.isArray(previewScrapItems) ? previewScrapItems.length : scrapTotalCount;
 
   return (
     <div style={{ padding: '24px', maxWidth: '1600px', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -1531,7 +1589,7 @@ export default function SFGStoreManagement({
         >
           <Trash2 size={18} />
           Scrap Store
-          {scrapItems.length > 0 && (
+          {scrapStoreTotal > 0 && (
             <span style={{
               background: '#64748b',
               color: '#ffffff',
@@ -1541,7 +1599,7 @@ export default function SFGStoreManagement({
               borderRadius: '10px',
               marginLeft: '4px'
             }}>
-              {scrapItems.length}
+              {scrapStoreTotal}
             </span>
           )}
         </button>
@@ -2469,79 +2527,15 @@ export default function SFGStoreManagement({
       {/* VIEW 3: SCRAP STORE SECTION                                          */}
       {/* ==================================================================== */}
       {activeStoreTab === 'scrap' && (
-        <div data-testid="scrap-store-section" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '24px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <div>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: '800', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Trash2 size={20} color="#64748b" /> Scrap Store Inventory Log ({scrapItems.length})
-              </h3>
-              <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                Process wastage for each job, tagged by stage and type, plus QC hold material sent to scrap. A zero quantity is removed.
-              </p>
-            </div>
-            <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#dc2626', background: '#fef2f2', padding: '8px 16px', borderRadius: '10px', border: '1px solid #fca5a5' }}>
-              Total Scrapped: {scrapItems.reduce((acc, i) => acc + Number(i.scrapQtyKg || 0), 0).toFixed(2)} kg
-            </div>
-          </div>
-
-          {scrapItems.length === 0 ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-              <Trash2 size={36} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
-              <div style={{ fontSize: '0.95rem', fontWeight: '600', color: '#475569' }}>Scrap store is currently empty</div>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table data-testid="scrap-store-log" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                    <th style={{ padding: '10px 14px' }}>Original Tag Ref</th>
-                    <th style={{ padding: '10px 14px' }}>Job Name & Order</th>
-                    <th style={{ padding: '10px 14px' }}>Stage</th>
-                    <th style={{ padding: '10px 14px' }}>Substrate & Size</th>
-                    <th style={{ padding: '10px 14px', textAlign: 'right' }}>Scrap Weight (kg)</th>
-                    <th style={{ padding: '10px 14px' }}>Type</th>
-                    <th style={{ padding: '10px 14px' }}>Scrap Reason & Remarks</th>
-                    <th style={{ padding: '10px 14px' }}>Transferred By & Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scrapItems.map((item) => (
-                    <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px 14px', fontFamily: 'monospace', fontWeight: '700', color: '#dc2626' }}>
-                        {item.holdTagId}
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ fontWeight: '700', color: '#0f172a' }}>{item.jobName}</div>
-                        <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderId || '—'} | Client: {displayPartyName(item.clientName)}</div>
-                      </td>
-                      <td style={{ padding: '10px 14px', fontWeight: '700', color: '#1e3a8a' }}>
-                        {item.stage || 'QC Hold'}
-                      </td>
-                      <td style={{ padding: '10px 14px', color: '#334155' }}>
-                        {item.filmType} ({item.micron}µm × {item.widthMm}mm)
-                      </td>
-                      <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: '900', color: '#dc2626' }}>
-                        {Number(item.scrapQtyKg || 0).toFixed(2)} kg
-                      </td>
-                      <td style={{ padding: '10px 14px' }}>
-                        <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', padding: '3px 8px', borderRadius: '4px', border: '1px solid #fca5a5' }}>
-                          {item.type || item.defectCategory}
-                        </span>
-                      </td>
-                      <td style={{ padding: '10px 14px', color: '#475569', fontSize: '0.8rem' }}>
-                        {item.scrapReason}
-                      </td>
-                      <td style={{ padding: '10px 14px', color: '#64748b', fontSize: '0.76rem' }}>
-                        <div>{item.scrappedBy}</div>
-                        <div>{item.date}</div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <ScrapStorePanel
+          rows={scrapRows}
+          summary={scrapViewSummary}
+          totalCount={scrapStoreTotal}
+          loading={scrapLoading && !Array.isArray(previewScrapItems)}
+          filters={scrapFilters}
+          onChange={writeScrapFilters}
+          context={scrapContext}
+        />
       )}
 
       {/* ==================================================================== */}

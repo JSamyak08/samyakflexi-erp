@@ -365,6 +365,7 @@ const QUERY_KEEP = new Set([
   'q', 'status', 'vendor', 'category', 'from', 'to', 'fy', 'month', 'machine', 'shift',
   'page', 'type', 'view', 'action', 'jobMasterId', 'orderId', 'preset', 'threshold',
   'filter', 'department', 'date', 'range', 'jobName', 'code',
+  'stage', 'source', 'customer', 'operator', 'material', 'kgMin', 'kgMax', 'high',
 ]);
 
 const MODULE_BY_KEY = new Map(MODULES.map((mod) => [mod.key, mod]));

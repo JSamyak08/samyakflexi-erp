@@ -498,6 +498,100 @@ test('sameRoute ignores a fresh parse of the page that is already open', () => {
   assert.equal(sameRoute(left, parse('/printing')), false);
 });
 
+test('scrap store filters round-trip and do not echo their own URL', () => {
+  const params = {
+    section: 'scrap',
+    preset: 'custom',
+    from: '2026-10-01',
+    to: '2026-10-27',
+    stage: 'QC Hold',
+    type: 'Lamination Plain Substrate (L2)',
+    source: 'process',
+    orderId: 'ORD-2026-210',
+    jobMasterId: 'JM-NYRA',
+    customer: 'Nyra Foods',
+    machine: 'MAC-ROTO-1',
+    operator: 'Ravi Patel',
+    material: 'PET',
+    kgMin: '1',
+    kgMax: '40',
+    high: '1',
+    status: 'In stock',
+    q: 'nyra',
+    page: '2'
+  };
+  const href = buildHref('sfg_store', params);
+  const route = parse(href);
+  assert.equal(route.tab, 'sfg_store');
+  assert.equal(route.section, 'scrap');
+  assert.equal(route.params.stage, 'QC Hold');
+  assert.equal(route.params.type, 'Lamination Plain Substrate (L2)');
+  assert.equal(route.params.customer, 'Nyra Foods');
+  assert.equal(route.params.high, '1');
+  assert.equal(route.params.kgMin, '1');
+  assert.equal(route.params.page, '2');
+  assert.equal(route.canonical, href);
+  const again = buildHref('sfg_store', {
+    section: 'scrap',
+    preset: route.params.preset,
+    from: route.params.from,
+    to: route.params.to,
+    stage: route.params.stage,
+    type: route.params.type,
+    source: route.params.source,
+    orderId: route.params.orderId,
+    jobMasterId: route.params.jobMasterId,
+    customer: route.params.customer,
+    machine: route.params.machine,
+    operator: route.params.operator,
+    material: route.params.material,
+    kgMin: route.params.kgMin,
+    kgMax: route.params.kgMax,
+    high: route.params.high,
+    status: route.params.status,
+    q: route.params.q,
+    page: route.params.page
+  });
+  assert.equal(again, href);
+
+  const history = installHistory('/sfg-fg/scrap');
+  let echoes = 0;
+  try {
+    window.addEventListener('erp-slug-navigate', () => {
+      echoes += 1;
+      if (echoes > 2) throw new Error('scrap filter URL echoed in a loop');
+      const current = getRouteFromUrl();
+      pushSlugState('sfg_store', {
+        section: 'scrap',
+        preset: current.params.preset,
+        from: current.params.from,
+        to: current.params.to,
+        stage: current.params.stage,
+        type: current.params.type,
+        source: current.params.source,
+        orderId: current.params.orderId,
+        jobMasterId: current.params.jobMasterId,
+        customer: current.params.customer,
+        machine: current.params.machine,
+        operator: current.params.operator,
+        material: current.params.material,
+        kgMin: current.params.kgMin,
+        kgMax: current.params.kgMax,
+        high: current.params.high,
+        status: current.params.status,
+        q: current.params.q,
+        page: current.params.page
+      }, true);
+    });
+    const written = pushSlugState('sfg_store', params);
+    assert.equal(written, href);
+    assert.equal(echoes, 1);
+    assert.equal(history.href(), href);
+  } finally {
+    history.restore();
+  }
+});
+
 test('canonical table covers every module that the sidebar can open', () => {
   const modules = new Set(CANONICAL.map((row) => row[1]));
   for (const key of [
