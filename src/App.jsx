@@ -163,6 +163,8 @@ import {
 } from './utils/printingFilmIssue';
 import { planPrintingSfgLot, printingSfgLotCode } from './utils/printingSfgLot';
 import { parseOptionalKg } from './utils/productionRecordQuality';
+import { printLayerSpec, resolveJobMaster } from './utils/jobMasterGuardrails';
+import { factoryCalendarDate } from './services/employeeAttendance';
 
 import JobMasterDirectory from './components/JobMasterDirectory';
 import { safeLocalStorageSet, safeLocalStorageGet, initSafeStorage, idbGet } from './utils/safeStorage';
@@ -2080,15 +2082,19 @@ export default function App() {
     setStoreIssueTransactions(newTxList);
 
     // 3. Update / Earmark the Production Record of this Job
-    const targetOrder = (orders || []).find(o => 
-      o.jobName?.trim().toLowerCase() === jobName.trim().toLowerCase() || o.id === jobName
+    const namedOrders = (orders || []).filter(o =>
+      o.id === jobName || (o.jobName && o.jobName.trim().toLowerCase() === jobName.trim().toLowerCase())
     );
-    const orderId = targetOrder ? targetOrder.id : jobName;
-    const clientName = targetOrder ? targetOrder.clientName : '';
+    const targetOrder = namedOrders.length === 1 ? namedOrders[0] : (orders || []).find(o => o.id === jobName);
+    if (!targetOrder) {
+      alert(`No single order matches "${jobName}". The store movement was saved. A production record was not created.`);
+      logAudit('CREATE', 'Store Issue Ledger', `${issueType === 'issue' ? 'Issued' : 'Returned'} ${qty} ${unitStr} of ${itemNameStr} for job "${jobName}" without a production record`, newTx.id);
+      return;
+    }
+    const orderId = targetOrder.id;
+    const clientName = targetOrder.clientName || '';
 
-    const existingIdx = (productionRecords || []).findIndex(r => 
-      r.orderId === orderId || (r.jobName && r.jobName.trim().toLowerCase() === jobName.trim().toLowerCase())
-    );
+    const existingIdx = (productionRecords || []).findIndex(r => r.orderId === orderId);
 
     let targetRecord;
     if (existingIdx >= 0) {
@@ -2099,7 +2105,7 @@ export default function App() {
         orderId: orderId,
         jobName: jobName,
         clientName: clientName,
-        dateFilled: new Date().toISOString().split('T')[0],
+        dateFilled: factoryCalendarDate(),
         materialsList: [],
         qtyFirstPassL1: 0,
         qtySecondPassL2: 0,
@@ -2316,6 +2322,8 @@ export default function App() {
   // Handlers for Starting and Ending Printing Jobs from Scheduler
   const handleStartPrintingJob = async (order, machineId, startTime) => {
     const startIso = startTime || new Date().toISOString();
+    const resolution = resolveJobMaster({ order, jobMasters });
+    const spec = printLayerSpec(resolution.jobMaster);
     const updatedOrder = {
       ...order,
       status: 'In Production',
@@ -2323,7 +2331,8 @@ export default function App() {
       machineId: machineId || order.machineId,
       printingStartTime: startIso,
       printingEndTime: null,
-      isPrintingCompleted: false
+      isPrintingCompleted: false,
+      jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : (order.jobMasterId || null)
     };
     await handleUpdateOrder(updatedOrder);
     await handleActiveRunningJobChange(updatedOrder);
@@ -2333,19 +2342,19 @@ export default function App() {
       jobName: order.jobName || '',
       clientName: order.clientName || order.customerName || '',
       machineId: machineId || order.machineId || 'UNASSIGNED',
-      shift: 'Day Shift',
-      scheduledDate: new Date().toISOString().split('T')[0],
-      startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      shift: '',
+      scheduledDate: factoryCalendarDate(),
+      startTime: new Date(startIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }),
       orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
-      widthMm: Number(order.widthMm || order.printWidthMm || 0),
-      micron: Number(order.micron) || null,
-      filmType: order.printFilmType || order.filmType || '',
+      widthMm: Number(spec?.printWidthMm || order.widthMm || order.printWidthMm || 0),
+      micron: spec?.micron ?? (Number(order.micron) || null),
+      filmType: spec?.filmType || order.printFilmType || order.filmType || '',
       status: 'In Production',
       priority: order.priority || 'Normal'
     });
 
     // Update or create corresponding Production Record
-    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || r.jobCode === order.jobCode);
+    const existingRec = productionRecords.find(r => r.orderId === order.id || r.id === order.id || (order.jobCode && r.jobCode === order.jobCode));
     const updatedRecord = existingRec ? {
       ...existingRec,
       status: 'In Production',
@@ -2364,9 +2373,14 @@ export default function App() {
     } : {
       id: `PR-${order.jobCode || order.id || Date.now()}`,
       orderId: order.id,
-      jobCode: order.jobCode || order.id,
+      jobCode: spec?.jobCode || order.jobCode || order.id,
+      jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : (order.jobMasterId || null),
+      printFilmType: spec?.filmType || null,
+      printMicron: spec?.micron ?? null,
+      printWidthMm: spec?.printWidthMm ?? null,
       jobName: order.jobName,
       clientName: order.clientName,
+      dateFilled: factoryCalendarDate(),
       targetQtyKg: order.quantityKg || order.quantity || order.orderQtyKg || 0,
       status: 'In Production',
       printingStatus: 'In Production',
@@ -2425,23 +2439,24 @@ export default function App() {
 
     // Update corresponding Production Record (or create if missing)
     const cleanTargetOrderId = String(order.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-    const existingRec = productionRecords.find(r => {
+    const byOrder = productionRecords.filter(r => {
       const cleanRId = String(r.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
       const cleanROrderId = String(r.orderId || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-      return cleanROrderId === cleanTargetOrderId || 
-             cleanRId === cleanTargetOrderId || 
-             r.orderId === order.id || 
-             r.id === order.id || 
-             (r.jobCode && r.jobCode === order.jobCode) ||
-             (r.jobName && order.jobName && r.jobName.trim().toLowerCase() === order.jobName.trim().toLowerCase());
+      return cleanROrderId === cleanTargetOrderId ||
+             cleanRId === cleanTargetOrderId ||
+             r.orderId === order.id ||
+             r.id === order.id ||
+             (order.jobCode && r.jobCode && r.jobCode === order.jobCode);
     });
+    const sameName = productionRecords.filter(r => order.jobName && r.jobName && r.jobName.trim().toLowerCase() === order.jobName.trim().toLowerCase());
+    const existingRec = byOrder[0] || (sameName.length === 1 ? sameName[0] : null);
     const baseRecord = existingRec || {
       id: `REC-${order.id}`,
       orderId: order.id,
-      jobCode: order.jobCode,
+      jobCode: endData.jobCode || order.jobCode,
       jobName: order.jobName,
       clientName: order.clientName || order.customerName || '',
-      dateFilled: new Date().toISOString().split('T')[0],
+      dateFilled: endData.dateFilled || factoryCalendarDate(),
       status: 'Filled by Plant Manager',
       filledBy: 'Operator',
       materialsList: []
@@ -2465,7 +2480,6 @@ export default function App() {
         outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
         materialsList: baseRecord.materialsList || [],
         totalInputConsumedKg: endData.totalInputConsumedKg || 0,
-      printWidthMm: endData.printWidthMm || order.printWidthMm || null,
       inputRollWidthMm: endData.inputRollWidthMm || null,
       isBiggerSize: endData.isBiggerSize || false,
       excessFilmWastageKg: endData.excessFilmWastageKg || 0,
@@ -2475,6 +2489,21 @@ export default function App() {
       printingPlainSettingWastageKg: parseOptionalKg(endData.printingPlainSettingWastageKg) || 0,
       printingWastageKg: parseOptionalKg(endData.printingWastageKg) || 0,
       notes: endData.notes || baseRecord.notes || '',
+      dateFilled: endData.dateFilled || factoryCalendarDate(),
+      machineName: endData.machineName || baseRecord.machineName || '',
+      operatorName: endData.operatorName || baseRecord.operatorName || '',
+      shift: endData.shift || baseRecord.shift || '',
+      jobMasterId: endData.jobMasterId || baseRecord.jobMasterId || null,
+      jobCode: endData.jobCode || baseRecord.jobCode || order.jobCode || '',
+      printFilmType: endData.printFilmType ?? baseRecord.printFilmType ?? null,
+      printMicron: endData.printMicron ?? baseRecord.printMicron ?? null,
+      printWidthMm: endData.printWidthMm ?? baseRecord.printWidthMm ?? null,
+      guardrailWarningReason: endData.guardrailWarningReason || '',
+      guardrailWarnings: endData.guardrailWarnings || [],
+      filmTypeOverrideReason: endData.filmTypeOverrideReason || '',
+      filmTypeOverrideBy: endData.filmTypeOverrideBy || '',
+      filmTypeOverrideRole: endData.filmTypeOverrideRole || '',
+      deriveNetFromStages: true,
       stages: {
         ...(baseRecord.stages || {}),
         printing: {
@@ -2509,13 +2538,13 @@ export default function App() {
       jobName: order.jobName || '',
       clientName: order.clientName || order.customerName || '',
       machineId: order.machineId || 'UNASSIGNED',
-      shift: 'Day Shift',
-      scheduledDate: new Date().toISOString().split('T')[0],
+      shift: endData.shift || '',
+      scheduledDate: factoryCalendarDate(),
       endTime: new Date(endIso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }),
       orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
       widthMm: Number(order.widthMm || order.printWidthMm || 0),
       micron: Number(order.micron) || null,
-      filmType: order.printFilmType || order.filmType || '',
+      filmType: endData.printFilmType || order.printFilmType || order.filmType || '',
       status: 'Completed',
       priority: order.priority || 'Normal',
       totalDurationMins: computedDurationMinutes || 0
@@ -2565,7 +2594,7 @@ export default function App() {
         jobCode: order.jobCode || order.id,
         jobMasterId: order.jobMasterId || order.jobDetails?.jobMasterId || '',
         clientName: order.clientName || order.customerName || '',
-        filmType: order.printFilmType || order.filmType || outputRolls[0]?.filmType || '',
+        filmType: endData.printFilmType || order.printFilmType || order.filmType || outputRolls[0]?.filmType || '',
         micron: order.micron || outputRolls[0]?.micron,
         widthMm: endData.printWidthMm || order.printWidthMm || order.widthMm || outputRolls[0]?.widthMm,
         outputRolls,

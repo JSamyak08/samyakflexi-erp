@@ -60,7 +60,6 @@ import MeasureRangeHint from './MeasureRangeHint';
 import RollLineageSummary from './RollLineageSummary';
 import {
   NOT_RECORDED,
-  NO_JOB_SPEC,
   displayQuantity,
   displayText,
   describeSubstrateAnalysis,
@@ -68,6 +67,24 @@ import {
   finiteNumber
 } from '../utils/productionRecordQuality';
 import { lineageProblems } from '../utils/rollLineage';
+import {
+  GUARDRAIL_SETTING_KEY,
+  JM_UNRESOLVED_LABEL,
+  UNKNOWN,
+  applyGuardrailFields,
+  canOverrideFilmType,
+  compareRollToSpec,
+  decideGuardrailSave,
+  dispatchReadyKg,
+  printLayerSpec,
+  recordedPrintWidthMm,
+  resolveJobMaster,
+  rollSfgScrapIntoRecord,
+  substrateMatchSummary,
+  validateProductionEntry
+} from '../utils/jobMasterGuardrails';
+import { factoryCalendarDate } from '../services/employeeAttendance';
+import { fetchSystemSetting } from '../services/supabaseDataService';
 
 /**
  * Roll-Wise Input Vs Output Reconciliation Component for SFG / FG Output Barcode Master Rolls
@@ -832,8 +849,17 @@ export default function ProductionRecordManagement({
   const [adhesiveConsumedL2Kg, setAdhesiveConsumedL2Kg] = useState(0); // Stage 4: Adhesive Consumed Pass 2 (kg)
   const [qtySlitting, setQtySlitting] = useState(0); // Stage 5: Slitting Finished Output (kg)
   const [paperCoreConsumedKg, setPaperCoreConsumedKg] = useState(0); // Stage 5: Paper Core Consumed
-  const [qtyPouching, setQtyPouching] = useState(0); // Stage 6: Pouching Finished Output (kg / Pcs)
-  const [zipperConsumedKg, setZipperConsumedKg] = useState(0); // Stage 6: Zipper Quantity Consumed
+  const [qtyPouching, setQtyPouching] = useState(0); // Stage 6: Pouching finished output in kg
+  const [qtyPouchingPcs, setQtyPouchingPcs] = useState(0);
+  const [zipperConsumedKg, setZipperConsumedKg] = useState(0);
+  const [zipperConsumedM, setZipperConsumedM] = useState(0);
+  const [recordMachineId, setRecordMachineId] = useState('');
+  const [recordOperator, setRecordOperator] = useState('');
+  const [recordShift, setRecordShift] = useState('');
+  const [guardrailWarningReason, setGuardrailWarningReason] = useState('');
+  const [filmTypeOverrideReason, setFilmTypeOverrideReason] = useState('');
+  const [guardrailPreview, setGuardrailPreview] = useState(null);
+  const [guardrailLimits, setGuardrailLimits] = useState(null);
   const [pouchingScrapKg, setPouchingScrapKg] = useState(0); // Stage 6: Pouching Scrap (kg)
   const [qtyDispatch, setQtyDispatch] = useState(0); // Stage 7: Final Dispatch Ready Quantity (kg)
   const [showSfgConsumptionPreview, setShowSfgConsumptionPreview] = useState(false);
@@ -878,9 +904,7 @@ export default function ProductionRecordManagement({
   const handleStartProductionForOrder = (ord) => {
     setSelectedOrder(ord);
 
-    const linkedJm = (jobMasters || []).find(j => 
-      j.id === ord.jobMasterId || (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim()
-    );
+    const linkedJm = resolveJobMaster({ order: ord, jobMasters }).jobMaster;
     const defaultTargetInk = linkedJm?.inkGsm || ord?.inkGsm || 1.5;
     const defaultTargetAdhesive = linkedJm?.adhesiveGsm || ord?.adhesiveGsm || 1.5;
 
@@ -913,9 +937,9 @@ export default function ProductionRecordManagement({
           itemId: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
           itemCode: `RM-${(r.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
           itemName: `${displayText(r.filmType)} ${finiteNumber(r.micron) === null ? NOT_RECORDED : `${r.micron}µ`} (${finiteNumber(r.widthMm) === null ? NOT_RECORDED : `${r.widthMm} mm`})`,
-          filmType: r.filmType || 'PET Film',
-          micron: String(r.micron || '12'),
-          widthMm: String(r.widthMm || '800'),
+          filmType: r.filmType || '',
+          micron: finiteNumber(r.micron) === null ? '' : String(r.micron),
+          widthMm: finiteNumber(r.widthMm) === null ? '' : String(r.widthMm),
           unit: 'Kg',
           barcode: r.barcodeId || '',
           issueQtyKg: consumed,
@@ -1079,7 +1103,12 @@ export default function ProductionRecordManagement({
       setQtySlitting(existingRec.qtySlitting || sfgQtySlitting || 0);
       setPaperCoreConsumedKg(existingRec.paperCoreConsumedKg || 0);
       setQtyPouching(existingRec.qtyPouching || sfgQtyPouching || 0);
+      setQtyPouchingPcs(existingRec.qtyPouchingPcs || 0);
       setZipperConsumedKg(existingRec.zipperConsumedKg || sfgZipperConsumed || 0);
+      setZipperConsumedM(existingRec.zipperConsumedM || 0);
+      setRecordMachineId(existingRec.machineId || '');
+      setRecordOperator(existingRec.operatorName || '');
+      setRecordShift(existingRec.shift || '');
       setPouchingScrapKg(existingRec.pouchingScrapKg || sfgPouchingScrap || 0);
       setQtyDispatch(existingRec.qtyDispatch || 0);
       setProcessingCostPerKg(existingRec.processingCostPerKg || 25);
@@ -1253,28 +1282,27 @@ export default function ProductionRecordManagement({
       });
       setMaterialsList(loadedMats);
     } else {
-      const jm = (jobMasters || []).find(j => 
-        (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim()
-      );
+      const jm = resolveJobMaster({ order: ord, jobMasters }).jobMaster;
+      const printWidth = recordedPrintWidthMm(jm);
       if (jm && jm.layers && jm.layers.length > 0) {
         const generatedList = jm.layers.map((layer, idx) => {
-          const estimatedRollWeightKg = Math.round((ord.orderQtyKg || 1000) / jm.layers.length);
-          const defaultRate = DEFAULT_DAILY_RATES[layer.filmType] || 140;
+          const defaultRate = DEFAULT_DAILY_RATES[layer.filmType] || 0;
+          const layerWidth = idx === 0 ? (printWidth || '') : (finiteNumber(layer.widthMm) ?? '');
           return {
             id: `mat-${Date.now()}-${idx + 1}`,
-            itemId: `RM-${layer.filmType.substring(0, 3).toUpperCase()}-${idx + 1}`,
-            itemCode: `RM-${layer.filmType.substring(0, 3).toUpperCase()}-${idx + 1}`,
-            itemName: `${layer.filmType} ${layer.micron}µ (${layer.widthMm || '800'}mm)`,
-            filmType: layer.filmType,
-            micron: layer.micron,
-            widthMm: layer.widthMm || '800',
+            itemId: `RM-${String(layer.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
+            itemCode: `RM-${String(layer.filmType || 'FILM').substring(0, 3).toUpperCase()}-${idx + 1}`,
+            itemName: `${layer.filmType || UNKNOWN} ${layer.micron ?? UNKNOWN}µ (${layerWidth || UNKNOWN} mm)`,
+            filmType: layer.filmType || '',
+            micron: layer.micron ?? '',
+            widthMm: layerWidth,
             unit: 'Kg',
             barcode: '',
-            issueQtyKg: estimatedRollWeightKg,
+            issueQtyKg: '',
             returnQtyKg: 0,
-            netConsumedQtyKg: estimatedRollWeightKg,
+            netConsumedQtyKg: 0,
             unitPricePerKg: defaultRate,
-            totalMaterialCost: estimatedRollWeightKg * defaultRate,
+            totalMaterialCost: 0,
             wastagePct: 0
           };
         });
@@ -1342,7 +1370,15 @@ export default function ProductionRecordManagement({
     setAdhesiveCostPerKg(activeMaterialRates.adhesiveCostPerKg);
     setPaperCoreCostPerKg(activeMaterialRates.paperCoreCostPerKg);
     setQtyPouching(sfgQtyPouching || 0);
+    setQtyPouchingPcs(0);
     setZipperConsumedKg(sfgZipperConsumed || 0);
+    setZipperConsumedM(0);
+    setRecordMachineId('');
+    setRecordOperator('');
+    setRecordShift('');
+    setGuardrailWarningReason('');
+    setFilmTypeOverrideReason('');
+    setGuardrailPreview(null);
     setPouchingScrapKg(sfgPouchingScrap || 0);
     setQtyDispatch(0);
     setPrintingPlainSettingWastageKg(sfgPrintPlainScrap || 0);
@@ -1509,11 +1545,9 @@ export default function ProductionRecordManagement({
   // Helper: derive substrate structure from Job Master layers (authoritative source)
   const getSubstrateStructure = (order) => {
     if (!order) return '—';
-    const jm = jobMasters.find(j =>
-      (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim()
-    );
+    const jm = resolveJobMaster({ order, jobMasters }).jobMaster;
     if (jm && jm.layers && jm.layers.length > 0) {
-      return jm.layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
+      return jm.layers.map(l => `${l.filmType || UNKNOWN} ${l.micron ?? UNKNOWN}µ`).join(' / ');
     }
     if (jm && jm.structure && jm.structure !== 'PET / PE' && jm.structure !== '—') {
       return jm.structure;
@@ -1521,8 +1555,16 @@ export default function ProductionRecordManagement({
     if (order.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
       return order.structure;
     }
-    return jm?.structure || order.structure || '—';
+    return jm?.structure || order.structure || JM_UNRESOLVED_LABEL;
   };
+
+  useEffect(() => {
+    let active = true;
+    fetchSystemSetting(GUARDRAIL_SETTING_KEY)
+      .then((value) => { if (active && value && typeof value === 'object') setGuardrailLimits(value); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const [scrapDisposals, setScrapDisposals] = useState([]);
 
@@ -1550,20 +1592,21 @@ export default function ProductionRecordManagement({
   };
 
   const addMaterialRow = () => {
+    const spec = printLayerSpec(resolveJobMaster({ order: selectedOrder, record: selectedRecord, jobMasters }).jobMaster);
     setMaterialsList(prev => [
       ...prev,
       {
         id: String(Date.now()),
-        filmType: 'PET Film',
-        micron: '12',
-        widthMm: '1000',
+        filmType: '',
+        micron: '',
+        widthMm: '',
         barcode: '',
-        issueQtyKg: 0,
+        issueQtyKg: '',
         returnQtyKg: 0,
-        unitPricePerKg: 125,
-        jobMasterFilmType: 'PET Film',
-        jobMasterMicron: 12,
-        jobMasterWidthMm: 1000
+        unitPricePerKg: 0,
+        jobMasterFilmType: spec?.filmType || '',
+        jobMasterMicron: spec?.micron ?? '',
+        jobMasterWidthMm: spec?.printWidthMm ?? ''
       }
     ]);
   };
@@ -1581,42 +1624,60 @@ export default function ProductionRecordManagement({
     }));
   };
 
-  // Calculations with Spec Variation detection against Job Master
+  const formResolution = resolveJobMaster({ order: selectedOrder, record: selectedRecord, jobMasters });
+  const formSpec = printLayerSpec(formResolution.jobMaster);
+
+  // Calculations with Spec Variation detection against the Job Master printing layer
   const calculatedMaterials = materialsList.map(m => {
     const issued = parseFloat(m.issueQtyKg) || 0;
     const returned = parseFloat(m.returnQtyKg) || 0;
     const netConsumed = Math.max(0, issued - returned);
     const rate = parseFloat(m.unitPricePerKg) || 0;
     const cost = netConsumed * rate;
-
-    // Spec Variation Calculations
-    const actualMicron = parseFloat(m.micron) || 0;
-    const jmMicron = parseFloat(m.jobMasterMicron) || 0;
-    const micronVarPct = (jmMicron > 0 && actualMicron > 0 && Math.abs(actualMicron - jmMicron) > 0.01)
-      ? Number((((actualMicron - jmMicron) / jmMicron) * 100).toFixed(1))
-      : null;
-
-    const actualWidth = parseFloat(m.widthMm) || 0;
-    const jmWidth = parseFloat(m.jobMasterWidthMm) || 0;
-    const widthVarPct = (jmWidth > 0 && actualWidth > 0 && Math.abs(actualWidth - jmWidth) > 0.5)
-      ? Number((((actualWidth - jmWidth) / jmWidth) * 100).toFixed(1))
-      : null;
-
-    const hasFilmTypeVar = Boolean(m.jobMasterFilmType && m.filmType && m.jobMasterFilmType !== m.filmType);
+    const compared = compareRollToSpec({
+      label: 'Material',
+      filmType: m.filmType,
+      micron: m.micron,
+      widthMm: m.widthMm,
+      consumedKg: netConsumed
+    }, formSpec);
+    const filmFinding = compared.blocks.find((item) => item.rule === 'film-type');
+    const micronFinding = [...compared.blocks, ...compared.warnings].find((item) => item.rule === 'micron');
+    const widthFinding = [...compared.blocks, ...compared.warnings].find((item) => item.rule === 'width');
+    const hasFilmTypeVar = Boolean(filmFinding);
+    const micronVarPct = micronFinding ? micronFinding.level : null;
+    const widthVarPct = widthFinding ? widthFinding.level : null;
 
     return {
       ...m,
       netConsumedQtyKg: netConsumed,
       totalMaterialCost: cost,
+      jobMasterFilmType: formSpec?.filmType || '',
+      jobMasterMicron: formSpec?.micron ?? '',
+      jobMasterWidthMm: formSpec?.printWidthMm ?? '',
       micronVarPct,
       widthVarPct,
+      micronGuardMessage: micronFinding?.message || '',
+      widthGuardMessage: widthFinding?.message || '',
       hasFilmTypeVar,
-      hasVariation: !!(micronVarPct !== null || widthVarPct !== null || hasFilmTypeVar)
+      hasVariation: Boolean(filmFinding || micronFinding || widthFinding)
     };
   });
 
-  // Net Produced Quantity = Dispatch Ready Quantity (or Pouching / Slitting / Lamination / Inspection / Printing if unpopulated)
-  const totalNetQtyKg = roundToTwo(parseFloat(qtyDispatch) || parseFloat(qtyPouching) || parseFloat(qtySlitting) || parseFloat(qtySecondPassL2) || parseFloat(qtyLaminationL1) || parseFloat(qtyInspection) || parseFloat(qtyFirstPassL1) || 0);
+  const totalNetQtyKg = dispatchReadyKg({
+    qtyDispatch,
+    qtyPouching,
+    qtySlitting
+  });
+  const producedKg = Math.max(
+    parseFloat(qtyDispatch) || 0,
+    parseFloat(qtyPouching) || 0,
+    parseFloat(qtySlitting) || 0,
+    parseFloat(qtySecondPassL2) || 0,
+    parseFloat(qtyLaminationL1) || 0,
+    parseFloat(qtyInspection) || 0,
+    parseFloat(qtyFirstPassL1) || 0
+  );
   
   // Raw materials cost from film substrates table
   const rawMaterialsTableCostRs = roundToTwo(calculatedMaterials.reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0));
@@ -1630,7 +1691,7 @@ export default function ProductionRecordManagement({
   const totalMaterialCostRs = roundToTwo(rawMaterialsTableCostRs + adhesiveCostRs + paperCoreCostRs);
   
   // Total Processing Cost = Total Qty Produced x Processing Cost Per Kg
-  const totalProcessingCostRs = roundToTwo(totalNetQtyKg * (parseFloat(processingCostPerKg) || 0));
+  const totalProcessingCostRs = roundToTwo(producedKg * (parseFloat(processingCostPerKg) || 0));
 
   // Total Scrap Weight across all stage process wastage categories
   const totalScrapQtyKg = roundToTwo(
@@ -1649,7 +1710,7 @@ export default function ProductionRecordManagement({
   const finalProductionCostRs = roundToTwo(totalProcessingCostRs + totalMaterialCostRs);
 
   // Scrap Metrics & Percentages
-  const totalJobMaterialOutputKg = roundToTwo(totalNetQtyKg + totalScrapQtyKg);
+  const totalJobMaterialOutputKg = roundToTwo(producedKg + totalScrapQtyKg);
   const overallScrapPctOfOutput = totalJobMaterialOutputKg > 0 ? Number(((totalScrapQtyKg / totalJobMaterialOutputKg) * 100).toFixed(2)) : 0;
   const overallScrapPctOfDispatch = totalNetQtyKg > 0 ? Number(((totalScrapQtyKg / totalNetQtyKg) * 100).toFixed(2)) : 0;
 
@@ -1834,7 +1895,61 @@ export default function ProductionRecordManagement({
       return;
     }
 
+    setGuardrailPreview(buildFormGuardrail());
     setIsConfirmModalOpen(true);
+  };
+
+  const buildFormGuardrail = () => {
+    const machine = (machines || []).find((item) => item.id === recordMachineId);
+    const filmRows = calculatedMaterials.filter((row) => (parseFloat(row.netConsumedQtyKg) || 0) > 0 || row.filmType || row.micron || row.widthMm);
+    const printRow = filmRows.reduce((best, row) => ((parseFloat(row.netConsumedQtyKg) || 0) >= (parseFloat(best?.netConsumedQtyKg) || 0) ? row : best), null);
+    const otherFilmKg = filmRows
+      .filter((row) => row !== printRow)
+      .reduce((sum, row) => sum + (parseFloat(row.netConsumedQtyKg) || 0), 0);
+    const printKg = parseFloat(qtyFirstPassL1) || 0;
+    const lamOut = parseFloat(qtyLaminationL1) || 0;
+    return validateProductionEntry({
+      context: 'record-form',
+      order: selectedOrder,
+      jobMasters,
+      limits: guardrailLimits,
+      role: currentUser?.role,
+      entry: {
+        orderId: selectedOrder?.id,
+        machineName: machine?.name || '',
+        operatorName: recordOperator.trim(),
+        shift: recordShift,
+        meters: finiteNumber(selectedRecord?.actualMetersPrinted ?? selectedOrder?.actualMetersPrinted),
+        printInputKg: parseFloat(printRow?.netConsumedQtyKg) || 0,
+        printedOutputKg: printKg || finiteNumber(selectedRecord?.printedOutputKg ?? selectedOrder?.printedOutputKg),
+        printingScrapKg: (parseFloat(printingPlainSettingWastageKg) || 0) + (parseFloat(printingWastageKg) || 0),
+        durationMinutes: finiteNumber(selectedRecord?.printingDurationMinutes ?? selectedOrder?.printingDurationMinutes),
+        ratedSpeedMpm: machine?.maxSpeedMpm,
+        ratedSpeedConfigured: machine?.maxSpeedRecorded === true,
+        inputRolls: filmRows.map((row) => ({
+          filmType: row.filmType,
+          micron: row.micron,
+          widthMm: row.widthMm,
+          consumedWeightKg: row.netConsumedQtyKg,
+          barcode: row.barcode
+        })),
+        orderQtyKg: finiteNumber(selectedOrder?.orderQtyKg ?? selectedOrder?.quantityKg),
+        quantityKg: producedKg,
+        goodKg: totalNetQtyKg > 0 ? totalNetQtyKg : producedKg,
+        scrapKg: totalScrapQtyKg,
+        pouchingKg: qtyPouching,
+        pouchingPcs: qtyPouchingPcs,
+        zipperKg: zipperConsumedKg,
+        zipperM: zipperConsumedM,
+        lamination: lamOut > 0 ? {
+          printedKg: printKg,
+          substrateKg: otherFilmKg,
+          adhesiveKg: parseFloat(adhesiveConsumedL1Kg) || 0,
+          outputKg: lamOut,
+          scrapKg: (parseFloat(laminationPlainSubstrateWastageKg) || 0) + (parseFloat(laminateWastageKg) || 0) + (parseFloat(laminationPlainSubstrateWastageL2Kg) || 0)
+        } : null
+      }
+    });
   };
 
   // Step 2: Final Submit upon confirmation
@@ -1880,26 +1995,38 @@ export default function ProductionRecordManagement({
       sfgConsumptions: selectedRecord?.sfgConsumptions || [],
       orderId: selectedOrder?.id
     });
-    const blocks = [...formCheck.blocks, ...chainCheck.blocks];
+    const preview = buildFormGuardrail();
+    setGuardrailPreview(preview);
+    const decision = decideGuardrailSave(preview, {
+      role: currentUser?.role,
+      warningReason: guardrailWarningReason,
+      filmTypeOverrideReason,
+      overrideBy: currentUser?.name || ''
+    });
+    const blocks = [...formCheck.blocks, ...chainCheck.blocks, ...decision.messages];
     if (blocks.length) {
       alert(`This production record cannot be saved:\n\n${blocks.join('\n')}`);
       return;
     }
     const warnings = [...formCheck.warnings, ...chainCheck.warnings];
-    let qualityWarningReason = '';
-    if (warnings.length) {
+    let qualityWarningReason = guardrailWarningReason.trim();
+    if (warnings.length && !qualityWarningReason) {
       const reason = window.prompt(`These values look unusual:\n\n${warnings.join('\n')}\n\nEnter a reason to save anyway. Leave this blank to go back.`);
       if (!reason || !reason.trim()) return;
       qualityWarningReason = reason.trim();
     }
 
-    const newRecord = {
+    const selectedMachine = (machines || []).find((item) => item.id === recordMachineId);
+    const newRecord = applyGuardrailFields(rollSfgScrapIntoRecord({
       id: selectedRecord?.id || `PR-${selectedOrder.id}`,
       orderId: selectedOrder.id,
       jobCode: selectedOrder.jobCode || selectedRecord?.jobCode || '',
       jobName: selectedOrder.jobName,
       clientName: selectedOrder.clientName,
-      dateFilled: new Date().toISOString().split('T')[0],
+      dateFilled: factoryCalendarDate(),
+      machineName: selectedMachine?.name || '',
+      operatorName: recordOperator.trim(),
+      shift: recordShift,
       materialsList: calculatedMaterials,
       outputRolls: selectedRecord?.outputRolls || selectedOrder?.outputRolls || selectedOrder?.rollsBreakdown || [],
       rollsBreakdown: selectedRecord?.rollsBreakdown || selectedRecord?.outputRolls || selectedOrder?.rollsBreakdown || [],
@@ -1925,10 +2052,12 @@ export default function ProductionRecordManagement({
       qtySlitting: parseFloat(qtySlitting) || 0,
       paperCoreConsumedKg: parseFloat(paperCoreConsumedKg) || 0,
       qtyPouching: parseFloat(qtyPouching) || 0,
+      qtyPouchingPcs: parseFloat(qtyPouchingPcs) || 0,
       zipperConsumedKg: parseFloat(zipperConsumedKg) || 0,
+      zipperConsumedM: parseFloat(zipperConsumedM) || 0,
       pouchingScrapKg: parseFloat(pouchingScrapKg) || 0,
       qtyDispatch: parseFloat(qtyDispatch) || 0,
-      totalProductionQtyKg: roundToTwo(totalNetQtyKg),
+      totalProductionQtyKg: roundToTwo(totalJobMaterialOutputKg),
 
       // Snapshot consumable material cost rates and totals
       adhesiveCostPerKg: parseFloat(adhesiveCostPerKg) || 270,
@@ -1954,6 +2083,7 @@ export default function ProductionRecordManagement({
       totalWastageKg: roundToTwo(totalScrapQtyKg),
       grossProductionKg: roundToTwo(totalJobMaterialOutputKg),
       netUsableKg: roundToTwo(totalNetQtyKg),
+      deriveNetFromStages: true,
       overallScrapPctOfOutput: roundToTwo(overallScrapPctOfOutput),
       overallScrapPctOfDispatch: roundToTwo(overallScrapPctOfDispatch),
       wastagePercentage: roundToTwo(overallScrapPctOfOutput),
@@ -1976,7 +2106,7 @@ export default function ProductionRecordManagement({
       hasVariants: Boolean(selectedOrder?.hasVariants || selectedOrder?.variants?.length),
       variants: selectedOrder?.variants || [],
       notes: recordNotes
-    };
+    }), decision);
 
     try {
       if (onSaveProductionRecord) await onSaveProductionRecord(newRecord);
@@ -2032,38 +2162,56 @@ export default function ProductionRecordManagement({
            String(o.clientName || '').toLowerCase().includes(q);
   });
 
-  const handleSaveSFGFG = (inventoryItem, rolls, prodLink) => {
+  const handleSaveSFGFG = async (inventoryItem, rolls, prodLink) => {
     if (Array.isArray(rolls)) {
-      rolls.forEach(r => {
-        if (onAddRoll) onAddRoll(r);
-      });
+      for (const roll of rolls) {
+        if (onAddRoll) await onAddRoll(roll);
+      }
     }
 
     if (prodLink && prodLink.orderId && onSaveProductionRecord) {
-      const existingRecord = (productionRecords || []).find(pr => String(pr.orderId) === String(prodLink.orderId) || String(pr.id) === String(prodLink.orderId));
+      const order = (orders || []).find((item) => item.id === prodLink.orderId);
+      if (!order) {
+        alert('This entry is not linked to an order. The production record was not saved.');
+        throw new Error('A production record needs an order.');
+      }
+      const existingRecord = (productionRecords || []).find(pr => String(pr.orderId) === String(prodLink.orderId));
       const existingRolls = existingRecord?.outputRolls || [];
       const updatedRolls = [...existingRolls, ...(rolls || [])];
       const totalOutputKg = updatedRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
+      const stageType = String(prodLink.stageType || '');
+      const stageQty = {};
+      if (prodLink.isFG) stageQty.qtyDispatch = totalOutputKg;
+      else if (stageType.includes('Pouch')) stageQty.qtyPouching = totalOutputKg;
+      else if (stageType.includes('Slit')) stageQty.qtySlitting = totalOutputKg;
 
-      const updatedRecord = {
+      const updatedRecord = applyGuardrailFields(rollSfgScrapIntoRecord({
         ...(existingRecord || {
           id: `PROD-${prodLink.orderId}-${Date.now().toString().slice(-4)}`,
-          orderId: prodLink.orderId,
-          jobName: prodLink.jobName,
-          jobCode: prodLink.jobCode,
-          operatorName: prodLink.operatorName,
-          shift: prodLink.shift,
-          productionDate: prodLink.productionDate,
-          status: 'In Progress',
-          machineName: prodLink.machineName
+          status: 'In Progress'
         }),
+        orderId: order.id,
+        jobName: prodLink.jobName,
+        jobCode: prodLink.jobCode,
+        operatorName: prodLink.operatorName,
+        shift: prodLink.shift,
+        machineName: prodLink.machineName,
+        dateFilled: prodLink.productionDate || factoryCalendarDate(),
+        productionDate: prodLink.productionDate || factoryCalendarDate(),
         outputRolls: updatedRolls,
         actualOutputKg: totalOutputKg,
-        netUsableKg: totalOutputKg,
+        ...stageQty,
+        ...prodLink.guardrail,
+        deriveNetFromStages: Boolean(prodLink.isFG || stageType.includes('Pouch') || stageType.includes('Slit')),
         lastUpdated: new Date().toISOString()
-      };
+      }), { fields: prodLink.guardrail || {} });
 
-      onSaveProductionRecord(updatedRecord);
+      try {
+        await onSaveProductionRecord(updatedRecord);
+      } catch (err) {
+        alert(`The production record was not saved: ${err.message || err}`);
+        throw err;
+      }
     }
 
     setSelectedRollForBarcodeModal(rolls);
@@ -2630,7 +2778,7 @@ export default function ProductionRecordManagement({
                 Production Record: {selectedRecord.jobName}
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Job Master ID: <b>{selectedRecord.jobMasterId || 'JM-2026-089'}</b> • Order ID: <b>{selectedRecord.orderId}</b> • Client: {selectedRecord.clientName}
+                Job Master ID: <b>{selectedRecord.jobMasterId || JM_UNRESOLVED_LABEL}</b> • Order ID: <b>{selectedRecord.orderId || '—'}</b> • Client: {selectedRecord.clientName}
               </p>
             </div>
 
@@ -2681,8 +2829,9 @@ export default function ProductionRecordManagement({
 
           {/* Substrate Input Rolls & Actual Ink GSM Technical Analysis */}
           {(() => {
-            const linkedOrder = orders.find(o => o.id === selectedRecord.orderId || o.jobName === selectedRecord.jobName) || {};
-            const matchedJM = (jobMasters || []).find(j => j.id === selectedRecord.jobMasterId || j.id === linkedOrder?.jobMasterId || j.jobCode === selectedRecord.jobCode);
+            const linkedOrder = orders.find(o => o.id && o.id === selectedRecord.orderId) || null;
+            const matchedJM = resolveJobMaster({ order: linkedOrder, record: selectedRecord, jobMasters }).jobMaster;
+            const substrateCard = substrateMatchSummary({ order: linkedOrder, record: selectedRecord, jobMasters });
 
             const inputRolls = selectedRecord.inputRollsList || [];
             const outputRolls = selectedRecord.rollsBreakdown || selectedRecord.outputRolls || [];
@@ -2691,26 +2840,10 @@ export default function ProductionRecordManagement({
               order: linkedOrder,
               jobMaster: matchedJM
             });
-            const { match, dry } = analysis;
+            const { dry } = analysis;
             const operatorInkGsm = finiteNumber(selectedRecord.inkGsmInSpeed);
             const actualCalculatedInkGsm = dry.gsm;
             const isInkGsmHigher = operatorInkGsm !== null && actualCalculatedInkGsm !== null && actualCalculatedInkGsm > operatorInkGsm;
-            const expectedLabel = match.specStatus === NO_JOB_SPEC
-              ? NO_JOB_SPEC
-              : [match.expectedFilm || NOT_RECORDED, match.expectedMicron ? `${match.expectedMicron}µ` : null, match.expectedWidth ? `${match.expectedWidth} mm` : null].filter(Boolean).join(' ');
-            const actualLabel = match.actualStatus === NOT_RECORDED
-              ? NOT_RECORDED
-              : [match.actualFilm || NOT_RECORDED, match.actualMicron ? `${match.actualMicron}µ` : null, match.actualWidth ? `${match.actualWidth} mm` : null].filter(Boolean).join(' ');
-            const sizeLabel = match.sizeMatch === true
-              ? `Same size (${match.actualWidth} mm)`
-              : match.sizeMatch === false
-                ? `Width differs (${match.actualWidth} mm vs job ${match.expectedWidth} mm)`
-                : (match.specStatus === NO_JOB_SPEC ? NO_JOB_SPEC : NOT_RECORDED);
-            const typeLabel = match.typeMatch === true
-              ? 'Same substrate'
-              : match.typeMatch === false
-                ? 'Different substrate'
-                : '';
 
             return (
               <>
@@ -2761,17 +2894,22 @@ export default function ProductionRecordManagement({
 
                 {/* Substrate & Ink Metrics Grid */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '16px' }}>
-                  <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div data-testid="substrate-match-card" style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', gridColumn: '1 / -1' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Substrate Match</span>
                     <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a', marginTop: '2px' }}>
-                      Expected: {expectedLabel}
+                      Job Master printing layer: {substrateCard.specLabel}
                     </div>
-                    <div style={{ fontSize: '0.95rem', fontWeight: '800', color: '#0f172a' }}>
-                      Actual: {actualLabel}
-                    </div>
-                    <span style={{ fontSize: '0.74rem', color: match.sizeMatch === false || match.typeMatch === false ? '#b45309' : '#059669', fontWeight: '700' }}>
-                      {sizeLabel}{typeLabel ? ` · ${typeLabel}` : ''}
-                    </span>
+                    {substrateCard.rows.length === 0 ? (
+                      <div style={{ fontSize: '0.82rem', color: '#b45309', marginTop: '6px' }}>No input rolls recorded. Blank roll specs fail the check.</div>
+                    ) : substrateCard.rows.map((row) => (
+                      <div key={row.index} style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginTop: '8px', fontSize: '0.84rem' }}>
+                        <span>Roll {row.index + 1}: {row.filmType} / {row.micron === null ? UNKNOWN : `${row.micron} µ`} / {row.widthMm === null ? UNKNOWN : `${row.widthMm} mm`}</span>
+                        <b style={{ color: row.status === 'fail' ? '#b91c1c' : row.status === 'warn' ? '#b45309' : '#047857' }}>
+                          {row.status === 'fail' ? 'Fail' : row.status === 'warn' ? 'Warn' : 'Pass'}
+                          {row.trimKg ? ` · trim ${row.trimKg} kg` : ''}
+                        </b>
+                      </div>
+                    ))}
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -3610,6 +3748,26 @@ export default function ProductionRecordManagement({
               <label>Record Filled By</label>
               <input type="text" className="form-control" value={`${currentUser.name} (${currentUser.role})`} readOnly />
             </div>
+
+            <div className="form-group">
+              <label>Machine *</label>
+              <SearchableSelect className="form-control" value={recordMachineId} onChange={e => setRecordMachineId(e.target.value)} placeholder="Select machine" required>
+                {(machines || []).map(machine => (
+                  <option key={machine.id} value={machine.id}>{machine.name}</option>
+                ))}
+              </SearchableSelect>
+            </div>
+            <div className="form-group">
+              <label>Operator *</label>
+              <input type="text" className="form-control" value={recordOperator} onChange={e => setRecordOperator(e.target.value)} required />
+            </div>
+            <div className="form-group">
+              <label>Shift *</label>
+              <SearchableSelect className="form-control" value={recordShift} onChange={e => setRecordShift(e.target.value)} placeholder="Select shift" required>
+                <option value="Day Shift (8 AM - 8 PM)">Day Shift (8 AM - 8 PM)</option>
+                <option value="Night Shift (8 PM - 8 AM)">Night Shift (8 PM - 8 AM)</option>
+              </SearchableSelect>
+            </div>
           </div>
 
           {/* Job Variants Banner (If Job Has Variants) */}
@@ -3732,7 +3890,13 @@ export default function ProductionRecordManagement({
                                 );
 
                                 if (rollMatch) {
-                                  updateMaterialRow(m.id, 'issueQtyKg', rollMatch.availableWeightKg || rollMatch.netWeightKg || 400);
+                                  const scannedWeight = finiteNumber(rollMatch.availableWeightKg ?? rollMatch.netWeightKg);
+                                  if (scannedWeight === null || scannedWeight <= 0) {
+                                    updateMaterialRow(m.id, 'issueQtyKg', '');
+                                    alert('This roll has no weight on file. Enter the weight before saving.');
+                                  } else {
+                                    updateMaterialRow(m.id, 'issueQtyKg', scannedWeight);
+                                  }
                                   updateMaterialRow(m.id, 'returnQtyKg', 0);
                                   if (rollMatch.filmType && rollMatch.filmType !== '-') updateMaterialRow(m.id, 'filmType', rollMatch.filmType);
                                   if (rollMatch.micron) updateMaterialRow(m.id, 'micron', rollMatch.micron);
@@ -3754,7 +3918,13 @@ export default function ProductionRecordManagement({
                                     codesEqual(inv.filmType, val)
                                   );
                                   if (match) {
-                                    updateMaterialRow(m.id, 'issueQtyKg', match.availableQtyKg || 400);
+                                    const scannedWeight = finiteNumber(match.availableQtyKg ?? match.stockQtyKg);
+                                    if (scannedWeight === null || scannedWeight <= 0) {
+                                      updateMaterialRow(m.id, 'issueQtyKg', '');
+                                      alert('This item has no weight on file. Enter the weight before saving.');
+                                    } else {
+                                      updateMaterialRow(m.id, 'issueQtyKg', scannedWeight);
+                                    }
                                     updateMaterialRow(m.id, 'returnQtyKg', 0);
                                     if (match.filmType) updateMaterialRow(m.id, 'filmType', match.filmType);
                                     if (match.micron) updateMaterialRow(m.id, 'micron', match.micron);
@@ -3814,9 +3984,9 @@ export default function ProductionRecordManagement({
                           value={m.micron}
                           onChange={e => updateMaterialRow(m.id, 'micron', e.target.value)}
                         />
-                        {m.micronVarPct !== null && (
-                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block', textAlign: 'center' }}>
-                            ⚠️ {m.micronVarPct > 0 ? `+${m.micronVarPct}%` : `${m.micronVarPct}%`}
+                        {m.micronGuardMessage && (
+                          <span className="badge badge-warning" style={{ background: m.micronVarPct === 'block' ? '#fef2f2' : '#fff7ed', color: m.micronVarPct === 'block' ? '#b91c1c' : '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block', textAlign: 'center' }}>
+                            Mismatch vs JM
                           </span>
                         )}
                       </td>
@@ -3831,9 +4001,9 @@ export default function ProductionRecordManagement({
                           value={m.widthMm}
                           onChange={e => updateMaterialRow(m.id, 'widthMm', e.target.value)}
                         />
-                        {m.widthVarPct !== null && (
-                          <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block', textAlign: 'center' }}>
-                            ⚠️ {m.widthVarPct > 0 ? `+${m.widthVarPct}%` : `${m.widthVarPct}%`}
+                        {m.widthGuardMessage && (
+                          <span className="badge badge-warning" style={{ background: m.widthVarPct === 'block' ? '#fef2f2' : '#fff7ed', color: m.widthVarPct === 'block' ? '#b91c1c' : '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem', marginTop: '2px', display: 'block', textAlign: 'center' }}>
+                            Mismatch vs JM
                           </span>
                         )}
                       </td>
@@ -4585,7 +4755,7 @@ export default function ProductionRecordManagement({
                   <div style={{ background: '#f8fafc', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                       <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f766e', textTransform: 'uppercase', margin: 0 }}>
-                        🟢 Pouching Finished Output (kg / Pcs)
+                        Pouching Finished Output (kg)
                       </label>
                       <WeighingScaleCaptureButton onCapture={(weight) => setQtyPouching(weight)} />
                     </div>
@@ -4597,8 +4767,18 @@ export default function ProductionRecordManagement({
                       value={qtyPouching} 
                       onChange={e => setQtyPouching(e.target.value)} 
                     />
+                    <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0f766e', display: 'block', margin: '10px 0 4px' }}>
+                      Pouch count (pcs)
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      className="form-control"
+                      value={qtyPouchingPcs}
+                      onChange={e => setQtyPouchingPcs(e.target.value)}
+                    />
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
-                      Total finished pouch weight / count after pouch conversion
+                      Kilograms stay in the kg field. Piece counts are stored separately and are not added into kg totals.
                     </div>
                   </div>
 
@@ -4609,7 +4789,7 @@ export default function ProductionRecordManagement({
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                       <div>
                         <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0f766e', display: 'block', marginBottom: '4px' }}>
-                          Zipper Quantity Consumed (kg / m)
+                          Zipper consumed (kg)
                         </label>
                         <input 
                           type="number" 
@@ -4618,6 +4798,16 @@ export default function ProductionRecordManagement({
                           style={{ background: '#ffffff', fontWeight: '700', border: '1.5px solid #5eead4' }} 
                           value={zipperConsumedKg} 
                           onChange={e => setZipperConsumedKg(e.target.value)} 
+                        />
+                        <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0f766e', display: 'block', margin: '8px 0 4px' }}>
+                          Zipper consumed (m)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          className="form-control"
+                          value={zipperConsumedM}
+                          onChange={e => setZipperConsumedM(e.target.value)}
                         />
                       </div>
                       <div>
@@ -4999,9 +5189,10 @@ export default function ProductionRecordManagement({
                         <td>
                           {m.hasVariation ? (
                             <span className="badge badge-warning" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', fontSize: '0.68rem' }}>
-                              ⚠️ {m.micronVarPct !== null && `Micron: ${m.micronVarPct > 0 ? `+${m.micronVarPct}%` : `${m.micronVarPct}%`} `}
-                              {m.widthVarPct !== null && `Width: ${m.widthVarPct > 0 ? `+${m.widthVarPct}%` : `${m.widthVarPct}%`} `}
-                              {m.hasFilmTypeVar && `Type Mismatch `}
+                              Mismatch vs JM
+                              {m.hasFilmTypeVar && ' · film'}
+                              {m.micronGuardMessage && ' · micron'}
+                              {m.widthGuardMessage && ' · width'}
                             </span>
                           ) : (
                             <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontSize: '0.68rem' }}>
@@ -5084,6 +5275,29 @@ export default function ProductionRecordManagement({
                 </span>
               </div>
             </div>
+
+            {guardrailPreview && (
+              <div data-testid="record-guardrail-banner" style={{ background: guardrailPreview.blocks.length || guardrailPreview.filmTypeBlocks.length ? '#fef2f2' : '#fffbeb', border: '1px solid #f59e0b', borderRadius: '10px', padding: '14px 16px', marginBottom: '16px' }}>
+                <div style={{ fontWeight: '800', marginBottom: '6px' }}>
+                  {formResolution.status === 'linked' ? `Job Master ${formSpec?.filmType || UNKNOWN} / ${formSpec?.micron ?? UNKNOWN} µ / ${formSpec?.printWidthMm ?? UNKNOWN} mm` : JM_UNRESOLVED_LABEL}
+                </div>
+                {[...guardrailPreview.blocks, ...guardrailPreview.filmTypeBlocks, ...guardrailPreview.warnings].map((item, index) => (
+                  <div key={`${item.rule}-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
+                ))}
+                {guardrailPreview.warnings.length > 0 && (
+                  <label style={{ display: 'block', marginTop: '10px', fontWeight: '700', fontSize: '0.8rem' }}>
+                    Reason for the warning *
+                    <textarea className="form-control" rows={2} value={guardrailWarningReason} onChange={(event) => setGuardrailWarningReason(event.target.value)} />
+                  </label>
+                )}
+                {guardrailPreview.filmTypeBlocks.length > 0 && (
+                  <label style={{ display: 'block', marginTop: '10px', fontWeight: '700', fontSize: '0.8rem' }}>
+                    Supervisor film-type reason {canOverrideFilmType(currentUser?.role) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
+                    <textarea className="form-control" rows={2} value={filmTypeOverrideReason} onChange={(event) => setFilmTypeOverrideReason(event.target.value)} disabled={!canOverrideFilmType(currentUser?.role)} />
+                  </label>
+                )}
+              </div>
+            )}
 
             {/* Modal Actions */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>

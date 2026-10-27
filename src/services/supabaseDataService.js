@@ -7,6 +7,7 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 import { assertPersistableMeasures } from '../utils/productionRecordQuality';
+import { netUsableForSave } from '../utils/jobMasterGuardrails';
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
@@ -34,7 +35,7 @@ import {
   parseStandardDate,
   applyAuditLogBoundary
 } from '../factoryStore';
-import { buildEmployeeAttendanceRow, mapEmployeeAttendanceRow } from './employeeAttendance';
+import { buildEmployeeAttendanceRow, factoryCalendarDate, mapEmployeeAttendanceRow } from './employeeAttendance';
 import { toSalaryAdvanceRow } from './salaryAdvance';
 import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
@@ -177,7 +178,9 @@ export async function fetchOrders() {
         printWidthMm: jd.printWidthMm || null,
         repeatLengthMm: jd.repeatLengthMm || null,
         colorsCount: jd.colorsCount || o.colors_count || 6,
-        jobMasterId: jd.jobMasterId || '',
+        jobMasterId: o.job_master_id || jd.jobMasterId || '',
+        skuCode: jd.skuCode || o.sku_code || '',
+        jobCode: jd.jobCode || jd.skuCode || o.job_code || '',
         printedSfgUse: jd.printedSfgUse || null,
         poIssued: jd.poIssued || false,
         poNumber: jd.poNumber || '',
@@ -286,6 +289,8 @@ export async function saveOrderToSupabase(order) {
     reopenedAt: order.reopenedAt ?? order.jobDetails?.reopenedAt ?? null,
     reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null,
     jobMasterId: order.jobMasterId || order.jobDetails?.jobMasterId || null,
+    skuCode: order.skuCode || order.jobDetails?.skuCode || null,
+    jobCode: order.jobCode || order.jobDetails?.jobCode || order.skuCode || null,
     printedSfgUse: order.printedSfgUse || order.jobDetails?.printedSfgUse || null
   };
 
@@ -328,10 +333,11 @@ export async function saveOrderToSupabase(order) {
     closed_at: jobDetails.closedAt,
     close_reason: jobDetails.closeReason,
     close_mode: jobDetails.closeMode,
-    over_dispatch_warning: jobDetails.overDispatchWarning
+    over_dispatch_warning: jobDetails.overDispatchWarning,
+    job_master_id: jobDetails.jobMasterId || null
   };
   let { error: fullErr } = await supabase.from('orders').upsert({ ...fullPayload, ...closeColumns }, { onConflict: 'id' });
-  if (fullErr && /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|schema cache/i.test(fullErr.message || '')) {
+  if (fullErr && /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|job_master_id|schema cache/i.test(fullErr.message || '')) {
     ({ error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' }));
   }
   if (fullErr) {
@@ -1387,6 +1393,28 @@ export async function deleteCylinderFromSupabase(cylinderId) {
 // 6. PRODUCTION RECORDS
 // ============================================================================
 
+function firstStoredNumber(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return 0;
+}
+
+const GUARDRAIL_RECORD_COLUMNS = [
+  'job_master_id',
+  'print_film_type',
+  'print_micron',
+  'print_width_mm',
+  'machine_name',
+  'guardrail_warning_reason',
+  'film_type_override_reason',
+  'film_type_override_by',
+  'qty_pouching_pcs',
+  'zipper_consumed_m'
+];
+
 export async function fetchProductionRecords() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -1413,8 +1441,20 @@ export async function fetchProductionRecords() {
         jobName: r.job_name || extra.jobName,
         clientName: r.client_name || extra.clientName || '',
         operatorName: r.operator_name || extra.operatorName || '',
-        shift: r.shift || extra.shift || 'Day Shift',
-        dateFilled: r.date_filled || extra.dateFilled || (r.recorded_at ? r.recorded_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+        shift: r.shift || extra.shift || '',
+        dateFilled: r.date_filled || extra.dateFilled || (r.recorded_at ? r.recorded_at.split('T')[0] : factoryCalendarDate()),
+        jobCode: r.job_code || extra.jobCode || '',
+        jobMasterId: r.job_master_id || extra.jobMasterId || '',
+        printFilmType: r.print_film_type || extra.printFilmType || '',
+        printMicron: r.print_micron ?? extra.printMicron ?? null,
+        printWidthMm: r.print_width_mm ?? extra.printWidthMm ?? null,
+        machineName: r.machine_name || extra.machineName || '',
+        guardrailWarningReason: r.guardrail_warning_reason || extra.guardrailWarningReason || '',
+        guardrailWarnings: extra.guardrailWarnings || [],
+        filmTypeOverrideReason: r.film_type_override_reason || extra.filmTypeOverrideReason || '',
+        filmTypeOverrideBy: r.film_type_override_by || extra.filmTypeOverrideBy || '',
+        qtyPouchingPcs: Number(r.qty_pouching_pcs ?? extra.qtyPouchingPcs ?? 0),
+        zipperConsumedM: Number(r.zipper_consumed_m ?? extra.zipperConsumedM ?? 0),
         materialsList: (Array.isArray(r.materials_list) && r.materials_list.length > 0) ? r.materials_list : (Array.isArray(extra.materialsList) ? extra.materialsList : []),
         qtyFirstPassL1: Number(extra.qtyFirstPassL1 || extra.qtyPrinting || 0),
         qtyPrinting: Number(extra.qtyPrinting || extra.qtyFirstPassL1 || 0),
@@ -1436,16 +1476,16 @@ export async function fetchProductionRecords() {
         actualAdhesiveGsm: Number(r.actual_adhesive_gsm ?? extra.actualAdhesiveGsm ?? 0),
         targetInkGsm: Number(r.target_ink_gsm ?? extra.targetInkGsm ?? 1.5),
         targetAdhesiveGsm: Number(r.target_adhesive_gsm ?? extra.targetAdhesiveGsm ?? 1.5),
-        qtyDispatch: Number(extra.qtyDispatch) || Number(r.net_usable_kg) || 0,
+        qtyDispatch: firstStoredNumber(extra.qtyDispatch, r.qty_dispatch),
         totalProductionQtyKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
         grossProductionKg: Number(r.gross_production_kg) || Number(extra.totalProductionQtyKg) || 0,
-        netUsableKg: Number(r.net_usable_kg) || Number(extra.qtyDispatch) || 0,
+        netUsableKg: firstStoredNumber(r.net_usable_kg, extra.netUsableKg),
         outputRolls: extra.outputRolls || extra.rollsBreakdown || [],
         rollsBreakdown: extra.rollsBreakdown || extra.outputRolls || [],
         inputRollsList: (Array.isArray(r.input_rolls_list) && r.input_rolls_list.length > 0) ? r.input_rolls_list : (extra.inputRollsList || []),
         createdBalanceRolls: extra.createdBalanceRolls || [],
         stages: extra.stages || {},
-        actualMetersPrinted: Number(extra.actualMetersPrinted || 0),
+        actualMetersPrinted: firstStoredNumber(r.actual_meters_printed, extra.actualMetersPrinted),
         inkGsmInSpeed: Number(extra.inkGsmInSpeed || 0),
         printedOutputKg: Number(extra.printedOutputKg || 0),
         printingStartTime: extra.printingStartTime || null,
@@ -1502,7 +1542,7 @@ export async function saveProductionRecordToSupabase(record) {
   const scrapPct = Number(record.overallScrapPctOfOutput ?? record.wastagePercentage ?? record.scrapWastagePct ?? 0);
   const scrapPctDispatch = Number(record.overallScrapPctOfDispatch ?? 0);
   const grossKg = Number(record.totalProductionQtyKg ?? record.grossProductionKg ?? 0);
-  const netKg = Number(record.qtyDispatch ?? record.netUsableKg ?? record.totalProductionQtyKg ?? 0);
+  const netKg = netUsableForSave(record);
 
   const extra = {
     orderId: record.orderId,
@@ -1539,6 +1579,18 @@ export async function saveProductionRecordToSupabase(record) {
     excessFilmWastageKg: Number(record.excessFilmWastageKg || 0),
     excessFilmWastagePct: Number(record.excessFilmWastagePct || 0),
     qtyDispatch: record.qtyDispatch,
+    qtyPouchingPcs: record.qtyPouchingPcs,
+    zipperConsumedM: record.zipperConsumedM,
+    jobMasterId: record.jobMasterId || null,
+    jobCode: record.jobCode || '',
+    printFilmType: record.printFilmType || null,
+    printMicron: record.printMicron ?? null,
+    printWidthMm: record.printWidthMm ?? null,
+    machineName: record.machineName || '',
+    guardrailWarningReason: record.guardrailWarningReason || '',
+    guardrailWarnings: record.guardrailWarnings || [],
+    filmTypeOverrideReason: record.filmTypeOverrideReason || '',
+    filmTypeOverrideBy: record.filmTypeOverrideBy || '',
     totalProductionQtyKg: grossKg,
     grossProductionKg: grossKg,
     netUsableKg: netKg,
@@ -1577,9 +1629,33 @@ export async function saveProductionRecordToSupabase(record) {
     id: recId,
     order_id: linkedOrderId,
     job_name: record.jobName || 'Production Record',
+    job_code: record.jobCode || '',
+    job_master_id: record.jobMasterId || null,
+    print_film_type: record.printFilmType || null,
+    print_micron: record.printMicron ?? null,
+    print_width_mm: record.printWidthMm ?? null,
+    machine_name: record.machineName || null,
+    guardrail_warning_reason: record.guardrailWarningReason || null,
+    film_type_override_reason: record.filmTypeOverrideReason || null,
+    film_type_override_by: record.filmTypeOverrideBy || null,
+    qty_pouching_pcs: Number(record.qtyPouchingPcs || 0),
+    zipper_consumed_m: Number(record.zipperConsumedM || 0),
+    actual_meters_printed: Number(record.actualMetersPrinted || 0),
+    qty_first_pass_l1: Number(record.qtyFirstPassL1 || 0),
+    qty_printing: Number(record.qtyPrinting || record.qtyFirstPassL1 || 0),
+    qty_inspection: Number(record.qtyInspection || 0),
+    qty_lamination_l1: Number(record.qtyLaminationL1 || 0),
+    qty_second_pass_l2: Number(record.qtySecondPassL2 || 0),
+    qty_slitting: Number(record.qtySlitting || 0),
+    qty_pouching: Number(record.qtyPouching || 0),
+    qty_dispatch: Number(record.qtyDispatch || 0),
+    adhesive_consumed_l1_kg: Number(record.adhesiveConsumedL1Kg || 0),
+    adhesive_consumed_l2_kg: Number(record.adhesiveConsumedL2Kg || 0),
+    zipper_consumed_kg: Number(record.zipperConsumedKg || 0),
+    paper_core_consumed_kg: Number(record.paperCoreConsumedKg || 0),
     client_name: record.clientName || '',
     operator_name: record.operatorName || record.filledBy || '',
-    shift: record.shift || 'Day Shift',
+    shift: record.shift || '',
     date_filled: toDatabaseDate(record.dateFilled),
     actual_ink_gsm: Number(record.actualInkGsm || 0),
     actual_adhesive_gsm: Number(record.actualAdhesiveGsm || 0),
@@ -1613,11 +1689,17 @@ export async function saveProductionRecordToSupabase(record) {
     process_logs: extra
   };
   
-  const { error: fullErr } = await supabase.from('production_records').upsert(fullPayload, { onConflict: 'id' });
+  let payload = fullPayload;
+  let { error: fullErr } = await supabase.from('production_records').upsert(payload, { onConflict: 'id' });
+  if (fullErr && GUARDRAIL_RECORD_COLUMNS.some((column) => String(fullErr.message || '').includes(column))) {
+    payload = { ...payload };
+    GUARDRAIL_RECORD_COLUMNS.forEach((column) => { delete payload[column]; });
+    ({ error: fullErr } = await supabase.from('production_records').upsert(payload, { onConflict: 'id' }));
+  }
   const fkFailed = fullErr && (fullErr.code === '23503' || String(fullErr.message || '').toLowerCase().includes('foreign key'));
   if (fkFailed && linkedOrderId) {
     console.warn('[production_records] Order foreign key rejected; saving the full record with order_id cleared.');
-    const { error: unlinkedErr } = await supabase.from('production_records').upsert({ ...fullPayload, order_id: null }, { onConflict: 'id' });
+    const { error: unlinkedErr } = await supabase.from('production_records').upsert({ ...payload, order_id: null }, { onConflict: 'id' });
     if (unlinkedErr) handleSupabaseError(unlinkedErr, 'production_records');
     return;
   }
@@ -2103,6 +2185,7 @@ export async function fetchPrintingMachines() {
       type: m.type || 'Rotogravure',
       colors: Number(m.colors) || 8,
       maxSpeedMpm: Number(m.max_speed_mpm) || 250,
+      maxSpeedRecorded: Number(m.max_speed_mpm) > 0,
       maxWidthMm: Number(m.max_width_mm) || 1200,
       status: m.status || 'Active',
       operator: m.operator,
@@ -2337,6 +2420,8 @@ export async function fetchJobMasters() {
         clientName: j.client_name || meta.clientName || '',
         structure: derivedStructure,
         printWidthMm: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) || 1000,
+        printWidthRecorded: Number(j.print_width_mm || j.print_width || j.pouch_width_mm || j.width_mm || j.pouch_open_width) > 0,
+        wastagePercentage: Number(j.wastage_percentage ?? j.wastagePercentage) || null,
         faceLengthMm: Number(j.face_length_mm || j.face_length || j.shell_size || pm.faceLengthMm) || (Number(j.print_width_mm) || 1050),
         repeatLengthMm: Number(j.repeat_length_mm || j.repeat_length || j.circumference_mm) || 400,
         pouchOpenWidth: Number(j.pouch_open_width || pm.pouchOpenWidth) || 0,
