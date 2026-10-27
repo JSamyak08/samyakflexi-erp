@@ -23,6 +23,13 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
+import {
+  listHighScrapJobs,
+  planJobWastage,
+  formatStageBreakdown,
+  HIGH_SCRAP_THRESHOLD_PCT,
+  ORDER_QTY_UNIT
+} from '../utils/jobWastage';
 
 const MONTHS = [
   'All Months',
@@ -43,11 +50,8 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
   const [endDate, setEndDate] = useState('2027-03-31');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Filter types: 'ALERTS_ONLY' (High Scrap >= limit), 'SCRAP_STORE_ONLY' (Physical Scrap Store), 'PRODUCTION_ONLY', 'ALL_RECORDS'
+  // Filter types: 'ALERTS_ONLY' (jobs at or above 5% of order quantity), 'SCRAP_STORE_ONLY', 'PRODUCTION_ONLY', 'ALL_RECORDS'
   const [filterType, setFilterType] = useState('ALERTS_ONLY');
-
-  // Configurable Maximum Wastage Threshold Percentage Limit (Default 5.0%)
-  const [wastageThresholdLimit, setWastageThresholdLimit] = useState(5.0);
 
   // Local storage persisted Physical Scrap Store Items (from QC Hold transfers)
   const [scrapStoreItems, setScrapStoreItems] = useState([]);
@@ -117,19 +121,48 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
     }
   };
 
-  // Merge both Production Process Records and Scrap Store Inventory Items into a single unified record list
+  const highScrapJobs = useMemo(
+    () => listHighScrapJobs(productionRecords, orders),
+    [productionRecords, orders]
+  );
+
+  const registryRows = useMemo(() => highScrapJobs.map((job) => ({
+    id: job.id,
+    sourceType: 'HIGH_SCRAP',
+    sourceLabel: 'High Scrap Registry',
+    rawDate: job.date || job.timestamp || '',
+    dateDisplay: job.date ? new Date(job.date).toLocaleDateString('en-GB') : '—',
+    orderId: job.orderId || 'N/A',
+    jobName: job.jobName || 'Production Job',
+    operatorName: job.operatorName || '—',
+    shift: job.shift || '',
+    grossKg: job.orderQtyKg,
+    scrapKg: job.totalWastageKg,
+    wastagePct: job.wastagePct,
+    reasonOrCategory: formatStageBreakdown(job.stages),
+    status: `${job.wastagePct}% of ${job.orderQtyKg} ${ORDER_QTY_UNIT} order`,
+    isHighWastage: true
+  })), [highScrapJobs]);
+
+  // Production logs and scrap-store lines. A scrap line is not itself a high-scrap job.
   const mergedRecordsList = useMemo(() => {
     const list = [];
+    const ordersById = new Map((orders || []).map((order) => [String(order.id), order]));
 
-    // 1. Process Production Records
     (productionRecords || []).forEach(r => {
+      const order = ordersById.get(String(r.orderId)) || null;
+      let plan = null;
+      try {
+        plan = planJobWastage({ record: r, order });
+      } catch {
+        plan = null;
+      }
       const grossKg = r.grossProductionKg || r.totalProductionQtyKg || ((r.netUsableKg || r.qtyDispatch || 0) + (r.totalWastageKg || r.totalScrapQtyKg || 0));
-      const wastageKg = r.totalWastageKg || r.totalScrapQtyKg || 0;
-      const wastagePct = Number(r.wastagePercentage ?? r.overallScrapPctOfOutput ?? (grossKg > 0 ? (wastageKg / grossKg) * 100 : 0));
+      const wastageKg = plan ? plan.totalWastageKg : (Number(r.totalWastageKg || r.totalScrapQtyKg) || 0);
       const dateStr = r.recordedAt || r.dateFilled || r.timestamp || '';
 
       list.push({
-        id: r.id || `PROD-REC-${Date.now()}`,
+        id: r.id || `PROD-REC-${r.orderId || 'job'}`,
         sourceType: 'PRODUCTION_PROCESS',
         sourceLabel: 'Production Process',
         rawDate: dateStr,
@@ -140,45 +173,60 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
         shift: r.shift || 'Day Shift',
         grossKg,
         scrapKg: wastageKg,
-        wastagePct,
-        reasonOrCategory: r.wastageReason || r.defectCategory || 'Process Wastage',
+        wastagePct: plan?.wastagePct ?? null,
+        reasonOrCategory: plan
+          ? (formatStageBreakdown((plan.scrap.upserts || []).map((row) => ({
+            stage: row.stage,
+            type: row.type,
+            scrapQtyKg: row.scrapQtyKg
+          }))) || 'Process wastage')
+          : 'Process wastage',
         status: r.status || 'Recorded',
-        isHighWastage: wastagePct >= wastageThresholdLimit
+        isHighWastage: Boolean(plan?.flagged)
       });
     });
 
-    // 2. Physical Scrap Store Inventory Items (transferred from QC Hold or store rejection)
     (scrapStoreItems || []).forEach(item => {
       const scrapKg = Number(item.scrapQtyKg || 0);
       const dateStr = item.date || item.timestamp || '';
+      const stage = item.stage || (item.source === 'printing' ? 'Printing' : 'QC Hold');
+      const type = item.type || item.defectCategory || 'Scrap';
 
       list.push({
-        id: item.id || item.holdTagId || `SCRAP-${Date.now()}`,
+        id: item.id || item.holdTagId || `SCRAP-${item.orderId || 'item'}`,
         sourceType: 'SCRAP_STORE',
-        sourceLabel: 'Scrap Store (QC Hold)',
+        sourceLabel: item.stage ? `${stage} scrap` : 'Scrap Store (QC Hold)',
         rawDate: dateStr,
         dateDisplay: dateStr ? new Date(dateStr).toLocaleDateString('en-GB') : '—',
         orderId: item.orderId || 'N/A',
         jobName: item.jobName || 'Scrapped SFG / FG Material',
         operatorName: item.scrappedBy || item.operatorName || 'QC Inspector',
-        shift: 'Day Shift',
+        shift: stage,
         grossKg: scrapKg,
         scrapKg: scrapKg,
-        wastagePct: 100, // 100% scrapped item
-        reasonOrCategory: item.defectCategory ? `${item.defectCategory}: ${item.scrapReason || ''}` : (item.scrapReason || 'Quarantine Rejection'),
-        status: 'Transferred to Scrap Store',
-        isHighWastage: true // Physical scrap items are high wastage / rejected items
+        wastagePct: null,
+        reasonOrCategory: `${stage} / ${type}`,
+        status: 'In scrap store',
+        isHighWastage: false
       });
     });
 
     return list;
-  }, [productionRecords, scrapStoreItems, wastageThresholdLimit]);
+  }, [productionRecords, orders, scrapStoreItems]);
 
   // Filter the merged record list based on date bounds, search term, and filter type
   const filteredRecords = useMemo(() => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
+
+    if (filterType === 'ALERTS_ONLY') {
+      return registryRows.filter((r) => {
+        if (!searchTerm.trim()) return true;
+        const q = searchTerm.toLowerCase();
+        return [r.jobName, r.orderId, r.reasonOrCategory, r.id].some((value) => String(value || '').toLowerCase().includes(q));
+      });
+    }
 
     return mergedRecordsList.filter(r => {
       // Date filter
@@ -202,9 +250,6 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       }
 
       // Filter type tabs
-      if (filterType === 'ALERTS_ONLY' && !r.isHighWastage) {
-        return false;
-      }
       if (filterType === 'SCRAP_STORE_ONLY' && r.sourceType !== 'SCRAP_STORE') {
         return false;
       }
@@ -214,7 +259,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
 
       return true;
     });
-  }, [mergedRecordsList, startDate, endDate, searchTerm, filterType]);
+  }, [mergedRecordsList, registryRows, startDate, endDate, searchTerm, filterType]);
 
   const recordsPagination = usePagination(filteredRecords, 50);
 
@@ -222,7 +267,6 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
   const stats = useMemo(() => {
     let totalGross = 0;
     let totalScrap = 0;
-    let highScrapCount = 0;
     let scrapStoreItemsCount = 0;
 
     const start = new Date(startDate);
@@ -239,9 +283,6 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       totalGross += r.grossKg;
       totalScrap += r.scrapKg;
 
-      if (r.isHighWastage) {
-        highScrapCount++;
-      }
       if (r.sourceType === 'SCRAP_STORE') {
         scrapStoreItemsCount++;
       }
@@ -253,11 +294,11 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       totalGross: Math.round(totalGross),
       totalScrap: Math.round(totalScrap),
       avgScrapPct: parseFloat(avgScrapPct.toFixed(2)),
-      highScrapCount,
+      highScrapCount: highScrapJobs.length,
       scrapStoreItemsCount,
       totalRecordsCount: periodRecords.length
     };
-  }, [mergedRecordsList, startDate, endDate]);
+  }, [mergedRecordsList, highScrapJobs.length, startDate, endDate]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -273,35 +314,16 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
               </h2>
             </div>
             <p style={{ color: '#64748b', fontSize: '0.88rem', marginTop: '4px', margin: '4px 0 0 0' }}>
-              Consolidated registry merging <strong>Scrap Store Inventory Logs</strong> and <strong>Production Process Wastage Audits</strong>. Highlights job records and physical scrap items exceeding set limits.
+              Scrap store lines stay per stage and type. A job enters the high scrap registry only when its total stage wastage is {HIGH_SCRAP_THRESHOLD_PCT}% or more of order quantity ({ORDER_QTY_UNIT}).
             </p>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569' }}>
-              High Wastage Limit Threshold:
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '4px 10px', borderRadius: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '8px 12px', borderRadius: '8px' }}>
               <AlertTriangle size={16} color="#dc2626" />
-              <SearchableSelect
-                value={wastageThresholdLimit}
-                onChange={(e) => setWastageThresholdLimit(parseFloat(e.target.value))}
-                style={{ width: '170px' }}
-                triggerStyle={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#991b1b',
-                  fontWeight: '900',
-                  fontSize: '0.85rem',
-                  padding: '2px 6px',
-                  minHeight: '28px'
-                }}
-              >
-                <option value={3.0}>&gt;= 3.0% Limit</option>
-                <option value={5.0}>&gt;= 5.0% Limit (Default)</option>
-                <option value={7.5}>&gt;= 7.5% Limit</option>
-                <option value={10.0}>&gt;= 10.0% Limit</option>
-              </SearchableSelect>
+              <span style={{ color: '#991b1b', fontWeight: '900', fontSize: '0.85rem' }}>
+                High scrap: {HIGH_SCRAP_THRESHOLD_PCT}% of order quantity ({ORDER_QTY_UNIT})
+              </span>
             </div>
           </div>
         </div>
@@ -346,7 +368,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           borderLeft: '4px solid #ef4444' 
         }}>
           <div style={{ fontSize: '0.82rem', color: stats.highScrapCount > 0 ? '#991b1b' : '#64748b', fontWeight: '700' }}>
-            High Scrap Alerts (&gt;={wastageThresholdLimit}%)
+            High Scrap Registry (&gt;={HIGH_SCRAP_THRESHOLD_PCT}% of order qty)
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: '900', color: stats.highScrapCount > 0 ? '#dc2626' : '#0f172a', marginTop: '6px' }}>
             {stats.highScrapCount} <span style={{ fontSize: '0.85rem' }}>Records</span>
@@ -365,6 +387,43 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Transferred from QC hold store</div>
         </div>
 
+      </div>
+
+      <div data-testid="high-scrap-registry" style={{ background: '#ffffff', border: '1px solid #fecaca', borderRadius: '14px', padding: '20px 24px' }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#991b1b' }}>High Scrap Registry</h3>
+        <p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '0.84rem' }}>
+          One row per job. Total stage wastage compared with order quantity in {ORDER_QTY_UNIT} (`orders.order_qty_kg`). Jobs under {HIGH_SCRAP_THRESHOLD_PCT}% are not listed. Editing a stage adds, updates, or removes the row.
+        </p>
+        {registryRows.length === 0 ? (
+          <div style={{ padding: '18px', color: '#475569', fontWeight: '700' }}>No job is at or above {HIGH_SCRAP_THRESHOLD_PCT}% of its order quantity.</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
+              <thead>
+                <tr style={{ background: '#fef2f2', color: '#7f1d1d', textAlign: 'left' }}>
+                  <th style={{ padding: '10px' }}>Job</th>
+                  <th style={{ padding: '10px' }}>Order</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Order qty ({ORDER_QTY_UNIT})</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Total wastage (kg)</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>% of order</th>
+                  <th style={{ padding: '10px' }}>Stage breakdown</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registryRows.map((job) => (
+                  <tr key={job.id} data-testid="high-scrap-job" style={{ borderTop: '1px solid #fee2e2' }}>
+                    <td style={{ padding: '10px', fontWeight: '800' }}>{job.jobName}</td>
+                    <td style={{ padding: '10px', fontFamily: 'monospace' }}>{job.orderId}</td>
+                    <td style={{ padding: '10px', textAlign: 'right' }}>{Number(job.grossKg).toFixed(2)}</td>
+                    <td style={{ padding: '10px', textAlign: 'right', fontWeight: '800', color: '#b91c1c' }}>{Number(job.scrapKg).toFixed(2)}</td>
+                    <td style={{ padding: '10px', textAlign: 'right' }}>{Number(job.wastagePct).toFixed(2)}%</td>
+                    <td style={{ padding: '10px' }}>{job.reasonOrCategory}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Filter and Selection Panel */}
@@ -460,7 +519,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                 gap: '6px'
               }}
             >
-              <AlertTriangle size={14} /> High Scrap Alerts Only (&gt;={wastageThresholdLimit}%) ({stats.highScrapCount})
+              <AlertTriangle size={14} /> High Scrap Registry (&gt;={HIGH_SCRAP_THRESHOLD_PCT}% of order qty) ({stats.highScrapCount})
             </button>
 
             <button 
@@ -639,11 +698,11 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                           }}
                         >
                           {isHigh && <AlertTriangle size={12} color="#b91c1c" />}
-                          {r.wastagePct >= 100 ? '100% REJECT' : `${r.wastagePct.toFixed(1)}%`}
+                          {r.wastagePct === null || r.wastagePct === undefined ? '—' : `${Number(r.wastagePct).toFixed(1)}%`}
                         </span>
                         {isHigh && (
                           <div style={{ fontSize: '0.65rem', color: '#b91c1c', fontWeight: '800', marginTop: '2px' }}>
-                            ⚠️ EXCEEDS {wastageThresholdLimit}% LIMIT
+                            {HIGH_SCRAP_THRESHOLD_PCT}% OR MORE OF ORDER QTY
                           </div>
                         )}
                       </td>

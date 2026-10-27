@@ -550,40 +550,8 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_ink_gsm NU
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_adhesive_gsm NUMERIC DEFAULT 1.5;
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS ink_gsm_in_speed NUMERIC;
 
--- VIEW: HIGH SCRAP & WASTAGE AUDIT REGISTRY (threshold >= 5.0%)
-DROP VIEW IF EXISTS public.high_scrap_audit_registry CASCADE;
-CREATE VIEW public.high_scrap_audit_registry AS
-SELECT 
-    pr.id AS record_id,
-    pr.order_id,
-    pr.job_name,
-    pr.client_name,
-    pr.operator_name,
-    pr.shift,
-    COALESCE(pr.date_filled, pr.recorded_at::date) AS record_date,
-    pr.gross_production_kg,
-    pr.net_usable_kg,
-    pr.total_wastage_kg,
-    pr.wastage_percentage,
-    pr.overall_scrap_pct_of_output,
-    pr.overall_scrap_pct_of_dispatch,
-    pr.printing_plain_setting_wastage_kg,
-    pr.printing_wastage_kg,
-    pr.lamination_plain_substrate_wastage_kg,
-    pr.printed_wastage_kg,
-    pr.laminate_wastage_kg,
-    pr.trim_wastage_kg,
-    pr.final_production_cost_rs,
-    pr.status,
-    pr.filled_by,
-    pr.approved_by,
-    pr.notes,
-    CASE 
-        WHEN pr.wastage_percentage >= 5.0 THEN TRUE 
-        ELSE FALSE 
-    END AS is_high_scrap_alert
-FROM public.production_records pr
-ORDER BY pr.recorded_at DESC;
+-- High scrap registry is created by supabase/migrations/20261026140000_job_wastage_scrap_registry.sql.
+-- It lists a job only when total stage wastage is at least 5% of orders.order_qty_kg.
 
 -- Ensure all columns exist on inventory if table was previously created with older schema
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;
