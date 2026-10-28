@@ -56,7 +56,8 @@ import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumb
 import {
   OPENING_RECEIPT_TYPE,
   buildBulkImportPayload,
-  bulkErrorReportCsv,
+  bulkErrorRowsCsv,
+  stockUploadErrorFileName,
   isOpeningStockReceipt,
   itemNameKey,
   parseBulkStockCsv,
@@ -3900,8 +3901,8 @@ export default function InventoryManagement({
   };
 
   const handleDownloadBulkErrorReport = () => {
-    if (!bulkPlan) return;
-    downloadCsvFile('Bulk_Inventory_Upload_Errors.csv', bulkErrorReportCsv(bulkPlan));
+    if (!bulkPlan || !bulkPlan.blockedCount) return;
+    downloadCsvFile(stockUploadErrorFileName(new Date()), bulkErrorRowsCsv(bulkPlan));
   };
 
   const handleDownloadLiveInventoryCSV = () => {
@@ -4005,6 +4006,14 @@ export default function InventoryManagement({
     setBulkImporting(true);
     try {
       if (payload.rolls.length > 0) {
+        const { data: existingRolls, error: existingRollError } = await supabase.from('inventory_rolls').select('barcode_id');
+        if (existingRollError) throw existingRollError;
+        const takenBarcodes = new Set((existingRolls || []).map((row) => String(row.barcode_id || '').trim().toLowerCase()).filter(Boolean));
+        const clashes = payload.rolls.filter((roll) => takenBarcodes.has(String(roll.barcodeId || '').trim().toLowerCase()));
+        if (clashes.length) {
+          alert(`These barcodes are already in stock, so nothing from this file was saved:\n${clashes.map((roll) => roll.barcodeId).join(', ')}\n\nOpen the file again so the preview can block those rows.`);
+          return;
+        }
         if (onUpdateInventoryRolls) {
           await onUpdateInventoryRolls(payload.rolls);
         } else if (onAddRoll) {
@@ -10018,8 +10027,8 @@ export default function InventoryManagement({
                     Preview: {bulkPlan.groups.length} item{bulkPlan.groups.length === 1 ? '' : 's'}, {bulkPlan.importableCount} row{bulkPlan.importableCount === 1 ? '' : 's'} ready, {bulkPlan.blockedCount} blocked
                   </div>
                   {bulkPlan.blockedCount > 0 && (
-                    <button type="button" className="btn-secondary" data-testid="bulk-error-report" style={{ fontSize: '0.75rem' }} onClick={handleDownloadBulkErrorReport}>
-                      <Download size={14} /> Download error report
+                    <button type="button" className="btn-secondary" data-testid="bulk-error-rows" style={{ fontSize: '0.75rem' }} onClick={handleDownloadBulkErrorReport}>
+                      <Download size={14} /> Download error rows (CSV)
                     </button>
                   )}
                 </div>

@@ -4,7 +4,8 @@ import {
   BULK_STOCK_CSV_COLUMNS,
   allocateUniqueInventoryId,
   buildBulkImportPayload,
-  bulkErrorReportCsv,
+  bulkErrorRowsCsv,
+  stockUploadErrorFileName,
   inventoryDbColumns,
   parseBulkStockCsv,
   sampleBulkStockCsv
@@ -131,7 +132,7 @@ test('blank barcodes are generated in the roll format and duplicates in the file
   assert.notEqual(autos[0].barcode.toLowerCase(), autos[1].barcode.toLowerCase());
   const dupes = plan.rows.filter((row) => row.itemName === 'Dup Film');
   assert.equal(dupes.every((row) => row.blocked), true);
-  assert.match(dupes[0].errors.join(' '), /repeated in this file/i);
+  assert.match(dupes[0].errors.join(' '), /Duplicate barcode in file \(also row/i);
   const known = plan.rows.find((row) => row.itemName === 'Known Film');
   assert.match(known.errors.join(' '), /already exists in stock/i);
   const payload = buildBulkImportPayload(plan, { now: NOW });
@@ -139,8 +140,8 @@ test('blank barcodes are generated in the roll format and duplicates in the file
   assert.equal(saved.includes('RM-BC-20261028-DUP'), false);
   assert.equal(saved.includes('RM-BC-DB-1'), false);
   assert.deepEqual(saved.sort(), [autos[0].barcode, autos[1].barcode].sort());
-  const report = bulkErrorReportCsv(plan);
-  assert.match(report, /repeated in this file/);
+  const report = bulkErrorRowsCsv(plan);
+  assert.match(report, /Duplicate barcode in file/);
   assert.match(report, /already exists in stock/);
 });
 
@@ -155,8 +156,8 @@ test('missing names, bad weights, and unknown categories are blocked and a repea
   const plan = parseBulkStockCsv(text, { now: NOW });
   const byName = (name) => plan.rows.filter((row) => row.itemName === name);
   assert.match(plan.rows.find((row) => !row.itemName).errors.join(' '), /Item name is missing/);
-  assert.match(byName('Bad Weight')[0].errors.join(' '), /not a number/);
-  assert.match(byName('Negative Film')[0].errors.join(' '), /negative/);
+  assert.match(byName('Bad Weight')[0].errors.join(' '), /WeightKg must be a positive number/);
+  assert.match(byName('Negative Film')[0].errors.join(' '), /WeightKg must be a positive number/);
   assert.match(byName('Mystery Item')[0].errors.join(' '), /Unknown category/);
   const payload = buildBulkImportPayload(plan, { now: NOW });
   assert.equal(payload.rolls.length, 1);
@@ -190,6 +191,70 @@ test('re-uploading the same file flags film rolls and a non-roll quantity', () =
   });
   assert.equal(again.importableCount, 0);
   assert.equal(again.rows.every((row) => row.blocked), true);
+});
+
+test('blocked rows download as the original upload columns plus an Error column and can be fixed and uploaded again', () => {
+  const header = BULK_STOCK_CSV_COLUMNS.join(',');
+  const text = [
+    header,
+    'Film Substrates,Keep Film,PET,12,1000,25,RM-BC-KEEP-1,Kg,Bay A,500,Vendor,BATCH,10',
+    'Film Substrates,Bad Film,PET,12,1000,abc,,Kg,"Bay A, Rack",500,Vendor,BATCH,10',
+    'Nope,Mystery,Grade,,,8,,Kg,Bay,10,Vendor,BATCH,1',
+    'Film Substrates,Dup One,PET,12,500,8,RM-BC-DUP,Kg,Bay A,100,Vendor,BATCH,10',
+    'Film Substrates,Dup Two,PET,12,500,9,RM-BC-DUP,Kg,Bay A,100,Vendor,BATCH,10'
+  ].join('\n');
+  const plan = parseBulkStockCsv(text, { now: NOW, generateBarcode: () => 'RM-BC-20261028-AUTO' });
+  const payload = buildBulkImportPayload(plan, { now: NOW });
+  assert.equal(payload.rolls.map((roll) => roll.barcodeId).join(','), 'RM-BC-KEEP-1');
+
+  const downloaded = bulkErrorRowsCsv(plan);
+  assert.equal(downloaded.charCodeAt(0), 0xFEFF);
+  const body = downloaded.slice(1);
+  const [downloadedHeader, ...downloadedRows] = body.split('\n');
+  assert.equal(downloadedHeader, `${header},Error`);
+  assert.equal(downloadedRows.length, 4);
+  assert.match(downloadedRows[0], /^Film Substrates,Bad Film,PET,12,1000,abc,,Kg,"Bay A, Rack",500,Vendor,BATCH,10,Row 3: WeightKg must be a positive number$/);
+  assert.match(downloadedRows[1], /^Nope,Mystery,Grade,,,8,,Kg,Bay,10,Vendor,BATCH,1,"Row 4: /);
+  assert.match(downloadedRows[1], /Unknown category ""Nope""/);
+  assert.match(downloadedRows[2], /Row 5: Duplicate barcode in file \(also row 6\)/);
+  assert.match(downloadedRows[3], /Row 6: Duplicate barcode in file \(also row 5\)/);
+  assert.equal(downloaded.includes('RM-BC-20261028-AUTO'), false);
+  assert.equal(stockUploadErrorFileName(NOW), 'stock-upload-errors-20261028-1330.csv');
+
+  const fixed = [
+    header,
+    'Film Substrates,Keep Film,PET,12,1000,25,RM-BC-KEEP-1,Kg,Bay A,500,Vendor,BATCH,10',
+    'Film Substrates,Bad Film,PET,12,1000,12,,Kg,Bay A,500,Vendor,BATCH,10',
+    'Printing Inks,Mystery,Grade,,,8,RM-BC-FIX-1,Kg,Bay,10,Vendor,BATCH,1',
+    'Film Substrates,Dup One,PET,12,500,8,RM-BC-NEW-1,Kg,Bay A,100,Vendor,BATCH,10',
+    'Film Substrates,Dup Two,PET,12,500,9,RM-BC-NEW-2,Kg,Bay A,100,Vendor,BATCH,10'
+  ].join('\n');
+  const again = parseBulkStockCsv(fixed, {
+    now: NOW,
+    inventory: payload.items,
+    rolls: payload.rolls,
+    adjustments: payload.adjustments,
+    generateBarcode: () => 'RM-BC-20261028-FIXED'
+  });
+  assert.equal(again.rows.find((row) => row.itemName === 'Keep Film').blocked, true);
+  assert.match(again.rows.find((row) => row.itemName === 'Keep Film').errors.join(' '), /already exists in stock/);
+  const repaired = buildBulkImportPayload(again, { inventory: payload.items, now: NOW });
+  assert.deepEqual(repaired.rolls.map((roll) => roll.barcodeId).sort(), ['RM-BC-20261028-FIXED', 'RM-BC-NEW-1', 'RM-BC-NEW-2']);
+  assert.equal(repaired.items.some((item) => item.itemName === 'Mystery' && item.category === 'Printing Inks'), true);
+  assert.equal(repaired.rolls.some((roll) => roll.barcodeId === 'RM-BC-KEEP-1'), false);
+
+  const withErrorColumn = [
+    `${header},Error`,
+    'Film Substrates,Fresh Corrected Film,PET,12,700,16,RM-BC-LEFT-1,Kg,Bay A,100,Vendor,BATCH,12,Row 9: old message',
+    'Printing Inks,Fresh Ink,Cyan,,,6,,Kg,Ink Store,5,Vendor,INK,20,Row 10: old message'
+  ].join('\n');
+  const kept = parseBulkStockCsv(withErrorColumn, { now: NOW });
+  assert.ok(kept.notices.some((notice) => notice.includes('Error column was ignored')));
+  assert.equal(kept.blockedCount, 0);
+  assert.equal(kept.importableCount, 2);
+  const keptPayload = buildBulkImportPayload(kept, { now: NOW });
+  assert.equal(keptPayload.rolls[0].barcodeId, 'RM-BC-LEFT-1');
+  assert.equal(keptPayload.items.find((item) => item.itemName === 'Fresh Ink').availableQtyKg, 6);
 });
 
 test('a saved bulk film keeps its typed name and writes category onto the inventory columns', () => {

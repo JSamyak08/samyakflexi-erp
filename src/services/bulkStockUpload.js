@@ -112,19 +112,42 @@ export function sampleBulkStockCsv() {
   return `\uFEFF${toCsv([BULK_STOCK_CSV_COLUMNS, ...BULK_STOCK_SAMPLE_ROWS])}`;
 }
 
-export function bulkErrorReportCsv(plan) {
-  const header = ['Row', 'ItemName', 'Category', 'Barcode', 'WeightKg', 'Errors'];
+export function stockUploadErrorFileName(now = new Date()) {
+  const ist = new Date(now.getTime() + (330 * 60 * 1000));
+  const pad = (value) => String(value).padStart(2, '0');
+  const stamp = `${ist.getUTCFullYear()}${pad(ist.getUTCMonth() + 1)}${pad(ist.getUTCDate())}-${pad(ist.getUTCHours())}${pad(ist.getUTCMinutes())}`;
+  return `stock-upload-errors-${stamp}.csv`;
+}
+
+export function bulkErrorRowsCsv(plan) {
+  const header = [...BULK_STOCK_CSV_COLUMNS, 'Error'];
   const lines = (plan?.rows || [])
-    .filter((row) => row.errors && row.errors.length)
-    .map((row) => [
-      row.lineNumber,
-      row.itemName || '',
-      row.category || '',
-      row.barcode || '',
-      row.weightText || '',
-      row.errors.join('; ')
-    ]);
-  return toCsv([header, ...lines]);
+    .filter((row) => row.blocked)
+    .map((row) => {
+      const source = row.sourceCells || {};
+      const problems = (row.errors || []).join('; ');
+      return [
+        source.Category ?? '',
+        source.ItemName ?? '',
+        source.SubstrateOrGrade ?? '',
+        source.Micron ?? '',
+        source.WidthMm ?? '',
+        source.WeightKg ?? '',
+        source.Barcode ?? '',
+        source.UOM ?? '',
+        source.Location ?? '',
+        source.ReorderLevel ?? '',
+        source.LastVendor ?? '',
+        source.LastBatch ?? '',
+        source.UnitCostRs ?? '',
+        `Row ${row.lineNumber}: ${problems}`
+      ];
+    });
+  return `\uFEFF${toCsv([header, ...lines])}`;
+}
+
+export function bulkErrorReportCsv(plan) {
+  return bulkErrorRowsCsv(plan);
 }
 
 function parseCsvLine(lineStr, delim = ',') {
@@ -186,6 +209,8 @@ function classifyHeader(cleanH) {
     || cleanH.includes('itemcode')
     || cleanH.includes('stockid')
   ) return 'inventoryId';
+  if (cleanH === 'error' || cleanH === 'errors' || cleanH === 'errormessage') return 'errorNote';
+  if (cleanH === 'sourcerow' || cleanH === 'sourcerowno' || cleanH === 'sourcerownumber') return 'sourceRow';
   if (cleanH.includes('barcode') || cleanH === 'rollno' || cleanH.includes('rollbarcode')) return 'barcode';
   if (cleanH.includes('category')) return 'category';
   if (cleanH.includes('substrate') || cleanH.includes('grade') || cleanH.includes('filmtype') || cleanH.includes('polymer')) return 'substrate';
@@ -382,6 +407,13 @@ export function parseBulkStockCsv(text, {
   if (headerMap.inventoryId !== undefined) {
     notices.push('The Inventory ID column was ignored. Stock ids are generated automatically and are not taken from the file.');
   }
+  const ignoredExtras = [
+    headerMap.errorNote !== undefined ? 'Error' : '',
+    headerMap.sourceRow !== undefined ? 'SourceRow' : ''
+  ].filter(Boolean);
+  if (ignoredExtras.length) {
+    notices.push(`The ${ignoredExtras.join(' and ')} column was ignored. Correct the other cells and upload the file again; that column can stay or be deleted.`);
+  }
 
   const startIndex = hasNamedHeaders ? 1 : 0;
   const positionalShift = !hasNamedHeaders && looksLikeInventoryId(headerCells[0]);
@@ -415,10 +447,9 @@ export function parseBulkStockCsv(text, {
     if (categoryResult.error) errors.push(categoryResult.error);
     if (!itemName) errors.push('Item name is missing.');
 
-    const weight = parseWeight(readCell(cells, 'weight', 5));
-    if (!weight.ok) errors.push(`Weight "${weight.text || readCell(cells, 'weight', 5) || ''}" is not a number.`.replace('Weight "" is not a number.', 'Weight is missing or not a number.'));
-    else if (weight.value < 0) errors.push(`Weight ${weight.value} cannot be negative.`);
-    else if (weight.value === 0) errors.push('Weight must be greater than zero.');
+    const weightRaw = readCell(cells, 'weight', 5);
+    const weight = parseWeight(weightRaw);
+    if (!weight.ok || weight.value <= 0) errors.push('WeightKg must be a positive number');
 
     const micron = parseOptionalNumber(readCell(cells, 'micron', 3));
     const width = parseOptionalNumber(readCell(cells, 'width', 4));
@@ -432,6 +463,21 @@ export function parseBulkStockCsv(text, {
     if (unitCost.ok && unitCost.value !== null && unitCost.value < 0) errors.push('Unit cost cannot be negative.');
 
     const givenBarcode = String(readCell(cells, 'barcode', 6) || '').trim();
+    const sourceCells = {
+      Category: readCell(cells, 'category', 0),
+      ItemName: readCell(cells, 'itemName', 1),
+      SubstrateOrGrade: readCell(cells, 'substrate', 2),
+      Micron: readCell(cells, 'micron', 3),
+      WidthMm: readCell(cells, 'width', 4),
+      WeightKg: weightRaw,
+      Barcode: readCell(cells, 'barcode', 6),
+      UOM: readCell(cells, 'uom', 7),
+      Location: readCell(cells, 'location', 8),
+      ReorderLevel: readCell(cells, 'reorder', 9),
+      LastVendor: readCell(cells, 'vendor', 10),
+      LastBatch: readCell(cells, 'batch', 11),
+      UnitCostRs: readCell(cells, 'unitCost', 12)
+    };
     const category = categoryResult.category;
     const isRoll = isFilmCategory(category) && !categoryResult.error;
     if (!isRoll && givenBarcode && !categoryResult.error) {
@@ -447,7 +493,8 @@ export function parseBulkStockCsv(text, {
       micron: micron.ok ? micron.value : null,
       widthMm: width.ok ? width.value : null,
       weight: weight.ok ? weight.value : null,
-      weightText: weight.text || String(readCell(cells, 'weight', 5) || ''),
+      weightText: weight.text || String(weightRaw || ''),
+      sourceCells,
       givenBarcode: isRoll ? givenBarcode : '',
       barcode: isRoll ? givenBarcode : '',
       barcodeSource: isRoll && givenBarcode ? 'given' : 'none',
@@ -463,18 +510,23 @@ export function parseBulkStockCsv(text, {
     });
   }
 
-  const barcodeCounts = new Map();
+  const barcodeLines = new Map();
   draftRows.forEach((row) => {
     const key = barcodeKey(row.givenBarcode);
     if (!key) return;
-    barcodeCounts.set(key, (barcodeCounts.get(key) || 0) + 1);
+    const lines = barcodeLines.get(key) || [];
+    lines.push(row.lineNumber);
+    barcodeLines.set(key, lines);
   });
   const dbBarcodes = existingBarcodeIndex(rolls);
   draftRows.forEach((row) => {
     const key = barcodeKey(row.givenBarcode);
     if (!key) return;
-    if ((barcodeCounts.get(key) || 0) > 1) {
-      row.errors.push(`Barcode ${row.givenBarcode} is repeated in this file.`);
+    const lines = barcodeLines.get(key) || [];
+    if (lines.length > 1) {
+      const others = lines.filter((line) => line !== row.lineNumber);
+      const label = others.length === 1 ? `row ${others[0]}` : `rows ${others.join(', ')}`;
+      row.errors.push(`Duplicate barcode in file (also ${label})`);
     }
     if (dbBarcodes.has(key)) {
       row.errors.push(`Barcode ${row.givenBarcode} already exists in stock.`);
