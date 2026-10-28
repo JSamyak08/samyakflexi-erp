@@ -1,5 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { NOT_RECORDED, computeDryInkSolids, finiteNumber, parseOptionalKg } from '../utils/productionRecordQuality';
+import {
+  GUARDRAIL_SETTING_KEY,
+  canOverrideFilmType,
+  decideGuardrailSave,
+  densityForFilm,
+  printingLayer,
+  recordedPrintWidthMm,
+  resolveJobMaster,
+  validateProductionEntry
+} from '../utils/jobMasterGuardrails';
+import { factoryCalendarDate } from '../services/employeeAttendance';
+import { fetchSystemSetting } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
 import StorageImage from './StorageImage';
 import { 
@@ -60,18 +72,11 @@ import { PartialSaveError, writeWithRetry, unsavedItemsMessage } from '../servic
 
 // Helper: Resolve Film Density for flexible packaging substrates
 const getFilmDensity = (filmType = '') => {
-  if (!filmType) return 1.40;
+  const fromGuardrail = densityForFilm(filmType);
+  if (fromGuardrail !== null) return fromGuardrail;
+  if (!filmType) return null;
   if (FILM_DENSITIES && FILM_DENSITIES[filmType]) return FILM_DENSITIES[filmType];
-  const lower = String(filmType).toLowerCase().trim();
-  if (lower.includes('pet') || lower.includes('polyester')) return 1.40;
-  if (lower.includes('pearlised')) return 0.70;
-  if (lower.includes('bopp') || lower.includes('opp')) return 0.91;
-  if (lower.includes('metpet')) return 1.40;
-  if (lower.includes('cpp')) return 0.91;
-  if (lower.includes('ld') || lower.includes('pe') || lower.includes('poly') || lower.includes('lldpe')) return 0.93;
-  if (lower.includes('paper')) return 0.80;
-  if (lower.includes('alu') || lower.includes('foil')) return 2.70;
-  return 1.40;
+  return null;
 };
 
 // Helper: Parse substrate structure string into individual film layers with GSM
@@ -80,11 +85,10 @@ const parseStructureLayers = (structureStr = '') => {
   const parts = structureStr.split(/[/+]/).map(p => p.trim()).filter(Boolean);
   return parts.map(part => {
     const micronMatch = part.match(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/i);
-    const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
+    const micron = micronMatch ? parseFloat(micronMatch[1]) : null;
     let filmType = part.replace(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/gi, '').replace(/[^\w\s-]/g, '').trim();
-    if (!filmType) filmType = 'PET';
     const density = getFilmDensity(filmType);
-    const gsm = parseFloat((micron * density).toFixed(2));
+    const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
     return { filmType, micron, density, gsm };
   });
 };
@@ -106,8 +110,8 @@ function printDryInk({ inputRollsList, outputKg, meters, printWidthMm, plainSett
 function EndJobCalculationsBadges({ endJobTargetOrder, inputRollsList, jobMasters, inputPrintedOutputKg, inputActualMeters, plainSettingKg, printingWastageKg }) {
   if (!endJobTargetOrder) return null;
   const totalInputConsumedKg = (inputRollsList || []).reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
-  const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
-  const printWidthMm = finiteNumber(endJobTargetOrder.printWidthMm ?? matchingJM?.printWidthMm ?? endJobTargetOrder.widthMm);
+  const matchingJM = resolveJobMaster({ order: endJobTargetOrder, jobMasters }).jobMaster;
+  const printWidthMm = finiteNumber(endJobTargetOrder.printWidthMm ?? recordedPrintWidthMm(matchingJM) ?? endJobTargetOrder.widthMm);
   const dry = printDryInk({
     inputRollsList,
     outputKg: inputPrintedOutputKg,
@@ -210,6 +214,14 @@ export default function ProductionScheduler({
     });
   }, [machines]);
 
+  useEffect(() => {
+    let active = true;
+    fetchSystemSetting(GUARDRAIL_SETTING_KEY)
+      .then((value) => { if (active && value && typeof value === 'object') setGuardrailLimits(value); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   // Active Job Run Modal & Artwork Preview State
   const [selectedOrderForRun, setSelectedOrderForRun] = useState(null);
   const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
@@ -262,6 +274,13 @@ export default function ProductionScheduler({
   const [inputPrintedOutputKg, setInputPrintedOutputKg] = useState('');
   const [inputOperatorNotes, setInputOperatorNotes] = useState('');
   const [printLessApproved, setPrintLessApproved] = useState(false);
+  const [endJobMachineId, setEndJobMachineId] = useState('');
+  const [endJobOperator, setEndJobOperator] = useState('');
+  const [endJobShift, setEndJobShift] = useState('');
+  const [endJobWarningReason, setEndJobWarningReason] = useState('');
+  const [endJobFilmOverrideReason, setEndJobFilmOverrideReason] = useState('');
+  const [endJobGuardrail, setEndJobGuardrail] = useState(null);
+  const [guardrailLimits, setGuardrailLimits] = useState(null);
   const [outputRollsList, setOutputRollsList] = useState([
     { id: 'roll-1', rollNo: 1, netWeightKg: '' }
   ]);
@@ -320,11 +339,7 @@ export default function ProductionScheduler({
       const firstFilmReq = reqs.find(r => r.micron && r.micron !== '-') || {};
 
       // Match Job Master & Rotogravure Cylinder record for Artwork, Structure, Layers, Colors, Repeat, and Width
-      const matchedJM = (jobMasters || []).find(j => 
-        (j.id && (j.id === order.jobMasterId || j.id === order.id)) || 
-        (j.jobCode && (j.jobCode === order.jobCode || j.jobCode === order.id)) || 
-        (j.jobName && (j.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim())
-      );
+      const matchedJM = resolveJobMaster({ order, jobMasters }).jobMaster;
 
       const matchedCylinder = (cylinders || []).find(c => 
         (c.id && (c.id === order.cylinderId || c.id === order.id)) || 
@@ -344,20 +359,18 @@ export default function ProductionScheduler({
         (order.structure && order.structure !== 'PET / PE' && order.structure !== '—' ? order.structure : null) ||
         (orderLayers.length > 0 ? orderLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
         (reqs.filter(r => r.micron && r.micron !== '-').map(r => `${r.filmType} ${r.micron}µ`).join(' / ')) ||
-        'PET 12µ / PE 40µ';
+        '';
 
       // Width resolution linked to Job Master / Cylinder / Order
-      const widthMm = parseFloat(
-        order.printWidthMm ||
-        order.jobDetails?.printWidthMm ||
-        matchedJM?.printWidthMm ||
-        matchedJM?.cylinderData?.widthMm ||
-        matchedCylinder?.widthMm ||
-        matchedCylinder?.printingWidthMm ||
-        order.widthMm ||
-        firstFilmReq.widthMm ||
-        1000
-      );
+      const widthMm = [
+        order.printWidthMm,
+        order.jobDetails?.printWidthMm,
+        recordedPrintWidthMm(matchedJM),
+        matchedCylinder?.widthMm,
+        matchedCylinder?.printingWidthMm,
+        order.widthMm,
+        firstFilmReq.widthMm
+      ].map((value) => finiteNumber(value)).find((value) => value !== null && value > 0) || 0;
 
       // Artwork resolution linked to Job Master / Cylinder / Order
       const artworkUrl = order.artworkUrl ||
@@ -393,26 +406,26 @@ export default function ProductionScheduler({
       let resolvedLayers = [];
       if (jmLayers.length > 0) {
         resolvedLayers = jmLayers.map(l => {
-          const filmType = l.filmType || 'PET';
-          const micron = parseFloat(l.micron) || 12;
+          const filmType = l.filmType || l.film_type || '';
+          const micron = finiteNumber(l.micron);
           const density = getFilmDensity(filmType);
-          const gsm = parseFloat((micron * density).toFixed(2));
+          const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
           return { ...l, filmType, micron, density, gsm };
         });
       } else if (cylinderLayers.length > 0) {
         resolvedLayers = cylinderLayers.map(l => {
-          const filmType = l.filmType || 'PET';
-          const micron = parseFloat(l.micron) || 12;
+          const filmType = l.filmType || l.film_type || '';
+          const micron = finiteNumber(l.micron);
           const density = getFilmDensity(filmType);
-          const gsm = parseFloat((micron * density).toFixed(2));
+          const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
           return { ...l, filmType, micron, density, gsm };
         });
       } else if (orderLayers.length > 0) {
         resolvedLayers = orderLayers.map(l => {
-          const filmType = l.filmType || 'PET';
-          const micron = parseFloat(l.micron) || 12;
+          const filmType = l.filmType || l.film_type || '';
+          const micron = finiteNumber(l.micron);
           const density = getFilmDensity(filmType);
-          const gsm = parseFloat((micron * density).toFixed(2));
+          const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
           return { ...l, filmType, micron, density, gsm };
         });
       } else if (structure) {
@@ -421,17 +434,27 @@ export default function ProductionScheduler({
 
       // Layer 1 is the Print Layer (printing substrate)
       const firstLayer = orderLayers[0] || {};
-      const printLayer = resolvedLayers[0] || {
-        filmType: order.filmType || firstFilmReq.filmType || 'PET',
-        micron: parseFloat(order.micron || firstLayer.micron || firstFilmReq.micron) || 12,
-        density: getFilmDensity(order.filmType || firstFilmReq.filmType || 'PET'),
-        gsm: (parseFloat(order.micron || firstLayer.micron || firstFilmReq.micron) || 12) * getFilmDensity(order.filmType || firstFilmReq.filmType || 'PET')
-      };
+      const specLayer = printingLayer(matchedJM);
+      const printLayer = specLayer
+        ? {
+          filmType: specLayer.filmType || specLayer.film_type || '',
+          micron: finiteNumber(specLayer.micron),
+          density: getFilmDensity(specLayer.filmType || specLayer.film_type || ''),
+          gsm: 0
+        }
+        : (resolvedLayers[0] || {
+          filmType: order.filmType || firstFilmReq.filmType || firstLayer.filmType || '',
+          micron: finiteNumber(order.micron ?? firstLayer.micron ?? firstFilmReq.micron),
+          density: getFilmDensity(order.filmType || firstFilmReq.filmType || ''),
+          gsm: 0
+        });
 
-      const printFilmType = printLayer.filmType || 'PET';
-      const printMicron = parseFloat(printLayer.micron) || 12;
+      const printFilmType = printLayer.filmType || '';
+      const printMicron = finiteNumber(printLayer.micron);
       const printDensity = printLayer.density || getFilmDensity(printFilmType);
-      const printLayerGsm = parseFloat((printMicron * printDensity).toFixed(2));
+      const printLayerGsm = printMicron !== null && printDensity !== null
+        ? parseFloat((printMicron * printDensity).toFixed(2))
+        : 0;
 
       // Calculate Total Films GSM & Laminate GSM
       const totalFilmsGsm = resolvedLayers.length > 0
@@ -449,7 +472,7 @@ export default function ProductionScheduler({
       const printQtyKg = parseFloat(order.quantityKg || order.quantity || order.orderQtyKg || 0);
 
       // Width in meters
-      const widthM = widthMm > 0 ? widthMm / 1000 : 1.0;
+      const widthM = widthMm > 0 ? widthMm / 1000 : 0;
 
       // Surface Area in m² based on Total Laminate GSM
       const totalAreaSqm = (totalLaminateGsm > 0 && printQtyKg > 0)
@@ -869,11 +892,18 @@ export default function ProductionScheduler({
     setInputPlainSettingKg('');
     setInputPrintingWastageKg('');
 
-    const matchingJM = (jobMasters || []).find(j => j.id === order.jobMasterId || j.jobCode === order.jobCode);
-    const printWidth = order.widthMm || order.printWidthMm || matchingJM?.printWidthMm || matchingJM?.cylinderData?.widthMm || 460;
-    const filmType = order.printFilmType || 'PET';
-    const micron = order.micron || 12;
-    const reqQty = order.printQtyKg || order.quantityKg || order.quantity || 100;
+    setEndJobMachineId('');
+    setEndJobOperator('');
+    setEndJobShift('');
+    setEndJobWarningReason('');
+    setEndJobFilmOverrideReason('');
+    setEndJobGuardrail(null);
+    const assignedPress = rotogravureMachines.find((machine) => machine.id === order.machineId);
+    if (assignedPress) {
+      setEndJobMachineId(assignedPress.id);
+      const assignedOperator = String(assignedPress.operator || '').trim();
+      if (assignedOperator && assignedOperator !== 'Plant Operator') setEndJobOperator(assignedOperator);
+    }
 
     setInputPrintedOutputKg('');
     setOutputRollsList([
@@ -945,13 +975,49 @@ export default function ProductionScheduler({
     // Automatically sync total weight from roll breakdown
     setInputPrintedOutputKg(String(totalRollsKg.toFixed(2)));
 
-    const targetNum = endJobTargetOrder?.targetMeters || 0;
-    if (targetNum > 0 && actualNum < targetNum && !printLessApproved) {
-      alert(`⚠️ Shortfall Warning: Actual Meters Printed (${(actualNum || 0).toLocaleString()} m) is LESS than Target Meters (${(targetNum || 0).toLocaleString()} m).\n\nPlease click 'Approval to Print Less Received' to proceed, or click 'Continue Job' to print more meters on press.`);
+    const result = evaluateEndJobGuardrail();
+    setEndJobGuardrail(result);
+    if (result.blocks.length || (result.filmTypeBlocks.length && !canOverrideFilmType(currentUser?.role))) {
       return;
     }
 
     setEndJobStep('confirm');
+  };
+
+  const evaluateEndJobGuardrail = () => {
+    const totalRollsKg = outputRollsList.reduce((sum, roll) => sum + (parseFloat(roll.netWeightKg) || 0), 0);
+    const totalInputConsumedKg = inputRollsList.reduce((sum, roll) => sum + (parseFloat(roll.consumedWeightKg) || 0), 0);
+    const plainSettingKg = parseOptionalKg(inputPlainSettingKg) || 0;
+    const printingWastageKg = parseOptionalKg(inputPrintingWastageKg) || 0;
+    const startTimeMs = new Date(endJobTargetOrder?.printingStartTime || Date.now()).getTime();
+    const durationMinutes = Math.max(1, Math.round((Date.now() - startTimeMs) / 60000));
+    const press = rotogravureMachines.find((machine) => machine.id === endJobMachineId);
+    return validateProductionEntry({
+      context: 'end-press',
+      order: endJobTargetOrder,
+      jobMasters,
+      limits: guardrailLimits,
+      role: currentUser?.role,
+      entry: {
+        orderId: endJobTargetOrder?.id,
+        machineName: press?.name || '',
+        operatorName: endJobOperator.trim(),
+        shift: endJobShift,
+        meters: finiteNumber(inputActualMeters),
+        printInputKg: totalInputConsumedKg,
+        printedOutputKg: totalRollsKg,
+        printingScrapKg: plainSettingKg + printingWastageKg,
+        durationMinutes,
+        ratedSpeedMpm: press?.maxSpeedMpm,
+        ratedSpeedConfigured: press?.maxSpeedRecorded === true,
+        inputRolls: inputRollsList,
+        orderQtyKg: finiteNumber(endJobTargetOrder?.orderQtyKg ?? endJobTargetOrder?.quantityKg ?? endJobTargetOrder?.quantity),
+        quantityKg: totalRollsKg,
+        goodKg: totalRollsKg,
+        scrapKg: plainSettingKg + printingWastageKg,
+        targetMeters: finiteNumber(endJobTargetOrder?.targetMeters)
+      }
+    });
   };
 
   // Final Confirmation & Database Save Handler
@@ -960,6 +1026,22 @@ export default function ProductionScheduler({
     setIsSubmittingEndJob(true);
 
     try {
+      const guardrailResult = evaluateEndJobGuardrail();
+      const guardrailDecision = decideGuardrailSave(guardrailResult, {
+        role: currentUser?.role,
+        warningReason: endJobWarningReason,
+        filmTypeOverrideReason: endJobFilmOverrideReason,
+        overrideBy: currentUser?.name || currentUser?.role || ''
+      });
+      setEndJobGuardrail(guardrailResult);
+      if (!guardrailDecision.ok) {
+        setIsSubmittingEndJob(false);
+        return;
+      }
+      const press = rotogravureMachines.find((machine) => machine.id === endJobMachineId);
+      const pressName = press?.name || '';
+      const pressOperator = endJobOperator.trim();
+
       const endTime = new Date().toISOString();
       const startTimeMs = new Date(endJobTargetOrder.printingStartTime || Date.now() - 3600000).getTime();
       const durationMinutes = Math.max(1, Math.round((new Date(endTime).getTime() - startTimeMs) / 60000));
@@ -973,7 +1055,7 @@ export default function ProductionScheduler({
       const outputKgNum = totalRollsKg > 0 ? totalRollsKg : (parseFloat(inputPrintedOutputKg) || 0);
 
       // Determine routing: Reverse Printing Job -> Lamination Machine, Surface Printing Job -> Slitting Machine
-      const matchingJM = (jobMasters || []).find(j => j.id === endJobTargetOrder.jobMasterId || j.jobCode === endJobTargetOrder.jobCode);
+      const matchingJM = resolveJobMaster({ order: endJobTargetOrder, jobMasters }).jobMaster;
       const printTypeStr = (endJobTargetOrder.printType || matchingJM?.printType || endJobTargetOrder.printingType || '').toLowerCase();
       const jobTypeStr = (endJobTargetOrder.jobType || matchingJM?.jobType || '').toLowerCase();
       const lamStructureStr = (endJobTargetOrder.laminateStructure || matchingJM?.laminateStructure || endJobTargetOrder.substrateStructure || matchingJM?.substrateStructure || '').toLowerCase();
@@ -1014,9 +1096,9 @@ export default function ProductionScheduler({
           orderId: endJobTargetOrder.id,
           customerName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || '',
           clientName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || '',
-          filmType: endJobTargetOrder.printFilmType || inputRollsList[0]?.filmType || '',
-          micron: finiteNumber(endJobTargetOrder.micron) ?? finiteNumber(inputRollsList[0]?.micron),
-          widthMm: finiteNumber(endJobTargetOrder.printWidthMm) ?? finiteNumber(endJobTargetOrder.widthMm) ?? finiteNumber(inputRollsList[0]?.widthMm),
+          filmType: guardrailDecision.fields.printFilmType || inputRollsList[0]?.filmType || '',
+          micron: guardrailDecision.fields.printMicron ?? finiteNumber(inputRollsList[0]?.micron),
+          widthMm: guardrailDecision.fields.printWidthMm ?? finiteNumber(inputRollsList[0]?.widthMm),
           unit: 'Kg',
           packagingType: 'Roll',
           unitNo: rollSeqNo,
@@ -1033,14 +1115,14 @@ export default function ProductionScheduler({
           purchaseRatePerKg: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           unitPrice: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           stationId: 'PRINTING_PRESS_REWINDER',
-          machineName: machineName || 'Rotogravure Press',
-          operatorName: machineOperator || 'Operator',
+          machineName: pressName,
+          operatorName: pressOperator,
           nextProcess: nextProcessName,
           processStage: 'PRINTED_SFG',
           status: 'In Stock (SFG)',
           qcStatus: 'Approved',
           inwardDatetime: new Date().toISOString(),
-          productionDate: new Date().toISOString().split('T')[0],
+          productionDate: factoryCalendarDate(),
           locationBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
           storageBay: isReverseJob ? 'SFG Store (Bay B - Pre-Lamination)' : 'SFG Store (Bay C - Pre-Slitting)',
           inputSubstrateBarcodes: inputRollsList.map(r => r.barcodeId).filter(Boolean),
@@ -1095,12 +1177,12 @@ export default function ProductionScheduler({
             tareWeightKg: null,
             availableWeightKg: Number(balW.toFixed(2)),
             stationId: 'PRINTING_PRESS_UNWINDER',
-            machineName: machineName || 'Rotogravure Press',
-            operatorName: machineOperator || 'Operator',
+            machineName: pressName,
+            operatorName: pressOperator,
             status: 'In Stock (RM)',
             qcStatus: 'Approved',
             inwardDatetime,
-            productionDate: inwardDatetime.split('T')[0],
+            productionDate: factoryCalendarDate(),
             locationBay: 'RM Store - Substrate Rolls'
           };
 
@@ -1121,7 +1203,7 @@ export default function ProductionScheduler({
         }));
       }
 
-      const printWidthMm = finiteNumber(endJobTargetOrder.printWidthMm ?? matchingJM?.printWidthMm ?? endJobTargetOrder.widthMm);
+      const printWidthMm = finiteNumber(guardrailDecision.fields.printWidthMm ?? recordedPrintWidthMm(matchingJM) ?? endJobTargetOrder.widthMm);
       const inputWidths = inputRollsList.map((roll) => finiteNumber(roll.widthMm)).filter((value) => value !== null);
       const maxInputWidth = inputWidths.length ? Math.max(...inputWidths) : null;
       const plainSettingKg = parseOptionalKg(inputPlainSettingKg) || 0;
@@ -1162,7 +1244,13 @@ export default function ProductionScheduler({
         actualCalculatedInkGsm: actualCalculatedInkGsm,
         printingPlainSettingWastageKg: plainSettingKg,
         printingWastageKg: printingWastageKg,
-        notes: inputOperatorNotes
+        notes: inputOperatorNotes,
+        ...guardrailDecision.fields,
+        machineName: pressName,
+        operatorName: pressOperator,
+        shift: endJobShift,
+        dateFilled: factoryCalendarDate(),
+        deriveNetFromStages: true
       };
 
       const completedOrder = {
@@ -2420,7 +2508,7 @@ export default function ProductionScheduler({
                               <input 
                                 type="number" 
                                 className="form-control" 
-                                style={{ fontSize: '0.82rem', fontWeight: '800', color: parseFloat(roll.widthMm) > (activeRunningJob.widthMm || 460) ? '#b45309' : '#0f172a', background: '#ffffff', width: '100%' }} 
+                                style={{ fontSize: '0.82rem', fontWeight: '800', color: finiteNumber(activeRunningJob.widthMm) !== null && parseFloat(roll.widthMm) > activeRunningJob.widthMm ? '#b45309' : '#0f172a', background: '#ffffff', width: '100%' }} 
                                 value={roll.widthMm || ''} 
                                 disabled={activeRunningJob.isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'widthMm', e.target.value)}
@@ -2667,6 +2755,37 @@ export default function ProductionScheduler({
             {/* STEP 1: SHOP FLOOR PRODUCTION INPUT FORM */}
             {endJobStep === 'input' && (
               <form onSubmit={handleProceedToConfirmation} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                {endJobGuardrail && (endJobGuardrail.blocks.length > 0 || endJobGuardrail.filmTypeBlocks.length > 0) && (
+                  <div data-testid="end-job-guardrail-block" style={{ background: '#fef2f2', border: '1.5px solid #ef4444', borderRadius: '10px', padding: '12px 14px', color: '#991b1b' }}>
+                    <div style={{ fontWeight: '900', marginBottom: '6px' }}>This press run cannot be saved</div>
+                    {[...endJobGuardrail.blocks, ...endJobGuardrail.filmTypeBlocks].map((item, index) => (
+                      <div key={`${item.rule}-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Press *</label>
+                    <select className="form-control" value={endJobMachineId} onChange={(event) => setEndJobMachineId(event.target.value)} required>
+                      <option value="">Select press</option>
+                      {rotogravureMachines.map((machine) => (
+                        <option key={machine.id} value={machine.id}>{machine.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Operator *</label>
+                    <input className="form-control" value={endJobOperator} onChange={(event) => setEndJobOperator(event.target.value)} placeholder="Operator name" required />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Shift *</label>
+                    <select className="form-control" value={endJobShift} onChange={(event) => setEndJobShift(event.target.value)} required>
+                      <option value="">Select shift</option>
+                      <option value="Day Shift (8 AM - 8 PM)">Day Shift (8 AM - 8 PM)</option>
+                      <option value="Night Shift (8 PM - 8 AM)">Night Shift (8 PM - 8 AM)</option>
+                    </select>
+                  </div>
+                </div>
                 
                 {/* Field 1: Actual Meters Printed */}
                 <div style={{ background: endJobIsMetersShortfall ? '#fffbeb' : '#f8fafc', padding: '16px', borderRadius: '10px', border: endJobIsMetersShortfall ? '1.5px solid #f59e0b' : '1px solid #e2e8f0', transition: 'all 0.2s ease' }}>
@@ -2733,32 +2852,11 @@ export default function ProductionScheduler({
                               ⚠️ Shortfall Warning: Actual ({(endJobActualMetersNum || 0).toLocaleString()} m) &lt; Target ({(endJobTargetMetersNum || 0).toLocaleString()} m)
                             </div>
                             <p style={{ margin: 0, fontSize: '0.78rem', color: '#b45309', lineHeight: '1.4' }}>
-                              Printed meters are less than the target requirement ({endJobMeterPercentage}% of target achieved). Please print more meters to fulfill the run, or grant approval to receive less.
+                              Printed meters are below the target. This is a warning. Continue to confirmation and type a reason. The target does not have to be retyped.
                             </p>
 
                             <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
-                              {/* Action Button 1: Approval to Print Less Received */}
-                              <button 
-                                type="button" 
-                                className="btn-secondary" 
-                                style={{ 
-                                  fontSize: '0.75rem', 
-                                  fontWeight: '800', 
-                                  padding: '6px 12px', 
-                                  background: printLessApproved ? '#dcfce7' : '#ffffff', 
-                                  color: printLessApproved ? '#15803d' : '#b45309', 
-                                  borderColor: printLessApproved ? '#86efac' : '#d97706',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                onClick={() => setPrintLessApproved(prev => !prev)}
-                              >
-                                {printLessApproved ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
-                                {printLessApproved ? '✓ Approval Granted (Print Less Received)' : 'Approval to Print Less Received'}
-                              </button>
-
-                              {/* Action Button 2: Continue Job */}
+                              {/* Continue Job */}
                               <button 
                                 type="button" 
                                 className="btn-primary" 
@@ -2998,6 +3096,27 @@ export default function ProductionScheduler({
             {endJobStep === 'confirm' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
                 
+                {endJobGuardrail && (endJobGuardrail.warnings.length > 0 || endJobGuardrail.filmTypeBlocks.length > 0 || endJobGuardrail.blocks.length > 0) && (
+                  <div data-testid="end-job-guardrail-review" style={{ background: endJobGuardrail.blocks.length ? '#fef2f2' : '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '12px 14px' }}>
+                    <div style={{ fontWeight: '900', marginBottom: '6px' }}>Job Master checks</div>
+                    {[...endJobGuardrail.blocks, ...endJobGuardrail.filmTypeBlocks, ...endJobGuardrail.warnings].map((item, index) => (
+                      <div key={`${item.rule}-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
+                    ))}
+                    {endJobGuardrail.warnings.length > 0 && (
+                      <label style={{ display: 'block', marginTop: '10px', fontSize: '0.78rem', fontWeight: '800' }}>
+                        Reason for the warning *
+                        <textarea className="form-control" value={endJobWarningReason} onChange={(event) => setEndJobWarningReason(event.target.value)} rows={2} placeholder="Why this run is outside the Job Master limit" />
+                      </label>
+                    )}
+                    {endJobGuardrail.filmTypeBlocks.length > 0 && (
+                      <label style={{ display: 'block', marginTop: '10px', fontSize: '0.78rem', fontWeight: '800' }}>
+                        Supervisor reason for a different film type {canOverrideFilmType(currentUser?.role) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
+                        <textarea className="form-control" value={endJobFilmOverrideReason} onChange={(event) => setEndJobFilmOverrideReason(event.target.value)} rows={2} placeholder="Why this film is accepted" disabled={!canOverrideFilmType(currentUser?.role)} />
+                      </label>
+                    )}
+                  </div>
+                )}
+
                 <div style={{ background: '#ecfdf5', border: '1.5px solid #a7f3d0', padding: '16px 20px', borderRadius: '12px', color: '#065f46' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <CheckCircle size={22} style={{ color: '#059669' }} />

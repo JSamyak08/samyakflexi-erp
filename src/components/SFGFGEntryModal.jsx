@@ -27,6 +27,14 @@ import SearchableSelect from './SearchableSelect';
 import { FILM_DENSITIES, getFilmSubstrateDensity, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
 import { getStorageBays } from '../services/settingsService';
 import { codeText } from '../utils/barcodeCode';
+import {
+  canOverrideFilmType,
+  decideGuardrailSave,
+  printLayerSpec,
+  resolveJobMaster,
+  validateProductionEntry
+} from '../utils/jobMasterGuardrails';
+import { factoryCalendarDate } from '../services/employeeAttendance';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -92,7 +100,10 @@ export default function SFGFGEntryModal({
   const [operatorName, setOperatorName] = useState('');
   const [shift, setShift] = useState('');
   const [storageBay, setStorageBay] = useState('');
-  const [productionDate, setProductionDate] = useState(new Date().toISOString().split('T')[0]);
+  const [productionDate, setProductionDate] = useState(factoryCalendarDate());
+  const [warningReason, setWarningReason] = useState('');
+  const [filmOverrideReason, setFilmOverrideReason] = useState('');
+  const [guardrailMessages, setGuardrailMessages] = useState([]);
   const [defaultTareKg, setDefaultTareKg] = useState('');
   const [coreDia, setCoreDia] = useState('3 Inch (76mm)');
   const [batchRemarks, setBatchRemarks] = useState('');
@@ -107,53 +118,27 @@ export default function SFGFGEntryModal({
       const jKey = `${ord.id}-${ord.jobName || ''}`;
       if (!seen.has(jKey)) {
         seen.add(jKey);
-        const jm = (jobMasters || []).find(j => (j.jobName || '').toLowerCase().trim() === (ord.jobName || '').toLowerCase().trim());
-        
-        const realWidth = ord.printWidthMm || ord.widthMm || ord.width || ord.pouchWidthMm || ord.sizeMm || jm?.printWidthMm || jm?.pouchWidthMm || jm?.widthMm || jm?.width || '';
-        const realMicron = ord.micron || jm?.micron || jm?.totalMicron || (jm?.layers ? jm.layers.reduce((sum, l) => sum + (parseFloat(l.micron) || 0), 0) : '') || '';
-        const realStructure = ord.structure || jm?.structure || '';
-        const realFilmType = ord.filmType || jm?.filmType || jm?.layers?.[0]?.filmType || '';
+        const resolution = resolveJobMaster({ order: ord, jobMasters });
+        const spec = printLayerSpec(resolution.jobMaster);
+        const realStructure = (resolution.jobMaster?.layers || []).map((layer) => `${layer.filmType || ''} ${layer.micron ?? ''}µ`).join(' / ') || ord.structure || '';
 
         jobs.push({
           id: ord.id,
           orderId: ord.id,
           jobName: ord.jobName || `Job #${ord.id}`,
-          jobCode: jm?.jobCode || ord.jobCode || `JOB-${ord.id}`,
-          clientName: ord.clientName || jm?.clientName || '',
+          jobCode: spec?.jobCode || ord.jobCode || ord.skuCode || '',
+          jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : '',
+          clientName: ord.clientName || resolution.jobMaster?.clientName || '',
           structure: realStructure,
-          plannedQtyKg: parseFloat(ord.targetQtyKg || ord.qtyKg || 0),
-          widthMm: realWidth ? String(realWidth) : '',
-          micron: realMicron ? String(realMicron) : '',
-          filmType: realFilmType,
-          unitPrice: parseFloat(ord.ratePerKg || ord.sellingPricePerKg || jm?.unitPrice || 0)
+          plannedQtyKg: parseFloat(ord.orderQtyKg || ord.targetQtyKg || ord.quantityKg || 0),
+          widthMm: spec?.printWidthMm != null ? String(spec.printWidthMm) : '',
+          micron: spec?.micron != null ? String(spec.micron) : '',
+          filmType: spec?.filmType || '',
+          unitPrice: parseFloat(ord.ratePerKg || ord.sellingPricePerKg || 0),
+          jmStatus: resolution.status
         });
       }
     });
-
-    if (jobs.length === 0 && (jobMasters || []).length > 0) {
-      jobMasters.forEach(jm => {
-        const jKey = `JM-${jm.id}-${jm.jobName}`;
-        if (!seen.has(jKey)) {
-          seen.add(jKey);
-          const realWidth = jm.printWidthMm || jm.pouchWidthMm || jm.widthMm || jm.width || '';
-          const realMicron = jm.micron || jm.totalMicron || (jm.layers ? jm.layers.reduce((sum, l) => sum + (parseFloat(l.micron) || 0), 0) : '') || '';
-
-          jobs.push({
-            id: jm.id,
-            orderId: jm.id,
-            jobName: jm.jobName || '',
-            jobCode: jm.jobCode || `JOB-${jm.id}`,
-            clientName: jm.clientName || '',
-            structure: jm.structure || '',
-            plannedQtyKg: 0,
-            widthMm: realWidth ? String(realWidth) : '',
-            micron: realMicron ? String(realMicron) : '',
-            filmType: jm.filmType || jm.layers?.[0]?.filmType || '',
-            unitPrice: parseFloat(jm.unitPrice || 0)
-          });
-        }
-      });
-    }
 
     return jobs;
   }, [orders, jobMasters]);
@@ -536,7 +521,7 @@ export default function SFGFGEntryModal({
   };
 
   // Submit Handler
-  const handleSaveAndSubmit = (e) => {
+  const handleSaveAndSubmit = async (e) => {
     e.preventDefault();
 
     if (!validateForm()) {
@@ -623,10 +608,42 @@ export default function SFGFGEntryModal({
     });
 
     // 3. Construct Production Record Linkage Object
+    const order = (orders || []).find((item) => item.id === currentJob.orderId) || null;
+    const guardrail = validateProductionEntry({
+      context: 'sfg-fg',
+      order,
+      jobMasters,
+      role: currentUser?.role,
+      entry: {
+        orderId: currentJob.orderId,
+        machineName,
+        operatorName: operatorName.trim(),
+        shift,
+        filmType: jobFilmType || currentJob.filmType,
+        micron: jobMicron,
+        widthMm: jobWidthMm,
+        outputRolls: formattedNewRolls,
+        quantityKg: newNetKg,
+        orderQtyKg: order?.orderQtyKg || currentJob.plannedQtyKg,
+        goodKg: newNetKg,
+        scrapKg: 0
+      }
+    });
+    const decision = decideGuardrailSave(guardrail, {
+      role: currentUser?.role,
+      warningReason,
+      filmTypeOverrideReason: filmOverrideReason,
+      overrideBy: currentUser?.name || ''
+    });
+    if (!decision.ok) {
+      setGuardrailMessages(decision.messages);
+      return;
+    }
+
     const productionRecordLink = {
       orderId: currentJob.orderId,
       jobName: currentJob.jobName,
-      jobCode: currentJob.jobCode,
+      jobCode: decision.fields.jobCode || currentJob.jobCode,
       stageType: selectedType,
       isSFG,
       isFG: !isSFG,
@@ -636,14 +653,18 @@ export default function SFGFGEntryModal({
       machineName,
       operatorName: operatorName.trim(),
       shift,
-      productionDate,
+      productionDate: productionDate || factoryCalendarDate(),
       storageBay,
       widthMm: parseFloat(jobWidthMm) || 0,
-      micron: parseFloat(jobMicron) || 0
+      micron: parseFloat(jobMicron) || 0,
+      guardrail: decision.fields
     };
 
-    if (onSave) {
-      onSave(inventoryItem, formattedNewRolls, productionRecordLink);
+    try {
+      if (onSave) await onSave(inventoryItem, formattedNewRolls, productionRecordLink);
+    } catch (err) {
+      setGuardrailMessages([err?.message || 'The production record was not saved.']);
+      return;
     }
 
     if (onPrintRolls) {
@@ -1251,6 +1272,24 @@ export default function SFGFGEntryModal({
               </div>
             </div>
           </div>
+
+          {guardrailMessages.length > 0 && (
+            <div data-testid="sfg-guardrail-block" style={{ background: '#fef2f2', border: '1px solid #ef4444', borderRadius: '8px', padding: '10px 12px', marginBottom: '12px', color: '#991b1b' }}>
+              {guardrailMessages.map((message) => <div key={message} style={{ fontSize: '0.8rem', marginTop: '4px' }}>{message}</div>)}
+            </div>
+          )}
+          {(guardrailMessages.length > 0 || warningReason || filmOverrideReason) && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '12px' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>
+                Warning reason
+                <textarea className="form-control" rows={2} value={warningReason} onChange={(event) => setWarningReason(event.target.value)} />
+              </label>
+              <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>
+                Film-type override {canOverrideFilmType(currentUser?.role) ? '' : '(supervisor only)'}
+                <textarea className="form-control" rows={2} value={filmOverrideReason} onChange={(event) => setFilmOverrideReason(event.target.value)} disabled={!canOverrideFilmType(currentUser?.role)} />
+              </label>
+            </div>
+          )}
 
           {/* Section 4: Batch Production Notes & Remarks */}
           <div style={{ marginBottom: '16px' }}>
