@@ -54,6 +54,15 @@ import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/ema
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber } from '../services/supabaseDataService';
 import {
+  OPENING_RECEIPT_TYPE,
+  buildBulkImportPayload,
+  bulkErrorReportCsv,
+  isOpeningStockReceipt,
+  itemNameKey,
+  parseBulkStockCsv,
+  sampleBulkStockCsv
+} from '../services/bulkStockUpload';
+import {
   applyMultiLineQc,
   findDuplicateInvoice,
   grnIdentityProblems,
@@ -799,9 +808,10 @@ export default function InventoryManagement({
   // Universal Bulk Stock Upload State
   const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [bulkCategory, setBulkCategory] = useState("Film Substrates");
-  const [bulkParsedRows, setBulkParsedRows] = useState([]);
+  const [bulkPlan, setBulkPlan] = useState(null);
   const [bulkFileName, setBulkFileName] = useState('');
   const [bulkErrorMsg, setBulkErrorMsg] = useState('');
+  const [bulkImporting, setBulkImporting] = useState(false);
 
   const vendorMaterialOptions = [
     "PET", "METPET", "LDPE", "Natural GP LD", "White LD", 
@@ -3871,43 +3881,33 @@ export default function InventoryManagement({
     alert("Monthly Physical Stock Reconciliation completed successfully! System available stock and audit ledger updated.");
   };
 
-  // Download Universal Bulk Inventory CSV Template (Covers All Material Categories)
-  const handleDownloadBulkInventoryTemplate = () => {
-    const headers = [
-      "InventoryID", "Category", "ItemName", "SubstrateOrGrade", "Micron", "WidthMm", 
-      "AvailableQty", "UOM", "Location", "ReorderLevel", "LastVendor", 
-      "LastBatch", "UnitCostRs"
-    ];
-    const sampleRows = [
-      ["INVT-1001", "Film Substrates", "PET Film 12 Micron", "PET", "12", "1000", "2500", "Kg", "Bay A - Rack 1", "1000", "FlexiPoly Films Ltd", "BATCH-PET-101", "135"],
-      ["INVT-1002", "Film Substrates", "Natural LD GP Film", "Natural LD GP Film", "35", "1005", "4200", "Kg", "Bay B - Extrusion", "1500", "Malwa Extrusions Pvt Ltd", "BATCH-LD-303", "115"],
-      ["INVT-1003", "Printing Inks", "Cyan Solvent Printing Ink", "Cyan Process Ink", "", "", "450", "Kg", "Ink Store Bay 1", "200", "Siegwerk Inks Ltd", "INK-CY-882", "240"],
-      ["INVT-1004", "Chemicals & Solvents", "Ethyl Acetate Solvent Grade", "Ethyl Acetate", "", "", "1200", "Litres", "Solvent Yard Tank 2", "500", "Gujarat Solvents", "SOL-EA-991", "85"],
-      ["INVT-1005", "Adhesives & Hardener", "Solventless Lamination Adhesive", "SL Adhesive", "", "", "600", "Kg", "Lamination Store", "250", "Henkel Adhesives", "ADH-SL-441", "270"],
-      ["INVT-1006", "Packaging & Cores", "Paper Core Pipes 3 Inch", "3 Inch Paper Core", "", "", "1500", "Nos", "Core Pipe Bay 3", "300", "Indore Core Pipes", "CORE-3IN-012", "45"],
-      ["INVT-1007", "Tapes & Consumables", "Stretch Film Packaging Roll 23u", "Stretch Film", "23", "500", "80", "Rolls", "Dispatch Store", "30", "3M Packaging", "TAP-ST-330", "120"]
-    ];
-
-    const csvContent = "\uFEFF" + [headers.join(","), ...sampleRows.map(e => e.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const downloadCsvFile = (filename, csvText) => {
+    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", "Bulk_Inventory_Stock_Template_Samyak.csv");
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
-  // Export Live Raw Material Inventory List (CSV) for viewing/editing quantities
+  const handleDownloadBulkInventoryTemplate = () => {
+    downloadCsvFile('Bulk_Inventory_Stock_Template_Samyak.csv', sampleBulkStockCsv());
+  };
+
+  const handleDownloadBulkErrorReport = () => {
+    if (!bulkPlan) return;
+    downloadCsvFile('Bulk_Inventory_Upload_Errors.csv', bulkErrorReportCsv(bulkPlan));
+  };
+
   const handleDownloadLiveInventoryCSV = () => {
     const headers = [
-      "InventoryID", "Category", "ItemName", "SubstrateOrGrade", "Micron", "WidthMm", 
-      "AvailableQty", "UOM", "Location", "ReorderLevel", "LastVendor", 
-      "LastBatch", "UnitCostRs"
+      'InventoryID', 'Category', 'ItemName', 'SubstrateOrGrade', 'Micron', 'WidthMm',
+      'AvailableQty', 'UOM', 'Location', 'ReorderLevel', 'LastVendor',
+      'LastBatch', 'UnitCostRs'
     ];
-
     const rows = (safeInventory || []).map(item => {
       const cat = item.category || 'Film Substrates';
       const name = item.itemName || `${item.filmType || ''} ${item.micron ? item.micron + 'µ' : ''}`.trim();
@@ -3921,34 +3921,18 @@ export default function InventoryManagement({
       const vendor = item.lastVendor || item.vendor || '';
       const batch = item.lastBatch || '';
       const cost = item.unitPrice !== undefined ? item.unitPrice : (item.purchaseRatePerKg || 0);
-
-      return [
-        item.id || item.itemCode || '',
-        cat,
-        name,
-        sub,
-        micron,
-        width,
-        qty,
-        uom,
-        loc,
-        reorder,
-        vendor,
-        batch,
-        cost
-      ];
+      return [item.id || item.itemCode || '', cat, name, sub, micron, width, qty, uom, loc, reorder, vendor, batch, cost];
     });
+    const csvContent = `\uFEFF${[headers.join(','), ...rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))].join('\n')}`;
+    downloadCsvFile(`Live_Raw_Material_Inventory_Samyak_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
+  };
 
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Live_Raw_Material_Inventory_Samyak_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const resetBulkUpload = () => {
+    setIsBulkModalOpen(false);
+    setBulkPlan(null);
+    setBulkFileName('');
+    setBulkErrorMsg('');
+    setBulkImporting(false);
   };
 
   // Universal Bulk CSV Parser (Supports All Material Categories & Excel Encodings)
@@ -3957,531 +3941,106 @@ export default function InventoryManagement({
     if (!file) return;
     setBulkFileName(file.name);
     setBulkErrorMsg('');
-    setBulkParsedRows([]);
+    setBulkPlan(null);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
         const buffer = evt.target.result;
         const bytes = new Uint8Array(buffer);
-
-        // Detect Encoding (UTF-8, UTF-16LE, UTF-16BE)
         let encoding = 'utf-8';
-        if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
-          encoding = 'utf-16le';
-        } else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
-          encoding = 'utf-16be';
-        } else {
-          // Check for high density of null bytes (typical for UTF-16LE exported from Excel without BOM)
+        if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = 'utf-16le';
+        else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = 'utf-16be';
+        else {
           let nullCount = 0;
           const sampleSize = Math.min(bytes.length, 500);
           for (let i = 1; i < sampleSize; i += 2) {
             if (bytes[i] === 0x00) nullCount++;
           }
-          if (nullCount > sampleSize * 0.2) {
-            encoding = 'utf-16le';
-          }
+          if (nullCount > sampleSize * 0.2) encoding = 'utf-16le';
         }
-
         let text = new TextDecoder(encoding).decode(buffer);
-        // Strip BOM character if present
-        if (text.charCodeAt(0) === 0xFEFF) {
-          text = text.slice(1);
-        }
-
-        // Standardize line breaks
-        text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        const rawLines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-
-        if (rawLines.length === 0) {
-          setBulkErrorMsg("CSV file is completely empty!");
+        if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+        const plan = parseBulkStockCsv(text, {
+          inventory: safeInventory,
+          rolls: inventoryRolls,
+          adjustments: stockLedgerAdjustments,
+          categories: INVENTORY_CATEGORIES,
+          categoryFallback: bulkCategory,
+          now: new Date()
+        });
+        if (plan.error && plan.rows.length === 0) {
+          setBulkErrorMsg(plan.error);
           return;
         }
-
-        // Multi-delimiter CSV line parser supporting quotes, commas, semicolons, and tabs
-        const parseCSVLine = (lineStr, delim = ',') => {
-          if (!lineStr) return [];
-          const cells = [];
-          let current = '';
-          let inQuotes = false;
-          for (let i = 0; i < lineStr.length; i++) {
-            const ch = lineStr[i];
-            if (ch === '"') {
-              if (inQuotes && lineStr[i + 1] === '"') {
-                current += '"';
-                i++;
-              } else {
-                inQuotes = !inQuotes;
-              }
-            } else if (ch === delim && !inQuotes) {
-              cells.push(current.trim().replace(/^["']|["']$/g, ''));
-              current = '';
-            } else {
-              current += ch;
-            }
-          }
-          cells.push(current.trim().replace(/^["']|["']$/g, ''));
-          return cells;
-        };
-
-        const parseCleanNum = (val) => {
-          if (val === undefined || val === null) return NaN;
-          const s = String(val).trim();
-          if (!s) return NaN;
-
-          // Remove currency symbols, units, spaces, and commas appropriately
-          let cleanedStr = s;
-          if (cleanedStr.includes(',') && cleanedStr.includes('.')) {
-            cleanedStr = cleanedStr.replace(/,/g, '');
-          } else if (cleanedStr.includes(',') && !cleanedStr.includes('.')) {
-            if (/,\d{1,2}$/.test(cleanedStr)) {
-              cleanedStr = cleanedStr.replace(',', '.');
-            } else {
-              cleanedStr = cleanedStr.replace(/,/g, '');
-            }
-          }
-
-          const numericOnly = cleanedStr.replace(/[^0-9.-]/g, '');
-          const n = parseFloat(numericOnly);
-          return isNaN(n) ? NaN : n;
-        };
-
-        // Auto-detect CSV delimiter from first line (comma, semicolon, or tab)
-        const headerLine = rawLines[0];
-        let activeDelim = ',';
-        if (headerLine.includes('\t')) activeDelim = '\t';
-        else if (headerLine.includes(';') && (headerLine.split(';').length > headerLine.split(',').length)) activeDelim = ';';
-
-        const firstLineCells = parseCSVLine(headerLine, activeDelim);
-        const headerMap = {};
-        
-        firstLineCells.forEach((h, idx) => {
-          const cleanH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
-          
-          if (cleanH === 'id' || cleanH === 'inventoryid' || cleanH.includes('inventoryid') || cleanH.includes('itemcode') || cleanH.includes('stockid')) {
-            if (headerMap.inventoryId === undefined) headerMap.inventoryId = idx;
-          }
-          else if (cleanH.includes('category')) {
-            if (headerMap.category === undefined) headerMap.category = idx;
-          }
-          else if (cleanH.includes('substrate') || cleanH.includes('grade') || cleanH.includes('filmtype') || cleanH.includes('polymer')) {
-            if (headerMap.substrateGrade === undefined) headerMap.substrateGrade = idx;
-          }
-          else if (cleanH.includes('micron') || cleanH.includes('gauge')) {
-            if (headerMap.micron === undefined) headerMap.micron = idx;
-          }
-          else if (cleanH.includes('width')) {
-            if (headerMap.widthMm === undefined) headerMap.widthMm = idx;
-          }
-          else if (cleanH.includes('availableqty') || cleanH.includes('qty') || cleanH.includes('quantity') || (cleanH.includes('stock') && !cleanH.includes('id') && !cleanH.includes('reorder'))) {
-            if (headerMap.qty === undefined) headerMap.qty = idx;
-          }
-          // MUST check unitCost/rate/price BEFORE uom/unit to avoid 'unitcostrs' matching 'unit'!
-          else if (
-            cleanH.includes('unitcost') || 
-            cleanH.includes('unitprice') ||
-            cleanH.includes('purchaserate') ||
-            cleanH.includes('purchaseprice') ||
-            cleanH.includes('purchasecost') ||
-            cleanH.includes('landedcost') ||
-            cleanH.includes('landingcost') ||
-            cleanH.includes('basicrate') ||
-            cleanH.includes('basiccost') ||
-            cleanH.includes('mrp') ||
-            cleanH.includes('unitcostrs') ||
-            cleanH.includes('cost') ||
-            cleanH.includes('price') ||
-            (cleanH.includes('rate') && !cleanH.includes('substrate') && !cleanH.includes('grade') && !cleanH.includes('reorder'))
-          ) {
-            if (headerMap.unitCost === undefined) headerMap.unitCost = idx;
-          }
-          // UOM / Unit of measure
-          else if (cleanH === 'uom' || cleanH.includes('uom') || cleanH.includes('unitofmeasure') || cleanH.includes('measure') || (cleanH.includes('unit') && !cleanH.includes('cost') && !cleanH.includes('price') && !cleanH.includes('rate'))) {
-            if (headerMap.uom === undefined) headerMap.uom = idx;
-          }
-          else if (cleanH.includes('location') || cleanH.includes('bay') || cleanH.includes('rack') || cleanH.includes('store')) {
-            if (headerMap.location === undefined) headerMap.location = idx;
-          }
-          else if (cleanH.includes('reorder')) {
-            if (headerMap.reorder === undefined) headerMap.reorder = idx;
-          }
-          else if (cleanH.includes('vendor') || cleanH.includes('supplier')) {
-            if (headerMap.vendor === undefined) headerMap.vendor = idx;
-          }
-          else if (cleanH.includes('batch') || cleanH.includes('lot')) {
-            if (headerMap.batch === undefined) headerMap.batch = idx;
-          }
-          else if (cleanH.includes('itemname') || cleanH.includes('item') || cleanH.includes('title') || cleanH.includes('description') || (cleanH.includes('name') && !cleanH.includes('vendor') && !cleanH.includes('supplier') && !cleanH.includes('client'))) {
-            if (headerMap.itemName === undefined) headerMap.itemName = idx;
-          }
-        });
-
-        // Fallback: If unitCost header was not explicitly matched, search for any unmapped index or index 12 / 11
-        if (headerMap.unitCost === undefined) {
-          const mappedIndices = new Set(Object.values(headerMap));
-          firstLineCells.forEach((h, idx) => {
-            if (!mappedIndices.has(idx)) {
-              const rawH = h.toLowerCase().replace(/[^a-z0-9]/g, '');
-              if (
-                rawH.includes('cost') || 
-                rawH.includes('price') || 
-                rawH.includes('amt') || 
-                rawH.includes('rs') || 
-                rawH.includes('inr') || 
-                rawH.includes('₹') ||
-                (rawH.includes('rate') && !rawH.includes('substrate') && !rawH.includes('grade'))
-              ) {
-                headerMap.unitCost = idx;
-                mappedIndices.add(idx);
-              }
-            }
-          });
-          if (headerMap.unitCost === undefined) {
-            if (firstLineCells.length >= 13 && !mappedIndices.has(12)) {
-              headerMap.unitCost = 12;
-            } else if (firstLineCells.length >= 12 && !mappedIndices.has(11)) {
-              headerMap.unitCost = 11;
-            }
-          }
-        }
-
-        const hasNamedHeaders = Object.keys(headerMap).length >= 2;
-        const startIndex = hasNamedHeaders ? 1 : 0;
-
-        const parsed = [];
-        for (let i = startIndex; i < rawLines.length; i++) {
-          const cells = parseCSVLine(rawLines[i], activeDelim);
-          
-          // Skip completely empty lines or rows containing only blank commas (e.g., ",,,,,,,,")
-          if (cells.length === 0 || cells.every(c => !c || c.trim() === '')) continue;
-
-          let inventoryId = '';
-          let category = '';
-          let itemName = '';
-          let substrateGrade = '';
-          let micron = 0;
-          let widthMm = 0;
-          let qty = NaN;
-          let uom = 'Kg';
-          let location = 'Main Factory Store';
-          let reorder = 1000;
-          let vendor = 'Local Vendor';
-          let batch = 'BULK-BATCH';
-          let unitCost = 0;
-
-          if (hasNamedHeaders) {
-            inventoryId = headerMap.inventoryId !== undefined ? (cells[headerMap.inventoryId] || '').trim() : '';
-            category = headerMap.category !== undefined ? cells[headerMap.category] : '';
-            itemName = headerMap.itemName !== undefined ? cells[headerMap.itemName] : '';
-            substrateGrade = headerMap.substrateGrade !== undefined ? cells[headerMap.substrateGrade] : '';
-            micron = headerMap.micron !== undefined ? (parseCleanNum(cells[headerMap.micron]) || 0) : 0;
-            widthMm = headerMap.widthMm !== undefined ? (parseCleanNum(cells[headerMap.widthMm]) || 0) : 0;
-            qty = headerMap.qty !== undefined ? parseCleanNum(cells[headerMap.qty]) : NaN;
-            uom = headerMap.uom !== undefined ? (cells[headerMap.uom] || 'Kg') : 'Kg';
-            location = headerMap.location !== undefined ? (cells[headerMap.location] || 'Main Factory Store') : 'Main Factory Store';
-            reorder = headerMap.reorder !== undefined ? (parseCleanNum(cells[headerMap.reorder]) || 1000) : 1000;
-            vendor = headerMap.vendor !== undefined ? (cells[headerMap.vendor] || 'Local Vendor') : 'Local Vendor';
-            batch = headerMap.batch !== undefined ? (cells[headerMap.batch] || 'BULK-BATCH') : 'BULK-BATCH';
-            unitCost = headerMap.unitCost !== undefined ? (parseCleanNum(cells[headerMap.unitCost]) || 0) : 0;
-          } else {
-            // Positional layout: Check if 13-column (starts with InventoryID) or 12-column
-            if (cells.length >= 13 || (cells[0] && (cells[0].toLowerCase().startsWith('inv') || cells[0].toLowerCase().startsWith('sku') || cells[0].toLowerCase().startsWith('id')))) {
-              inventoryId = cells[0] || '';
-              category = cells[1] || '';
-              itemName = cells[2] || '';
-              substrateGrade = cells[3] || '';
-              micron = parseCleanNum(cells[4]) || 0;
-              widthMm = parseCleanNum(cells[5]) || 0;
-              qty = parseCleanNum(cells[6]);
-              uom = cells[7] || 'Kg';
-              location = cells[8] || 'Main Factory Store';
-              reorder = parseCleanNum(cells[9]) || 1000;
-              vendor = cells[10] || 'Local Vendor';
-              batch = cells[11] || 'BULK-BATCH';
-              unitCost = parseCleanNum(cells[12]) || 0;
-            } else {
-              category = cells[0] || '';
-              itemName = cells[1] || '';
-              substrateGrade = cells[2] || '';
-              micron = parseCleanNum(cells[3]) || 0;
-              widthMm = parseCleanNum(cells[4]) || 0;
-              qty = parseCleanNum(cells[5]);
-              uom = cells[6] || 'Kg';
-              location = cells[7] || 'Main Factory Store';
-              reorder = parseCleanNum(cells[8]) || 1000;
-              vendor = cells[9] || 'Local Vendor';
-              batch = cells[10] || 'BULK-BATCH';
-              unitCost = parseCleanNum(cells[11]) || 0;
-            }
-          }
-
-          // Category auto-detection & fallback
-          if (!category || !INVENTORY_CATEGORIES.includes(category)) {
-            if (bulkCategory && bulkCategory !== 'ALL') {
-              category = bulkCategory;
-            } else {
-              const combo = (itemName + ' ' + substrateGrade).toLowerCase();
-              if (combo.includes('ink') || combo.includes('cyan') || combo.includes('magenta') || combo.includes('yellow')) category = 'Printing Inks';
-              else if (combo.includes('acetate') || combo.includes('solvent') || combo.includes('toluene') || combo.includes('ipa')) category = 'Chemicals & Solvents';
-              else if (combo.includes('adhesive') || combo.includes('hardener') || combo.includes('glue')) category = 'Adhesives & Hardener';
-              else if (combo.includes('core') || combo.includes('carton') || combo.includes('box')) category = 'Packaging & Cores';
-              else if (combo.includes('tape') || combo.includes('stretch')) category = 'Tapes & Consumables';
-              else category = 'Film Substrates';
-            }
-          }
-
-          // Resolve Substrate and Item Name
-          if (!substrateGrade && itemName) {
-            substrateGrade = itemName;
-          }
-          if (!itemName) {
-            const isFilm = category === 'Film Substrates';
-            itemName = isFilm 
-              ? `${substrateGrade || 'PET'} ${micron ? micron + 'µ' : ''} ${widthMm ? '(' + widthMm + 'mm)' : ''}`.trim()
-              : `${category} - ${substrateGrade || 'Item'}`;
-          }
-
-          // Strict validation: Skip invalid/empty row if no meaningful item name or substrate
-          if (!itemName && !substrateGrade) continue;
-          if (isNaN(qty)) {
-            qty = 0;
-          }
-          if (qty < 0) continue;
-
-          // Duplicate item detection against current inventory database
-          const normRowName = (itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-          const matchedItem = (safeInventory || []).find(inv => {
-            if (inventoryId) {
-              const invIdClean = String(inv.id || '').toLowerCase().trim();
-              const invCodeClean = String(inv.itemCode || '').toLowerCase().trim();
-              if (invIdClean === inventoryId.toLowerCase() || invCodeClean === inventoryId.toLowerCase()) {
-                return true;
-              }
-            }
-            const invNameClean = (inv.itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-            const invCodeClean = String(inv.id || inv.itemCode || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-            if (normRowName && (invNameClean === normRowName || invCodeClean === normRowName)) return true;
-            
-            // Check film spec match (filmType/grade + micron + width)
-            const cat = category || 'Film Substrates';
-            if (cat === 'Film Substrates' && inv.category === 'Film Substrates') {
-              const rowFilmGrade = (substrateGrade || itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-              const invFilmGrade = (inv.substrateOrGrade || inv.filmType || inv.itemName || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-              if (rowFilmGrade && rowFilmGrade === invFilmGrade) {
-                if (Number(micron) === Number(inv.micron) && Number(widthMm) === Number(inv.widthMm)) {
-                  return true;
-                }
-              }
-            }
-            return false;
-          });
-
-          parsed.push({
-            inventoryId: inventoryId || (matchedItem ? matchedItem.id : ''),
-            category: category || 'Film Substrates',
-            itemName: itemName.trim(),
-            substrateOrGrade: (substrateGrade || itemName).trim(),
-            filmType: (substrateGrade || itemName).trim(),
-            micron: isNaN(micron) ? 0 : micron,
-            widthMm: isNaN(widthMm) ? 0 : widthMm,
-            availableQty: qty,
-            unit: uom || 'Kg',
-            location: location || 'Main Factory Store',
-            reorderLevel: isNaN(reorder) ? 1000 : reorder,
-            lastVendor: vendor || 'Local Vendor',
-            lastBatch: batch || 'BULK-BATCH',
-            unitPrice: isNaN(unitCost) ? 0 : unitCost,
-            matchedItem: matchedItem || null,
-            importAction: matchedItem ? 'UPDATE_EXISTING' : 'CREATE_NEW'
-          });
-        }
-
-        if (parsed.length === 0) {
-          setBulkErrorMsg("No valid inventory material rows could be parsed from the CSV file. Please make sure your file contains row data beneath the headers.");
-        } else {
-          setBulkParsedRows(parsed);
+        setBulkPlan(plan);
+        if (plan.importableCount === 0) {
+          setBulkErrorMsg('Every row has an error. Nothing will be imported until those rows are fixed.');
         }
       } catch (err) {
-        console.error("CSV parse error:", err);
-        setBulkErrorMsg("Failed to read CSV file: " + err.message);
+        console.error('CSV parse error:', err);
+        setBulkErrorMsg('Failed to read CSV file: ' + err.message);
       }
     };
-
     reader.readAsArrayBuffer(file);
     e.target.value = '';
   };
 
-  const handleRowActionChange = (index, newAction) => {
-    setBulkParsedRows(prev => {
-      const next = [...prev];
-      if (next[index]) {
-        next[index] = { ...next[index], importAction: newAction };
-      }
-      return next;
-    });
-  };
-
-  // Confirm Import & Save Items Directly to Database
   const handleConfirmBulkImport = async () => {
-    if (bulkParsedRows.length === 0) {
-      alert("No parsed rows to import.");
+    if (!bulkPlan || bulkPlan.importableCount === 0 || bulkImporting) {
+      alert('There are no valid rows to import.');
       return;
     }
-
-    let currentInv = [...(safeInventory || [])];
-    let createdCount = 0;
-    let updatedCount = 0;
-    let newAdjustments = [];
-
-    bulkParsedRows.forEach(row => {
-      const qtyNum = Number(row.availableQty) || 0;
-
-      if ((row.importAction === 'ADD_TO_EXISTING' || row.importAction === 'UPDATE_EXISTING') && row.matchedItem) {
-        // Merge or update stock in existing database item
-        const targetIdx = currentInv.findIndex(inv => inv.id === row.matchedItem.id);
-        if (targetIdx !== -1) {
-          const existing = currentInv[targetIdx];
-          const oldQty = Number(existing.availableQtyKg ?? existing.availableQty ?? 0);
-          
-          let updatedQty = oldQty;
-          let variance = 0;
-
-          if (row.importAction === 'UPDATE_EXISTING') {
-            updatedQty = qtyNum;
-            variance = Math.round((updatedQty - oldQty) * 100) / 100;
-          } else {
-            // ADD_TO_EXISTING
-            updatedQty = Math.round((oldQty + qtyNum) * 100) / 100;
-            variance = qtyNum;
-          }
-
-          currentInv[targetIdx] = {
-            ...existing,
-            availableQtyKg: updatedQty,
-            availableQty: updatedQty,
-            unitPrice: Number(row.unitPrice) > 0 ? Number(row.unitPrice) : (existing.unitPrice || 0),
-            purchaseRatePerKg: Number(row.unitPrice) > 0 ? Number(row.unitPrice) : (existing.purchaseRatePerKg || 0),
-            location: row.location || existing.location || 'Main Factory Store',
-            reorderLevelKg: Number(row.reorderLevel) > 0 ? Number(row.reorderLevel) : (existing.reorderLevelKg || existing.reorderLevel || 1000),
-            reorderLevel: Number(row.reorderLevel) > 0 ? Number(row.reorderLevel) : (existing.reorderLevel || 1000),
-            lastVendor: row.lastVendor || existing.lastVendor || existing.vendor,
-            vendor: row.lastVendor || existing.vendor || existing.lastVendor,
-            lastBatch: row.lastBatch || existing.lastBatch || 'BULK-BATCH'
-          };
-
-          // Record stock ledger adjustment entry if quantity changed
-          if (Math.abs(variance) > 0.001) {
-            newAdjustments.push({
-              id: `ADJ-BULK-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-              itemId: existing.id,
-              itemCode: existing.itemCode || existing.id,
-              itemName: existing.itemName || `${existing.filmType || ''} ${existing.micron ? existing.micron + 'µ' : ''}`.trim(),
-              category: existing.category || 'Film Substrates',
-              filmType: existing.filmType || existing.substrateOrGrade || '',
-              micron: existing.micron || '-',
-              widthMm: existing.widthMm || '-',
-              date: new Date().toISOString(),
-              type: 'Stock Adjustment (Bulk Upload)',
-              qtyKg: variance,
-              barcode: `ADJ-BULK-${Date.now()}`,
-              reason: 'Stock Adjustment (Bulk Upload)',
-              adjustedBy: currentUser?.name || 'Store Manager'
-            });
-          }
-          updatedCount++;
-        } else {
-          // Fallback if missing
-          const autoId = generateInventoryId(currentInv);
-          const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
-          const itemObj = {
-            id: autoId,
-            itemCode: autoId,
-            category: row.category || bulkCategory || 'Film Substrates',
-            itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
-            substrateOrGrade: subGradeStr,
-            filmType: subGradeStr,
-            grade: subGradeStr,
-            subType: subGradeStr,
-            micron: Number(row.micron) || 0,
-            widthMm: Number(row.widthMm) || 0,
-            density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
-            unit: row.unit || 'Kg',
-            availableQtyKg: qtyNum,
-            availableQty: qtyNum,
-            allocatedQtyKg: 0,
-            location: row.location || 'Main Factory Store',
-            reorderLevelKg: Number(row.reorderLevel) || 1000,
-            reorderLevel: Number(row.reorderLevel) || 1000,
-            lastVendor: row.lastVendor || 'Local Vendor',
-            vendor: row.lastVendor || 'Local Vendor',
-            lastBatch: row.lastBatch || 'BULK-BATCH',
-            unitPrice: Number(row.unitPrice) || 0,
-            purchaseRatePerKg: Number(row.unitPrice) || 0,
-            createdDate: new Date().toISOString()
-          };
-          currentInv.push(itemObj);
-          createdCount++;
-        }
-      } else {
-        // Create New Separate Item
-        const finalId = (row.inventoryId && !currentInv.some(i => i.id === row.inventoryId)) ? row.inventoryId : generateInventoryId(currentInv);
-        const subGradeStr = row.substrateOrGrade || row.filmType || row.itemName || '';
-        const itemObj = {
-          id: finalId,
-          itemCode: finalId,
-          category: row.category || bulkCategory || 'Film Substrates',
-          itemName: row.itemName || `${subGradeStr} ${row.micron ? row.micron + 'µ' : ''}`.trim(),
-          substrateOrGrade: subGradeStr,
-          filmType: subGradeStr,
-          grade: subGradeStr,
-          subType: subGradeStr,
-          micron: Number(row.micron) || 0,
-          widthMm: Number(row.widthMm) || 0,
-          density: FILM_DENSITIES[subGradeStr] || FILM_DENSITIES[row.filmType] || 1.0,
-          unit: row.unit || 'Kg',
-          availableQtyKg: qtyNum,
-          availableQty: qtyNum,
-          allocatedQtyKg: 0,
-          location: row.location || 'Main Factory Store',
-          reorderLevelKg: Number(row.reorderLevel) || 1000,
-          reorderLevel: Number(row.reorderLevel) || 1000,
-          lastVendor: row.lastVendor || 'Local Vendor',
-          vendor: row.lastVendor || 'Local Vendor',
-          lastBatch: row.lastBatch || 'BULK-BATCH',
-          unitPrice: Number(row.unitPrice) || 0,
-          purchaseRatePerKg: Number(row.unitPrice) || 0,
-          createdDate: new Date().toISOString()
-        };
-        currentInv.push(itemObj);
-        createdCount++;
-      }
+    const payload = buildBulkImportPayload(bulkPlan, {
+      inventory: safeInventory,
+      now: new Date(),
+      adjustedBy: currentUser?.name || 'Store Manager'
     });
-
-    if (newAdjustments.length > 0) {
-      const updatedAdj = [...newAdjustments, ...stockLedgerAdjustments];
-      try {
+    if (payload.items.length === 0) {
+      alert('There are no valid rows to import.');
+      return;
+    }
+    setBulkImporting(true);
+    try {
+      if (payload.rolls.length > 0) {
+        if (onUpdateInventoryRolls) {
+          await onUpdateInventoryRolls(payload.rolls);
+        } else if (onAddRoll) {
+          for (const roll of payload.rolls) await onAddRoll(roll);
+        } else {
+          throw new Error('Roll saving is not available.');
+        }
+      }
+      if (payload.adjustments.length > 0) {
+        const currentAdj = await fetchPayloadRecords(supabase, 'stock_adjustments');
+        const incomingIds = new Set(payload.adjustments.map((row) => String(row.id)));
+        const updatedAdj = [
+          ...payload.adjustments,
+          ...currentAdj.filter((row) => !incomingIds.has(String(row.id)))
+        ];
         await replacePayloadRecords(supabase, 'stock_adjustments', updatedAdj);
         setStockLedgerAdjustments(updatedAdj);
-      } catch (err) {
-        alert(`The bulk stock adjustments were not saved: ${describeSaveError(err)}`);
-        return;
       }
+      if (!onSaveInventoryItem) throw new Error('Saving a stock item is not available.');
+      for (const item of payload.items) {
+        await onSaveInventoryItem(item);
+      }
+      const blocked = bulkPlan.blockedCount || 0;
+      let summaryMsg = 'Bulk inventory import finished.\n';
+      if (payload.updatedCount > 0) summaryMsg += `${payload.updatedCount} existing item(s) received new rolls or quantity.\n`;
+      if (payload.createdCount > 0) summaryMsg += `${payload.createdCount} new item(s) were created with generated ids.\n`;
+      if (payload.rolls.length > 0) summaryMsg += `${payload.rolls.length} roll(s) were added to stock.\n`;
+      if (blocked > 0) summaryMsg += `${blocked} row(s) were blocked and were not saved.`;
+      alert(summaryMsg);
+      resetBulkUpload();
+    } catch (err) {
+      alert(`The bulk import was not completed: ${describeSaveError(err)}`);
+    } finally {
+      setBulkImporting(false);
     }
-
-    if (onUpdateInventory) {
-      await onUpdateInventory(currentInv);
-    }
-
-    let summaryMsg = `✅ Bulk Inventory Import Completed Successfully!\n`;
-    if (updatedCount > 0) summaryMsg += `• ${updatedCount} existing item(s) updated with new stock quantity & details (Stock Adjustments logged).\n`;
-    if (createdCount > 0) summaryMsg += `• ${createdCount} new item(s) created in database.`;
-    alert(summaryMsg);
-
-    setIsBulkModalOpen(false);
-    setBulkParsedRows([]);
-    setBulkFileName('');
-    setBulkErrorMsg('');
   };
+
+
 
   const pendingQCGRNs = (safeGrns || []).filter(g => {
     const st = String(g.status || '').trim().toLowerCase();
@@ -5493,9 +5052,10 @@ export default function InventoryManagement({
                 type="button"
                 className="btn-secondary" 
                 style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+                data-testid="bulk-upload-open"
                 onClick={() => {
                   setIsBulkModalOpen(true);
-                  setBulkParsedRows([]);
+                  setBulkPlan(null);
                   setBulkFileName('');
                   setBulkErrorMsg('');
                 }}
@@ -9420,7 +8980,7 @@ export default function InventoryManagement({
 
         // 4. Gather Physical Reconciliation & Quick Adjustments
         const adjLines = (stockLedgerAdjustments || [])
-          .filter(a => isItemMatch(a, item))
+          .filter(a => isItemMatch(a, item) && !isOpeningStockReceipt(a))
           .map(a => {
             const txId = `ADJ_${a.id}`;
             const qty = a.qtyKg || 0;
@@ -9474,8 +9034,69 @@ export default function InventoryManagement({
           };
         });
 
+        const bulkReceiptLines = (stockLedgerAdjustments || [])
+          .filter(a => isOpeningStockReceipt(a) && isItemMatch(a, item))
+          .map(a => ({
+            txId: `BULK_${a.id}`,
+            category: 'inward',
+            type: '📥 Opening Stock Receipt',
+            isPendingQC: false,
+            isRejected: false,
+            date: a.date || new Date().toISOString(),
+            refNo: a.barcode || a.id,
+            subRef: 'Bulk upload',
+            partyName: a.adjustedBy || 'Store Manager',
+            subParty: 'Opening stock receipt',
+            inwardQtyKg: Math.abs(Number(a.qtyKg) || 0),
+            outwardQtyKg: 0,
+            adjQtyKg: 0,
+            ratePerKg: itemActualUnitPrice,
+            unitPrice: itemActualUnitPrice,
+            totalValue: Math.abs(Number(a.qtyKg) || 0) * itemActualUnitPrice,
+            barcode: a.barcode || '',
+            batchNo: a.barcode || 'BULK',
+            status: 'In Stock',
+            notes: a.reason || OPENING_RECEIPT_TYPE
+          }));
+        const receiptBarcodes = new Set(bulkReceiptLines.map(line => String(line.barcode || '').trim().toLowerCase()).filter(Boolean));
+        const itemIds = new Set([item.id, item.itemCode, ...(item.subItems || []).flatMap(sub => [sub.id, sub.itemCode])].filter(Boolean).map(String));
+        const itemNames = new Set([item, ...(item.subItems || [])].map(entry => itemNameKey(entry.itemName)).filter(Boolean));
+        const rollReceiptLines = (inventoryRolls || []).filter(roll => {
+          const barcode = String(roll.barcodeId || roll.id || '').trim().toLowerCase();
+          if (!barcode || receiptBarcodes.has(barcode)) return false;
+          if (roll.grnNo || roll.grnId || roll.grn_no) return false;
+          if (String(roll.status || 'In Stock') !== 'In Stock') return false;
+          const linked = itemIds.has(String(roll.itemId || '')) || itemNames.has(itemNameKey(roll.itemName));
+          return linked && (Number(roll.availableWeightKg ?? roll.netWeightKg) || 0) > 0;
+        }).map(roll => {
+          const qty = Number(roll.availableWeightKg ?? roll.netWeightKg) || 0;
+          return {
+            txId: `ROLL_${roll.barcodeId || roll.id}`,
+            category: 'inward',
+            type: '📥 Opening Stock Receipt',
+            isPendingQC: false,
+            isRejected: false,
+            date: roll.inwardDatetime || new Date().toISOString(),
+            refNo: roll.barcodeId || roll.id,
+            subRef: 'Roll receipt',
+            partyName: roll.vendorName || 'Store',
+            subParty: 'Opening stock receipt',
+            inwardQtyKg: qty,
+            outwardQtyKg: 0,
+            adjQtyKg: 0,
+            ratePerKg: Number(roll.purchaseRatePerKg || roll.unitPrice || itemActualUnitPrice) || 0,
+            unitPrice: Number(roll.unitPrice || itemActualUnitPrice) || 0,
+            totalValue: qty * (Number(roll.unitPrice || itemActualUnitPrice) || 0),
+            barcode: roll.barcodeId || roll.id,
+            batchNo: roll.batchNo || '',
+            status: 'In Stock',
+            notes: 'Opening stock receipt per roll'
+          };
+        });
+        const openingReceiptLines = [...bulkReceiptLines, ...rollReceiptLines];
+
         // 5. Calculate Opening Stock Baseline (Excluding Pending QC from movement so net matches usable stock)
-        const totalApprovedInwards = inwardTxLines.filter(tx => !tx.isPendingQC).reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'inward').reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
+        const totalApprovedInwards = inwardTxLines.filter(tx => !tx.isPendingQC).reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'inward').reduce((sum, tx) => sum + tx.inwardQtyKg, 0) + openingReceiptLines.reduce((sum, tx) => sum + tx.inwardQtyKg, 0);
         const totalTxOutwards = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const totalTxAdj = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
         const netMovement = totalApprovedInwards - totalTxOutwards + totalTxAdj;
@@ -9509,7 +9130,7 @@ export default function InventoryManagement({
           return new Date(dStr).getTime() || 0;
         };
 
-        const allTxLines = [...openingStockLine, ...inwardTxLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines];
+        const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines];
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
         // 7. Calculate Chronological Running Balance (Pending QC and Rejected QC Hold do NOT add to usable stock!)
@@ -9756,7 +9377,7 @@ export default function InventoryManagement({
                     style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'inward' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'inward' ? '700' : '500', color: ledgerFilterTab === 'inward' ? '#047857' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('inward')}
                   >
-                    📥 Inwards ({inwardTxLines.length + (openingStockQty > 0 ? 1 : 0) + storeIssueLines.filter(tx => tx.category === 'inward').length})
+                    📥 Inwards ({inwardTxLines.length + openingReceiptLines.length + (openingStockQty > 0 ? 1 : 0) + storeIssueLines.filter(tx => tx.category === 'inward').length})
                   </button>
 
                   {pendingInwardLines.length > 0 && (
@@ -10298,201 +9919,172 @@ export default function InventoryManagement({
 
       {/* Modal: Universal Bulk Inventory Stock Upload */}
       {isBulkModalOpen && (
-        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsBulkModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '880px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            
-            {/* Modal Header */}
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={resetBulkUpload}>
+          <div className="glass-card modal-content" data-testid="bulk-upload-modal" style={{ width: '1080px', maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
                 <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary-brand)' }}>
-                  <Upload size={22} /> Bulk Import Material Stock into Inventory Database
+                  <Upload size={22} /> Bulk Import Material Stock
                 </h3>
-                <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Upload CSV files for any material category (Film Substrates, Inks, Solvents, Adhesives, Core Pipes, Consumables, etc.).
+                <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginTop: '2px', maxWidth: '760px' }}>
+                  Film rows with the same item name become one stock item, and each row is one roll. A blank barcode is generated as RM-BC-YYYYMMDD-XXXX. If that exact name is already in inventory, the rolls are added to it. Non-film rows are a quantity with no roll. Inventory ID is never read from the file.
                 </p>
               </div>
-              <button 
-                type="button" 
-                className="btn-secondary" 
-                style={{ padding: '4px 10px', fontSize: '0.8rem' }}
-                onClick={() => setIsBulkModalOpen(false)}
-              >
+              <button type="button" className="btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} onClick={resetBulkUpload}>
                 ✕ Close
               </button>
             </div>
 
-            {/* Step 1: Select Category & Download Template */}
             <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '16px', alignItems: 'end' }}>
                 <div>
-                  <label className="form-label" style={{ fontWeight: '700' }}>
-                    1. Select Target Inventory Category *
-                  </label>
-                  <SearchableSelect 
-                    className="form-control" 
+                  <label className="form-label" style={{ fontWeight: '700' }}>Blank category cells use this category</label>
+                  <SearchableSelect
+                    className="form-control"
                     triggerStyle={{ fontWeight: '700', color: '#0f172a', background: '#ffffff' }}
                     value={bulkCategory}
                     onChange={e => setBulkCategory(e.target.value)}
                   >
-                    <option value="ALL">🌐 All Material Categories (Auto-Detect from CSV)</option>
+                    <option value="ALL">Only the category written in the CSV</option>
                     {INVENTORY_CATEGORIES.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </SearchableSelect>
                 </div>
-
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '6px' }}>Need the CSV column format?</div>
-                  <button 
-                    type="button"
-                    className="btn-secondary" 
-                    style={{ fontSize: '0.8rem', padding: '7px 14px', background: '#ffffff', color: '#0284c7', border: '1px solid #bae6fd', fontWeight: '700' }}
-                    onClick={handleDownloadBulkInventoryTemplate}
-                  >
-                    <Download size={15} /> Download Sample CSV Template
-                  </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  data-testid="bulk-sample-csv"
+                  style={{ fontSize: '0.8rem', padding: '7px 14px', background: '#ffffff', color: '#0284c7', border: '1px solid #bae6fd', fontWeight: '700' }}
+                  onClick={handleDownloadBulkInventoryTemplate}
+                >
+                  <Download size={15} /> Download Sample CSV
+                </button>
+              </div>
+              <div data-testid="bulk-sample-preview" style={{ marginTop: '14px', overflowX: 'auto' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                  Sample columns: Category, ItemName, SubstrateOrGrade, Micron, WidthMm, WeightKg, Barcode, UOM, Location, ReorderLevel, LastVendor, LastBatch, UnitCostRs. No Inventory ID.
                 </div>
+                <table className="data-table" style={{ fontSize: '0.72rem', margin: 0 }}>
+                  <thead>
+                    <tr>
+                      <th>Item name</th>
+                      <th>Category</th>
+                      <th>Weight</th>
+                      <th>Barcode</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>PET 12 Micron 1000mm</td><td>Film Substrates</td><td>250.5 kg</td><td>RM-BC-20261028-1001 (given)</td></tr>
+                    <tr><td>pet 12 micron 1000mm</td><td>Film Substrates</td><td>180 kg</td><td>RM-BC-20261028-1002 (given)</td></tr>
+                    <tr><td>PET 12 Micron 1000mm</td><td>Film Substrates</td><td>95.25 kg</td><td>blank — auto-generated</td></tr>
+                    <tr><td>Cyan Solvent Printing Ink</td><td>Printing Inks</td><td>40 kg</td><td>no roll</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* Step 2: Upload File */}
             <div style={{ border: '2px dashed #cbd5e1', borderRadius: '10px', padding: '24px', textAlign: 'center', background: '#f0f9ff', marginBottom: '16px' }}>
-              <input 
-                type="file" 
-                accept=".csv" 
-                id="bulk-csv-file-input"
-                style={{ display: 'none' }} 
-                onChange={handleParseBulkCSV} 
-              />
+              <input type="file" accept=".csv" id="bulk-csv-file-input" data-testid="bulk-csv-file-input" style={{ display: 'none' }} onChange={handleParseBulkCSV} />
               <label htmlFor="bulk-csv-file-input" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                 <Upload size={32} style={{ color: '#0284c7' }} />
                 <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.95rem' }}>
-                  {bulkFileName ? `Selected File: ${bulkFileName}` : 'Click here to select CSV file for upload'}
+                  {bulkFileName ? `Selected File: ${bulkFileName}` : 'Click here to select a CSV file'}
                 </span>
-                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                  Supports CSV files containing items for {bulkCategory === 'ALL' ? 'all inventory categories' : bulkCategory}
-                </span>
+                <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Import starts only after you confirm the preview.</span>
               </label>
             </div>
 
-            {/* Error Display */}
             {bulkErrorMsg && (
-              <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c', padding: '10px 14px', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600' }}>
-                ⚠️ {bulkErrorMsg}
+              <div data-testid="bulk-file-error" style={{ background: '#fef2f2', border: '1px solid #fca5a5', color: '#b91c1c', padding: '10px 14px', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '16px', fontWeight: '600' }}>
+                {bulkErrorMsg}
               </div>
             )}
 
-            {/* Step 3: Parsed Data Live Preview Table */}
-            {bulkParsedRows.length > 0 && (() => {
-              const duplicateCount = bulkParsedRows.filter(r => r.matchedItem).length;
-
-              return (
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#ffffff', marginBottom: '20px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>
-                      📋 Parsed Material Stock Items ({bulkParsedRows.length} Rows Ready for Database Import)
-                    </div>
-                    <span style={{ fontSize: '0.78rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', padding: '3px 8px', borderRadius: '4px', fontWeight: '700' }}>
-                      Category: {bulkCategory}
-                    </span>
+            {bulkPlan && (
+              <div data-testid="bulk-preview" style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '14px', background: '#ffffff', marginBottom: '20px' }}>
+                {bulkPlan.notices.map((notice) => (
+                  <div key={notice} data-testid="bulk-notice" style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e3a8a', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '10px', fontWeight: '600' }}>
+                    {notice}
                   </div>
-
-                  {/* Duplicate Detection Alert Banner */}
-                  {duplicateCount > 0 && (
-                    <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px', fontSize: '0.84rem', color: '#d48806', fontWeight: '600' }}>
-                      ⚠️ <strong>{duplicateCount} Duplicate Item(s) Detected!</strong> We found matching items already in your Inventory Database. By default, new quantities will be added to existing item stock balances. You can change any row action below to create a separate new item instead.
-                    </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                  <div style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>
+                    Preview: {bulkPlan.groups.length} item{bulkPlan.groups.length === 1 ? '' : 's'}, {bulkPlan.importableCount} row{bulkPlan.importableCount === 1 ? '' : 's'} ready, {bulkPlan.blockedCount} blocked
+                  </div>
+                  {bulkPlan.blockedCount > 0 && (
+                    <button type="button" className="btn-secondary" data-testid="bulk-error-report" style={{ fontSize: '0.75rem' }} onClick={handleDownloadBulkErrorReport}>
+                      <Download size={14} /> Download error report
+                    </button>
                   )}
-
-                  <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
-                    <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.8rem' }}>
-                      <thead>
-                        <tr style={{ background: '#f8fafc' }}>
-                          <th>#</th>
-                          <th>Inventory ID</th>
-                          <th>Category</th>
-                          <th>Item Name / Title</th>
-                          <th>Grade / Substrate</th>
-                          <th>Qty</th>
-                          <th>UOM</th>
-                          <th>Location</th>
-                          <th>Vendor</th>
-                          <th>Unit Cost (₹)</th>
-                          <th style={{ minWidth: '200px' }}>Import Action (Duplicate Handling)</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bulkParsedRows.map((row, idx) => (
-                          <tr key={idx} style={{ background: row.matchedItem ? '#fffdf5' : 'transparent' }}>
-                            <td>{idx + 1}</td>
-                            <td><span className="badge" style={{ background: '#f1f5f9', color: '#1e293b', fontWeight: '700', fontSize: '0.74rem' }}>{row.inventoryId || (row.matchedItem ? row.matchedItem.id : 'Auto')}</span></td>
-                            <td><span className="badge badge-subtle">{row.category}</span></td>
-                            <td>
-                              <strong>{row.itemName}</strong>
-                              {row.matchedItem && (
-                                <div style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fcd34d', padding: '2px 6px', borderRadius: '4px', fontSize: '0.71rem', marginTop: '3px', fontWeight: '700', width: 'fit-content' }}>
-                                  ⚠️ Matches Existing: {row.matchedItem.itemName || row.matchedItem.id} (Current: {row.matchedItem.availableQtyKg ?? row.matchedItem.availableQty ?? 0} {row.matchedItem.unit || 'Kg'})
-                                </div>
-                              )}
-                            </td>
-                            <td><span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.72rem', fontWeight: '700' }}>{row.substrateOrGrade || row.filmType || '-'}</span></td>
-                            <td style={{ fontWeight: '800', color: '#0284c7' }}>{row.availableQty}</td>
-                            <td>{row.unit}</td>
-                            <td>{row.location}</td>
-                            <td>{row.lastVendor}</td>
-                            <td>₹ {row.unitPrice}</td>
-                            <td>
-                              {row.matchedItem ? (
-                                <SearchableSelect 
-                                  className="form-control"
-                                  style={{ minWidth: '220px' }}
-                                  triggerStyle={{ 
-                                    fontSize: '0.75rem', 
-                                    padding: '2px 4px', 
-                                    minHeight: '28px',
-                                    fontWeight: '700',
-                                    borderColor: row.importAction === 'UPDATE_EXISTING' ? '#059669' : (row.importAction === 'ADD_TO_EXISTING' ? '#f59e0b' : '#3b82f6'),
-                                    background: row.importAction === 'UPDATE_EXISTING' ? '#ecfdf5' : (row.importAction === 'ADD_TO_EXISTING' ? '#fffbe6' : '#eff6ff'),
-                                    color: row.importAction === 'UPDATE_EXISTING' ? '#047857' : (row.importAction === 'ADD_TO_EXISTING' ? '#b45309' : '#1d4ed8')
-                                  }}
-                                  value={row.importAction || 'UPDATE_EXISTING'}
-                                  onChange={(e) => handleRowActionChange(idx, e.target.value)}
-                                >
-                                  <option value="UPDATE_EXISTING">🔄 Update Quantity & Item Details</option>
-                                  <option value="ADD_TO_EXISTING">➕ Add Qty to Existing Stock</option>
-                                  <option value="CREATE_NEW">✨ Create New Separate Item</option>
-                                </SearchableSelect>
-                              ) : (
-                                <span style={{ fontSize: '0.74rem', color: '#166534', background: '#dcfce7', border: '1px solid #86efac', padding: '2px 6px', borderRadius: '4px', fontWeight: '700' }}>
-                                  ✨ New Item
-                                </span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 </div>
-              );
-            })()}
+                <div style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '10px' }}>
+                  An existing item is matched by its name after trimming, ignoring letter case. Rolls are added to that item. This is the only match used.
+                </div>
+                {bulkPlan.groups.map((group) => (
+                  <div key={group.nameKey} data-testid="bulk-group" style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginBottom: '10px', background: group.match === 'existing' ? '#fffbeb' : '#f0fdf4' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                      <strong>{group.itemName}</strong>
+                      <span data-testid="bulk-group-flag" style={{ fontSize: '0.75rem', fontWeight: '800', color: group.match === 'existing' ? '#92400e' : '#166534' }}>
+                        {group.match === 'existing' ? `Existing item ${group.plannedId}` : `New item ${group.plannedId || ''}`}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '4px' }}>
+                      {group.category} · {group.rollCount} roll{group.rollCount === 1 ? '' : 's'} · {group.totalKg} kg to add
+                      {group.match === 'existing' ? ` · current stock ${group.existingItem.availableQtyKg} ${group.existingItem.unit || 'Kg'}` : ''}
+                      {group.blockedCount > 0 ? ` · ${group.blockedCount} row(s) blocked` : ''}
+                    </div>
+                  </div>
+                ))}
+                <div style={{ maxHeight: '280px', overflowY: 'auto', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                  <table className="data-table" style={{ width: '100%', margin: 0, fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc' }}>
+                        <th>Row</th>
+                        <th>Item</th>
+                        <th>Weight</th>
+                        <th>Barcode</th>
+                        <th>Result</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bulkPlan.rows.map((row) => (
+                        <tr key={`${row.lineNumber}-${row.barcode || row.itemName}`} data-testid={row.blocked ? 'bulk-row-error' : 'bulk-row-ok'} style={{ background: row.blocked ? '#fef2f2' : 'transparent' }}>
+                          <td>{row.lineNumber}</td>
+                          <td>{row.itemName || '—'}</td>
+                          <td>{row.weightText || row.weight || '—'}</td>
+                          <td>
+                            {row.isRoll ? (
+                              <span data-testid="bulk-barcode">
+                                {row.barcode || '—'}
+                                <span style={{ display: 'block', color: '#64748b' }}>{row.barcodeSource === 'auto' ? 'auto' : (row.barcodeSource === 'given' ? 'given' : '')}</span>
+                              </span>
+                            ) : 'No roll'}
+                          </td>
+                          <td style={{ color: row.blocked ? '#b91c1c' : '#166534', fontWeight: '700' }}>
+                            {row.blocked ? row.errors.join(' ') : (row.isRoll ? 'Roll will be added' : 'Quantity will be added')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
-            {/* Action Footer */}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
-              <button type="button" className="btn-secondary" onClick={() => setIsBulkModalOpen(false)}>
-                Cancel
-              </button>
-              <button 
-                type="button" 
-                className="btn-primary" 
-                disabled={bulkParsedRows.length === 0}
-                style={{ opacity: bulkParsedRows.length === 0 ? 0.5 : 1, background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
+              <button type="button" className="btn-secondary" onClick={resetBulkUpload}>Cancel</button>
+              <button
+                type="button"
+                className="btn-primary"
+                data-testid="bulk-confirm"
+                disabled={!bulkPlan || bulkPlan.importableCount === 0 || bulkImporting}
+                style={{ opacity: !bulkPlan || bulkPlan.importableCount === 0 || bulkImporting ? 0.5 : 1, background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
                 onClick={handleConfirmBulkImport}
               >
-                <Check size={18} /> Confirm & Upload {bulkParsedRows.length} Items to Database
+                <Check size={18} /> {bulkImporting ? 'Importing…' : `Confirm import of ${bulkPlan?.importableCount || 0} valid rows`}
               </button>
             </div>
-
           </div>
         </div>
       )}

@@ -1,0 +1,195 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  BULK_STOCK_CSV_COLUMNS,
+  allocateUniqueInventoryId,
+  buildBulkImportPayload,
+  bulkErrorReportCsv,
+  inventoryDbColumns,
+  parseBulkStockCsv,
+  sampleBulkStockCsv
+} from '../src/services/bulkStockUpload.js';
+import fs from 'node:fs';
+import { generateInventoryId } from '../src/factoryStore.js';
+
+const NOW = new Date('2026-10-28T08:00:00.000Z');
+
+function csv(rows) {
+  return [BULK_STOCK_CSV_COLUMNS.join(','), ...rows].join('\n');
+}
+
+function filmRow(name, weight, barcode = '') {
+  return `Film Substrates,${name},PET,12,1000,${weight},${barcode},Kg,Bay A,500,FlexiPoly,BATCH-PET,135`;
+}
+
+test('sample CSV has no Inventory ID and shows one film with three rolls plus a non-roll item', () => {
+  const text = sampleBulkStockCsv();
+  assert.equal(text.includes('InventoryID'), false);
+  assert.equal(text.includes('Inventory ID'), false);
+  const plan = parseBulkStockCsv(text, { now: NOW, generateBarcode: () => 'RM-BC-20261028-AUTO' });
+  assert.equal(plan.groups.length, 2);
+  const film = plan.groups.find((group) => group.itemName.toLowerCase().includes('pet'));
+  assert.equal(film.rollCount, 3);
+  assert.equal(film.totalKg, 525.75);
+  assert.equal(film.match, 'new');
+  const barcodes = film.rows.map((row) => ({ barcode: row.barcode, source: row.barcodeSource, weight: row.weight }));
+  assert.deepEqual(barcodes.map((row) => row.source), ['given', 'given', 'auto']);
+  assert.equal(barcodes[2].barcode, 'RM-BC-20261028-AUTO');
+  assert.deepEqual(barcodes.map((row) => row.weight), [250.5, 180, 95.25]);
+  const ink = plan.groups.find((group) => group.category === 'Printing Inks');
+  assert.equal(ink.rollCount, 0);
+  assert.equal(ink.totalKg, 40);
+  const payload = buildBulkImportPayload(plan, { now: NOW });
+  assert.equal(payload.rolls.length, 3);
+  assert.equal(payload.items.find((item) => item.category === 'Printing Inks').availableQtyKg, 40);
+  assert.equal(payload.rolls.some((roll) => roll.barcodeId === 'RM-BC-20261028-AUTO'), true);
+});
+
+test('rows with the same item name group into one item and an existing name receives the rolls', () => {
+  const text = csv([
+    filmRow('PET 12 Micron 1000mm', '100', 'RM-BC-20261028-0001'),
+    filmRow('  pet 12 micron 1000mm ', '40', 'RM-BC-20261028-0002')
+  ]);
+  const inventory = [{
+    id: 'INVT-0004',
+    itemCode: 'INVT-0004',
+    itemName: 'PET 12 Micron 1000mm',
+    category: 'Film Substrates',
+    availableQtyKg: 15,
+    unit: 'Kg'
+  }];
+  const plan = parseBulkStockCsv(text, { inventory, now: NOW });
+  assert.equal(plan.groups.length, 1);
+  assert.equal(plan.groups[0].match, 'existing');
+  assert.equal(plan.groups[0].plannedId, 'INVT-0004');
+  assert.equal(plan.groups[0].rollCount, 2);
+  assert.equal(plan.groups[0].totalKg, 140);
+  const payload = buildBulkImportPayload(plan, { inventory, now: NOW });
+  assert.equal(payload.createdCount, 0);
+  assert.equal(payload.updatedCount, 1);
+  assert.equal(payload.items[0].id, 'INVT-0004');
+  assert.equal(payload.items[0].availableQtyKg, 155);
+  assert.equal(payload.rolls.length, 2);
+  payload.rolls.forEach((roll) => {
+    assert.equal(roll.itemId, 'INVT-0004');
+    assert.equal(roll.status, 'In Stock');
+    assert.equal(roll.qcStatus, 'Approved');
+    assert.equal(roll.availableWeightKg, roll.netWeightKg);
+    assert.equal(roll.rollType, 'RAW_MATERIAL');
+    assert.equal(roll.category, 'Film Substrates');
+  });
+  assert.equal(payload.adjustments.length, 2);
+  assert.deepEqual(payload.adjustments.map((row) => row.barcode).sort(), ['RM-BC-20261028-0001', 'RM-BC-20261028-0002']);
+});
+
+test('generated inventory ids ignore the CSV column and stay unique in the file and against stock', () => {
+  const text = [
+    'InventoryID,Category,ItemName,WeightKg,Barcode',
+    'INVT-9999,Film Substrates,New Film Alpha,10,RM-BC-20261028-A',
+    'INVT-9999,Film Substrates,New Film Beta,12,RM-BC-20261028-B',
+    'INVT-0001,Printing Inks,Fresh Cyan Ink,5,'
+  ].join('\n');
+  const inventory = [
+    { id: 'INVT-0005', itemName: 'Already There', category: 'Printing Inks', availableQtyKg: 1 },
+    { id: 'INVT-0008', itemCode: 'INVT-0008', itemName: 'Code Clash', category: 'Other Raw Materials', availableQtyKg: 1 }
+  ];
+  const plan = parseBulkStockCsv(text, { inventory, now: NOW });
+  assert.ok(plan.notices.some((notice) => notice.includes('Inventory ID')));
+  const ids = plan.groups.map((group) => group.plannedId);
+  assert.deepEqual(ids.sort(), ['INVT-0009', 'INVT-0010', 'INVT-0011']);
+  assert.equal(ids.includes('INVT-9999'), false);
+  assert.equal(new Set(ids).size, 3);
+  ids.forEach((id) => {
+    assert.equal(inventory.some((item) => item.id === id || item.itemCode === id), false);
+  });
+  const again = allocateUniqueInventoryId(inventory, ids, generateInventoryId);
+  assert.equal(ids.includes(again), false);
+  assert.equal(again, 'INVT-0012');
+});
+
+test('blank barcodes are generated in the roll format and duplicates in the file or the database are blocked', () => {
+  let n = 0;
+  const text = csv([
+    filmRow('Auto Film', '10', ''),
+    filmRow('Auto Film', '11', ''),
+    filmRow('Dup Film', '12', 'RM-BC-20261028-DUP'),
+    filmRow('Dup Film', '13', 'rm-bc-20261028-dup'),
+    filmRow('Known Film', '14', 'RM-BC-DB-1')
+  ]);
+  const plan = parseBulkStockCsv(text, {
+    now: NOW,
+    rolls: [{ barcodeId: 'RM-BC-DB-1', itemName: 'Old' }],
+    generateBarcode: () => {
+      n += 1;
+      return n === 1 ? 'RM-BC-20261028-AUTO' : 'RM-BC-20261028-AUTO';
+    }
+  });
+  const autos = plan.rows.filter((row) => row.barcodeSource === 'auto');
+  assert.equal(autos.length, 2);
+  assert.equal(autos[0].barcode, 'RM-BC-20261028-AUTO');
+  assert.match(autos[1].barcode, /^RM-BC-20261028-\d{4}$/);
+  assert.notEqual(autos[0].barcode.toLowerCase(), autos[1].barcode.toLowerCase());
+  const dupes = plan.rows.filter((row) => row.itemName === 'Dup Film');
+  assert.equal(dupes.every((row) => row.blocked), true);
+  assert.match(dupes[0].errors.join(' '), /repeated in this file/i);
+  const known = plan.rows.find((row) => row.itemName === 'Known Film');
+  assert.match(known.errors.join(' '), /already exists in stock/i);
+  const payload = buildBulkImportPayload(plan, { now: NOW });
+  const saved = payload.rolls.map((roll) => roll.barcodeId);
+  assert.equal(saved.includes('RM-BC-20261028-DUP'), false);
+  assert.equal(saved.includes('RM-BC-DB-1'), false);
+  assert.deepEqual(saved.sort(), [autos[0].barcode, autos[1].barcode].sort());
+  const report = bulkErrorReportCsv(plan);
+  assert.match(report, /repeated in this file/);
+  assert.match(report, /already exists in stock/);
+});
+
+test('missing names, bad weights, and unknown categories are blocked and a repeat upload is flagged', () => {
+  const text = csv([
+    filmRow('Good Film', '20', 'RM-BC-20261028-GOOD'),
+    'Film Substrates,,PET,12,1000,15,RM-BC-20261028-NONAME,Kg,Bay A,500,FlexiPoly,BATCH-PET,135',
+    filmRow('Bad Weight', 'minus', 'RM-BC-20261028-BAD'),
+    filmRow('Negative Film', '-4', 'RM-BC-20261028-NEG'),
+    'Not A Category,Mystery Item,Grade,,,8,,Kg,Bay,10,Vendor,BATCH,1'
+  ]);
+  const plan = parseBulkStockCsv(text, { now: NOW });
+  const byName = (name) => plan.rows.filter((row) => row.itemName === name);
+  assert.match(plan.rows.find((row) => !row.itemName).errors.join(' '), /Item name is missing/);
+  assert.match(byName('Bad Weight')[0].errors.join(' '), /not a number/);
+  assert.match(byName('Negative Film')[0].errors.join(' '), /negative/);
+  assert.match(byName('Mystery Item')[0].errors.join(' '), /Unknown category/);
+  const payload = buildBulkImportPayload(plan, { now: NOW });
+  assert.equal(payload.rolls.length, 1);
+  assert.equal(payload.rolls[0].barcodeId, 'RM-BC-20261028-GOOD');
+  assert.equal(payload.items.length, 1);
+
+  const second = parseBulkStockCsv(text, {
+    now: NOW,
+    inventory: payload.items,
+    rolls: payload.rolls,
+    adjustments: payload.adjustments
+  });
+  const good = second.rows.find((row) => row.barcode === 'RM-BC-20261028-GOOD');
+  assert.equal(good.blocked, true);
+  assert.match(good.errors.join(' '), /already exists|already uploaded/);
+  assert.equal(second.importableCount < plan.importableCount, true);
+  const secondPayload = buildBulkImportPayload(second, { inventory: payload.items, now: NOW });
+  assert.equal(secondPayload.rolls.some((roll) => roll.barcodeId === 'RM-BC-20261028-GOOD'), false);
+});
+
+test('a saved bulk film keeps its typed name and writes category onto the inventory columns', () => {
+  const plan = parseBulkStockCsv(csv([filmRow('PET 12 Micron 1000mm', '10', 'RM-BC-20261028-KEEP')]), { now: NOW });
+  const payload = buildBulkImportPayload(plan, { now: NOW });
+  const item = payload.items[0];
+  assert.equal(item.itemName, 'PET 12 Micron 1000mm');
+  assert.equal(item.preserveItemName, true);
+  assert.equal(item.category, 'Film Substrates');
+  const columns = inventoryDbColumns(item);
+  assert.equal(columns.category, 'Film Substrates');
+  assert.equal(columns.film_type, 'PET');
+  assert.equal(Number(columns.micron), 12);
+  assert.equal(Number(columns.width_mm), 1000);
+  const source = fs.readFileSync(new URL('../src/services/supabaseDataService.js', import.meta.url), 'utf8');
+  assert.match(source, /inventoryDbColumns\(clean\)/);
+  assert.match(source, /preserveItemName === true \|\| cleanRaw\.preserveItemName === true/);
+});

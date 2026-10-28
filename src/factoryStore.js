@@ -1,7 +1,7 @@
 // FactoryOS Data Store & Flexible Packaging Calculation Engine
 // Samyak International Ltd, Indore
 
-import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile';
+import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile.js';
 import { SYSTEM_ROLES } from './roles.js';
 
 export { SYSTEM_ROLES };
@@ -10,9 +10,9 @@ export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 
 
 
-import { getFilmSubstrates } from './services/filmSubstratesService';
-import { attendanceCalendarDate } from './services/employeeAttendance';
-import { isPayrollRecoverableAdvance } from './services/salaryAdvance';
+import { getFilmSubstrates } from './services/filmSubstratesService.js';
+import { attendanceCalendarDate } from './services/employeeAttendance.js';
+import { isPayrollRecoverableAdvance } from './services/salaryAdvance.js';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
