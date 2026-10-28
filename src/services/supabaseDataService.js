@@ -41,6 +41,7 @@ import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
 import { linesForSave, stampLineIds } from './grnDocument';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
+import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
 export { sanitizeGRN };
 
@@ -762,9 +763,12 @@ export function sanitizeInventoryItem(rawItem) {
 
   const resolvedUnit = cleanRaw.unit || cleanRaw.unit_of_measure || extractedMeta.unit || fallbackUnit;
 
-  const cleanItemName = isFilm 
-    ? formatFilmItemName(filmType, widthMm, micron, rawName, metallocenePct) 
-    : (rawName ? rawName.replace(/µ/g, 'Micron') : `${category} Stock Item`);
+  const keepGivenName = (extractedMeta.preserveItemName === true || cleanRaw.preserveItemName === true) && Boolean(rawName);
+  const cleanItemName = keepGivenName
+    ? rawName.replace(/µ/g, 'Micron')
+    : (isFilm
+      ? formatFilmItemName(filmType, widthMm, micron, rawName, metallocenePct)
+      : (rawName ? rawName.replace(/µ/g, 'Micron') : `${category} Stock Item`));
 
   return {
     ...extractedMeta,
@@ -792,7 +796,8 @@ export function sanitizeInventoryItem(rawItem) {
     subType: cleanRaw.subType || extractedMeta.subType || '',
     shade: cleanRaw.shade || extractedMeta.shade || '',
     dimensions: cleanRaw.dimensions || extractedMeta.dimensions || '',
-    lastUpdated: cleanRaw.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString()
+    lastUpdated: cleanRaw.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString(),
+    preserveItemName: keepGivenName || undefined
   };
 }
 
@@ -827,7 +832,8 @@ export function mapInventoryItemToDbPayload(item) {
     location: clean.location,
     lastVendor: clean.lastVendor,
     lastBatch: clean.lastBatch,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
+    preserveItemName: clean.preserveItemName === true ? true : undefined
   };
 
   const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
@@ -839,7 +845,9 @@ export function mapInventoryItemToDbPayload(item) {
     item_name: combinedItemName,
     metallocene_pct: clean.metallocenePct || null,
     stock_qty_kg: Number(clean.availableQtyKg ?? clean.stock_qty_kg ?? 0) || 0,
-    unit_price: Number(clean.unitPrice ?? 0) || 0
+    unit_price: Number(clean.unitPrice ?? 0) || 0,
+    ...inventoryDbColumns(clean),
+    last_updated: new Date().toISOString()
   };
 }
 
@@ -1962,6 +1970,8 @@ export async function fetchInventoryRolls() {
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
       status: r.status || 'In Stock',
+      filmType: r.film_type || meta.filmType || '',
+      bulkUploadFingerprint: meta.bulkUploadFingerprint || '',
       ...(meta.parentSfgBatchCode ? { parentSfgBatchCode: meta.parentSfgBatchCode } : {})
     };
     });
@@ -2000,6 +2010,7 @@ export async function saveInventoryRollToSupabase(roll) {
     available_weight_kg: availableWeight,
     length_meters: Number(roll.lengthMeters ?? 0) || 0,
     joint_count: Number(roll.jointCount ?? 0) || 0,
+    film_type: roll.filmType && roll.filmType !== '-' ? roll.filmType : null,
     qc_status: roll.qcStatus || 'Approved',
     machine_name: roll.machineName || roll.machine || roll.stationId || '',
     operator_name: roll.operatorName || roll.operator || '',
@@ -2027,6 +2038,8 @@ export async function saveInventoryRollToSupabase(roll) {
       purchaseRatePerKg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
       unitPrice: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
       unit: roll.unit || 'Kg',
+      ...(roll.filmType && roll.filmType !== '-' ? { filmType: roll.filmType } : {}),
+      ...(roll.bulkUploadFingerprint ? { bulkUploadFingerprint: roll.bulkUploadFingerprint } : {}),
       ...(roll.parentSfgBatchCode ? { parentSfgBatchCode: roll.parentSfgBatchCode } : {})
     }
   };
