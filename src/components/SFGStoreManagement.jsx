@@ -61,6 +61,17 @@ import TablePagination, { usePagination } from './TablePagination';
 import ScrapStorePanel from './ScrapStorePanel';
 import MeasureRangeHint from './MeasureRangeHint';
 import { assessConsumeStep } from '../utils/rollLineage';
+import {
+  BALANCE_REASON_OTHER,
+  BALANCE_REASON_QC_HOLD,
+  BALANCE_REASONS,
+  applyBalanceDisposition,
+  balanceSaveError,
+  composeConsumeNotes,
+  computeConsumeStockBalance,
+  stageHasOutputSection,
+  stageScrapKg
+} from '../utils/consumeMassBalance';
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
@@ -199,6 +210,8 @@ export default function SFGStoreManagement({
   const [operatorName, setOperatorName] = useState(currentUser?.fullName || currentUser?.username || '');
   const [shift, setShift] = useState('Day Shift');
   const [notes, setNotes] = useState('');
+  const [balanceReason, setBalanceReason] = useState('');
+  const [balanceNote, setBalanceNote] = useState('');
   const [formError, setFormError] = useState('');
   const [isSubmittingConsume, setIsSubmittingConsume] = useState(false);
 
@@ -607,6 +620,8 @@ export default function SFGStoreManagement({
     setOperatorName(currentUser?.fullName || currentUser?.username || '');
     setShift('Day Shift');
     setNotes('');
+    setBalanceReason('');
+    setBalanceNote('');
     setHoldReason('');
     setHoldRollCount(1);
     setRollWeights(['']);
@@ -871,6 +886,52 @@ export default function SFGStoreManagement({
     });
   };
 
+  const consumeBalance = useMemo(() => {
+    const available = selectedItemForConsume
+      ? (selectedItemForConsume.availableKg !== undefined
+        ? Number(selectedItemForConsume.availableKg)
+        : Number(selectedItemForConsume.totalNetKg || 0) - Number(selectedItemForConsume.consumedKg || 0))
+      : 0;
+    const scrapKg = stageScrapKg(targetProcess, {
+      laminationPlainSubstrateWastageKg,
+      laminationPlainSubstrateWastageL2Kg,
+      laminateWastageKg,
+      printingPlainSettingWastageKg,
+      printingWastageKg,
+      slittingTrimScrapKg,
+      slittingSettingWastageKg,
+      pouchingScrapKg
+    });
+    const outputNetKg = stageHasOutputSection(targetProcess) && isOutputMade
+      ? sumOutputNet(outputGrossKg, outputTareKg, extraOutputs)
+      : 0;
+    return applyBalanceDisposition(computeConsumeStockBalance({
+      processName: targetProcess,
+      consumedKg: parseFloat(consumedWeightKg) || 0,
+      availableKg: available,
+      scrapKg,
+      outputNetKg
+    }), balanceReason);
+  }, [
+    selectedItemForConsume,
+    targetProcess,
+    consumedWeightKg,
+    laminationPlainSubstrateWastageKg,
+    laminationPlainSubstrateWastageL2Kg,
+    laminateWastageKg,
+    printingPlainSettingWastageKg,
+    printingWastageKg,
+    slittingTrimScrapKg,
+    slittingSettingWastageKg,
+    pouchingScrapKg,
+    isOutputMade,
+    outputGrossKg,
+    outputTareKg,
+    extraOutputs,
+    balanceReason
+  ]);
+  const balanceBlocksSave = Boolean(balanceSaveError(consumeBalance, { reason: balanceReason, note: balanceNote }));
+
   // Submit Consume / QC Hold SFG
   const handleConfirmConsumeSFG = async (e) => {
     e.preventDefault();
@@ -890,6 +951,12 @@ export default function SFGStoreManagement({
 
     if (qtyVal > currentAvailable) {
       setFormError(`Consumed weight (${qtyVal} kg) cannot exceed current available balance (${currentAvailable.toFixed(2)} kg).`);
+      return;
+    }
+
+    const balanceError = balanceSaveError(consumeBalance, { reason: balanceReason, note: balanceNote });
+    if (balanceError) {
+      setFormError(balanceError);
       return;
     }
 
@@ -969,9 +1036,13 @@ export default function SFGStoreManagement({
     setFormError('');
 
     try {
-      const newConsumedKg = (currentConsumed + qtyVal).toFixed(2);
-      const newAvailableKg = Math.max(0, currentNet - newConsumedKg).toFixed(2);
-      
+      const outputStage = consumeBalance.mode === 'output';
+      const stockDeductedKg = outputStage ? Number(consumeBalance.stockDeductedKg) : qtyVal;
+      const newConsumedKg = (currentConsumed + stockDeductedKg).toFixed(2);
+      const newAvailableKg = outputStage
+        ? Number(consumeBalance.lotAvailableKg).toFixed(2)
+        : Math.max(0, currentNet - newConsumedKg).toFixed(2);
+
       let newStatus = 'In Stock (WIP)';
       if (parseFloat(newConsumedKg) > 0) {
         newStatus = parseFloat(newAvailableKg) <= 0 ? 'Fully Consumed' : 'Partially Consumed';
@@ -1059,11 +1130,26 @@ export default function SFGStoreManagement({
         orderId: selectedItemForConsume.orderId,
         consumedKg: parseFloat(qtyVal.toFixed(2)),
         remainingBalanceKg: parseFloat(newAvailableKg),
+        ...(outputStage ? {
+          balanceKeptKg: consumeBalance.balanceKeptKg,
+          scrapKg: consumeBalance.scrapKg,
+          outputNetKg: consumeBalance.outputNetKg,
+          stockDeductedKg: parseFloat(stockDeductedKg.toFixed(2)),
+          balanceReason: consumeBalance.balanceKeptKg > 0 ? balanceReason : '',
+          balanceNote: balanceReason === BALANCE_REASON_OTHER ? balanceNote.trim() : ''
+        } : {}),
         targetProcess,
         targetMachine,
         operatorName,
         shift,
-        notes: targetProcess === 'QC Hold Store' ? `QC Hold: ${holdReason}` : notes,
+        notes: composeConsumeNotes({
+          targetProcess,
+          holdReason,
+          notes,
+          balance: consumeBalance,
+          balanceReason,
+          balanceNote
+        }),
         substrate2: isLaminationPass1 ? subInfo : null,
         substrate3: isLaminationPass2 ? subInfo : null,
         scrapBreakdown,
@@ -1117,12 +1203,17 @@ export default function SFGStoreManagement({
         ...(selectedItemForConsume.consumptionHistory || [])
       ];
 
+      const keptOnLot = outputStage && consumeBalance.balanceKeptKg > 0 && !consumeBalance.toQcHold;
       const updatedItem = {
         ...selectedItemForConsume,
         consumedKg: parseFloat(newConsumedKg),
         availableKg: parseFloat(newAvailableKg),
         status: newStatus,
-        consumptionHistory: updatedConsumptionHistory
+        consumptionHistory: updatedConsumptionHistory,
+        balanceReason: keptOnLot ? balanceReason : (outputStage && consumeBalance.toQcHold ? BALANCE_REASON_QC_HOLD : ''),
+        balanceNote: keptOnLot && balanceReason === BALANCE_REASON_OTHER ? balanceNote.trim() : '',
+        balanceKeptKg: keptOnLot ? consumeBalance.balanceKeptKg : 0,
+        balanceQcHoldKg: outputStage && consumeBalance.toQcHold ? consumeBalance.balanceKeptKg : 0
       };
 
       let consumeWarning = null;
@@ -1136,6 +1227,42 @@ export default function SFGStoreManagement({
       } catch (consumeErr) {
         if (consumeErr?.name !== 'PartialSaveError') throw consumeErr;
         consumeWarning = consumeErr;
+      }
+
+      if (outputStage && consumeBalance.toQcHold && consumeBalance.balanceKeptKg > 0) {
+        const holdTagId = `QCHOLD-${Date.now().toString().slice(-6)}`;
+        const heldKg = parseFloat(Number(consumeBalance.balanceKeptKg).toFixed(2));
+        const holdDetail = balanceReason === BALANCE_REASON_OTHER ? balanceNote.trim() : balanceReason;
+        await persistQcHold([{
+          id: holdTagId,
+          barcodeId: holdTagId,
+          sfgBatchCode: holdTagId,
+          parentSfgBatchCode: selectedItemForConsume.sfgBatchCode,
+          parentSfgId: selectedItemForConsume.id,
+          orderId: selectedItemForConsume.orderId || 'N/A',
+          jobName: selectedItemForConsume.jobName,
+          jobCode: selectedItemForConsume.jobCode,
+          clientName: selectedItemForConsume.clientName,
+          filmType: selectedItemForConsume.filmType,
+          micron: selectedItemForConsume.micron,
+          widthMm: selectedItemForConsume.widthMm,
+          totalHoldKg: heldKg,
+          remainingHoldKg: heldKg,
+          approvedKg: 0,
+          scrappedKg: 0,
+          numberOfRolls: 1,
+          rollWeights: [heldKg],
+          holdReason: `Balance from ${targetProcess}: ${holdDetail}`,
+          targetProcess: 'QC Hold Store',
+          operatorName: operatorName || currentUser?.fullName || currentUser?.username || 'QC Inspector',
+          shift,
+          date: new Date().toISOString().split('T')[0],
+          timestamp: new Date().toISOString(),
+          status: 'QC_HOLD',
+          isQCHold: true,
+          approvalLogs: [],
+          scrapLogs: []
+        }, ...qcHoldItems]);
       }
 
       // Special logic when targetProcess is 'QC Hold Store'
@@ -2166,6 +2293,16 @@ export default function SFGStoreManagement({
                                 }}>
                                   {item.status === 'Dispatched' ? '0.00 kg (Dispatched)' : `${available.toFixed(2)} kg`}
                                 </span>
+                                {Number(item.balanceKeptKg) > 0 && (
+                                  <div style={{ fontSize: '0.68rem', color: '#166534', fontWeight: '800', marginTop: '4px', maxWidth: '140px', whiteSpace: 'normal' }}>
+                                    Kept {Number(item.balanceKeptKg).toFixed(2)} kg · {item.balanceReason || 'in stock'}
+                                  </div>
+                                )}
+                                {Number(item.balanceQcHoldKg) > 0 && (
+                                  <div style={{ fontSize: '0.68rem', color: '#991b1b', fontWeight: '800', marginTop: '4px', maxWidth: '140px', whiteSpace: 'normal' }}>
+                                    QC Hold {Number(item.balanceQcHoldKg).toFixed(2)} kg
+                                  </div>
+                                )}
                               </td>
 
                               {/* Storage Bay */}
@@ -3994,7 +4131,7 @@ export default function SFGStoreManagement({
               )}
 
               {/* Real-time Post-Consumption Stock Balance Preview */}
-              {consumedWeightKg && !isNaN(parseFloat(consumedWeightKg)) && parseFloat(consumedWeightKg) > 0 && (
+              {consumeBalance.mode === 'plain' && consumedWeightKg && !isNaN(parseFloat(consumedWeightKg)) && parseFloat(consumedWeightKg) > 0 && (
                 <div style={{
                   background: '#f0fdf4',
                   border: '1px solid #86efac',
@@ -4009,13 +4146,88 @@ export default function SFGStoreManagement({
                     NEW REMAINING STOCK BALANCE:
                   </span>
                   <span style={{ fontSize: '1.2rem', fontWeight: '900', color: '#14532d' }}>
-                    {Math.max(
-                      0,
-                      (selectedItemForConsume.availableKg !== undefined 
-                        ? Number(selectedItemForConsume.availableKg) 
-                        : Number(selectedItemForConsume.totalNetKg || 0) - Number(selectedItemForConsume.consumedKg || 0)) - parseFloat(consumedWeightKg)
-                    ).toFixed(2)} kg
+                    {Number(consumeBalance.lotAvailableKg).toFixed(2)} kg
                   </span>
+                </div>
+              )}
+              {consumeBalance.mode === 'output' && (parseFloat(consumedWeightKg) > 0 || consumeBalance.scrapKg > 0 || consumeBalance.outputNetKg > 0) && (
+                <div
+                  data-testid="consume-mass-balance"
+                  style={{
+                    background: consumeBalance.negative ? '#fef2f2' : '#f0fdf4',
+                    border: `1px solid ${consumeBalance.negative ? '#fca5a5' : '#86efac'}`,
+                    borderRadius: '10px',
+                    padding: '14px 16px',
+                    marginBottom: '20px'
+                  }}
+                >
+                  <div style={{ fontSize: '0.78rem', fontWeight: '800', color: consumeBalance.negative ? '#991b1b' : '#166534', marginBottom: '8px' }}>
+                    MASS BALANCE
+                  </div>
+                  {[
+                    ['Consumed', consumeBalance.consumedKg],
+                    ['Scrap', consumeBalance.scrapKg],
+                    ['Output', consumeBalance.outputNetKg]
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.84rem', color: '#334155', marginBottom: '4px' }}>
+                      <span>{label}</span>
+                      <span style={{ fontWeight: '700' }}>{Number(value).toFixed(2)} kg</span>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '1px solid #bbf7d0', marginTop: '6px', paddingTop: '8px' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: '800', color: consumeBalance.negative ? '#991b1b' : '#14532d' }}>
+                      Balance kept in stock
+                    </span>
+                    <span style={{ fontSize: '1.25rem', fontWeight: '900', color: consumeBalance.negative ? '#b91c1c' : '#14532d' }}>
+                      {Number(consumeBalance.balanceKeptKg).toFixed(2)} kg
+                    </span>
+                  </div>
+                  {consumeBalance.negative && (
+                    <div style={{ marginTop: '8px', fontSize: '0.8rem', color: '#991b1b', fontWeight: '700' }}>
+                      Output plus scrap exceeds the consumed weight. Correct the weights before recording.
+                    </div>
+                  )}
+                  {!consumeBalance.negative && consumeBalance.balanceKeptKg > 0 && (
+                    <div style={{ marginTop: '12px' }}>
+                      <div style={{ fontSize: '0.78rem', color: '#166534', marginBottom: '8px' }}>
+                        {consumeBalance.toQcHold
+                          ? `${Number(consumeBalance.balanceKeptKg).toFixed(2)} kg moves to QC Hold. Good stock left on this lot: ${Number(consumeBalance.lotAvailableKg).toFixed(2)} kg.`
+                          : `${Number(consumeBalance.balanceKeptKg).toFixed(2)} kg stays on ${selectedItemForConsume?.sfgBatchCode || 'this lot'}${Number(consumeBalance.lotAvailableKg) !== Number(consumeBalance.balanceKeptKg) ? ` (lot available after: ${Number(consumeBalance.lotAvailableKg).toFixed(2)} kg)` : ''}.`}
+                      </div>
+                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                        Reason for balance <span style={{ color: '#ef4444' }}>*</span>
+                      </label>
+                      <SearchableSelect
+                        id="consume-balance-reason"
+                        value={balanceReason}
+                        onChange={(e) => setBalanceReason(e.target.value)}
+                        placeholder="Select a reason..."
+                        style={{ width: '100%' }}
+                      >
+                        <option value="">Select a reason...</option>
+                        {BALANCE_REASONS.map((reason) => (
+                          <option key={reason} value={reason}>{reason}</option>
+                        ))}
+                      </SearchableSelect>
+                      {balanceReason === BALANCE_REASON_OTHER && (
+                        <input
+                          data-testid="consume-balance-note"
+                          type="text"
+                          placeholder="Note for this balance"
+                          value={balanceNote}
+                          onChange={(e) => setBalanceNote(e.target.value)}
+                          style={{
+                            width: '100%',
+                            marginTop: '8px',
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            border: '1px solid #cbd5e1',
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -4039,19 +4251,19 @@ export default function SFGStoreManagement({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmittingConsume}
+                  disabled={isSubmittingConsume || balanceBlocksSave}
                   style={{
                     padding: '10px 22px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: isSubmittingConsume 
+                    background: isSubmittingConsume || balanceBlocksSave
                       ? '#94a3b8' 
                       : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
                     color: '#ffffff',
                     fontSize: '0.88rem',
                     fontWeight: '700',
-                    cursor: isSubmittingConsume ? 'not-allowed' : 'pointer',
-                    boxShadow: isSubmittingConsume ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.3)',
+                    cursor: isSubmittingConsume || balanceBlocksSave ? 'not-allowed' : 'pointer',
+                    boxShadow: isSubmittingConsume || balanceBlocksSave ? 'none' : '0 4px 12px rgba(37, 99, 235, 0.3)',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px'

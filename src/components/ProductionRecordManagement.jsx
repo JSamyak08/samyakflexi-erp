@@ -85,6 +85,7 @@ import {
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
+import { inputRollWeightsFromLog } from '../utils/consumeMassBalance';
 
 function measureInputValue(value, fallback) {
   const primary = finiteNumber(value);
@@ -266,14 +267,15 @@ function RollWiseInputOutputMasterRolls({
   const sfgInputRolls = [];
   sfgLogs.forEach(log => {
     if (log.sfgBatchCode && parseFloat(log.consumedKg) > 0) {
+      const rollWeights = inputRollWeightsFromLog(log);
       sfgInputRolls.push({
         id: `sfg-cons-${log.id || log.sfgBatchCode}`,
         barcodeId: log.sfgBatchCode,
         filmType: log.filmType || '',
         micron: finiteNumber(log.micron),
         widthMm: finiteNumber(log.widthMm),
-        initialWeightKg: (parseFloat(log.consumedKg) || 0) + (parseFloat(log.remainingBalanceKg) || 0),
-        consumedWeightKg: parseFloat(log.consumedKg) || 0,
+        initialWeightKg: rollWeights.initialWeightKg,
+        consumedWeightKg: rollWeights.consumedWeightKg,
         source: `SFG Store (${log.targetProcess || 'Consumption'})`
       });
     }

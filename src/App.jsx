@@ -774,6 +774,51 @@ export default function App() {
     applyE2eMachinePreview();
   }, [e2eMachinePreview]);
 
+  const [e2eMassBalancePreview] = useState(() => {
+    if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('e2e') === 'mass-balance';
+    } catch {
+      return false;
+    }
+  });
+
+  const applyE2eMassBalancePreview = () => {
+    setMachines([
+      { id: 'slit', name: 'SP Ultraflex DSR RL 400 Slitter', type: 'Slitting', status: 'Active' }
+    ]);
+    setOrders([{
+      id: 'ORD-2026-133',
+      jobName: 'Darshan Guava Outer - Printed SFG Roll 1',
+      clientName: 'Samyak International',
+      poNo: 'PO-133',
+      orderQtyKg: 801.2,
+      status: 'In Production'
+    }]);
+    setSfgGoods([{
+      id: 'SFG-BAL-1',
+      sfgBatchCode: 'SFG-BC-ORD2026133-6337',
+      jobName: 'Darshan Guava Outer - Printed SFG Roll 1',
+      orderId: 'ORD-2026-133',
+      clientName: 'Samyak International',
+      filmType: 'PET',
+      micron: 12,
+      widthMm: 720,
+      rollType: 'SFG',
+      sfgType: 'Printed Rolls',
+      totalNetKg: 801.2,
+      consumedKg: 0,
+      availableKg: 801.2,
+      status: 'In Stock',
+      storageBay: 'SFG Store (Bay B - Pre-Lamination)'
+    }]);
+  };
+
+  useEffect(() => {
+    if (!e2eMassBalancePreview) return;
+    applyE2eMassBalancePreview();
+  }, [e2eMassBalancePreview]);
+
   useEffect(() => {
     if (!e2eDispatchPreview) return;
     const entry = consumptionFromLog({
@@ -1378,6 +1423,7 @@ export default function App() {
           setOrdersLoading(false);
           setIsDataFetched(true);
           if (e2eMachinePreview) applyE2eMachinePreview();
+          if (e2eMassBalancePreview) applyE2eMassBalancePreview();
         }
       }
     }
