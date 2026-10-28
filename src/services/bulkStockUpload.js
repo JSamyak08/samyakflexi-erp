@@ -335,11 +335,7 @@ function existingFingerprints(rolls, adjustments) {
     if (value) set.add(String(value));
   });
   (adjustments || []).forEach((adjustment) => {
-    String(adjustment?.bulkUploadFingerprint || '')
-      .split('||')
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .forEach((value) => set.add(value));
+    if (adjustment?.bulkUploadFingerprint) set.add(String(adjustment.bulkUploadFingerprint));
     (Array.isArray(adjustment?.bulkUploadFingerprints) ? adjustment.bulkUploadFingerprints : [])
       .forEach((value) => {
         if (value) set.add(String(value));
@@ -754,7 +750,8 @@ export function buildBulkImportPayload(plan, {
         barcode: '',
         reason: 'Opening stock receipt (bulk upload)',
         adjustedBy,
-        bulkUploadFingerprint: qtyRows.map((row) => row.bulkUploadFingerprint).filter(Boolean).join('||')
+        bulkUploadFingerprint: qtyRows.length === 1 ? qtyRows[0].bulkUploadFingerprint : '',
+        bulkUploadFingerprints: qtyRows.map((row) => row.bulkUploadFingerprint).filter(Boolean)
       });
     }
   });

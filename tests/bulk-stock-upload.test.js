@@ -177,6 +177,21 @@ test('missing names, bad weights, and unknown categories are blocked and a repea
   assert.equal(secondPayload.rolls.some((roll) => roll.barcodeId === 'RM-BC-20261028-GOOD'), false);
 });
 
+test('re-uploading the same file flags film rolls and a non-roll quantity', () => {
+  const text = sampleBulkStockCsv();
+  const plan = parseBulkStockCsv(text, { now: NOW, generateBarcode: () => 'RM-BC-20261028-AUTO' });
+  const payload = buildBulkImportPayload(plan, { now: NOW });
+  const again = parseBulkStockCsv(text, {
+    now: NOW,
+    inventory: payload.items,
+    rolls: payload.rolls,
+    adjustments: payload.adjustments,
+    generateBarcode: () => 'RM-BC-20261028-NEXT'
+  });
+  assert.equal(again.importableCount, 0);
+  assert.equal(again.rows.every((row) => row.blocked), true);
+});
+
 test('a saved bulk film keeps its typed name and writes category onto the inventory columns', () => {
   const plan = parseBulkStockCsv(csv([filmRow('PET 12 Micron 1000mm', '10', 'RM-BC-20261028-KEEP')]), { now: NOW });
   const payload = buildBulkImportPayload(plan, { now: NOW });

@@ -341,7 +341,9 @@ export default function InventoryManagement({
       const width = item.widthMm !== undefined && item.widthMm !== null ? String(item.widthMm).trim() : '';
 
       let groupKey = '';
-      if (isFilm) {
+      if (isFilm && item.preserveItemName && cleanName) {
+        groupKey = `ITEM_${cleanName.toLowerCase()}`;
+      } else if (isFilm) {
         const stdTitle = formatFilmItemName(filmType, width, micron, cleanName);
         groupKey = `FILM_${stdTitle.toLowerCase().replace(/\s+/g, '')}`;
       } else if (cleanName) {
@@ -5095,8 +5097,8 @@ export default function InventoryManagement({
                 {stockPagination.paginatedItems.map(item => {
                   const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
                   const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
-                  const title = isFilm 
-                    ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName) 
+                  const title = (isFilm && !item.preserveItemName)
+                    ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName)
                     : (item.itemName ? item.itemName.replace(/µ/g, 'Micron') : (item.category || item.filmType || 'Stock Item'));
                   const unitStr = item.unit || 'kg';
                   const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
@@ -9179,7 +9181,10 @@ export default function InventoryManagement({
         const paginatedLedgerItems = displayLines.slice((ledgerCurrentPage - 1) * ledgerPageSize, ledgerCurrentPage * ledgerPageSize);
 
         // Summary Calculations
-        const approvedInwardLines = inwardTxLines.filter(tx => !tx.isPendingQC && !tx.isRejected);
+        const approvedInwardLines = [
+          ...inwardTxLines.filter(tx => !tx.isPendingQC && !tx.isRejected),
+          ...openingReceiptLines
+        ];
         const pendingInwardLines = inwardTxLines.filter(tx => tx.isPendingQC);
         const rejectedInwardLines = inwardTxLines.filter(tx => tx.isRejected);
 
@@ -10025,8 +10030,10 @@ export default function InventoryManagement({
                   <div key={group.nameKey} data-testid="bulk-group" style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginBottom: '10px', background: group.match === 'existing' ? '#fffbeb' : '#f0fdf4' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
                       <strong>{group.itemName}</strong>
-                      <span data-testid="bulk-group-flag" style={{ fontSize: '0.75rem', fontWeight: '800', color: group.match === 'existing' ? '#92400e' : '#166534' }}>
-                        {group.match === 'existing' ? `Existing item ${group.plannedId}` : `New item ${group.plannedId || ''}`}
+                      <span data-testid="bulk-group-flag" style={{ fontSize: '0.75rem', fontWeight: '800', color: group.match === 'existing' ? '#92400e' : (group.rollCount || group.quantityRowCount ? '#166534' : '#b91c1c') }}>
+                        {group.match === 'existing'
+                          ? `Existing item ${group.plannedId}`
+                          : ((group.rollCount || group.quantityRowCount) ? `New item ${group.plannedId || ''}` : 'Blocked — not imported')}
                       </span>
                     </div>
                     <div style={{ fontSize: '0.78rem', color: '#334155', marginTop: '4px' }}>
