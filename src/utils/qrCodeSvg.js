@@ -24,3 +24,4 @@ export function generateSyncQrSvg(text, margin = 1) {
     return '';
   }
 }
+
