@@ -71,15 +71,19 @@ test('Thermal Barcode Printer Isolated Engine and Styling', () => {
   assert.equal(catInfo.displayQty, 26.9, 'Display qty should be 26.9');
   assert.equal(catInfo.displayUnit, 'Kg', 'Display unit should be Kg');
 
-  // 7. Test single sticker HTML generation
+  // 7. Test single sticker HTML generation with complete GSTIN and factory address
   const singleHtml = generateSingleStickerHtml(testRoll, {
     name: 'SAMYAK INTERNATIONAL LTD.',
-    placeOfSupply: 'Indore, MP',
+    address: '11-B, Kheda Industrial Area, Pithampur Sector - III, Dist. Dhar, Dhar (Madhya Pradesh- 23), India - 454775',
+    placeOfSupply: 'Dhar, Madhya Pradesh (23)',
     gstin: '23AABCM3526F1ZY'
   });
 
   assert.ok(singleHtml.includes('SAMYAK INTERNATIONAL LTD.'), 'HTML must include company name');
   assert.ok(singleHtml.includes('23AABCM3526F1ZY'), 'HTML must include GSTIN');
+  assert.ok(singleHtml.includes('company-gstin'), 'HTML must include company-gstin container');
+  assert.ok(singleHtml.includes('11-B, Kheda Industrial Area'), 'HTML must include factory address');
+  assert.ok(singleHtml.includes('company-address'), 'HTML must include company-address container');
   assert.ok(singleHtml.includes('RM-BC-20261029-9068NF5P'), 'HTML must include barcode ID');
   assert.ok(singleHtml.includes('26.9'), 'HTML must include net weight');
   assert.ok(singleHtml.includes('thermal-label-sheet'), 'HTML must include thermal-label-sheet class');

@@ -173,7 +173,8 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
           <div class="header-left">
             ${!r.hideBranding ? `
               <div class="company-name">${escapeHtml(company.name || 'SAMYAK INTERNATIONAL LTD.')}</div>
-              <div class="company-sub">${escapeHtml(company.placeOfSupply || 'Indore, MP')} &bull; GSTIN: ${escapeHtml(company.gstin || '')}</div>
+              <div class="company-gstin"><span class="gstin-label">GSTIN:</span> <strong class="gstin-val">${escapeHtml(company.gstin || '')}</strong></div>
+              <div class="company-address">${escapeHtml(company.address || company.placeOfSupply || '')}</div>
             ` : `
               <div class="tag-title">IDENTIFICATION TAG</div>
             `}
@@ -351,10 +352,11 @@ export function generateThermalLabelsHtml(rollList = [], company = {}, { invento
     .header-left {
       flex: 1;
       min-width: 0;
+      padding-right: 6px;
     }
     .company-name {
       font-weight: 900;
-      font-size: 0.84rem;
+      font-size: 0.82rem;
       letter-spacing: -0.01em;
       line-height: 1.15;
       color: #0f172a;
@@ -362,15 +364,32 @@ export function generateThermalLabelsHtml(rollList = [], company = {}, { invento
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .company-sub {
+    .company-gstin {
       font-size: 0.65rem;
-      color: #475569;
-      font-weight: 600;
+      color: #0f172a;
+      font-weight: 700;
       margin-top: 1px;
       line-height: 1.2;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      letter-spacing: 0.02em;
+    }
+    .gstin-label {
+      color: #475569;
+      font-weight: 600;
+    }
+    .gstin-val {
+      font-family: Consolas, Monaco, 'Courier New', monospace;
+      font-weight: 800;
+      color: #0f172a;
+    }
+    .company-address {
+      font-size: 0.53rem;
+      color: #475569;
+      font-weight: 500;
+      margin-top: 1px;
+      line-height: 1.25;
+      word-break: break-word;
+      white-space: normal;
+      overflow: visible;
     }
     .tag-title {
       font-weight: 900;

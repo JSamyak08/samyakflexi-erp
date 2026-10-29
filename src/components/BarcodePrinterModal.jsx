@@ -96,14 +96,20 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
       >
         {/* Label Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: isQCHold ? '2px solid #dc2626' : '1.5px solid #0f172a', paddingBottom: '4px', flexShrink: 0 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0, paddingRight: '6px' }}>
             {!r.hideBranding ? (
               <>
-                <div style={{ fontWeight: '900', fontSize: '0.84rem', letterSpacing: '-0.01em', lineHeight: '1.15', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <div style={{ fontWeight: '900', fontSize: '0.82rem', letterSpacing: '-0.01em', lineHeight: '1.15', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {COMPANY_DETAILS.name}
                 </div>
-                <div style={{ fontSize: '0.65rem', color: '#475569', fontWeight: '600', marginTop: '1px', lineHeight: '1.2' }}>
-                  {COMPANY_DETAILS.placeOfSupply} • GSTIN: {COMPANY_DETAILS.gstin}
+                <div style={{ fontSize: '0.65rem', color: '#0f172a', fontWeight: '700', marginTop: '1px', lineHeight: '1.2', letterSpacing: '0.02em' }}>
+                  <span style={{ color: '#475569', fontWeight: '600' }}>GSTIN:</span>{' '}
+                  <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontWeight: '800' }}>
+                    {COMPANY_DETAILS.gstin}
+                  </span>
+                </div>
+                <div style={{ fontSize: '0.53rem', color: '#475569', fontWeight: '500', marginTop: '1px', lineHeight: '1.25', wordBreak: 'break-word', whiteSpace: 'normal' }}>
+                  {COMPANY_DETAILS.address || COMPANY_DETAILS.placeOfSupply}
                 </div>
               </>
             ) : (
