@@ -1242,7 +1242,9 @@ td.no-capitalize,
   #printable-barcode-label,
   #printable-barcode-label *,
   .printable-barcode-sheet,
-  .printable-barcode-sheet * {
+  .printable-barcode-sheet *,
+  .printable-barcode-container,
+  .printable-barcode-container * {
     visibility: visible !important;
   }
 
