@@ -374,8 +374,7 @@
   .pdf-paper-container,
   .printable-jobcard-host,
   div:has(.printable-document),
-  div:has(.printable-landscape-card),
-  div:has(.printable-barcode-container) {
+  div:has(.printable-landscape-card) {
     visibility: visible !important;
     height: auto !important;
     min-height: 0 !important;
@@ -874,16 +873,4 @@
     page-break-before: avoid !important;
   }
 
-  /* 4×4 barcode stickers keep their own page size. Do not force them onto A4. */
-  .printable-barcode-container,
-  .printable-barcode-container * {
-    visibility: visible !important;
-    overflow: visible !important;
-  }
-
-  .printable-barcode-single-label {
-    height: 3.9in !important;
-    max-height: 3.9in !important;
-    min-height: 0 !important;
-  }
 }
