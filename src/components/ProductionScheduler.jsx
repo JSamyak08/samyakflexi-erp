@@ -183,17 +183,28 @@ export default function ProductionScheduler({
 }) {
   // Navigation Tabs: 'queue' (Ready Queue - Default) | 'completed' (Completed Jobs) | 'machines' (Press Configuration)
   const [activeTab, setActiveTab] = useState(urlParams?.tab || 'queue');
+  const [searchQuery, setSearchQuery] = useState('');
+  const focusOrderId = urlParams?.orderId ? String(urlParams.orderId) : '';
   useEffect(() => {
     if (urlParams?.tab === 'queue' || urlParams?.tab === 'completed' || urlParams?.tab === 'machines') {
       setActiveTab(urlParams.tab);
     }
   }, [urlParams?.tab]);
+  useEffect(() => {
+    if (!focusOrderId) return;
+    setActiveTab('queue');
+    setSearchQuery(focusOrderId);
+  }, [focusOrderId]);
+  useEffect(() => {
+    if (!focusOrderId) return;
+    const node = document.getElementById(`press-job-${focusOrderId}`);
+    if (node) node.scrollIntoView({ block: 'center' });
+  }, [focusOrderId, orders]);
   const choosePressTab = (tab) => {
     setActiveTab(tab);
     if (onSectionChange) onSectionChange(tab);
     else if (urlParams && Object.keys(urlParams).length > 0) pushSlugState('printing_scheduler', { section: tab });
   };
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedMachineFilter, setSelectedMachineFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'In Production' | 'Ready' | 'Overdue' | 'Material Pending'
 
@@ -605,13 +616,15 @@ export default function ProductionScheduler({
   // Filtered Ready Queue View
   const filteredQueue = useMemo(() => {
     return readyQueueOrders.filter(order => {
+      if (focusOrderId && String(order.id) === focusOrderId) return true;
       // Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
         const matchesJobName = (order.jobName || '').toLowerCase().includes(q);
         const matchesClient = (order.clientName || '').toLowerCase().includes(q);
-        const matchesJobCode = String(order.jobCode || order.id || '').toLowerCase().includes(q);
-        if (!matchesJobName && !matchesClient && !matchesJobCode) return false;
+        const matchesJobCode = String(order.jobCode || '').toLowerCase().includes(q);
+        const matchesId = String(order.id || '').toLowerCase().includes(q);
+        if (!matchesJobName && !matchesClient && !matchesJobCode && !matchesId) return false;
       }
       // Machine filter
       if (selectedMachineFilter !== 'All') {
@@ -625,7 +638,7 @@ export default function ProductionScheduler({
       if (statusFilter === 'Material Pending' && (order.isMaterialReady || order.isCurrentlyInProduction)) return false;
       return true;
     });
-  }, [readyQueueOrders, searchQuery, selectedMachineFilter, statusFilter, activeMachineSelection, rotogravureMachines]);
+  }, [readyQueueOrders, searchQuery, selectedMachineFilter, statusFilter, activeMachineSelection, rotogravureMachines, focusOrderId]);
 
   // Filtered Completed Jobs View
   const filteredCompleted = useMemo(() => {
@@ -1461,6 +1474,20 @@ export default function ProductionScheduler({
       {/* ========================================================================= */}
       {activeTab === 'queue' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {focusOrderId && (
+            <div style={{
+              background: '#fff7ed',
+              border: '1px solid #fdba74',
+              borderRadius: '12px',
+              padding: '14px 16px',
+              color: '#9a3412',
+              fontSize: '0.86rem',
+              fontWeight: '700',
+            }}>
+              Plan {(orders || []).find((item) => String(item.id) === focusOrderId)?.jobName || focusOrderId} at the earliest.
+              The queue is filtered to this job so it can go on a press now.
+            </div>
+          )}
           
           {/* Queue Filter Bar & Controls */}
           <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', borderRadius: '12px' }}>
@@ -1599,11 +1626,13 @@ export default function ProductionScheduler({
 
                 return (
                   <div 
-                    key={order.id} 
+                    key={order.id}
+                    id={`press-job-${order.id}`}
                     className={`glass-card scheduler-queue-card ${canRearrangeQueue ? 'with-reorder' : ''}`} 
                     style={{ 
                       padding: '18px 22px', 
                       borderRadius: '14px',
+                      outline: focusOrderId && String(order.id) === focusOrderId ? '2px solid #ea580c' : 'none',
                       borderLeft: order.isCurrentlyInProduction 
                         ? '6px solid #2563eb' 
                         : order.isOverdue 

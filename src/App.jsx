@@ -11,6 +11,7 @@ import {
   getOrderStageInfo,
   FILM_DENSITIES
 } from './factoryStore';
+import { assessPrintingDeadlineReminder } from './utils/orderDeadlineReminder';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -67,6 +68,7 @@ import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
+import DeadlineReminderBanner from './components/DeadlineReminderBanner';
 import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
@@ -1891,6 +1893,15 @@ export default function App() {
   const isRecDue = isReconciliationDue();
   const delayedOrders = useMemo(() => (orders || []).filter(o => isOrderOverdue(o)), [orders]);
   const delayedOrdersCount = delayedOrders.length;
+  const [printingDeadlineBannerHidden, setPrintingDeadlineBannerHidden] = useState(false);
+  const printingDeadlineReminders = useMemo(() => (
+    (orders || []).flatMap((order) => {
+      if (!order) return [];
+      const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
+      const assessment = assessPrintingDeadlineReminder(order, stageInfo);
+      return assessment.active ? [{ order, stageInfo, assessment }] : [];
+    })
+  ), [orders, sfgGoods, productionRecords]);
   const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
@@ -2314,6 +2325,11 @@ export default function App() {
       setOrders((prev) => prev.map((order) => updated.get(order.id) || order));
     }
     return decisions;
+  };
+
+  const handleOrderDeadlineSaved = async (order, auditText) => {
+    setOrders((prev) => prev.map((item) => (item.id === order.id ? { ...item, ...order } : item)));
+    await logAudit('UPDATE', 'Orders', auditText || `Updated the pre-printing deadline for ${order.id}`, order.id);
   };
 
   const handleUpdateOrder = async (updatedOrder) => {
@@ -4883,6 +4899,15 @@ export default function App() {
           </div>
         ) : moduleOpen && activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            {!printingDeadlineBannerHidden && (
+              <DeadlineReminderBanner
+                reminders={printingDeadlineReminders}
+                canPlanPrinting={isTabAllowed('printing_scheduler')}
+                onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
+                onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
+                onDismiss={() => setPrintingDeadlineBannerHidden(true)}
+              />
+            )}
             {/* Redesigned Executive Operational Alerts Hub */}
             {(delayedOrdersCount > 0 || (lowStockInks || []).length > 0) && (
               <div style={{
@@ -5282,6 +5307,13 @@ export default function App() {
                               ) : (
                                 <span className="badge badge-us">{o.status}</span>
                               )}
+                              {printingDeadlineReminders.some((item) => item.order.id === o.id) && (
+                                <div style={{ marginTop: '6px' }}>
+                                  <span className="badge-delayed-tag" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }}>
+                                    PLAN PRINTING
+                                  </span>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
@@ -5594,6 +5626,9 @@ export default function App() {
             onSaveOrderCloseSettings={handleSaveOrderCloseSettings}
             onManualCloseOrder={handleManualCloseOrder}
             onManualReopenOrder={handleManualReopenOrder}
+            canPlanPrinting={isTabAllowed('printing_scheduler')}
+            onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
+            onOrderDeadlineSaved={handleOrderDeadlineSaved}
           />
         )}
 
