@@ -48,6 +48,7 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
+import GrnPoSuggestion from './GrnPoSuggestion';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, getDocumentPrefixes } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
@@ -97,6 +98,14 @@ import {
   parseStandardDate
 } from '../factoryStore';
 import { codeKey, codeKeyFrom, codeStartsWith, codesEqual, textFrom } from '../utils/barcodeCode';
+import {
+  blankPoFilledGrnFields,
+  describePoForSuggestion,
+  filmStockIdForPoItem,
+  grnFieldsFromPo,
+  planPoSelection,
+  planVendorPick
+} from '../services/grnPoSuggestion';
 
 export const INVENTORY_CATEGORIES = [
   "Film Substrates",
@@ -930,8 +939,8 @@ export default function InventoryManagement({
       onAddVendor(createdVendor);
     }
 
-    // Auto select the newly created vendor for the GRN form
-    setGrnVendor(createdVendor.companyName);
+    // Select the new vendor. Open POs are suggested; the receipt stays blank until one is confirmed.
+    handleGrnVendorChange(createdVendor.companyName);
 
     // Reset vendor modal state
     setNewVendorCompanyName('');
@@ -1033,6 +1042,8 @@ export default function InventoryManagement({
   const [grnVendor, setGrnVendor] = useState('');
   const [grnPoNo, setGrnPoNo] = useState('');
   const [isManualPoEntry, setIsManualPoEntry] = useState(false);
+  const [poSuggestionDismissed, setPoSuggestionDismissed] = useState(false);
+  const [grnPoApplied, setGrnPoApplied] = useState(false);
   const [grnInvoiceNo, setGrnInvoiceNo] = useState('');
   const [grnCategory, setGrnCategory] = useState('');
   const [grnItemName, setGrnItemName] = useState('');
@@ -1711,74 +1722,118 @@ export default function InventoryManagement({
     });
   }, [unifiedIssuedPOs, grnVendor, grns, vendors]);
 
-  // Handler when selecting a PO from the Ref PO Number searchable dropdown
+  const grnPoSuggestions = (!grnVendor || poSuggestionDismissed || isManualPoEntry || grnPoApplied)
+    ? []
+    : vendorActivePOs.map((po) => describePoForSuggestion(po, getPoDeliveryInfo(po)));
+  const showGrnPoSuggestion = grnPoSuggestions.length > 0;
+
+  const writePoFilledGrnFields = (fields, { applied }) => {
+    const weightKg = fields.weightKg ?? '';
+    const lengthMeters = fields.category === 'Film Substrates' && Number(weightKg) > 0
+      ? calculateFilmRollLength(weightKg, fields.widthMm, fields.micron, fields.filmType)
+      : '';
+    setGrnPoNo(fields.poNumber);
+    setGrnCategory(fields.category);
+    setGrnPurchaseRate(fields.purchaseRate);
+    setGrnFilmType(fields.filmType);
+    setGrnMicron(fields.micron);
+    setGrnWidthMm(fields.widthMm);
+    setGrnItemName(fields.itemName);
+    setGrnItemSearchTerm(fields.itemSearchTerm);
+    setGrnSelectedStockItemId(fields.stockItemId);
+    setGrnWeightKg(weightKg);
+    setGrnRolls('1');
+    setGrnItemsList([{
+      id: `item-${Date.now()}-1`,
+      grossWeightKg: weightKg,
+      tareWeightKg: grnDefaultTare || 0,
+      netWeightKg: weightKg,
+      lengthMeters,
+      vendorRollNo: '',
+      notes: ''
+    }]);
+    setGrnPoApplied(applied);
+    setIsGrnItemDropdownOpen(false);
+  };
+
+  const clearPoFilledGrnFields = () => {
+    writePoFilledGrnFields(blankPoFilledGrnFields(), { applied: false });
+  };
+
+  const applyConfirmedPoFields = (fields) => {
+    setIsManualPoEntry(false);
+    writePoFilledGrnFields(fields, { applied: true });
+  };
+
+  // Vendor choice only suggests open POs. The receipt stays editable and empty.
+  const handleGrnVendorChange = (nextVendor) => {
+    if (nextVendor === '__CREATE_NEW__') {
+      setIsVendorModalOpen(true);
+      return;
+    }
+    if (nextVendor === grnVendor) return;
+    const vendorPlan = planVendorPick((unifiedIssuedPOs || []).filter((po) => {
+      if (!po || !po.poNumber || !isPoVendorMatch(po, nextVendor)) return false;
+      const info = getPoDeliveryInfo(po);
+      return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
+    }).map((po) => po.poNumber));
+    setGrnVendor(nextVendor);
+    setIsManualPoEntry(false);
+    setPoSuggestionDismissed(false);
+    if (grnPoApplied) clearPoFilledGrnFields();
+    else setGrnPoNo('');
+    if (vendorPlan.fillForm && vendorPlan.suggestedPoNumbers[0]) {
+      handleSelectPoForGrn(vendorPlan.suggestedPoNumbers[0]);
+    }
+  };
+
+  const enterManualPoEntry = () => {
+    setIsManualPoEntry(true);
+    setPoSuggestionDismissed(true);
+    if (grnPoApplied) clearPoFilledGrnFields();
+    else setGrnPoNo('');
+    setTimeout(() => document.getElementById('grn-po-manual')?.focus(), 0);
+  };
+
+  const dismissPoSuggestion = () => {
+    setPoSuggestionDismissed(true);
+  };
+
+  // Explicit PO confirm fills the form. Changing or clearing that PO drops the fields it wrote.
   const handleSelectPoForGrn = (selectedPoNumber) => {
-    if (selectedPoNumber === '__MANUAL__') {
-      setIsManualPoEntry(true);
-      setGrnPoNo('');
+    const plan = planPoSelection(selectedPoNumber);
+    if (plan.action === 'manual') {
+      enterManualPoEntry();
+      return;
+    }
+    if (plan.action === 'clear') {
+      if (grnPoApplied) clearPoFilledGrnFields();
+      else setGrnPoNo('');
+      return;
+    }
+    if (grnPoApplied && grnPoNo === plan.poNumber) return;
+
+    const targetPo = (vendorActivePOs || []).find(p => p && p.poNumber === plan.poNumber) ||
+                     (unifiedIssuedPOs || []).find(p => p && p.poNumber === plan.poNumber);
+    if (!targetPo) {
+      if (grnPoApplied) clearPoFilledGrnFields();
+      setGrnPoNo(plan.poNumber);
+      setGrnPoApplied(false);
       return;
     }
 
-    setGrnPoNo(selectedPoNumber);
-
-    const targetPo = (vendorActivePOs || []).find(p => p && p.poNumber === selectedPoNumber) ||
-                     (unifiedIssuedPOs || []).find(p => p && p.poNumber === selectedPoNumber);
-    if (!targetPo) return;
-
-    if (targetPo.category) {
-      setGrnCategory(targetPo.category);
-    }
-
     const firstItem = (targetPo.items || [])[0];
-    if (firstItem) {
-      if (firstItem.rate && (!grnPurchaseRate || Number(grnPurchaseRate) === 0)) {
-        setGrnPurchaseRate(firstItem.rate);
-      }
+    const fields = grnFieldsFromPo(targetPo, {
+      pendingQty: getPoDeliveryInfo(targetPo).pendingQty,
+      filmStockId: filmStockIdForPoItem(inventory, firstItem),
+      formatFilmItemName
+    });
+    applyConfirmedPoFields(fields);
+  };
 
-      const activeCat = targetPo.category || grnCategory || 'Film Substrates';
-      if (activeCat === 'Film Substrates' || firstItem.filmType) {
-        if (firstItem.filmType) setGrnFilmType(firstItem.filmType);
-        if (firstItem.micron && firstItem.micron !== '-') setGrnMicron(firstItem.micron);
-        if (firstItem.widthMm && firstItem.widthMm !== '-') setGrnWidthMm(firstItem.widthMm);
-
-        const itemTitle = formatFilmItemName(firstItem.filmType || 'PET', firstItem.widthMm || 1000, firstItem.micron || 12);
-        setGrnItemName(itemTitle);
-        setGrnItemSearchTerm(itemTitle);
-
-        const matchedStock = (inventory || []).find(inv => {
-          const catMatch = String(inv.category || '').toLowerCase() === 'film substrates';
-          const typeMatch = String(inv.filmType || '').toUpperCase() === String(firstItem.filmType || '').toUpperCase();
-          const micronMatch = String(inv.micron || '') === String(firstItem.micron || '');
-          const widthMatch = String(inv.widthMm || '') === String(firstItem.widthMm || '');
-          return catMatch && typeMatch && micronMatch && widthMatch;
-        });
-        if (matchedStock) {
-          setGrnSelectedStockItemId(matchedStock.id || matchedStock.itemCode || '');
-        }
-      } else {
-        const desc = firstItem.itemDesc || firstItem.description || firstItem.itemName || '';
-        if (desc) {
-          setGrnItemName(desc);
-          setGrnItemSearchTerm(desc);
-        }
-        if (firstItem.itemId || firstItem.stockItemId) {
-          setGrnSelectedStockItemId(firstItem.itemId || firstItem.stockItemId);
-        }
-      }
-
-      const deliveryInfo = getPoDeliveryInfo(targetPo);
-      const pendingQty = deliveryInfo.pendingQty || firstItem.qtyKg || firstItem.qty || 0;
-      if ((!grnWeightKg || Number(grnWeightKg) === 0) && pendingQty > 0) {
-        setGrnWeightKg(pendingQty);
-        if (Array.isArray(grnItemsList) && grnItemsList.length === 1 && (!grnItemsList[0].grossWeightKg || grnItemsList[0].grossWeightKg === '')) {
-          setGrnItemsList([{
-            ...grnItemsList[0],
-            grossWeightKg: pendingQty,
-            netWeightKg: pendingQty
-          }]);
-        }
-      }
-    }
+  const confirmSuggestedPo = (poNumber) => {
+    handleSelectPoForGrn(poNumber);
+    setTimeout(() => document.getElementById('grn-vendor-invoice')?.focus(), 0);
   };
 
   const handleConfirmResolveDiscrepancy = async () => {
@@ -1927,6 +1982,9 @@ export default function InventoryManagement({
     setGrnItemSearchTerm(generatedTitle);
     setGrnSelectedStockItemId('');
     setGrnRolls('1');
+    setIsManualPoEntry(false);
+    setPoSuggestionDismissed(false);
+    setGrnPoApplied(true);
     
     // Weight must be entered by user, not pre-filled
     setGrnItemsList([
@@ -1993,6 +2051,8 @@ export default function InventoryManagement({
     setGrnLineOrder([freshLineId]);
     setIsNewGRNModalOpen(true);
     setIsManualPoEntry(false);
+    setPoSuggestionDismissed(false);
+    setGrnPoApplied(false);
     setGrnVendor('');
     setGrnPoNo('');
     setGrnCategory('');
@@ -6246,6 +6306,17 @@ export default function InventoryManagement({
               </button>
             </div>
 
+            {showGrnPoSuggestion && (
+              <GrnPoSuggestion
+                key={grnVendor}
+                vendorName={grnVendor}
+                suggestions={grnPoSuggestions}
+                onUsePo={confirmSuggestedPo}
+                onEnterManually={enterManualPoEntry}
+                onDismiss={dismissPoSuggestion}
+              />
+            )}
+
             {/* Scrollable Form Body */}
             <form onSubmit={handleSaveGRN}>
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
@@ -6287,28 +6358,7 @@ export default function InventoryManagement({
                       placeholder="Select or search vendor"
                       searchPlaceholder="Search vendor name or GSTIN..."
                       value={grnVendor} 
-                      onChange={e => {
-                        if (e.target.value === '__CREATE_NEW__') {
-                          setIsVendorModalOpen(true);
-                        } else {
-                          const newV = e.target.value;
-                          setGrnVendor(newV);
-                          setIsManualPoEntry(false);
-                          
-                          // Check active POs awaiting delivery for this newly selected vendor
-                          const matching = (unifiedIssuedPOs || []).filter(po => {
-                            if (!po || !po.poNumber) return false;
-                            if (!isPoVendorMatch(po, newV)) return false;
-                            const info = getPoDeliveryInfo(po);
-                            return info.status === 'Awaiting Delivery' || info.status === 'Partially Received';
-                          });
-                          if (matching.length === 1) {
-                            handleSelectPoForGrn(matching[0].poNumber);
-                          } else {
-                            setGrnPoNo('');
-                          }
-                        }
-                      }}
+                      onChange={e => handleGrnVendorChange(e.target.value)}
                       triggerStyle={{ fontWeight: '500' }}
                     >
                       <option value="" disabled>-- Select Vendor --</option>
@@ -6348,40 +6398,59 @@ export default function InventoryManagement({
                         )}
                       </label>
                       {vendorActivePOs.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (isManualPoEntry) {
-                              setIsManualPoEntry(false);
-                              if (vendorActivePOs.length === 1) {
-                                handleSelectPoForGrn(vendorActivePOs[0].poNumber);
+                        <span style={{ display: 'inline-flex', gap: '12px', alignItems: 'center' }}>
+                          {poSuggestionDismissed && !isManualPoEntry && !grnPoApplied && (
+                            <button
+                              type="button"
+                              onClick={() => setPoSuggestionDismissed(false)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: '#9a3412',
+                                fontSize: '0.74rem',
+                                fontWeight: '700',
+                                cursor: 'pointer',
+                                padding: 0,
+                                textDecoration: 'underline'
+                              }}
+                            >
+                              Show suggested POs
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isManualPoEntry) {
+                                setIsManualPoEntry(false);
+                                setPoSuggestionDismissed(false);
+                              } else {
+                                enterManualPoEntry();
                               }
-                            } else {
-                              setIsManualPoEntry(true);
-                            }
-                          }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#0284c7',
-                            fontSize: '0.74rem',
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            padding: 0,
-                            textDecoration: 'underline'
-                          }}
-                        >
-                          {isManualPoEntry ? `← Select from Active POs (${vendorActivePOs.length})` : 'Enter manually'}
-                        </button>
+                            }}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#0284c7',
+                              fontSize: '0.74rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              padding: 0,
+                              textDecoration: 'underline'
+                            }}
+                          >
+                            {isManualPoEntry ? `← Select from Active POs (${vendorActivePOs.length})` : 'Enter manually'}
+                          </button>
+                        </span>
                       )}
                     </div>
 
                     {vendorActivePOs.length > 0 && !isManualPoEntry ? (
                       <SearchableSelect
                         className="form-control"
-                        placeholder="-- Select Active PO (Awaiting Delivery) --"
+                        placeholder="Select a suggested PO to fill this receipt"
                         searchPlaceholder="Search PO #, item, or quantity..."
                         value={grnPoNo}
+                        isClearable
                         onChange={e => handleSelectPoForGrn(e.target.value)}
                         triggerStyle={{ 
                           fontWeight: '600',
@@ -6390,7 +6459,7 @@ export default function InventoryManagement({
                           background: grnPoNo ? '#f0f9ff' : '#ffffff'
                         }}
                       >
-                        <option value="" disabled>-- Select Active PO (Awaiting Delivery) --</option>
+                        <option value="" disabled>Select a suggested PO to fill this receipt</option>
                         {vendorActivePOs.map(po => {
                           const firstItem = (po.items || [])[0] || {};
                           const itemsSummary = (po.items || []).map(it => it.itemDesc || it.description || it.itemName || it.filmType || 'Item').join(', ');
@@ -6417,11 +6486,16 @@ export default function InventoryManagement({
                     ) : (
                       <>
                         <input 
+                          id="grn-po-manual"
                           type="text" 
                           className="form-control" 
                           placeholder="e.g. SIL/PO/26-27/1941" 
                           value={grnPoNo} 
-                          onChange={e => setGrnPoNo(e.target.value)} 
+                          onChange={e => {
+                            const next = e.target.value;
+                            if (grnPoApplied) clearPoFilledGrnFields();
+                            setGrnPoNo(next);
+                          }} 
                         />
                         {grnVendor && vendorActivePOs.length === 0 && (
                           <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '3px' }}>
@@ -6435,7 +6509,7 @@ export default function InventoryManagement({
                     <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>
                       Vendor Invoice Number <span style={{ color: '#ef4444' }}>*</span>
                     </label>
-                    <input type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
+                    <input id="grn-vendor-invoice" type="text" className="form-control" required placeholder="e.g. INV-FP-9904" value={grnInvoiceNo} onChange={e => setGrnInvoiceNo(e.target.value)} />
                   </div>
                   <div className="form-group">
                     <label style={{ fontWeight: '600', fontSize: '0.83rem', color: '#334155' }}>Transporter Name / Vehicle #</label>
