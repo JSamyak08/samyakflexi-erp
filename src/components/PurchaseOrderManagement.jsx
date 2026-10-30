@@ -51,6 +51,7 @@ import {
 } from '../utils/poAmendment';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
+import { resolveReceiptItem } from '../services/inventoryIdentity';
 import { generateInventoryId } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
@@ -1173,6 +1174,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           batchNo: batchFallback,
           remarks: grnFormData.variationNotes.trim(),
           weightKg: enteredWeight,
+          stockItemId: activeGrnModalData.item?.itemId || activeGrnModalData.item?.stockItemId || '',
           rolls: splitReceivedRolls(enteredWeight, grnFormData.rollsCount)
         };
         const extraCaptured = includedExtras.map((line) => ({
@@ -1188,6 +1190,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           batchNo: batchFallback,
           remarks: grnFormData.variationNotes.trim(),
           weightKg: parseFloat(line.weight),
+          stockItemId: line.itemId || line.stockItemId || '',
           rolls: splitReceivedRolls(parseFloat(line.weight), line.rollsCount)
         }));
         const poItems = (activeGrnModalData.items || []).map((item, index) => ({
@@ -1210,7 +1213,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           nowIso,
           inventory,
           poItems,
-          generateInventoryId
+          generateInventoryId,
+          idSources: [grns]
         });
         const multiGRN = {
           ...prepared.newGRN,
@@ -1268,7 +1272,15 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
       const countUnits = parseInt(grnFormData.rollsCount, 10) || 1;
       const unitWeight = Number((enteredWeight / countUnits).toFixed(2));
-      const newInvId = `INV-${Date.now().toString().slice(-6)}`;
+      const existingStock = resolveReceiptItem(inventory, {
+        itemName: enteredNameClean,
+        category: grnFormData.category || 'Raw Materials',
+        filmType: grnFormData.filmType || '',
+        micron: grnFormData.micron || '-',
+        widthMm: grnFormData.widthMm || '-',
+        stockItemId: activeGrnModalData.item?.itemId || activeGrnModalData.item?.stockItemId || ''
+      });
+      const newInvId = existingStock ? String(existingStock.id) : generateInventoryId(inventory, grns);
 
       const itemsBreakdown = Array.from({ length: countUnits }, (_, i) => ({
         barcodeId: `${grnNo}-U${String(i + 1).padStart(2, '0')}`,
@@ -1337,8 +1349,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         if (returned) storedGRN = { ...grnToSave, ...returned };
       }
 
-      // 2. Add to Inventory Stock Item
-      if (onSaveInventoryItem) {
+      // 2. Add a stock row only when this spec is not already on the ledger. Quantity stays 0 until QC.
+      if (onSaveInventoryItem && !existingStock) {
         const newInvItem = {
           id: newInvId,
           itemCode: newInvId,

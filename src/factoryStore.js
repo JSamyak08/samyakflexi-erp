@@ -1258,20 +1258,59 @@ export const generateBarcodeId = (prefix = 'BC') => {
   return `${prefix}-${dateStr}-${timeMs}${randomHex}`;
 };
 
-export const generateInventoryId = (inventory = []) => {
-  let maxNum = 0;
-  (inventory || []).forEach(item => {
-    const id = String(item?.id || item?.itemCode || '');
-    const match = id.match(/(?:INVT|INV)[-_\s]*(\d+)/i) || id.match(/(\d+)/);
-    if (match && match[1]) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num) && num > maxNum && num < 1000000) {
-        maxNum = num;
-      }
-    }
+function inventorySerialFrom(value, loose) {
+  const id = String(value ?? '').trim();
+  if (!id) return 0;
+  const prefixed = id.match(/(?:INVT|INV)[-_\s]*(\d+)/i);
+  const match = prefixed || (loose ? id.match(/(\d+)/) : null);
+  if (!match) return 0;
+  const num = parseInt(match[1], 10);
+  if (!Number.isFinite(num) || num <= 0 || num >= 1000000) return 0;
+  return num;
+}
+
+function visitInventoryRefs(node, bump, depth) {
+  if (node == null || depth > 6) return;
+  if (Array.isArray(node)) {
+    node.forEach((child) => visitInventoryRefs(child, bump, depth));
+    return;
+  }
+  if (typeof node !== 'object') {
+    bump(node, false);
+    return;
+  }
+  ['id', 'itemCode', 'item_code', 'stockItemId', 'stock_item_id', 'masterItemId', 'master_item_id', 'itemId', 'item_id']
+    .forEach((key) => bump(node[key], false));
+  ['lineItems', 'items', 'subItems', 'rolls'].forEach((key) => {
+    if (Array.isArray(node[key])) visitInventoryRefs(node[key], bump, depth + 1);
   });
-  const nextNum = maxNum + 1;
-  return `INVT-${String(nextNum).padStart(4, '0')}`;
+}
+
+/**
+ * Next INVT id is one past the highest number ever used.
+ * Gaps are not filled. Ids that only remain on a GRN or a roll still count,
+ * so a deleted item's number is not given out again.
+ */
+export const generateInventoryId = (inventory = [], ...extras) => {
+  let maxNum = 0;
+  const bump = (value, loose) => {
+    const num = inventorySerialFrom(value, loose);
+    if (num > maxNum) maxNum = num;
+  };
+  (inventory || []).forEach((item) => {
+    if (item == null) return;
+    if (typeof item !== 'object') {
+      bump(item, true);
+      return;
+    }
+    bump(item.id, true);
+    bump(item.itemCode ?? item.item_code, true);
+    bump(item.stockItemId ?? item.stock_item_id, false);
+    bump(item.masterItemId ?? item.master_item_id, false);
+    bump(item.itemId ?? item.item_id, false);
+  });
+  extras.forEach((list) => visitInventoryRefs(list, bump, 0));
+  return `INVT-${String(maxNum + 1).padStart(4, '0')}`;
 };
 
 export const PACKAGING_MATERIAL_TYPES = [
