@@ -14,6 +14,7 @@ import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
 import StorageImage from './StorageImage';
+import { openArtworkViewer } from '../services/supabaseStorageService';
 import { 
   Printer, 
   Play,
@@ -2605,16 +2606,15 @@ export default function ProductionScheduler({
                       >
                         <Maximize2 size={13} /> Zoom
                       </button>
-                      <a 
-                        href={activeRunningJob.artworkUrl} 
-                        download={`${activeRunningJob.jobName || 'Artwork'}.jpg`}
-                        target="_blank" 
-                        rel="noreferrer"
+                      <button 
+                        type="button"
+                        onClick={() => openArtworkViewer(activeRunningJob.artworkUrl, activeRunningJob.jobName || 'Artwork')}
                         className="btn-secondary" 
-                        style={{ padding: '5px 10px', fontSize: '0.75rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                        style={{ padding: '5px 10px', fontSize: '0.75rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', cursor: 'pointer' }}
+                        title="View / Download Artwork"
                       >
-                        <Download size={13} /> Save
-                      </a>
+                        <Download size={13} /> Save / View
+                      </button>
                     </div>
                   )}
                 </div>
