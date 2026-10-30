@@ -40,7 +40,7 @@ import { toSalaryAdvanceRow } from './salaryAdvance';
 import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { buildOcnAmendment } from '../utils/ocnAmendment';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
-import { linesForSave, stampLineIds } from './grnDocument';
+import { linesForSave, normalizeInvoiceNo, stampLineIds } from './grnDocument';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
@@ -1011,7 +1011,12 @@ export async function saveGRNToSupabase(grn) {
     originalPoItemName: clean.originalPoItemName || '',
     orderedPoQtyKg: clean.orderedPoQtyKg || null,
     agreedPoRate: clean.agreedPoRate || null,
-    vehicleNo: clean.vehicleNo || ''
+    vehicleNo: clean.vehicleNo || '',
+    cancelledBy: clean.cancelledBy || '',
+    cancelledAt: clean.cancelledAt || '',
+    cancelReason: clean.cancelReason || '',
+    editedBy: clean.editedBy || '',
+    editedAt: clean.editedAt || ''
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
@@ -1049,16 +1054,18 @@ export async function saveGRNToSupabase(grn) {
 
   // Same supplier and the same invoice is a second document. A different supplier may reuse the number.
   // The row being saved is not a duplicate of itself. save_grn_with_lines applies the same rule.
-  if (clean.invoiceNo && targetVName) {
+  const wantedInvoice = normalizeInvoiceNo(clean.invoiceNo);
+  if (wantedInvoice && targetVName) {
     const { data: existingGrns, error: duplicateLookupError } = await supabase
       .from('grns')
-      .select('id, grn_number, invoice_number, vendor_id, item_name')
-      .eq('invoice_number', clean.invoiceNo);
+      .select('id, grn_number, invoice_number, vendor_id, item_name, status');
     if (duplicateLookupError) {
       throw new Error(`Could not check for a duplicate GRN invoice: ${duplicateLookupError.message}`);
     }
     const wantedVendor = targetVName.toLowerCase();
     const match = (existingGrns || []).find((row) => {
+      if (String(row.status || '').toLowerCase().includes('cancel')) return false;
+      if (normalizeInvoiceNo(row.invoice_number) !== wantedInvoice) return false;
       const sameDocument = String(row.id) === String(grnId) || String(row.grn_number) === String(clean.grnNo || grnId);
       if (sameDocument) return false;
       if (validVendorId && String(row.vendor_id) === String(validVendorId)) return true;
