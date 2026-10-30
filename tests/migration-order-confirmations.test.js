@@ -41,3 +41,4 @@ test('order confirmation migration is idempotent and creates order_confirmations
   assert.ok(colNames.includes('amendment_no'));
   assert.ok(colNames.includes('payload'));
 });
+

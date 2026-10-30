@@ -29,6 +29,7 @@ import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
 import { 
   calculateJobRawMaterials, 
+  parseStructureLayers,
   isOrderOverdue, 
   isOrderNearingDeadline, 
   getOrderStatusInfo,
@@ -39,12 +40,13 @@ import {
   requirementStockKey
 } from '../factoryStore';
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
+import { anyAssignedRole } from '../assignedRoles';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
 import DeadlineReminderBanner from './DeadlineReminderBanner';
 import { assessPrintingDeadlineReminder, canManageOrderDeadline } from '../utils/orderDeadlineReminder';
-import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients } from '../services/supabaseDataService';
+import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients, getCachedOrderConfirmations, saveOrderConfirmationAmendment } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
@@ -291,10 +293,9 @@ export default function OrderManagement({
     }
   };
 
-  const isAdmin = currentUser?.role === 'Admin' || 
-                  currentUser?.role?.toLowerCase() === 'admin' || 
-                  currentUser?.role?.toLowerCase() === 'executive management' || 
-                  currentUser?.role?.toLowerCase() === 'system admin';
+  const isAdmin = anyAssignedRole(currentUser, (_role, lower) =>
+    lower === 'admin' || lower === 'executive management' || lower === 'system admin'
+  );
 
   // Admin Edit Order Modal States
   const [editingOrder, setEditingOrder] = useState(null);
@@ -455,13 +456,98 @@ export default function OrderManagement({
       return;
     }
 
+    const newOrderQtyKg = parseFloat(editOrderQtyKg) || 0;
+    const isCylinder = editOrderType === 'Rotogravure Cylinder' || (editOrderType || '').toLowerCase().includes('cylinder');
+
+    // 1. Match Job Master for dimension fallbacks
+    const matchedJM = (jobMasters || []).find(j =>
+      (editingOrder.jobMasterId && (j.id === editingOrder.jobMasterId || j.jobMasterId === editingOrder.jobMasterId)) ||
+      ((j.jobName || '').toLowerCase().trim() === (editJobName || '').toLowerCase().trim())
+    );
+
+    // 2. Parse and resolve layers with custom structure, previous layers, and metallocene
+    const oldLayers = editingOrder.layers || editingOrder.jobDetails?.layers || matchedJM?.layers || [];
+    const resolvedLayers = parseStructureLayers(editStructure.trim(), oldLayers, editMetallocenePct.trim());
+
+    // 3. Recalculate raw material requirements and costing
+    let newCalc = null;
+    let newMaterialRequirements = [];
+
+    if (!isCylinder && newOrderQtyKg > 0) {
+      const printWidthMm = parseFloat(editingOrder.printWidthMm || editingOrder.jobDetails?.printWidthMm || matchedJM?.printWidthMm || 1000);
+      const repeatLengthMm = parseFloat(editingOrder.repeatLengthMm || editingOrder.jobDetails?.repeatLengthMm || matchedJM?.repeatLengthMm || 400);
+      const inkGsm = parseFloat(editingOrder.inkGsm || editingOrder.jobDetails?.inkGsm || matchedJM?.inkGsm || 1.5);
+      const adhesiveGsm = parseFloat(editingOrder.adhesiveGsm || editingOrder.jobDetails?.adhesiveGsm || matchedJM?.adhesiveGsm || 1.5);
+      const inkPrice = parseFloat(editingOrder.inkPrice || editingOrder.calculationDetails?.inkDetails?.pricePerKg || 1500);
+      const adhesivePrice = parseFloat(editingOrder.adhesivePrice || editingOrder.calculationDetails?.adhesiveDetails?.pricePerKg || 270);
+      const conversionChargesPerKg = parseFloat(editingOrder.conversionChargesPerKg || editingOrder.calculationDetails?.conversionChargesPerKg || 0);
+      const fixedProfitPerKg = parseFloat(editingOrder.fixedProfitPerKg || editingOrder.calculationDetails?.fixedProfitPerKg || 0);
+      const calcOrderType = (editOrderType || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
+
+      newCalc = calculateJobRawMaterials({
+        jobName: editJobName.trim(),
+        printWidthMm,
+        repeatLengthMm,
+        orderQtyKg: newOrderQtyKg,
+        orderType: calcOrderType,
+        inkGsm,
+        adhesiveGsm,
+        layers: resolvedLayers,
+        filmPrices: {},
+        inkPrice,
+        adhesivePrice,
+        conversionChargesPerKg,
+        fixedProfitPerKg
+      });
+
+      const oldReqs = editingOrder.materialRequirements || editingOrder.rawMaterialRequirements || [];
+
+      newMaterialRequirements = (newCalc.layerResults || []).map((layer, idx) => {
+        const oldReq = oldReqs[idx] || oldReqs.find(r => r.filmType === layer.filmType) || {};
+        const preferredVendor = editVendorName.trim() || oldReq.preferredVendor || oldReq.assignedVendor || ((layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd');
+
+        return {
+          id: oldReq.id || `REQ-${editingOrder.id}-${idx + 1}`,
+          filmType: layer.filmType,
+          micron: layer.micron,
+          widthMm: layer.widthMm,
+          qtyKg: layer.grossKg,
+          ratePerKg: layer.pricePerKg,
+          rate: layer.pricePerKg,
+          status: oldReq.status || 'Required',
+          preferredVendor,
+          assignedVendor: oldReq.assignedVendor || (editVendorName.trim() ? editVendorName.trim() : ''),
+          poIssued: Boolean(oldReq.poIssued),
+          poNumber: oldReq.poNumber || ''
+        };
+      });
+    }
+
+    // 4. Printed SFG re-plan if active
+    let updatedPrintedSfgUse = editingOrder.printedSfgUse || null;
+    if (updatedPrintedSfgUse && newMaterialRequirements.length > 0) {
+      try {
+        const plan = planPrintedSfgAllocation({
+          order: { ...editingOrder, orderQtyKg: newOrderQtyKg, printedSfgUse: null },
+          orders,
+          sfgGoods,
+          requirements: newMaterialRequirements,
+          choice: choiceForOrder(editingOrder)
+        });
+        updatedPrintedSfgUse = plan.use;
+        newMaterialRequirements = plan.requirements;
+      } catch (err) {
+        console.warn('Could not re-plan printed SFG for updated order:', err);
+      }
+    }
+
     const updatedOrder = {
       ...editingOrder,
       jobName: editJobName.trim(),
       clientName: editClientName.trim(),
       orderType: editOrderType,
       materialFormat: editOrderType,
-      orderQtyKg: parseFloat(editOrderQtyKg) || 0,
+      orderQtyKg: newOrderQtyKg,
       targetDeliveryDate: editTargetDeliveryDate,
       deliveryDate: editTargetDeliveryDate,
       status: editStatus,
@@ -473,17 +559,33 @@ export default function OrderManagement({
       notes: editOrderComments.trim(),
       poNumber: editPoNumber.trim(),
       vendorName: editVendorName.trim(),
+      layers: resolvedLayers,
+      materialRequirements: newMaterialRequirements,
+      rawMaterialRequirements: newMaterialRequirements,
+      printedSfgUse: updatedPrintedSfgUse,
+      calculationDetails: newCalc || editingOrder.calculationDetails || null,
+      wastagePct: newCalc ? newCalc.wastagePct : (editingOrder.wastagePct || 5),
+      wastageKg: newCalc ? newCalc.wastageKg : (editingOrder.wastageKg || 0),
+      minSellingPricePerKg: newCalc ? newCalc.minSellingPricePerKg : editingOrder.minSellingPricePerKg,
+      totalMinSellingAmount: newCalc ? newCalc.totalMinSellingAmount : editingOrder.totalMinSellingAmount,
+      totalConversionCost: newCalc ? newCalc.totalConversionCost : editingOrder.totalConversionCost,
+      totalFixedProfit: newCalc ? newCalc.totalFixedProfit : editingOrder.totalFixedProfit,
       jobDetails: {
         ...(editingOrder.jobDetails || {}),
         orderComments: editOrderComments.trim(),
         comments: editOrderComments.trim(),
         structure: editStructure.trim(),
-        metallocenePct: editMetallocenePct.trim()
+        metallocenePct: editMetallocenePct.trim(),
+        layers: resolvedLayers,
+        calculationDetails: newCalc || editingOrder.calculationDetails || null,
+        wastagePct: newCalc ? newCalc.wastagePct : (editingOrder.wastagePct || 5),
+        wastageKg: newCalc ? newCalc.wastageKg : (editingOrder.wastageKg || 0),
+        printedSfgUse: updatedPrintedSfgUse
       }
     };
 
     if (editStatus === 'Completed' && editingOrder.closeMode !== 'manual' && editingOrder.status !== 'Completed') {
-      if (!isAdminRole(currentUser?.role)) {
+      if (!isAdminRole(currentUser)) {
         alert('Only Admin can manually close an order.');
         return;
       }
@@ -496,7 +598,7 @@ export default function OrderManagement({
       updatedOrder.overDispatchWarning = null;
     }
     if (editingOrder.closeMode === 'manual' && editStatus !== 'Completed') {
-      if (!isAdminRole(currentUser?.role)) {
+      if (!isAdminRole(currentUser)) {
         alert('Only Admin can reopen a manually closed order.');
         return;
       }
@@ -517,6 +619,41 @@ export default function OrderManagement({
       } else {
         await saveOrderToSupabase(updatedOrder);
       }
+
+      // Sync linked Order Confirmation Note (OCN) if one exists
+      const linkedOcnNumber = updatedOrder.ocnNumber || updatedOrder.jobDetails?.ocnNumber;
+      if (linkedOcnNumber) {
+        try {
+          const cachedOcns = getCachedOrderConfirmations();
+          const existingOcn = (cachedOcns || []).find(o => o.id === linkedOcnNumber || o.ocnNumber === linkedOcnNumber);
+          if (existingOcn) {
+            const amendmentPatch = {
+              orderQtyKg: updatedOrder.orderQtyKg,
+              orderType: updatedOrder.orderType,
+              jobName: updatedOrder.jobName,
+              clientName: updatedOrder.clientName,
+              targetDeliveryDate: updatedOrder.targetDeliveryDate,
+              structure: updatedOrder.structure,
+              metallocenePct: updatedOrder.metallocenePct,
+              layers: updatedOrder.layers,
+              layerResults: newCalc?.layerResults || existingOcn.layerResults,
+              calculationData: { ...(existingOcn.calculationData || {}), ...(newCalc || {}), orderQtyKg: updatedOrder.orderQtyKg, layers: updatedOrder.layers },
+              totalLaminateGsm: newCalc?.totalLaminateGsm || existingOcn.totalLaminateGsm,
+              totalAreaSqm: newCalc?.totalAreaSqm || existingOcn.totalAreaSqm,
+              wastagePct: newCalc?.wastagePct || existingOcn.wastagePct,
+              wastageKg: newCalc?.wastageKg || existingOcn.wastageKg,
+              minSellingPricePerKg: newCalc?.minSellingPricePerKg || existingOcn.minSellingPricePerKg,
+              totalMinSellingAmount: newCalc?.totalMinSellingAmount || existingOcn.totalMinSellingAmount,
+              summary: newCalc?.summary || existingOcn.summary,
+              amendmentReason: `Order specifications updated in Order Management (${updatedOrder.orderQtyKg} kg)`
+            };
+            await saveOrderConfirmationAmendment(existingOcn.id, amendmentPatch, currentUser?.name || 'Staff');
+          }
+        } catch (e) {
+          console.warn('Could not sync linked OCN amendment:', e);
+        }
+      }
+
       alert(`Order "${updatedOrder.id} - ${updatedOrder.jobName}" updated and saved to database successfully!`);
       setEditingOrder(null);
     } catch (err) {
@@ -528,14 +665,14 @@ export default function OrderManagement({
   // Navigation SubTab: 'orders' | 'requirements'
   const [deadlineBannerHidden, setDeadlineBannerHidden] = useState(false);
   const printingDeadlineReminders = useMemo(() => {
-    if (!canManageOrderDeadline(currentUser?.role)) return [];
+    if (!canManageOrderDeadline(currentUser)) return [];
     return (orders || []).flatMap((order) => {
       if (!order) return [];
       const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
       const assessment = assessPrintingDeadlineReminder(order, stageInfo);
       return assessment.active ? [{ order, stageInfo, assessment }] : [];
     });
-  }, [orders, sfgGoods, productionRecords, currentUser?.role]);
+  }, [orders, sfgGoods, productionRecords, currentUser]);
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
   useEffect(() => {
     if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);
@@ -1236,7 +1373,7 @@ export default function OrderManagement({
 
   const handleAdminClose = (order, event) => {
     if (event) event.stopPropagation();
-    if (!isAdminRole(currentUser?.role)) {
+    if (!isAdminRole(currentUser)) {
       alert('Only Admin can manually close an order.');
       return;
     }
@@ -1248,7 +1385,7 @@ export default function OrderManagement({
 
   const handleAdminReopen = (order, event) => {
     if (event) event.stopPropagation();
-    if (!isAdminRole(currentUser?.role)) {
+    if (!isAdminRole(currentUser)) {
       alert('Only Admin can reopen an order.');
       return;
     }
@@ -1586,7 +1723,7 @@ export default function OrderManagement({
                   <option value="PENDING_PO">Pending PO Issuance</option>
                 </SearchableSelect>
               </div>
-              {isAdminRole(currentUser?.role) && (
+              {isAdminRole(currentUser) && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
                   <input
                     type="checkbox"
@@ -1912,7 +2049,7 @@ export default function OrderManagement({
                                 <CheckCircle2 size={13} /> Complete
                               </button>
                             )}
-                            {isAdminRole(currentUser?.role) && order.status !== 'Completed' && (
+                            {isAdminRole(currentUser) && order.status !== 'Completed' && (
                               <button
                                 className="btn-secondary"
                                 style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#7c2d12', borderColor: '#fdba74', background: '#fff7ed', borderRadius: '6px', fontWeight: '700', whiteSpace: 'nowrap' }}
@@ -1922,7 +2059,7 @@ export default function OrderManagement({
                                 Admin close
                               </button>
                             )}
-                            {isAdminRole(currentUser?.role) && order.status === 'Completed' && (
+                            {isAdminRole(currentUser) && order.status === 'Completed' && (
                               <button
                                 className="btn-secondary"
                                 style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '700', whiteSpace: 'nowrap' }}

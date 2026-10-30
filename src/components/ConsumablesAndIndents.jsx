@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { pushSlugState } from '../utils/slugRouter';
+import { anyAssignedRole, rawRoleNames } from '../assignedRoles';
 import SearchableSelect from './SearchableSelect';
 import { 
   ClipboardList, 
@@ -69,6 +70,7 @@ export const initialMachineIssues = [];
 export default function ConsumablesAndIndents({ 
   urlParams = {},
   onNavigateTab,
+  currentUser = null,
   userRole = "",
   userName = "Samyak Jain",
   vendors = [],
@@ -108,18 +110,20 @@ export default function ConsumablesAndIndents({
   };
 
   // Role-Based Admin Permission Check for Issuing Purchase Orders
+  const actor = currentUser || userRole;
+  const actorLabel = rawRoleNames(actor).join(', ') || String(userRole || '');
   const isAdminRole = useMemo(() => {
-    if (!userRole) return false;
-    const role = String(userRole).toLowerCase().trim();
-    return role.includes('admin') || role.includes('plant') || role.includes('director') || role.includes('manager') || role.includes('super');
-  }, [userRole]);
+    if (!actor) return false;
+    return anyAssignedRole(actor, (_role, lower) =>
+      lower.includes('admin') || lower.includes('plant') || lower.includes('director') || lower.includes('manager') || lower.includes('super')
+    );
+  }, [actor]);
 
   // Strict Admin Role Check for Edit Action (Admin Role Only)
   const isAdminOnly = useMemo(() => {
-    if (!userRole) return false;
-    const role = String(userRole).toLowerCase().trim();
-    return role === 'admin' || role.includes('admin') || role.includes('super');
-  }, [userRole]);
+    if (!actor) return false;
+    return anyAssignedRole(actor, (_role, lower) => lower === 'admin' || lower.includes('admin') || lower.includes('super'));
+  }, [actor]);
 
   // Vendors List Fallback
   const availableVendors = useMemo(() => {
@@ -234,7 +238,7 @@ export default function ConsumablesAndIndents({
   // Handle Open Raise PO Modal from Indent (Admin Restricted)
   const handleOpenRaisePO = (indent, itemRow = null) => {
     if (!isAdminRole) {
-      alert(`Access Restricted!\n\nPermission to issue Purchase Orders directly from Material Indents is restricted strictly to the Admin / Plant Manager role.\n\nYour current logged-in role is: "${userRole}". Please contact Admin to issue POs.`);
+      alert(`Access Restricted!\n\nPermission to issue Purchase Orders directly from Material Indents is restricted strictly to the Admin / Plant Manager role.\n\nYour current logged-in role is: "${actorLabel}". Please contact Admin to issue POs.`);
       return;
     }
 
@@ -690,7 +694,7 @@ export default function ConsumablesAndIndents({
   // 1. Open Edit Store Item Modal (Admin Only)
   const handleOpenEditStoreItemModal = (item) => {
     if (!isAdminOnly) {
-      alert(`Access Restricted!\n\nEdit option for Consumable & Spare Store items is restricted strictly to users with the Admin Role.\n\nYour current logged-in role is: "${userRole}". Please contact Admin to make edits.`);
+      alert(`Access Restricted!\n\nEdit option for Consumable & Spare Store items is restricted strictly to users with the Admin Role.\n\nYour current logged-in role is: "${actorLabel}". Please contact Admin to make edits.`);
       return;
     }
     setEditingStoreItem(item);
@@ -731,7 +735,7 @@ export default function ConsumablesAndIndents({
   // 2. Open Edit Material Indent Modal (Admin Only)
   const handleOpenEditIndentModal = (indent) => {
     if (!isAdminOnly) {
-      alert(`Access Restricted!\n\nEdit option for Material Indents is restricted strictly to users with the Admin Role.\n\nYour current logged-in role is: "${userRole}". Please contact Admin to make edits.`);
+      alert(`Access Restricted!\n\nEdit option for Material Indents is restricted strictly to users with the Admin Role.\n\nYour current logged-in role is: "${actorLabel}". Please contact Admin to make edits.`);
       return;
     }
     setEditingIndent(indent);

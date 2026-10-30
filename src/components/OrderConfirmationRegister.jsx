@@ -26,7 +26,7 @@ import { formatPlantDate } from '../utils/dbDates';
 import { displayAmendmentLabel, revisionNumber, ocnHistoryEntries } from '../utils/ocnAmendment';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import SearchableSelect from './SearchableSelect';
-import { FILM_DENSITIES, isLDFilm } from '../factoryStore';
+import { FILM_DENSITIES, isLDFilm, isMetalloceneEligibleFilm, METALLOCENE_OPTIONS } from '../factoryStore';
 
 export default function OrderConfirmationRegister({
   ocns = [],
@@ -454,7 +454,7 @@ function OcnAmendmentModal({ ocn, clients = [], activeUsername, onClose, onSave 
       minSellingPricePerKg: finalSellingPrice,
       totalMinSellingAmount: totalAmount,
       layers,
-      structure: layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+      structure: layers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '),
       orderComments,
       amendmentReason: amendmentReason.trim()
     };
@@ -580,7 +580,7 @@ function OcnAmendmentModal({ ocn, clients = [], activeUsername, onClose, onSave 
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {layers.map((l, i) => (
-                <div key={l.id || i} style={{ display: 'grid', gridTemplateColumns: '32px 140px 90px 90px 100px 32px', gap: '8px', alignItems: 'center' }}>
+                <div key={l.id || i} style={{ display: 'grid', gridTemplateColumns: '32px 140px 85px 85px 75px 95px 32px', gap: '8px', alignItems: 'center' }}>
                   <span style={{ fontWeight: '800', color: '#047857', fontSize: '0.8rem' }}>L{i + 1}</span>
                   <input 
                     type="text" 
@@ -605,6 +605,15 @@ function OcnAmendmentModal({ ocn, clients = [], activeUsername, onClose, onSave 
                     onChange={e => handleLayerChange(i, 'widthMm', parseFloat(e.target.value) || 0)} 
                     placeholder="Width mm" 
                     style={{ fontSize: '0.82rem' }}
+                  />
+                  <input 
+                    type="text" 
+                    className="form-control" 
+                    value={l.metallocenePct || ''} 
+                    onChange={e => handleLayerChange(i, 'metallocenePct', e.target.value)} 
+                    placeholder="Met %" 
+                    style={{ fontSize: '0.82rem' }}
+                    title="Metallocene Percentage (e.g. 5%)"
                   />
                   <input 
                     type="number" 

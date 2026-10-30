@@ -75,6 +75,7 @@ import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerMo
 import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
 import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS } from './bootAccess';
+import { assignedRolesOf, hasOnlyRole, rawRoleNames, userHasRole } from './assignedRoles';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
@@ -453,7 +454,7 @@ export default function App() {
         handleTabChange(restored.tab, restored.params || {});
         return;
       }
-      const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+      const defaultTab = hasOnlyRole(currentUser, 'Printing Operator') ? 'printing_scheduler' : 'dashboard';
       handleTabChange(defaultTab);
       return;
     }
@@ -691,14 +692,7 @@ export default function App() {
     }));
   }, [activeUsersList, currentUser]);
 
-  const isUserTabAllowed = (user, tabKey) => {
-    if (!user || !tabKey) return false;
-    if (user.role === 'Admin') return true;
-    if (tabKey === 'user_management' || tabKey === 'audit_logs') return false;
-    const rolePerm = rolePermissions[user.role];
-    if (!rolePerm) return false;
-    return rolePerm[tabKey] === true;
-  };
+  const isUserTabAllowed = (user, tabKey) => roleHasModule(rolePermissions, assignedRolesOf(user), tabKey);
 
   const isTabAllowed = (tabKey) => isUserTabAllowed(currentUser, tabKey);
 
@@ -987,7 +981,9 @@ export default function App() {
           alert(`Some records saved only in this browser could not be uploaded. They were left on this device. ${describeSaveError(importErr)}`);
         }
 
-        const roleName = currentUser?.role || sessionProfile?.role || '';
+        const accessUser = currentUser || sessionProfile;
+        const roleNames = assignedRolesOf(accessUser);
+        const accessAdmin = roleNames.includes('Admin');
         let accessMatrix = rolePermissions;
         const loadedMatrix = await fetchSafe(fetchRolePermissionsFromSupabase, 'Role Permissions');
         if (loadedMatrix && typeof loadedMatrix === 'object' && !Array.isArray(loadedMatrix) && Object.keys(loadedMatrix).length > 0) {
@@ -996,16 +992,16 @@ export default function App() {
         accessMatrix = applyBarcodePermissionDefaults(accessMatrix);
         setRolePermissions(accessMatrix);
         safeLocalStorageSet('samyak_cache_role_permissions', accessMatrix);
-        const allow = (moduleKey) => roleHasModule(accessMatrix, roleName, moduleKey);
-        const need = (...keys) => roleNeedsAny(accessMatrix, roleName, keys.length === 1 && Array.isArray(keys[0]) ? keys[0] : keys);
-        const hrAllowed = canReadPayroll(roleName);
+        const allow = (moduleKey) => roleHasModule(accessMatrix, roleNames, moduleKey);
+        const need = (...keys) => roleNeedsAny(accessMatrix, roleNames, keys.length === 1 && Array.isArray(keys[0]) ? keys[0] : keys);
+        const hrAllowed = canReadPayroll(roleNames);
         const remember = (moduleKey, storageKey, value) => {
           if (allow(moduleKey)) safeLocalStorageSet(storageKey, value);
           else {
             try { localStorage.removeItem(storageKey); } catch (e) {}
           }
         };
-        cachesToDrop(accessMatrix, roleName).forEach((key) => {
+        cachesToDrop(accessMatrix, roleNames).forEach((key) => {
           try { localStorage.removeItem(key); } catch (e) {}
         });
         if (!hrAllowed && isMounted) {
@@ -1014,7 +1010,7 @@ export default function App() {
           setSalaryAdvances([]);
           setSalaryPayments([]);
         }
-        if (roleName !== 'Admin' && isMounted) setAuditLogs([]);
+        if (!accessAdmin && isMounted) setAuditLogs([]);
 
         const currentOrdersVersion = ++ordersFetchVersion.current;
         setOrdersLoading(true);
@@ -1313,7 +1309,7 @@ export default function App() {
           hrAllowed ? fetchSafe(fetchSalaryAdvancesFromSupabase, 'Salary Advances') : Promise.resolve(null),
           hrAllowed ? fetchSafe(fetchSalaryPaymentsFromSupabase, 'Salary Payments') : Promise.resolve(null),
           Promise.resolve(accessMatrix),
-          roleName === 'Admin' ? fetchSafe(() => fetchAuditLogsPage({ limit: 100, offset: 0 }), 'Audit Logs') : Promise.resolve(null),
+          accessAdmin ? fetchSafe(() => fetchAuditLogsPage({ limit: 100, offset: 0 }), 'Audit Logs') : Promise.resolve(null),
           fetchSafe(fetchAllSystemSettings, 'All System Settings')
         ]);
 
@@ -1369,19 +1365,19 @@ export default function App() {
           safeLocalStorageSet('samyak_cache_role_permissions', supaRolePerms);
         }
 
-        if (roleName === 'Admin' && supaAuditLogs && Array.isArray(supaAuditLogs.logs)) {
+        if (accessAdmin && supaAuditLogs && Array.isArray(supaAuditLogs.logs)) {
           const pruned = pruneOldAuditLogs(supaAuditLogs.logs);
           auditFetchedCountRef.current = supaAuditLogs.logs.length;
           setAuditLogTotal(Number(supaAuditLogs.total) || pruned.length);
           setAuditLogs(pruned);
           safeLocalStorageSet('samyak_cache_audit_logs', pruned);
-        } else if (roleName === 'Admin' && Array.isArray(supaAuditLogs)) {
+        } else if (accessAdmin && Array.isArray(supaAuditLogs)) {
           const pruned = pruneOldAuditLogs(supaAuditLogs);
           auditFetchedCountRef.current = pruned.length;
           setAuditLogTotal(pruned.length);
           setAuditLogs(pruned);
           safeLocalStorageSet('samyak_cache_audit_logs', pruned);
-        } else if (roleName !== 'Admin') {
+        } else if (!accessAdmin) {
           try {
             localStorage.removeItem('samyak_cache_audit_logs');
             localStorage.removeItem('samyak_erp_audit_logs');
@@ -1552,21 +1548,21 @@ export default function App() {
               setJobMasters(clean);
               safeLocalStorageSet('samyak_cache_job_masters', clean);
             }
-          } else if (table === 'employees' && canReadPayroll(sessionProfile?.role || currentUser?.role)) {
+          } else if (table === 'employees' && canReadPayroll(assignedRolesOf(sessionProfile || currentUser))) {
             const data = await fetchEmployeesFromSupabase();
             if (Array.isArray(data)) {
               const clean = stripDummyRecords(data);
               setEmployees(clean);
               safeLocalStorageSet('samyak_cache_employees', clean);
             }
-          } else if (table === 'employee_attendance' && canReadPayroll(sessionProfile?.role || currentUser?.role)) {
+          } else if (table === 'employee_attendance' && canReadPayroll(assignedRolesOf(sessionProfile || currentUser))) {
             const data = await fetchEmployeeAttendanceFromSupabase();
             if (Array.isArray(data)) {
               const clean = stripDummyRecords(data);
               setEmployeeAttendance(clean);
               safeLocalStorageSet('samyak_cache_employee_attendance', clean);
             }
-          } else if (table === 'salary_advances' && canReadPayroll(sessionProfile?.role || currentUser?.role)) {
+          } else if (table === 'salary_advances' && canReadPayroll(assignedRolesOf(sessionProfile || currentUser))) {
             const data = await fetchSalaryAdvancesFromSupabase();
             if (Array.isArray(data)) {
               const clean = stripDummyRecords(data);
@@ -1780,7 +1776,7 @@ export default function App() {
   const applyAuthenticatedProfile = (profile) => {
     setSessionProfile(profile);
     let nextUser = profile;
-    if (profile?.role === 'Admin') {
+    if (userHasRole(profile, 'Admin')) {
       try {
         const preview = JSON.parse(sessionStorage.getItem('samyak_erp_ui_role_preview') || 'null');
         if (preview && preview.role && preview.email) nextUser = preview;
@@ -1871,7 +1867,7 @@ export default function App() {
       handleTabChange(activeTab, urlParams);
       return;
     }
-    const targetTab = user?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+    const targetTab = hasOnlyRole(user, 'Printing Operator') ? 'printing_scheduler' : 'dashboard';
     handleTabChange(targetTab);
   };
 
@@ -1942,14 +1938,14 @@ export default function App() {
   const delayedOrdersCount = delayedOrders.length;
   const [printingDeadlineBannerHidden, setPrintingDeadlineBannerHidden] = useState(false);
   const printingDeadlineReminders = useMemo(() => {
-    if (!canManageOrderDeadline(currentUser?.role)) return [];
+    if (!canManageOrderDeadline(currentUser)) return [];
     return (orders || []).flatMap((order) => {
       if (!order) return [];
       const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
       const assessment = assessPrintingDeadlineReminder(order, stageInfo);
       return assessment.active ? [{ order, stageInfo, assessment }] : [];
     });
-  }, [orders, sfgGoods, productionRecords, currentUser?.role]);
+  }, [orders, sfgGoods, productionRecords, currentUser]);
   const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
@@ -2392,6 +2388,20 @@ export default function App() {
       await saveOrderToSupabase(updatedOrder);
       console.log(`[ORDERS][DB WRITE] UPSERT orderId=${updatedOrder?.id} successful`);
       setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+      setSchedules(prev => prev.map(s => {
+        if (s.id === `SCHED-${updatedOrder.id}` || s.orderId === updatedOrder.id) {
+          const nextSched = {
+            ...s,
+            orderQtyKg: Number(updatedOrder.orderQtyKg || 0),
+            jobName: updatedOrder.jobName || s.jobName,
+            clientName: updatedOrder.clientName || s.clientName
+          };
+          saveProductionScheduleToSupabase(nextSched).catch(e => console.warn('Could not sync schedule for updated order:', e));
+          return nextSched;
+        }
+        return s;
+      }));
+      setPressActiveRunningJob(prev => prev && prev.id === updatedOrder.id ? { ...prev, ...updatedOrder } : prev);
       await logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
     } catch (err) {
       console.error('[ORDERS][UPDATE] Failed to update order in Supabase:', err);
@@ -4647,7 +4657,7 @@ export default function App() {
           )}
 
           {/* Group: Human Resources & Payroll */}
-          {(isTabAllowed('employees') || currentUser?.role === 'Admin' || currentUser?.role === 'HR & Payroll Manager') && (
+          {(isTabAllowed('employees') || userHasRole(currentUser, 'Admin') || userHasRole(currentUser, 'HR & Payroll Manager')) && (
             <>
               <div className="sidebar-section-header">Workforce & HR</div>
 
@@ -4669,7 +4679,7 @@ export default function App() {
           )}
 
           {/* Group 5: System Admin */}
-          {(isTabAllowed('user_management') || isTabAllowed('supabase') || isTabAllowed('doc_settings') || currentUser?.role === 'Admin') && (
+          {(isTabAllowed('user_management') || isTabAllowed('supabase') || isTabAllowed('doc_settings') || userHasRole(currentUser, 'Admin')) && (
             <>
               <div className="sidebar-section-header">System Admin</div>
 
@@ -4709,7 +4719,7 @@ export default function App() {
                 </div>
               )}
 
-              {currentUser?.role === 'Admin' && (
+              {userHasRole(currentUser, 'Admin') && (
                 <div 
                   className={`nav-item ${activeTab === 'audit_logs' ? 'active' : ''}`}
                   onClick={() => handleTabChange('audit_logs')}
@@ -4732,7 +4742,7 @@ export default function App() {
               {currentUser?.name || 'Logged User'}
             </div>
             <div style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '1px' }}>
-              Role: <b>{currentUser?.role}</b>
+              Role: <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b>
             </div>
           </div>
           <button 
@@ -4827,13 +4837,13 @@ export default function App() {
                   padding: '2px 8px',
                   minHeight: '28px'
                 }}
-                disabled={!(sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin')}
+                disabled={!(sessionProfile ? userHasRole(sessionProfile, 'Admin') : userHasRole(currentUser, 'Admin'))}
                 value={currentUser?.id || ''}
                 options={activeUserOptions}
                 onChange={e => {
                   const selectedId = e.target.value;
                   const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
-                  if (selectedUser && sessionProfile?.role === 'Admin') {
+                  if (selectedUser && userHasRole(sessionProfile, 'Admin')) {
                     setCurrentUser(selectedUser);
                     try { sessionStorage.setItem('samyak_erp_ui_role_preview', JSON.stringify(selectedUser)); } catch (e) {}
                   }
@@ -4912,10 +4922,10 @@ export default function App() {
           <div className="glass-panel" data-screen="forbidden" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
             <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
             <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
-              Module Access Restricted for Role ({currentUser?.role})
+              Module Access Restricted for Role ({rawRoleNames(currentUser).join(', ') || 'Guest'})
             </h3>
             <p style={{ color: '#92400e', fontSize: '0.85rem', marginTop: '6px', maxWidth: '500px', margin: '6px auto 16px auto' }}>
-              Your active role <b>{currentUser?.role}</b> has not been granted permission to view this module in the RBAC permissions matrix.
+              Your assigned roles <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b> have not been granted permission to view this module in the RBAC permissions matrix.
             </p>
             <button className="btn-primary" onClick={() => handleTabChange('dashboard')}>
               Return to Executive Dashboard
@@ -4924,7 +4934,7 @@ export default function App() {
         )}
 
         {/* TAB 1: EXECUTIVE DASHBOARD / OPERATOR DASHBOARD */}
-        {moduleOpen && activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
+        {moduleOpen && activeTab === 'dashboard' && hasOnlyRole(currentUser, 'Printing Operator') ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div className="glass-panel" style={{ padding: '20px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', borderRadius: '12px' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -5246,7 +5256,7 @@ export default function App() {
               </div>
 
               {/* RBAC Protected Total Stock Purchase Valuation Card */}
-              {(isTabAllowed('inventory') || currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager') && (
+              {(isTabAllowed('inventory') || userHasRole(currentUser, 'Admin') || userHasRole(currentUser, 'Plant Manager')) && (
                 <div className="glass-card stats-card" style={{ cursor: 'pointer', borderLeft: '4px solid #047857' }} onClick={() => handleTabChange('inventory')}>
                   <span className="stats-title" style={{ color: '#047857', fontWeight: '700' }}>Total Stock Purchase Valuation</span>
                   <span className="stats-value" style={{ color: '#047857', fontSize: '1.5rem', fontWeight: '800' }}>
@@ -5669,7 +5679,14 @@ export default function App() {
             ocns={ocns}
             onSaveOcn={handleSaveOcn}
             onSaveOcnAmendment={handleSaveOcnAmendment}
-            onRefreshOcns={() => fetchSafe(fetchOrderConfirmations, 'Order Confirmations').then(res => res && setOcns(res))}
+            onRefreshOcns={async () => {
+              const data = await fetchOrderConfirmations();
+              if (!Array.isArray(data)) return;
+              const clean = stripDummyRecords(data);
+              setOcns(clean);
+              safeLocalStorageSet('samyak_cache_order_confirmations', clean);
+              syncOcnCounterWithRecords(clean);
+            }}
             urlParams={urlParams}
             activeUsername={currentUser?.username || currentUser?.name || sessionProfile?.username || 'Staff'}
           />
@@ -5821,6 +5838,7 @@ export default function App() {
         {moduleOpen && activeTab === 'material_indents' && (
           <ConsumablesAndIndents 
             urlParams={urlParams}
+            currentUser={currentUser}
             userRole={currentUser?.role || ""}
             userName={currentUser?.name || ""}
             vendors={vendors}

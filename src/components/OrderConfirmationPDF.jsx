@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Printer, ArrowLeft, Edit3, Plus, Trash2, History } from 'lucide-react';
-import { isLDFilm, getFilmSlitWidth } from '../factoryStore';
+import { isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm } from '../factoryStore';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { displayAmendmentLabel, revisionNumber } from '../utils/ocnAmendment';
+import { displayAmendmentLabel, revisionNumber, getLayerMetallocenePct, formatOcnFilmName } from '../utils/ocnAmendment';
 import { formatPlantDate } from '../utils/dbDates';
 
 export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, onClose, clientDetails, clients, onAmendOcn }) {
@@ -93,7 +93,11 @@ export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, o
       notes: v.notes || ''
     }));
 
-  const layersList = layerResults.length > 0 ? layerResults : [];
+  const layersList = layerResults.length > 0 
+    ? layerResults 
+    : (Array.isArray(calculationData?.layers) && calculationData.layers.length > 0
+        ? calculationData.layers 
+        : (Array.isArray(ocn?.layers) ? ocn.layers : []));
 
   // Resolve Client Details dynamically from Client Directory / Job Master
   const targetClientName = calculationData?.clientName || resolvedClientName || "";
@@ -370,14 +374,33 @@ export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, o
               {layersList.length > 0 ? (
                 layersList.map((layer, index) => {
                   const filmSize = layer.widthMm || layer.filmSize || layer.size || layer.slitWidth || (printWidthMm ? getFilmSlitWidth(layer.filmType, printWidthMm) : null);
+                  const metallocenePct = getLayerMetallocenePct(layer, index, calculationData, ocn);
+                  const metalloceneLabel = metallocenePct
+                    ? (layer.filmType?.toLowerCase().includes('metallocene')
+                        ? (layer.filmType.includes('%') ? '' : `(${metallocenePct})`)
+                        : `(${metallocenePct} Metallocene)`)
+                    : '';
+
                   return (
                     <tr key={index}>
                       <td className="center">{index + 1}</td>
                       <td>
-                        <div className="item-name">{layer.filmType}</div>
+                        <div className="item-name">
+                          {layer.filmType}
+                          {metalloceneLabel && (
+                            <span style={{ marginLeft: '6px', fontWeight: '800', color: '#1e40af' }}>
+                              {metalloceneLabel}
+                            </span>
+                          )}
+                        </div>
                         <div className="item-meta">
                           Substrate Density: {layer.density} g/cm³
-                          {filmSize ? ` • Film Size: ${filmSize} mm` : ''}
+                          {metallocenePct && (
+                            <> • Metallocene: <strong style={{ fontWeight: '800', color: '#0f172a' }}>{metallocenePct}</strong></>
+                          )}
+                          {filmSize && (
+                            <> • <strong style={{ fontWeight: '800', color: '#0f172a' }}>Film Size: {filmSize} mm</strong></>
+                          )}
                         </div>
                       </td>
                       <td className="center">{layer.micron} µ</td>

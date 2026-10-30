@@ -13,6 +13,7 @@ import {
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
+import { userHasAnyRole } from '../assignedRoles';
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { 
@@ -210,10 +211,10 @@ export default function ProductionScheduler({
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'In Production' | 'Ready' | 'Overdue' | 'Material Pending'
 
   // Permission Check: Only Admin, Plant Manager, and Production Manager can re-arrange the Ready Queue
-  const canRearrangeQueue = useMemo(() => {
-    const role = currentUser?.role;
-    return role === 'Admin' || role === 'Plant Manager' || role === 'Production Manager';
-  }, [currentUser]);
+  const canRearrangeQueue = useMemo(
+    () => userHasAnyRole(currentUser, ['Admin', 'Plant Manager', 'Production Manager']),
+    [currentUser],
+  );
 
   // Filter machines to ONLY Rotogravure printing machine types
   const rotogravureMachines = useMemo(() => {
@@ -359,17 +360,17 @@ export default function ProductionScheduler({
         (c.jobName && (c.jobName || '').toLowerCase().trim() === (order.jobName || '').toLowerCase().trim())
       );
 
-      // Substrate structure resolution from Job Master / Cylinder / Order
+      // Substrate structure resolution: Order (specific order overrides) -> Job Master -> Cylinder -> parsed requirements
+      const orderLayers = order.jobDetails?.layers || order.layers || [];
       const jmLayers = matchedJM?.layers || [];
       const cylinderLayers = matchedCylinder?.layers || [];
-      const orderLayers = order.jobDetails?.layers || order.layers || [];
 
-      const structure = (jmLayers.length > 0 ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+      const structure = (order.structure && order.structure !== 'PET / PE' && order.structure !== '—' ? order.structure : null) ||
+        (orderLayers.length > 0 ? orderLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
+        (jmLayers.length > 0 ? jmLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
         (matchedJM?.structure && matchedJM.structure !== 'PET / PE' && matchedJM.structure !== '—' ? matchedJM.structure : null) ||
         (cylinderLayers.length > 0 ? cylinderLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
         (matchedCylinder?.structure && matchedCylinder.structure !== 'PET / PE' && matchedCylinder.structure !== '—' ? matchedCylinder.structure : null) ||
-        (order.structure && order.structure !== 'PET / PE' && order.structure !== '—' ? order.structure : null) ||
-        (orderLayers.length > 0 ? orderLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') : null) ||
         (reqs.filter(r => r.micron && r.micron !== '-').map(r => `${r.filmType} ${r.micron}µ`).join(' / ')) ||
         '';
 
@@ -414,9 +415,19 @@ export default function ProductionScheduler({
                              matchedCylinder?.cylinderColors ||
                              [];
 
-      // Resolve layers from jobMasters, cylinder, order.jobDetails, order.layers, or parsed structure
+      // Resolve layers from order, structure, jobMasters, or cylinder
       let resolvedLayers = [];
-      if (jmLayers.length > 0) {
+      if (orderLayers.length > 0) {
+        resolvedLayers = orderLayers.map(l => {
+          const filmType = l.filmType || l.film_type || '';
+          const micron = finiteNumber(l.micron);
+          const density = getFilmDensity(filmType);
+          const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
+          return { ...l, filmType, micron, density, gsm };
+        });
+      } else if (order.structure && order.structure !== 'PET / PE' && order.structure !== '—') {
+        resolvedLayers = parseStructureLayers(order.structure);
+      } else if (jmLayers.length > 0) {
         resolvedLayers = jmLayers.map(l => {
           const filmType = l.filmType || l.film_type || '';
           const micron = finiteNumber(l.micron);
@@ -432,29 +443,27 @@ export default function ProductionScheduler({
           const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
           return { ...l, filmType, micron, density, gsm };
         });
-      } else if (orderLayers.length > 0) {
-        resolvedLayers = orderLayers.map(l => {
-          const filmType = l.filmType || l.film_type || '';
-          const micron = finiteNumber(l.micron);
-          const density = getFilmDensity(filmType);
-          const gsm = micron !== null && density !== null ? parseFloat((micron * density).toFixed(2)) : 0;
-          return { ...l, filmType, micron, density, gsm };
-        });
       } else if (structure) {
         resolvedLayers = parseStructureLayers(structure);
       }
 
       // Layer 1 is the Print Layer (printing substrate)
       const firstLayer = orderLayers[0] || {};
-      const specLayer = printingLayer(matchedJM);
-      const printLayer = specLayer
+      const printLayer = resolvedLayers[0]
         ? {
-          filmType: specLayer.filmType || specLayer.film_type || '',
-          micron: finiteNumber(specLayer.micron),
-          density: getFilmDensity(specLayer.filmType || specLayer.film_type || ''),
+          filmType: resolvedLayers[0].filmType || '',
+          micron: finiteNumber(resolvedLayers[0].micron),
+          density: resolvedLayers[0].density || getFilmDensity(resolvedLayers[0].filmType || ''),
+          gsm: resolvedLayers[0].gsm || 0
+        }
+        : (printingLayer(matchedJM)
+        ? {
+          filmType: printingLayer(matchedJM).filmType || printingLayer(matchedJM).film_type || '',
+          micron: finiteNumber(printingLayer(matchedJM).micron),
+          density: getFilmDensity(printingLayer(matchedJM).filmType || printingLayer(matchedJM).film_type || ''),
           gsm: 0
         }
-        : (resolvedLayers[0] || {
+        : {
           filmType: order.filmType || firstFilmReq.filmType || firstLayer.filmType || '',
           micron: finiteNumber(order.micron ?? firstLayer.micron ?? firstFilmReq.micron),
           density: getFilmDensity(order.filmType || firstFilmReq.filmType || ''),
@@ -597,6 +606,16 @@ export default function ProductionScheduler({
       }
     }
   }, [initialPressActiveRunningJob, allEnrichedOrders]);
+
+  // Keep activeRunningJob synced with fresh enriched orders when an order is updated
+  useEffect(() => {
+    if (activeRunningJob && allEnrichedOrders && allEnrichedOrders.length > 0) {
+      const fresh = allEnrichedOrders.find(o => o.id === activeRunningJob.id);
+      if (fresh && (fresh.orderQtyKg !== activeRunningJob.orderQtyKg || fresh.structure !== activeRunningJob.structure)) {
+        setActiveRunningJobState(fresh);
+      }
+    }
+  }, [allEnrichedOrders, activeRunningJob]);
 
   // 1. Ready Queue Orders (Active & Unfinished Jobs Only)
   // Active/Running jobs ('In Production') are locked at the top of the press execution queue
@@ -991,7 +1010,7 @@ export default function ProductionScheduler({
 
     const result = evaluateEndJobGuardrail();
     setEndJobGuardrail(result);
-    if (result.blocks.length || (result.filmTypeBlocks.length && !canOverrideFilmType(currentUser?.role))) {
+    if (result.blocks.length || (result.filmTypeBlocks.length && !canOverrideFilmType(currentUser))) {
       return;
     }
 
@@ -1011,7 +1030,7 @@ export default function ProductionScheduler({
       order: endJobTargetOrder,
       jobMasters,
       limits: guardrailLimits,
-      role: currentUser?.role,
+      role: currentUser,
       entry: {
         orderId: endJobTargetOrder?.id,
         machineName: press?.name || '',
@@ -1042,7 +1061,7 @@ export default function ProductionScheduler({
     try {
       const guardrailResult = evaluateEndJobGuardrail();
       const guardrailDecision = decideGuardrailSave(guardrailResult, {
-        role: currentUser?.role,
+        role: currentUser,
         warningReason: endJobWarningReason,
         filmTypeOverrideReason: endJobFilmOverrideReason,
         overrideBy: currentUser?.name || currentUser?.role || ''
@@ -3139,8 +3158,8 @@ export default function ProductionScheduler({
                     )}
                     {endJobGuardrail.filmTypeBlocks.length > 0 && (
                       <label style={{ display: 'block', marginTop: '10px', fontSize: '0.78rem', fontWeight: '800' }}>
-                        Supervisor reason for a different film type {canOverrideFilmType(currentUser?.role) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
-                        <textarea className="form-control" value={endJobFilmOverrideReason} onChange={(event) => setEndJobFilmOverrideReason(event.target.value)} rows={2} placeholder="Why this film is accepted" disabled={!canOverrideFilmType(currentUser?.role)} />
+                        Supervisor reason for a different film type {canOverrideFilmType(currentUser) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
+                        <textarea className="form-control" value={endJobFilmOverrideReason} onChange={(event) => setEndJobFilmOverrideReason(event.target.value)} rows={2} placeholder="Why this film is accepted" disabled={!canOverrideFilmType(currentUser)} />
                       </label>
                     )}
                   </div>

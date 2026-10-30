@@ -1,23 +1,36 @@
 /**
  * Which boot reads and browser caches a signed-in role may keep.
+ * A user may have several plant roles. Access is the union of those roles.
  * Admin can open every module. user_management and audit_logs stay Admin-only,
  * matching isTabAllowed. Payroll tables stay with Admin and HR even when the
  * employees flag is on for another role, because that screen does not load them.
  */
 
-export function roleHasModule(matrix, role, moduleKey) {
-  if (!role) return false;
-  if (role === 'Admin') return true;
+function asRoleList(roleOrRoles) {
+  if (Array.isArray(roleOrRoles)) {
+    return roleOrRoles
+      .filter((role) => typeof role === 'string' && role.trim())
+      .map((role) => role.trim());
+  }
+  if (typeof roleOrRoles === 'string' && roleOrRoles.trim()) return [roleOrRoles.trim()];
+  return [];
+}
+
+export function roleHasModule(matrix, roleOrRoles, moduleKey) {
+  const roles = asRoleList(roleOrRoles);
+  if (!roles.length || !moduleKey) return false;
+  if (roles.includes('Admin')) return true;
   if (moduleKey === 'user_management' || moduleKey === 'audit_logs') return false;
-  return matrix?.[role]?.[moduleKey] === true;
+  return roles.some((role) => matrix?.[role]?.[moduleKey] === true);
 }
 
-export function roleNeedsAny(matrix, role, moduleKeys) {
-  return (moduleKeys || []).some((key) => roleHasModule(matrix, role, key));
+export function roleNeedsAny(matrix, roleOrRoles, moduleKeys) {
+  return (moduleKeys || []).some((key) => roleHasModule(matrix, roleOrRoles, key));
 }
 
-export function canReadPayroll(role) {
-  return role === 'Admin' || role === 'HR & Payroll Manager';
+export function canReadPayroll(roleOrRoles) {
+  const roles = asRoleList(roleOrRoles);
+  return roles.includes('Admin') || roles.includes('HR & Payroll Manager');
 }
 
 export const BOOT_NEEDS = {

@@ -8,6 +8,7 @@ import { getEmailTemplates, interpolateTemplate } from './settingsService';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { supabase } from './supabaseClient';
 import { legacyFilterInternalRecipients, normalizeKind } from './emailPolicy';
+import { rawRoleNames } from '../assignedRoles';
 
 const recentSends = new Map();
 const DEDUPE_MS = 10 * 60 * 1000;
@@ -480,7 +481,7 @@ export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = '
 
   users.forEach(u => {
     if (!u || u.status === 'Inactive') return;
-    const userRole = String(u.role || '').trim().toLowerCase();
+    const userRoles = rawRoleNames(u).map((role) => role.toLowerCase());
     const userDept = String(u.department || '').trim().toLowerCase();
     const email = u.email?.trim();
 
@@ -488,19 +489,21 @@ export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = '
 
     const matches = targetRoles.some(roleKey => {
       const key = roleKey.toLowerCase();
-      if (key === 'quality' || key === 'qc' || key === 'qc chemist' || key === 'quality manager') {
-        return userRole.includes('qc') || userRole.includes('quality') || userDept.includes('quality') || userDept.includes('qc');
-      }
-      if (key === 'admin') {
-        return userRole.includes('admin');
-      }
-      if (key === 'plant manager') {
-        return userRole.includes('plant manager') || userRole === 'plant manager';
-      }
-      if (key === 'production manager') {
-        return userRole.includes('production manager') || userRole === 'production manager';
-      }
-      return userRole === key || userRole.includes(key);
+      return userRoles.some((userRole) => {
+        if (key === 'quality' || key === 'qc' || key === 'qc chemist' || key === 'quality manager') {
+          return userRole.includes('qc') || userRole.includes('quality') || userDept.includes('quality') || userDept.includes('qc');
+        }
+        if (key === 'admin') {
+          return userRole.includes('admin');
+        }
+        if (key === 'plant manager') {
+          return userRole.includes('plant manager') || userRole === 'plant manager';
+        }
+        if (key === 'production manager') {
+          return userRole.includes('production manager') || userRole === 'production manager';
+        }
+        return userRole === key || userRole.includes(key);
+      });
     });
 
     if (matches) {

@@ -12,6 +12,7 @@
  */
 
 import { isCylinderOrder } from './orderAutoClose.js';
+import { assignedRolesOf } from '../assignedRoles.js';
 
 export const NEAR_PRINTING_DEADLINE_DAYS = 2;
 
@@ -22,8 +23,8 @@ export const DEADLINE_REMINDER_ROLES = [
 
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-export function canManageOrderDeadline(role) {
-  return DEADLINE_REMINDER_ROLES.includes(String(role || '').trim());
+export function canManageOrderDeadline(roleOrUser) {
+  return assignedRolesOf(roleOrUser).some((role) => DEADLINE_REMINDER_ROLES.includes(role));
 }
 
 export function deadlineActorLabel(user) {

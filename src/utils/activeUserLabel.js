@@ -3,6 +3,8 @@
  * select value, and show the username column when the row actually has one.
  */
 
+import { assignedRolesOf, primaryRole } from '../assignedRoles.js';
+
 export function readUsername(record) {
   if (!record || typeof record.username !== 'string') return '';
   return record.username.trim();
@@ -18,12 +20,15 @@ export function activeUserLabel(user) {
 
 export function mapDirectoryUser(row) {
   const username = readUsername(row);
+  const storedRole = row.role || 'Shop Floor Operator';
+  const roles = assignedRolesOf({ roles: row.assigned_roles, role: storedRole });
   return {
     id: row.id,
     username,
     name: row.full_name || username || 'User',
     email: row.email || (username.includes('@') ? username : ''),
-    role: row.role || 'Shop Floor Operator',
+    role: primaryRole(roles, storedRole) || storedRole,
+    roles,
     department: row.department || 'Operations',
     status: row.status || (row.active !== false ? 'Active' : 'Inactive'),
   };
