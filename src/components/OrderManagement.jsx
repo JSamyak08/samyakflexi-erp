@@ -39,6 +39,9 @@ import {
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
+import OrderDeadlineReminder from './OrderDeadlineReminder';
+import DeadlineReminderBanner from './DeadlineReminderBanner';
+import { assessPrintingDeadlineReminder } from '../utils/orderDeadlineReminder';
 import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
@@ -65,7 +68,10 @@ export default function OrderManagement({
   orderCloseSettings = { enabled: true, tolerancePct: 10 },
   onSaveOrderCloseSettings,
   onManualCloseOrder,
-  onManualReopenOrder
+  onManualReopenOrder,
+  canPlanPrinting = false,
+  onPlanPrinting,
+  onOrderDeadlineSaved
 }) {
   // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
@@ -518,6 +524,15 @@ export default function OrderManagement({
   };
   
   // Navigation SubTab: 'orders' | 'requirements'
+  const [deadlineBannerHidden, setDeadlineBannerHidden] = useState(false);
+  const printingDeadlineReminders = useMemo(() => (
+    (orders || []).flatMap((order) => {
+      if (!order) return [];
+      const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
+      const assessment = assessPrintingDeadlineReminder(order, stageInfo);
+      return assessment.active ? [{ order, stageInfo, assessment }] : [];
+    })
+  ), [orders, sfgGoods, productionRecords]);
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
   useEffect(() => {
     if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);
@@ -1600,6 +1615,19 @@ export default function OrderManagement({
               </div>
             </div>
 
+            {!deadlineBannerHidden && activeSubTab === 'orders' && (
+              <DeadlineReminderBanner
+                reminders={printingDeadlineReminders}
+                canPlanPrinting={canPlanPrinting}
+                onOpenOrder={(order) => {
+                  setSearchTerm(order.id);
+                  setExpandedOrders((prev) => ({ ...prev, [order.id]: true }));
+                }}
+                onPlanPrinting={onPlanPrinting}
+                onDismiss={() => setDeadlineBannerHidden(true)}
+              />
+            )}
+
             {/* Orders List with Itemized Raw Material Requirements Drawer */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {ordersPagination.paginatedItems.map(order => {
@@ -1906,9 +1934,30 @@ export default function OrderManagement({
                       </div>
                     </div>
 
+                    {!isExpanded && (
+                      <OrderDeadlineReminder
+                        order={order}
+                        stageInfo={stageInfo}
+                        currentUser={currentUser}
+                        canPlanPrinting={canPlanPrinting}
+                        onPlanPrinting={onPlanPrinting}
+                        onSaved={onOrderDeadlineSaved}
+                        variant="inline"
+                      />
+                    )}
+
                     {/* Expandable Drawer: Itemized Raw Material Breakdown or Cylinder Engraving Specs */}
                     {isExpanded && (
                       <div style={{ padding: '16px 20px', background: '#ffffff', borderTop: '1px solid var(--border-color)' }}>
+                        <OrderDeadlineReminder
+                          order={order}
+                          stageInfo={stageInfo}
+                          currentUser={currentUser}
+                          canPlanPrinting={canPlanPrinting}
+                          onPlanPrinting={onPlanPrinting}
+                          onSaved={onOrderDeadlineSaved}
+                          variant="detail"
+                        />
                         {order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder' ? (
                           <div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>

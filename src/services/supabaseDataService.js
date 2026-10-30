@@ -43,6 +43,7 @@ import { linesForSave, stampLineIds } from './grnDocument';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
+import { deadlineFieldsFromRow } from '../utils/orderDeadlineReminder';
 export { sanitizeGRN };
 
 /**
@@ -155,6 +156,7 @@ export async function fetchOrders() {
         orderQtyKg: Number(o.order_qty_kg) || 0,
         deliveryDate: o.target_delivery_date || o.delivery_date,
         targetDeliveryDate: o.target_delivery_date || o.delivery_date,
+        ...deadlineFieldsFromRow(o),
         orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
         closedBy: o.closed_by || jd.closedBy || null,

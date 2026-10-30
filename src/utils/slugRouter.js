@@ -121,6 +121,7 @@ export const MODULES = [
     legacy: ['/printing-scheduler', '/printing'],
     patterns: [
       { section: 'queue', segs: [], default: true, legacy: { tab: 'queue' } },
+      { section: 'job', segs: ['jobs', ':orderId'], idParam: 'orderId', legacy: { tab: 'queue' } },
       { section: 'completed', segs: ['completed'], legacy: { tab: 'completed' } },
       { section: 'presses', segs: ['presses'], legacy: { tab: 'machines' } },
     ],
@@ -593,6 +594,7 @@ function detailPatternFor(mod, section, id) {
       if (section === 'inward') return pattern.section === 'inward-item';
       if (section === 'indents' || section === 'indent') return pattern.section === 'indent';
       if (section === 'machines' || section === 'machine') return pattern.section === 'machine';
+      if ((section === 'queue' || section === 'job') && mod.key === 'printing_scheduler') return pattern.section === 'job';
       if (section === 'job-data-sheets' || section === 'sheet') return pattern.section === 'sheet';
       return false;
     });
