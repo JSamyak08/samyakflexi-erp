@@ -80,3 +80,4 @@ test('buildOcnAmendment archives previous revision and advances to Rev 01', () =
   assert.equal(history[1].amendmentNo, 'Rev 01');
   assert.equal(history[1].isCurrent, true);
 });
+

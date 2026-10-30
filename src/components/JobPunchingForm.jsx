@@ -593,14 +593,16 @@ export default function JobPunchingForm({
         repeatLengthMm: parseFloat(repeatLengthMm), 
         inkGsm: parseFloat(inkGsm) || 0,
         adhesiveGsm: parseFloat(adhesiveGsm) || 0,
-        structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '), 
+        structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '), 
         hasVariants: hasVariants && finalVariants.length > 0,
         variants: finalVariants,
         orderComments, 
         comments: orderComments,
         ocnNumber,
-        ocnId: ocnNumber
+        ocnId: ocnNumber,
+        metallocenePct: finalLayers.find(l => l.metallocenePct)?.metallocenePct || ''
       },
+      metallocenePct: finalLayers.find(l => l.metallocenePct)?.metallocenePct || '',
       wastagePct: parseFloat(calculationResults.wastagePct) || 5,
       wastageKg: parseFloat(calculationResults.wastageKg) || 0,
       conversionChargesPerKg: parseFloat(conversionCharges) || 0,
@@ -610,7 +612,7 @@ export default function JobPunchingForm({
       totalFixedProfit: calculationResults.totalFixedProfit,
       totalMinSellingAmount: calculationResults.totalMinSellingAmount,
       layers: finalLayers,
-      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '),
       calculationDetails: calculationResults,
       materialRequirements: calculationResults.layerResults.map((l, idx) => ({
         id: requirementLineId(orderId, idx),
@@ -624,6 +626,7 @@ export default function JobPunchingForm({
       }))
     };
 
+    const ocnMetallocene = finalLayers.find(l => l.metallocenePct)?.metallocenePct || '';
     const ocnRecord = {
       id: ocnNumber,
       ocnNumber,
@@ -644,8 +647,9 @@ export default function JobPunchingForm({
       totalMinSellingAmount: calculationResults.totalMinSellingAmount || 0,
       conversionChargesPerKg: parseFloat(conversionCharges) || 0,
       fixedProfitPerKg: parseFloat(fixedProfit) || 0,
+      metallocenePct: ocnMetallocene,
       layers: finalLayers,
-      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '),
       variants: finalVariants,
       hasVariants,
       calculationData: { ...calculationResults, clientName, jobName, orderQtyKg, orderType, layers: finalLayers },

@@ -3,6 +3,67 @@
  * Handles revision numbering, amendment tracking, history snapshots, and display labels.
  */
 
+import { isMetalloceneEligibleFilm, isLDFilm } from '../factoryStore.js';
+
+/**
+ * Extracts and formats the metallocene percentage for an OCN film layer
+ */
+export function getLayerMetallocenePct(layer, index = 0, calculationData = {}, ocn = {}) {
+  let pct = layer?.metallocenePct || layer?.metallocene_pct || layer?.metallocene;
+  
+  if (!pct && Array.isArray(calculationData?.layers)) {
+    const l = calculationData.layers[index] || calculationData.layers.find(x => x?.id === layer?.id || x?.filmType === layer?.filmType);
+    pct = l?.metallocenePct || l?.metallocene_pct || l?.metallocene;
+  }
+  if (!pct && Array.isArray(ocn?.layers)) {
+    const l = ocn.layers[index] || ocn.layers.find(x => x?.id === layer?.id || x?.filmType === layer?.filmType);
+    pct = l?.metallocenePct || l?.metallocene_pct || l?.metallocene;
+  }
+  if (!pct && Array.isArray(calculationData?.jobDetails?.rawMaterialLayers)) {
+    const l = calculationData.jobDetails.rawMaterialLayers[index];
+    pct = l?.metallocenePct || l?.metallocene_pct || l?.metallocene;
+  }
+  if (!pct && Array.isArray(calculationData?.jobMasterData?.layers)) {
+    const l = calculationData.jobMasterData.layers[index];
+    pct = l?.metallocenePct || l?.metallocene_pct || l?.metallocene;
+  }
+
+  const filmName = String(layer?.filmType || '');
+  if (!pct && (isMetalloceneEligibleFilm(filmName) || isLDFilm(filmName) || filmName.toUpperCase().includes('METALLOCENE'))) {
+    pct = calculationData?.metallocenePct ||
+          calculationData?.metallocene_pct ||
+          calculationData?.jobDetails?.metallocenePct ||
+          calculationData?.orderData?.metallocenePct ||
+          calculationData?.jobMasterData?.metallocenePct ||
+          ocn?.metallocenePct ||
+          ocn?.metallocene_pct;
+  }
+
+  if (!pct && filmName) {
+    const match = filmName.match(/(\d{1,2}%)/);
+    if (match) pct = match[1];
+  }
+
+  if (!pct) return null;
+  const clean = String(pct).trim();
+  if (!clean || clean === '0' || clean === '0%') return null;
+  return clean.endsWith('%') ? clean : `${clean}%`;
+}
+
+/**
+ * Formats film description with metallocene percentage displayed prominently in front of the film
+ */
+export function formatOcnFilmName(filmType, metallocenePct) {
+  if (!filmType) return '';
+  if (!metallocenePct) return filmType;
+  const pctStr = String(metallocenePct).endsWith('%') ? metallocenePct : `${metallocenePct}%`;
+  const lower = filmType.toLowerCase();
+  if (lower.includes('metallocene')) {
+    return lower.includes('%') ? filmType : `${filmType} (${pctStr})`;
+  }
+  return `${filmType} (${pctStr} Metallocene)`;
+}
+
 /**
  * Returns numeric revision number of an OCN (defaults to 0 for untouched OCNs)
  */
