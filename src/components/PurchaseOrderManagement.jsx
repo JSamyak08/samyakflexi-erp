@@ -51,7 +51,8 @@ import {
 } from '../utils/poAmendment';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
-import { generateInventoryId } from '../factoryStore';
+import { resolveReceiptItem } from '../services/inventoryIdentity';
+import { calculateOrderStockReservations, generateInventoryId, linkedRequirementMatches, presentRequirementStock, requirementStockKey } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
 export default function PurchaseOrderManagement({
@@ -531,24 +532,34 @@ export default function PurchaseOrderManagement({
         await onAddPurchaseOrder(payload);
       }
 
-      // If linked to orders, mark their requirements as PO issued
-      if (poForm.linkedOrderId && orders && onUpdateOrder) {
-        const targetOrder = orders.find(o => o.id === poForm.linkedOrderId);
-        if (targetOrder) {
-          const updatedReqs = (targetOrder.materialRequirements || []).map(r => {
-            if (poForm.linkedRequirements.includes(r.id)) {
-              return { ...r, poIssued: true, poNumber: payload.poNumber };
-            }
-            return r;
+      // Mark only the order lines that were actually added. A shared requirement
+      // id must not flip the same id on a different order.
+      if (orders && onUpdateOrder && Array.isArray(poForm.linkedRequirements) && poForm.linkedRequirements.length > 0) {
+        const orderIds = new Set();
+        if (poForm.linkedOrderId) orderIds.add(String(poForm.linkedOrderId));
+        poForm.linkedRequirements.forEach((entry) => {
+          if (typeof entry !== 'string') return;
+          const splitAt = entry.indexOf('::');
+          if (splitAt > 0) orderIds.add(entry.slice(0, splitAt));
+        });
+        orderIds.forEach((orderId) => {
+          const targetOrder = orders.find(o => String(o.id) === String(orderId));
+          if (!targetOrder) return;
+          let changed = false;
+          const updatedReqs = (targetOrder.materialRequirements || targetOrder.rawMaterialRequirements || []).map(r => {
+            if (!linkedRequirementMatches(poForm.linkedRequirements, targetOrder.id, r.id, poForm.linkedOrderId)) return r;
+            changed = true;
+            return { ...r, poIssued: true, poNumber: payload.poNumber };
           });
+          if (!changed) return;
           onUpdateOrder({
             ...targetOrder,
             materialRequirements: updatedReqs,
             rawMaterialRequirements: updatedReqs,
-            poIssued: true,
+            poIssued: updatedReqs.every(r => r.poIssued),
             poNumber: payload.poNumber
           });
-        }
+        });
       }
 
       setIsCreateModalOpen(false);
@@ -1173,6 +1184,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           batchNo: batchFallback,
           remarks: grnFormData.variationNotes.trim(),
           weightKg: enteredWeight,
+          stockItemId: activeGrnModalData.item?.itemId || activeGrnModalData.item?.stockItemId || '',
           rolls: splitReceivedRolls(enteredWeight, grnFormData.rollsCount)
         };
         const extraCaptured = includedExtras.map((line) => ({
@@ -1188,6 +1200,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           batchNo: batchFallback,
           remarks: grnFormData.variationNotes.trim(),
           weightKg: parseFloat(line.weight),
+          stockItemId: line.itemId || line.stockItemId || '',
           rolls: splitReceivedRolls(parseFloat(line.weight), line.rollsCount)
         }));
         const poItems = (activeGrnModalData.items || []).map((item, index) => ({
@@ -1210,7 +1223,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           nowIso,
           inventory,
           poItems,
-          generateInventoryId
+          generateInventoryId,
+          idSources: [grns]
         });
         const multiGRN = {
           ...prepared.newGRN,
@@ -1268,7 +1282,15 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
       const countUnits = parseInt(grnFormData.rollsCount, 10) || 1;
       const unitWeight = Number((enteredWeight / countUnits).toFixed(2));
-      const newInvId = `INV-${Date.now().toString().slice(-6)}`;
+      const existingStock = resolveReceiptItem(inventory, {
+        itemName: enteredNameClean,
+        category: grnFormData.category || 'Raw Materials',
+        filmType: grnFormData.filmType || '',
+        micron: grnFormData.micron || '-',
+        widthMm: grnFormData.widthMm || '-',
+        stockItemId: activeGrnModalData.item?.itemId || activeGrnModalData.item?.stockItemId || ''
+      });
+      const newInvId = existingStock ? String(existingStock.id) : generateInventoryId(inventory, grns);
 
       const itemsBreakdown = Array.from({ length: countUnits }, (_, i) => ({
         barcodeId: `${grnNo}-U${String(i + 1).padStart(2, '0')}`,
@@ -1337,8 +1359,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         if (returned) storedGRN = { ...grnToSave, ...returned };
       }
 
-      // 2. Add to Inventory Stock Item
-      if (onSaveInventoryItem) {
+      // 2. Add a stock row only when this spec is not already on the ledger. Quantity stays 0 until QC.
+      if (onSaveInventoryItem && !existingStock) {
         const newInvItem = {
           id: newInvId,
           itemCode: newInvId,
@@ -1405,7 +1427,13 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
     return Array.from(names).sort();
   }, [enrichedPurchaseOrders]);
 
-  // Memoized Pending Requirements from Orders with shortage
+  const orderStockReservations = useMemo(
+    () => calculateOrderStockReservations(orders, inventory, []),
+    [orders, inventory]
+  );
+
+  // Pending lines still without a PO. Quantity to order is this line's balance,
+  // never another order's quantity that happens to share a requirement id.
   const pendingShortageRequirements = useMemo(() => {
     return (Array.isArray(orders) ? orders : [])
       .filter(Boolean)
@@ -1413,9 +1441,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         const reqList = (o && (o.materialRequirements || o.rawMaterialRequirements)) || [];
         return (Array.isArray(reqList) ? reqList : [])
           .filter(r => r && !r.poIssued)
-          .map(r => ({ order: o, req: r }));
+          .map(r => {
+            const stock = presentRequirementStock(r, orderStockReservations.getReqStockInfo(r, o.id));
+            return { order: o, req: r, stock };
+          });
       });
-  }, [orders]);
+  }, [orders, orderStockReservations]);
 
   return (
     <div className="po-management-wrapper" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
@@ -2794,7 +2825,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                   <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left', color: '#475569' }}>
                     <th style={{ padding: '8px 12px' }}>Order & Job</th>
                     <th style={{ padding: '8px 12px' }}>Material Required</th>
-                    <th style={{ padding: '8px 12px' }}>Required Qty</th>
+                    <th style={{ padding: '8px 12px' }}>Balance for PO</th>
                     <th style={{ padding: '8px 12px' }}>Preferred Vendor</th>
                     <th style={{ padding: '8px 12px', textAlign: 'center' }}>Action</th>
                   </tr>
@@ -2807,8 +2838,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                       </td>
                     </tr>
                   ) : (
-                    pendingShortageRequirements.map(({ order, req }) => (
-                      <tr key={req.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    pendingShortageRequirements.map(({ order, req, stock }) => (
+                      <tr key={requirementStockKey(order.id, req)} style={{ borderBottom: '1px solid #f1f5f9' }}>
                         <td style={{ padding: '8px 12px' }}>
                           <strong style={{ color: '#0f172a' }}>#{order.id}</strong>
                           <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{order.jobName}</div>
@@ -2820,7 +2851,10 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                           </div>
                         </td>
                         <td style={{ padding: '8px 12px', fontWeight: '700', color: '#0f172a' }}>
-                          {req.qtyKg || 0} kg
+                          {stock.balanceKg} kg
+                          {Math.abs((stock.grossKg || 0) - (stock.balanceKg || 0)) > 0.02 && (
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600' }}>Gross {stock.grossKg} kg</div>
+                          )}
                         </td>
                         <td style={{ padding: '8px 12px', color: '#475569' }}>
                           {req.preferredVendor || 'Any Vendor'}
@@ -2836,7 +2870,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                                 filmType: req.filmType,
                                 micron: req.micron,
                                 widthMm: req.widthMm,
-                                qtyKg: req.qtyKg || 500,
+                                qtyKg: stock.balanceKg,
                                 rate: 165,
                                 orderId: order.id,
                                 jobName: order.jobName
@@ -2845,7 +2879,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                                 ...prev,
                                 linkedOrderId: order.id,
                                 linkedOrderName: order.jobName,
-                                linkedRequirements: [...prev.linkedRequirements, req.id]
+                                linkedRequirements: [...prev.linkedRequirements, requirementStockKey(order.id, req)]
                               }));
                               setIsOrderShortageModalOpen(false);
                             }}

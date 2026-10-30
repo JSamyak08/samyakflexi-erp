@@ -6,6 +6,7 @@ import {
   DEFAULT_PROCESSING_RATES,
   calculateJobRawMaterials,
   isLDFilm,
+  requirementLineId,
   isMetalloceneEligibleFilm,
   METALLOCENE_OPTIONS
 } from '../factoryStore';
@@ -21,7 +22,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Check,
-  Tag
+  Tag,
+  FileCheck
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import OrderConfirmationRegister from './OrderConfirmationRegister';
@@ -561,10 +563,11 @@ export default function JobPunchingForm({
         }))
       : [];
 
+    const orderId = getNextDocRefNumber('order');
     const ocnNumber = getNextDocRefNumber('ocn');
 
     const newOrder = {
-      id: getNextDocRefNumber('order'),
+      id: orderId,
       ocnNumber,
       ocnId: ocnNumber,
       jobName,
@@ -609,8 +612,8 @@ export default function JobPunchingForm({
       layers: finalLayers,
       structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
       calculationDetails: calculationResults,
-      materialRequirements: calculationResults.layerResults.map(l => ({
-        id: `REQ-${Math.floor(100 + Math.random() * 900)}`,
+      materialRequirements: calculationResults.layerResults.map((l, idx) => ({
+        id: requirementLineId(orderId, idx),
         filmType: l.filmType,
         micron: l.micron,
         widthMm: l.widthMm,

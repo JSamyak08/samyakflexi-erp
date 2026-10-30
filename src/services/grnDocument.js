@@ -4,6 +4,8 @@
  * the store screen already uses.
  */
 
+import { resolveQcStockTarget, resolveReceiptItem } from './inventoryIdentity.js';
+
 function asNumber(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -86,8 +88,18 @@ export function stampLineIds(grnId, lines) {
   });
 }
 
+/** Invoice numbers match once spaces, hyphens, and underscores are removed. */
+export function normalizeInvoiceNo(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function grnIsCancelled(grn) {
+  const blob = `${grn?.status || ''} ${grn?.qcStatus || ''}`.toLowerCase();
+  return blob.includes('cancel');
+}
+
 export function findDuplicateInvoice(existing, candidate) {
-  const invoiceNo = String(candidate?.invoiceNo || '').trim().toLowerCase();
+  const invoiceNo = normalizeInvoiceNo(candidate?.invoiceNo || candidate?.invoice_number);
   const vendorName = String(candidate?.vendorName || '').trim().toLowerCase();
   if (!invoiceNo || !vendorName) return null;
   const ownIds = new Set(
@@ -96,7 +108,8 @@ export function findDuplicateInvoice(existing, candidate) {
       .map((value) => String(value))
   );
   return (existing || []).find((grn) => {
-    const theirInvoice = String(grn?.invoiceNo || grn?.invoice_number || '').trim().toLowerCase();
+    if (grnIsCancelled(grn)) return false;
+    const theirInvoice = normalizeInvoiceNo(grn?.invoiceNo || grn?.invoice_number);
     const theirVendor = String(grn?.vendorName || '').trim().toLowerCase();
     const theirIds = [grn?.grnNo, grn?.id, grn?.grn_number].filter(Boolean).map(String);
     const sameDocument = theirIds.some((value) => ownIds.has(value));
@@ -190,11 +203,13 @@ export function prepareMultiLineReceipt({
   generateInventoryId,
   formatFilmItemName,
   calculateFilmRollLength,
-  isMetalloceneEligibleFilm
+  isMetalloceneEligibleFilm,
+  idSources = []
 }) {
   const helpers = { formatFilmItemName, calculateFilmRollLength, isMetalloceneEligibleFilm };
   const grnCode = String(grnNo || '').replace('GRN-', '');
   const pool = [...(inventory || [])];
+  const touchedExisting = new Map();
   const lineCount = capturedLines.length;
   const builtLines = capturedLines.map((captured, index) => {
     const lineNo = index + 1;
@@ -237,9 +252,54 @@ export function prepareMultiLineReceipt({
     const net = round2(rolls.reduce((sum, roll) => sum + asNumber(roll.netWeightKg), 0));
     const gross = round2(rolls.reduce((sum, roll) => sum + asNumber(roll.grossWeightKg), 0));
     const tare = round2(rolls.reduce((sum, roll) => sum + asNumber(roll.tareWeightKg), 0));
-    const lotId = generateInventoryId ? generateInventoryId(pool) : `INVT-${String(index + 1).padStart(4, '0')}`;
-    pool.push({ id: lotId });
+    const category = captured.category || 'Film Substrates';
+    const micron = isFilm ? (parseFloat(captured.micron) || 0) : '-';
+    const widthMm = isFilm ? (parseFloat(captured.widthMm) || 0) : '-';
+    const existing = resolveReceiptItem(pool, {
+      stockItemId: captured.stockItemId,
+      masterItemId: captured.masterItemId,
+      itemName,
+      category,
+      filmType: isFilm ? captured.filmType : category,
+      micron,
+      widthMm,
+      metallocenePct: metallocene
+    });
+    let lotId;
+    let createdLot = false;
+    if (existing) {
+      lotId = String(existing.id);
+    } else {
+      lotId = generateInventoryId
+        ? generateInventoryId(pool, ...(idSources || []))
+        : fallbackInventoryId(pool);
+      createdLot = true;
+      pool.push({
+        id: lotId,
+        itemCode: lotId,
+        itemName,
+        category,
+        micron,
+        widthMm
+      });
+    }
     const rate = asNumber(captured.purchaseRate);
+    if (existing && isCylinder) {
+      const idx = pool.findIndex((item) => String(item.id) === String(existing.id));
+      if (idx >= 0) {
+        const qty = round2((Number(pool[idx].availableQtyKg) || 0) + net);
+        const price = rate > 0 ? rate : (Number(pool[idx].unitPrice) || 0);
+        pool[idx] = {
+          ...pool[idx],
+          availableQtyKg: qty,
+          unitPrice: price,
+          purchaseRatePerKg: price,
+          purchaseValuation: round2(qty * price),
+          lastBatch: String(captured.batchNo || '').trim() || pool[idx].lastBatch
+        };
+        touchedExisting.set(String(existing.id), pool[idx]);
+      }
+    }
     const poLine = (poItems || []).find((item) => (
       captured.poLineId && String(item.id || item.lineId || '') === String(captured.poLineId)
     )) || (index === 0 ? (poItems || [])[0] : null);
@@ -261,7 +321,7 @@ export function prepareMultiLineReceipt({
       metallocenePct: metallocene,
       unit: isFilm ? 'Kg' : (isCylinder ? 'Set' : (captured.unit || 'Kg')),
       stockItemId: lotId,
-      masterItemId: captured.stockItemId || lotId,
+      masterItemId: lotId,
       purchaseRate: rate,
       batchNo: String(captured.batchNo || '').trim(),
       packagingType: captured.packagingType || 'Roll',
@@ -277,7 +337,8 @@ export function prepareMultiLineReceipt({
       hasVariation: Boolean(hasRateVar || hasQtyVar || hasItemVar),
       isCylinder,
       lotId,
-      rate
+      rate,
+      createdLot
     };
   });
 
@@ -331,10 +392,17 @@ export function prepareMultiLineReceipt({
     status: anyCylinder ? 'Approved' : 'Pending QC Approval',
     qcStatus: anyCylinder ? 'Approved' : 'Pending QC Approval',
     storeManager: header.storeManager || 'Store Manager',
-    lineItems: builtLines.map(({ isCylinder, lotId, rate, ...line }) => line)
+    lineItems: builtLines.map((line) => {
+      const rest = { ...line };
+      delete rest.isCylinder;
+      delete rest.lotId;
+      delete rest.rate;
+      delete rest.createdLot;
+      return rest;
+    })
   };
 
-  const inventoryLots = builtLines.map((line) => ({
+  const inventoryLots = builtLines.filter((line) => line.createdLot).map((line) => ({
     id: line.lotId,
     itemCode: line.lotId,
     masterItemId: line.masterItemId,
@@ -399,7 +467,81 @@ export function prepareMultiLineReceipt({
     notes: roll.itemRemarks
   })));
 
-  return { newGRN, inventoryLots, rolls };
+  return { newGRN, inventoryLots, updatedItems: [...touchedExisting.values()], rolls };
+}
+
+function fallbackInventoryId(pool) {
+  let maxNum = 0;
+  (pool || []).forEach((item) => {
+    const match = String(item?.id || '').match(/(?:INVT|INV)[-_\s]*(\d+)/i);
+    if (!match) return;
+    const num = parseInt(match[1], 10);
+    if (num > maxNum) maxNum = num;
+  });
+  return `INVT-${String(maxNum + 1).padStart(4, '0')}`;
+}
+
+/**
+ * Add QC-approved kilograms to one ledger row per line.
+ * A new inventory row is created only when nothing matches.
+ */
+export function applyQcApprovalStock(inventory, posts, { generateInventoryId, idSources = [] } = {}) {
+  const working = [...(inventory || [])];
+  const saved = [];
+  (posts || []).forEach((post) => {
+    const addKg = asNumber(post?.addKg);
+    const rate = asNumber(post?.rate);
+    const target = resolveQcStockTarget(working, post);
+    if (target) {
+      const index = working.findIndex((item) => String(item.id) === String(target.id));
+      const item = working[index];
+      const newAvailable = round2((Number(item.availableQtyKg) || 0) + addKg);
+      const price = rate > 0 ? rate : (Number(item.unitPrice) || 0);
+      const updated = {
+        ...item,
+        availableQtyKg: newAvailable,
+        unitPrice: price,
+        purchaseRatePerKg: price,
+        purchaseValuation: round2(newAvailable * price),
+        lastVendor: post.vendorName || item.lastVendor,
+        lastBatch: post.batchNo || item.lastBatch,
+        itemName: post.itemName || item.itemName,
+        filmType: post.filmType || item.filmType,
+        micron: post.micron !== undefined ? post.micron : item.micron,
+        widthMm: post.widthMm !== undefined ? post.widthMm : item.widthMm,
+        category: post.category || item.category,
+        location: item.location
+      };
+      working[index] = updated;
+      saved.push(updated);
+      return;
+    }
+    const newId = generateInventoryId
+      ? generateInventoryId(working, ...(idSources || []))
+      : fallbackInventoryId(working);
+    const created = {
+      id: newId,
+      itemCode: newId,
+      itemName: post.itemName,
+      category: post.category || 'Film Substrates',
+      filmType: post.filmType,
+      micron: post.micron,
+      widthMm: post.widthMm,
+      unit: 'Kg',
+      availableQtyKg: addKg,
+      allocatedQtyKg: 0,
+      unitPrice: rate,
+      purchaseRatePerKg: rate,
+      purchaseValuation: round2(addKg * rate),
+      location: post.isFilm ? 'Bay A - Inward Dock' : 'Consumables Store',
+      reorderLevelKg: 100,
+      lastVendor: post.vendorName || '',
+      lastBatch: post.batchNo || ''
+    };
+    working.push(created);
+    saved.push(created);
+  });
+  return { inventory: working, saved };
 }
 
 export function oneLineFromReceipt(grn) {
