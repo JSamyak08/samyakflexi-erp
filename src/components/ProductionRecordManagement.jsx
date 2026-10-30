@@ -838,6 +838,16 @@ export default function ProductionRecordManagement({
   // Form State for creating/editing a Production Record
   const [selectedOrder, setSelectedOrder] = useState(orders[0] || null);
 
+  // Keep selectedOrder in sync when orders list is updated (e.g. quantity or structure edited)
+  React.useEffect(() => {
+    if (selectedOrder && orders && orders.length > 0) {
+      const match = orders.find(o => o.id === selectedOrder.id);
+      if (match && match !== selectedOrder) {
+        setSelectedOrder(match);
+      }
+    }
+  }, [orders]);
+
   const [materialsList, setMaterialsList] = useState([]);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
@@ -1607,8 +1617,23 @@ export default function ProductionRecordManagement({
     }
   };
 
+  const formResolution = resolveJobMaster({ order: selectedOrder, record: selectedRecord, jobMasters });
+  const formOrderLayers = selectedOrder?.layers || selectedOrder?.jobDetails?.layers || [];
+  const formSpec = (formOrderLayers.length > 0 && formOrderLayers[0]?.filmType)
+    ? {
+        jobMasterId: selectedOrder?.jobMasterId || null,
+        jobCode: selectedOrder?.jobCode || selectedOrder?.skuCode || null,
+        filmType: formOrderLayers[0].filmType,
+        micron: finiteNumber(formOrderLayers[0].micron),
+        printWidthMm: finiteNumber(selectedOrder?.printWidthMm || selectedOrder?.jobDetails?.printWidthMm) || recordedPrintWidthMm(formResolution.jobMaster),
+        wastagePct: finiteNumber(selectedOrder?.wastagePct ?? selectedOrder?.calculationDetails?.wastagePct) || 5,
+        density: formOrderLayers[0].density || null,
+        laminateLayers: formOrderLayers.slice(1)
+      }
+    : printLayerSpec(formResolution.jobMaster);
+
   const addMaterialRow = () => {
-    const spec = printLayerSpec(resolveJobMaster({ order: selectedOrder, record: selectedRecord, jobMasters }).jobMaster);
+    const spec = formSpec;
     setMaterialsList(prev => [
       ...prev,
       {
@@ -1639,9 +1664,6 @@ export default function ProductionRecordManagement({
       return m;
     }));
   };
-
-  const formResolution = resolveJobMaster({ order: selectedOrder, record: selectedRecord, jobMasters });
-  const formSpec = printLayerSpec(formResolution.jobMaster);
 
   // Calculations with Spec Variation detection against the Job Master printing layer
   const calculatedMaterials = materialsList.map(m => {

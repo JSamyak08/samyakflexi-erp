@@ -2388,6 +2388,20 @@ export default function App() {
       await saveOrderToSupabase(updatedOrder);
       console.log(`[ORDERS][DB WRITE] UPSERT orderId=${updatedOrder?.id} successful`);
       setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
+      setSchedules(prev => prev.map(s => {
+        if (s.id === `SCHED-${updatedOrder.id}` || s.orderId === updatedOrder.id) {
+          const nextSched = {
+            ...s,
+            orderQtyKg: Number(updatedOrder.orderQtyKg || 0),
+            jobName: updatedOrder.jobName || s.jobName,
+            clientName: updatedOrder.clientName || s.clientName
+          };
+          saveProductionScheduleToSupabase(nextSched).catch(e => console.warn('Could not sync schedule for updated order:', e));
+          return nextSched;
+        }
+        return s;
+      }));
+      setPressActiveRunningJob(prev => prev && prev.id === updatedOrder.id ? { ...prev, ...updatedOrder } : prev);
       await logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
     } catch (err) {
       console.error('[ORDERS][UPDATE] Failed to update order in Supabase:', err);

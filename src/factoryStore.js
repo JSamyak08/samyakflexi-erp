@@ -214,6 +214,58 @@ export const getWastagePercentage = (orderQtyKg, isPouching = false) => {
 };
 
 /**
+ * Universal Structure String Parser
+ * Parses structures like "PET 12µ / METPET 12µ / NMET 30µ" into an array of layer objects.
+ * Merges previous layer widths, rates, densities and metallocene percentages where available.
+ */
+export const parseStructureLayers = (structureStr = '', oldLayers = [], editMetallocene = '') => {
+  if (!structureStr || typeof structureStr !== 'string' || structureStr.trim() === '—') {
+    return Array.isArray(oldLayers) && oldLayers.length > 0 ? oldLayers : [
+      { filmType: 'PET', micron: 12 },
+      { filmType: 'Natural GP LD', micron: 35 }
+    ];
+  }
+  const parts = structureStr.split(/[/+]/).map(p => p.trim()).filter(Boolean);
+  return parts.map((part, idx) => {
+    const oldLayer = (Array.isArray(oldLayers) && oldLayers[idx]) ||
+      (Array.isArray(oldLayers) && oldLayers.find(l => part.toLowerCase().includes((l?.filmType || '').toLowerCase()))) ||
+      {};
+    const micronMatch = part.match(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/i);
+    const micron = micronMatch ? parseFloat(micronMatch[1]) : (parseFloat(oldLayer.micron) || 12);
+    
+    // Check for embedded metallocene like "NMET 30µ (5%)" or "PE 50µ 5%"
+    const metaMatch = part.match(/(\d+(\.\d+)?)\s*%/);
+    const embeddedMeta = metaMatch ? metaMatch[1] + '%' : '';
+
+    let filmType = part
+      .replace(/\([^)]*\)/g, '')
+      .replace(/(\d+(\.\d+)?)\s*(µ|mic|micron)?/gi, '')
+      .replace(/(\d+(\.\d+)?)\s*%/g, '')
+      .replace(/[^\w\s-]/g, '')
+      .trim();
+
+    if (!filmType) filmType = oldLayer.filmType || 'PET';
+
+    const density = FILM_DENSITIES[filmType] || oldLayer.density || getFilmSubstrateDensity(filmType) || 1.0;
+    const widthMm = oldLayer.widthMm !== undefined ? oldLayer.widthMm : (oldLayer.width !== undefined ? oldLayer.width : undefined);
+    const rate = oldLayer.rate !== undefined ? oldLayer.rate : (oldLayer.pricePerKg !== undefined ? oldLayer.pricePerKg : (oldLayer.ratePerKg !== undefined ? oldLayer.ratePerKg : undefined));
+
+    const isSealantOrLd = isLDFilm(filmType) || idx === parts.length - 1 || filmType.toUpperCase().includes('PE') || filmType.toUpperCase().includes('NMET') || filmType.toUpperCase().includes('LD');
+    const metallocenePct = embeddedMeta || oldLayer.metallocenePct || (isSealantOrLd && editMetallocene ? editMetallocene : '');
+
+    return {
+      ...oldLayer,
+      filmType,
+      micron,
+      density,
+      ...(widthMm !== undefined ? { widthMm } : {}),
+      ...(rate !== undefined ? { rate, pricePerKg: rate, ratePerKg: rate } : {}),
+      metallocenePct
+    };
+  });
+};
+
+/**
  * Comprehensive Flexible Packaging Laminate Raw Material Cost & Quantity Calculator
  */
 export const calculateJobRawMaterials = ({
@@ -388,9 +440,29 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
     return [];
   }
 
+  const orderQtyKg = parseFloat(order?.orderQtyKg || order?.quantityKg || order?.quantity) || 0;
   const existing = order.materialRequirements || order.rawMaterialRequirements;
+
+  let existingIsConsistent = false;
   if (Array.isArray(existing) && existing.length > 0) {
-    return existing;
+    if (orderQtyKg > 0) {
+      const filmReqs = existing.filter(r => r && r.micron && r.micron !== '-' && r.filmType !== 'Liquid Inks' && r.filmType !== 'Solvent-less Adhesive');
+      const sumFilmKg = filmReqs.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0);
+      const sfgAllocatedKg = parseFloat(order?.printedSfgUse?.allocatedKg) || 0;
+      const totalEffectiveKg = sumFilmKg + sfgAllocatedKg;
+
+      // In flexible packaging laminates, film requirements typically sum to ~70% - 150% of orderQtyKg.
+      // If orderQtyKg is 1000 but sum is 408 (ratio 0.408), it's stale from a previous 400kg quantity.
+      if (totalEffectiveKg > 0 && (totalEffectiveKg / orderQtyKg) >= 0.70 && (totalEffectiveKg / orderQtyKg) <= 1.50) {
+        existingIsConsistent = true;
+      }
+    } else {
+      existingIsConsistent = true;
+    }
+
+    if (existingIsConsistent && !order._forceRecalculateRequirements) {
+      return existing;
+    }
   }
 
   const jm = (jobMasters || []).find(j =>
@@ -404,14 +476,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
 
   if (!layers || layers.length === 0) {
     if (orderStructStr && orderStructStr !== 'PET / PE' && orderStructStr !== '—') {
-      const parts = orderStructStr.split('/').map(p => p.trim());
-      layers = parts.map(part => {
-        const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
-        const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
-        let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
-        if (!filmType) filmType = 'PET';
-        return { filmType, micron };
-      });
+      layers = parseStructureLayers(orderStructStr);
     }
   }
 
@@ -420,14 +485,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
     layers = jm?.layers;
     const jmStructStr = jm?.structure || '';
     if ((!layers || layers.length === 0) && jmStructStr && jmStructStr !== 'PET / PE' && jmStructStr !== '—') {
-      const parts = jmStructStr.split('/').map(p => p.trim());
-      layers = parts.map(part => {
-        const micronMatch = part.match(/(\d+(\.\d+)?)\s*µ?/i);
-        const micron = micronMatch ? parseFloat(micronMatch[1]) : 12;
-        let filmType = part.replace(/(\d+(\.\d+)?)\s*µ?/gi, '').trim();
-        if (!filmType) filmType = 'PET';
-        return { filmType, micron };
-      });
+      layers = parseStructureLayers(jmStructStr);
     }
   }
 
@@ -437,6 +495,20 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
       { filmType: 'Natural GP LD', micron: 35 }
     ];
   }
+
+  // Merge any custom widths, rates, or metallocene from existing requirements if present
+  const mergedLayers = layers.map((layer, idx) => {
+    const oldReq = Array.isArray(existing) ? (existing[idx] || existing.find(r => r.filmType === layer.filmType)) : null;
+    const widthMm = (oldReq && oldReq.widthMm && oldReq.widthMm !== '-') ? parseFloat(oldReq.widthMm) : layer.widthMm;
+    const rate = (oldReq && (oldReq.rate !== undefined || oldReq.ratePerKg !== undefined))
+      ? parseFloat(oldReq.rate ?? oldReq.ratePerKg)
+      : (layer.rate ?? layer.ratePerKg);
+    return {
+      ...layer,
+      ...(widthMm !== undefined && !isNaN(widthMm) ? { widthMm } : {}),
+      ...(rate !== undefined && !isNaN(rate) ? { rate, pricePerKg: rate, ratePerKg: rate } : {})
+    };
+  });
 
   const getMaterialForm = (o) => {
     const type = (o?.orderType || o?.materialFormat || '').toLowerCase();
@@ -448,27 +520,33 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
     jobName: order?.jobName || 'Job',
     printWidthMm: parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
     repeatLengthMm: parseFloat(order?.repeatLengthMm || jm?.repeatLengthMm) || 400,
-    orderQtyKg: parseFloat(order?.orderQtyKg) || 1000,
+    orderQtyKg: orderQtyKg || 1000,
     orderType: getMaterialForm(order),
-    layers
+    layers: mergedLayers
   });
 
   const reqs = [];
   if (calc && calc.layerResults) {
     calc.layerResults.forEach((layer, idx) => {
+      const oldReq = Array.isArray(existing) ? (existing[idx] || existing.find(r => r.filmType === layer.filmType)) : null;
       reqs.push({
-        id: `REQ-${order?.id || 'ORD'}-${idx + 1}`,
+        id: oldReq?.id || `REQ-${order?.id || 'ORD'}-${idx + 1}`,
         filmType: layer.filmType,
         micron: layer.micron,
         widthMm: layer.widthMm || parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
         qtyKg: layer.grossKg || 0,
-        preferredVendor: (layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
-        poIssued: false,
-        poNumber: ""
+        ratePerKg: layer.pricePerKg,
+        rate: layer.pricePerKg,
+        preferredVendor: oldReq?.preferredVendor || ((layer.filmType || '').toLowerCase().includes('ld') ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd'),
+        assignedVendor: oldReq?.assignedVendor || '',
+        poIssued: Boolean(oldReq?.poIssued),
+        poNumber: oldReq?.poNumber || '',
+        status: oldReq?.status || 'Required'
       });
     });
 
-    if (calc.inkDetails && calc.inkDetails.grossKg > 0) {
+    const hadInks = Array.isArray(existing) && existing.some(r => r.filmType === 'Liquid Inks');
+    if (hadInks && calc.inkDetails && calc.inkDetails.grossKg > 0) {
       reqs.push({
         id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
         filmType: 'Liquid Inks',
@@ -481,7 +559,8 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
       });
     }
 
-    if (calc.adhesiveDetails && calc.adhesiveDetails.grossKg > 0) {
+    const hadAdhesive = Array.isArray(existing) && existing.some(r => r.filmType === 'Solvent-less Adhesive');
+    if (hadAdhesive && calc.adhesiveDetails && calc.adhesiveDetails.grossKg > 0) {
       reqs.push({
         id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
         filmType: 'Solvent-less Adhesive',
