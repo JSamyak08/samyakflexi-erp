@@ -13,11 +13,12 @@ import ArtworkModal from './components/ArtworkModal';
 import StorageImage from './components/StorageImage';
 import SearchableSelect from './components/SearchableSelect';
 import { applySavedJobCardSpec, buildCylinderJobCardDraft, findMatchingJobMaster, parseStructureToLayers } from './utils/cylinderJobCardDraft';
+import { rawRoleNames, userHasAnyRole } from './assignedRoles';
 import { formatPlantDate } from './utils/dbDates';
 
 const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, ref) => {
   const letterhead = loadLetterhead();
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
   const managementSignature = getAuthorisedSignature();
   if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} />;
   const COMPANY_DETAILS = letterhead.company;
@@ -276,9 +277,9 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
 
 export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [], cylinders = [] }) {
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
-  const userRole = currentUser?.role || '';
-  const canEdit = EDIT_ROLES.includes(userRole);
-  const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
+  const userRole = rawRoleNames(currentUser).join(', ');
+  const canEdit = userHasAnyRole(currentUser, EDIT_ROLES);
+  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
   const componentRef = useRef();
 
   const [layers, setLayers] = useState(() => {

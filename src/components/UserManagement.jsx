@@ -22,6 +22,8 @@ import SearchableSelect from './SearchableSelect';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary } from '../factoryStore';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
+import { assignedRolesOf, departmentForRole, primaryRole, userHasRole } from '../assignedRoles';
+import AssignedPlantRoleField from './AssignedPlantRoleField';
 
 export default function UserManagement({ 
   users = [], 
@@ -33,8 +35,8 @@ export default function UserManagement({
   onUpdateRolePermissions,
   urlParams = {}
 }) {
-  const isAuthorized = currentUser?.role === 'Admin';
-  const isAdmin = currentUser?.role === 'Admin';
+  const isAuthorized = userHasRole(currentUser, 'Admin');
+  const isAdmin = isAuthorized;
   const [saveNotification, setSaveNotification] = useState(null);
   const [saveNotificationError, setSaveNotificationError] = useState(false);
 
@@ -53,45 +55,44 @@ export default function UserManagement({
   // User Form State
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [roles, setRoles] = useState(['Store Manager']);
   const [role, setRole] = useState('Store Manager');
   const [department, setDepartment] = useState('Store & Raw Material');
   const [status, setStatus] = useState('Active');
 
-  const roleOptions = [
-    { role: "Admin", dept: "Executive Management" },
-    { role: "Plant Manager", dept: "Operations & Plant" },
-    { role: "HR & Payroll Manager", dept: "Human Resources & Admin" },
-    { role: "Production Manager", dept: "Operations & Plant" },
-    { role: "Store Manager", dept: "Store & Raw Material" },
-    { role: "QC Chemist", dept: "Quality Control Lab" },
-    { role: "Purchase Manager", dept: "Purchase & Commercial" },
-    { role: "Sales Manager", dept: "Sales & Commercial" },
-    { role: "Printing Operator", dept: "Rotogravure Printing" },
-    { role: "Shop Floor Operator", dept: "Lamination & Printing" }
-  ];
+  const applyRoleSelection = (nextRoles, previousPrimary) => {
+    const primary = primaryRole(nextRoles, previousPrimary);
+    setRoles(nextRoles);
+    setRole(primary);
+    const dept = departmentForRole(primary);
+    if (dept) setDepartment(dept);
+    return primary;
+  };
 
-  const handleRoleSelect = (selectedRole) => {
-    setRole(selectedRole);
-    const found = roleOptions.find(r => r.role === selectedRole);
-    if (found) setDepartment(found.dept);
+  const toggleAssignedRole = (selectedRole) => {
+    const nextRoles = roles.includes(selectedRole)
+      ? roles.filter((item) => item !== selectedRole)
+      : [...roles, selectedRole];
+    applyRoleSelection(nextRoles, role);
   };
 
   const openAddModal = () => {
     setEditingUser(null);
     setName('');
     setEmail('');
-    setRole('Store Manager');
+    applyRoleSelection(['Store Manager'], 'Store Manager');
     setDepartment('Store & Raw Material');
     setStatus('Active');
     setIsOnboardingModalOpen(true);
   };
 
   const openEditModal = (u) => {
+    const existing = assignedRolesOf(u);
     setEditingUser(u);
     setName(u.name || '');
     setEmail(u.email || '');
-    setRole(u.role || 'Store Manager');
-    setDepartment(u.department || 'Store & Raw Material');
+    applyRoleSelection(existing.length ? existing : ['Store Manager'], u.role || 'Store Manager');
+    setDepartment(u.department || departmentForRole(u.role) || 'Store & Raw Material');
     setStatus(u.status || 'Active');
     setIsOnboardingModalOpen(true);
   };
@@ -102,13 +103,21 @@ export default function UserManagement({
       alert("Name and Email are required!");
       return;
     }
+    if (!roles.length) {
+      alert("Select at least one Assigned Plant Role.");
+      return;
+    }
+
+    const savedRoles = assignedRolesOf(roles);
+    const savedRole = primaryRole(savedRoles, role);
 
     if (editingUser) {
       const updated = {
         ...editingUser,
         name: name.trim(),
         email: email.trim().toLowerCase(),
-        role,
+        role: savedRole,
+        roles: savedRoles,
         department,
         status
       };
@@ -117,7 +126,8 @@ export default function UserManagement({
       const newUser = {
         name: name.trim(),
         email: email.trim().toLowerCase(),
-        role,
+        role: savedRole,
+        roles: savedRoles,
         department,
         status
       };
@@ -194,7 +204,7 @@ export default function UserManagement({
   const filteredUsers = (users || []).filter(u => 
     (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (u.role || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    assignedRolesOf(u).join(' ').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.department || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -253,7 +263,7 @@ export default function UserManagement({
             Only <b>Admin</b> role has authority to manage user accounts and configure RBAC module permissions matrix.
           </p>
           <span className="badge badge-warning" style={{ padding: '6px 12px' }}>
-            Your Role: {currentUser?.role || 'Guest'}
+            Your Role: {assignedRolesOf(currentUser).join(', ') || 'Guest'}
           </span>
         </div>
       ) : activeSubTab === 'rbac' ? (
@@ -369,7 +379,7 @@ export default function UserManagement({
                   <th>User ID</th>
                   <th>Full Name</th>
                   <th>Email Address</th>
-                  <th>Assigned Role</th>
+                  <th>Assigned Roles</th>
                   <th>Department</th>
                   <th>Status</th>
                   {isAdmin && <th>Admin Actions</th>}
@@ -382,9 +392,17 @@ export default function UserManagement({
                     <td style={{ fontWeight: '600' }}>{u.name}</td>
                     <td className="no-capitalize" style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{u.email}</td>
                     <td>
-                      <span className={`badge ${u.role === 'Admin' ? 'badge-warning' : u.role === 'Plant Manager' ? 'badge-client' : u.role === 'Store Manager' ? 'badge-us' : 'badge-both'}`}>
-                        {u.role}
-                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                        {assignedRolesOf(u).map((roleName) => (
+                          <span
+                            key={roleName}
+                            className={`badge ${roleName === 'Admin' ? 'badge-warning' : roleName === 'Plant Manager' ? 'badge-client' : roleName === 'Store Manager' ? 'badge-us' : 'badge-both'}`}
+                            title={roleName === u.role ? 'Primary role' : 'Assigned plant role'}
+                          >
+                            {roleName}{roleName === u.role ? ' · primary' : ''}
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td>{u.department}</td>
                     <td>
@@ -433,7 +451,7 @@ export default function UserManagement({
       {/* Modal: Onboard / Edit User */}
       {isOnboardingModalOpen && (
         <div className="modal-overlay" onClick={() => setIsOnboardingModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: '550px' }} onClick={e => e.stopPropagation()}>
+            <div className="glass-card modal-content" style={{ width: '640px', maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <UserPlus size={20} style={{ color: 'var(--primary-brand)' }} /> {editingUser ? 'Edit User Account' : 'Onboard Plant User'}
             </h3>
@@ -476,12 +494,7 @@ export default function UserManagement({
               </div>
 
               <div className="form-group">
-                <label>Assigned Plant Role *</label>
-                <SearchableSelect className="form-control" value={role} onChange={e => handleRoleSelect(e.target.value)}>
-                  {roleOptions.map(r => (
-                    <option key={r.role} value={r.role}>{r.role} ({r.dept})</option>
-                  ))}
-                </SearchableSelect>
+                <AssignedPlantRoleField roles={roles} primary={role} onToggle={toggleAssignedRole} />
               </div>
 
               <div className="form-group">

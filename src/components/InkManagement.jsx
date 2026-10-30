@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { userHasAnyRole } from '../assignedRoles';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { 
   Droplet, 
@@ -122,12 +123,14 @@ export default function InkManagement({
   onSaveOrder,
   onNavigateTab
 }) {
-  const isAuthorized = currentUser?.role === 'Admin' || 
-                       currentUser?.role === 'Plant Manager' || 
-                       currentUser?.role === 'Store Manager' || 
-                       currentUser?.role === 'Purchase Manager' || 
-                       currentUser?.role === 'QC Chemist';
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'Plant Manager';
+  const isAuthorized = userHasAnyRole(currentUser, [
+    'Admin',
+    'Plant Manager',
+    'Store Manager',
+    'Purchase Manager',
+    'QC Chemist',
+  ]);
+  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'Plant Manager']);
 
   // Sub-tabs: 'directory' | 'calculator' | 'stock'
   const [activeSubTab, setActiveSubTab] = useState('directory');

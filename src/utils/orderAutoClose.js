@@ -10,6 +10,7 @@
  */
 
 import { isReusablePrintedLot } from './printingSfgLot.js';
+import { rawRoleNames } from '../assignedRoles.js';
 
 export const ORDER_CLOSE_TOLERANCE_PCT = 10;
 export const ORDER_AUTO_CLOSE_SETTING = 'order_auto_close_enabled';
@@ -17,8 +18,8 @@ export const ORDER_CLOSE_TOLERANCE_SETTING = 'order_close_tolerance_pct';
 export const STOCK_DUST_KG = 0.05;
 export const ORDER_CLOSED_STOCK_FLAG = 'Order closed';
 
-export function isAdminRole(role) {
-  return String(role || '').trim() === 'Admin';
+export function isAdminRole(roleOrUser) {
+  return rawRoleNames(roleOrUser).includes('Admin');
 }
 
 export function cleanJobName(name) {
@@ -282,7 +283,7 @@ export function planAutoCloseUpdates(orders, context) {
 }
 
 export function buildManualClose(order, { user, reason, now = new Date().toISOString() } = {}) {
-  if (!isAdminRole(user?.role)) {
+  if (!isAdminRole(user)) {
     return { ok: false, error: 'Only Admin can manually close an order.' };
   }
   const text = String(reason || '').trim();
@@ -306,7 +307,7 @@ export function buildManualClose(order, { user, reason, now = new Date().toISOSt
 }
 
 export function buildManualReopen(order, { user, reason, now = new Date().toISOString() } = {}) {
-  if (!isAdminRole(user?.role)) {
+  if (!isAdminRole(user)) {
     return { ok: false, error: 'Only Admin can reopen an order.' };
   }
   const text = String(reason || '').trim();
@@ -333,7 +334,7 @@ export function buildManualReopen(order, { user, reason, now = new Date().toISOS
 
 export function manualCloseGuard(previous, next, user) {
   if (!next) return 'Order is missing.';
-  const admin = isAdminRole(user?.role);
+  const admin = isAdminRole(user);
   const nextManual = next.closeMode === 'manual';
   const prevManual = previous?.closeMode === 'manual';
   if (nextManual && !prevManual && !admin) return 'Only Admin can manually close an order.';

@@ -86,6 +86,7 @@ import {
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { inputRollWeightsFromLog } from '../utils/consumeMassBalance';
+import { userHasAnyRole } from '../assignedRoles';
 
 function measureInputValue(value, fallback) {
   const primary = finiteNumber(value);
@@ -826,8 +827,8 @@ export default function ProductionRecordManagement({
   onAddRoll
 }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const isPlantManager = currentUser?.role === 'Plant Manager' || currentUser?.role === 'Admin' || currentUser?.role === 'Production Manager';
-  const isAdmin = currentUser?.role === 'Admin';
+  const isPlantManager = userHasAnyRole(currentUser, ['Plant Manager', 'Admin', 'Production Manager']);
+  const isAdmin = userHasAnyRole(currentUser, 'Admin');
 
   const [activeTab, setActiveTab] = useState('punched_jobs'); // 'punched_jobs', 'list', 'new_record', 'job_cards'
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -1928,7 +1929,7 @@ export default function ProductionRecordManagement({
       order: selectedOrder,
       jobMasters,
       limits: guardrailLimits,
-      role: currentUser?.role,
+      role: currentUser,
       entry: {
         orderId: selectedOrder?.id,
         machineName: machine?.name || '',
@@ -2013,7 +2014,7 @@ export default function ProductionRecordManagement({
     const preview = buildFormGuardrail();
     setGuardrailPreview(preview);
     const decision = decideGuardrailSave(preview, {
-      role: currentUser?.role,
+      role: currentUser,
       warningReason: guardrailWarningReason,
       filmTypeOverrideReason,
       overrideBy: currentUser?.name || ''
@@ -5307,8 +5308,8 @@ export default function ProductionRecordManagement({
                 )}
                 {guardrailPreview.filmTypeBlocks.length > 0 && (
                   <label style={{ display: 'block', marginTop: '10px', fontWeight: '700', fontSize: '0.8rem' }}>
-                    Supervisor film-type reason {canOverrideFilmType(currentUser?.role) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
-                    <textarea className="form-control" rows={2} value={filmTypeOverrideReason} onChange={(event) => setFilmTypeOverrideReason(event.target.value)} disabled={!canOverrideFilmType(currentUser?.role)} />
+                    Supervisor film-type reason {canOverrideFilmType(currentUser) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
+                    <textarea className="form-control" rows={2} value={filmTypeOverrideReason} onChange={(event) => setFilmTypeOverrideReason(event.target.value)} disabled={!canOverrideFilmType(currentUser)} />
                   </label>
                 )}
               </div>

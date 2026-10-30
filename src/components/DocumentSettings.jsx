@@ -861,7 +861,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               >
                 ⏳ Inventory Ageing & FIFO
               </button>
-              {canSeePackingGainLoss(currentUser?.role) && (
+              {canSeePackingGainLoss(currentUser) && (
                 <button
                   type="button"
                   className={`tab-button ${activeTab === 'dispatch_gain_loss' ? 'active' : ''}`}
@@ -1672,7 +1672,7 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
       {/* TAB: INVENTORY AGEING ALERTS & FIFO CONSUMPTION SETTINGS */}
       {/* ========================================================================= */}
       {activeTab === 'dispatch_gain_loss' && (
-        canSeePackingGainLoss(currentUser?.role)
+        canSeePackingGainLoss(currentUser)
           ? <DispatchGainLossSettings />
           : (
             <div data-testid="dispatch-gain-loss-settings-hidden" className="glass-panel" style={{ padding: '24px', color: '#334155' }}>

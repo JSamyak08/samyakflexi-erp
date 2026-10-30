@@ -55,6 +55,7 @@ const CANONICAL = [
   ['/clients/new', 'clients', 'new'],
   ['/clients/CL-1', 'clients', 'client'],
   ['/printing', 'printing_scheduler', 'queue'],
+  ['/printing/jobs/ORD-1', 'printing_scheduler', 'job'],
   ['/printing/completed', 'printing_scheduler', 'completed'],
   ['/printing/presses', 'printing_scheduler', 'presses'],
   ['/production', 'production_records', 'punched-jobs'],

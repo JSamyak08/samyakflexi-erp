@@ -6,6 +6,7 @@ import {
   DEFAULT_PROCESSING_RATES,
   calculateJobRawMaterials,
   isLDFilm,
+  requirementLineId,
   isMetalloceneEligibleFilm,
   METALLOCENE_OPTIONS
 } from '../factoryStore';
@@ -21,19 +22,54 @@ import {
   AlertTriangle,
   RotateCcw,
   Check,
-  Tag
+  Tag,
+  FileCheck
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
+import OrderConfirmationRegister from './OrderConfirmationRegister';
 import { notifyOrderPunched } from '../services/emailService';
 import { 
   getProcessingRates, 
   saveProcessingRates, 
   getNextDocRefNumber, 
   getMaterialCostSettings, 
-  fetchMaterialCostSettingsFromSupabase 
+  fetchMaterialCostSettingsFromSupabase,
+  syncOcnCounterWithRecords
 } from '../services/settingsService';
 
-export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, initialJobMasterData, clients = [], jobMasters = [] }) {
+export default function JobPunchingForm({ 
+  onSaveOrder, 
+  onNavigateToDashboard, 
+  initialJobMasterData, 
+  clients = [], 
+  jobMasters = [],
+  orders = [],
+  ocns = [],
+  onSaveOcn,
+  onSaveOcnAmendment,
+  onRefreshOcns,
+  urlParams = {},
+  activeUsername = 'Staff'
+}) {
+  // Navigation / View State
+  const [activeView, setActiveView] = useState(() => (urlParams?.view === 'ocns' ? 'ocns' : 'form'));
+  const [activeOcnForPdf, setActiveOcnForPdf] = useState(null);
+
+  // Sync OCN counter with existing records on mount/change
+  useEffect(() => {
+    if (Array.isArray(ocns) && ocns.length > 0) {
+      syncOcnCounterWithRecords(ocns);
+    }
+  }, [ocns]);
+
+  useEffect(() => {
+    if (urlParams?.view === 'ocns') {
+      setActiveView('ocns');
+    } else if (urlParams?.view === 'form') {
+      setActiveView('form');
+    }
+  }, [urlParams?.view]);
+
   // Form State
   const [jobName, setJobName] = useState(() => initialJobMasterData?.jobName || '');
   const [clientName, setClientName] = useState(() => initialJobMasterData?.clientName || '');
@@ -527,8 +563,13 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         }))
       : [];
 
+    const orderId = getNextDocRefNumber('order');
+    const ocnNumber = getNextDocRefNumber('ocn');
+
     const newOrder = {
-      id: getNextDocRefNumber('order'),
+      id: orderId,
+      ocnNumber,
+      ocnId: ocnNumber,
       jobName,
       clientName,
       orderType: orderType || 'Pouching',
@@ -552,12 +593,16 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         repeatLengthMm: parseFloat(repeatLengthMm), 
         inkGsm: parseFloat(inkGsm) || 0,
         adhesiveGsm: parseFloat(adhesiveGsm) || 0,
-        structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '), 
+        structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '), 
         hasVariants: hasVariants && finalVariants.length > 0,
         variants: finalVariants,
         orderComments, 
-        comments: orderComments 
+        comments: orderComments,
+        ocnNumber,
+        ocnId: ocnNumber,
+        metallocenePct: finalLayers.find(l => l.metallocenePct)?.metallocenePct || ''
       },
+      metallocenePct: finalLayers.find(l => l.metallocenePct)?.metallocenePct || '',
       wastagePct: parseFloat(calculationResults.wastagePct) || 5,
       wastageKg: parseFloat(calculationResults.wastageKg) || 0,
       conversionChargesPerKg: parseFloat(conversionCharges) || 0,
@@ -567,10 +612,10 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       totalFixedProfit: calculationResults.totalFixedProfit,
       totalMinSellingAmount: calculationResults.totalMinSellingAmount,
       layers: finalLayers,
-      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '),
       calculationDetails: calculationResults,
-      materialRequirements: calculationResults.layerResults.map(l => ({
-        id: `REQ-${Math.floor(100 + Math.random() * 900)}`,
+      materialRequirements: calculationResults.layerResults.map((l, idx) => ({
+        id: requirementLineId(orderId, idx),
         filmType: l.filmType,
         micron: l.micron,
         widthMm: l.widthMm,
@@ -581,15 +626,57 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       }))
     };
 
+    const ocnMetallocene = finalLayers.find(l => l.metallocenePct)?.metallocenePct || '';
+    const ocnRecord = {
+      id: ocnNumber,
+      ocnNumber,
+      orderId: newOrder.id,
+      jobName,
+      clientName,
+      clientDetails: matchedClient,
+      orderDate: new Date().toISOString().split('T')[0],
+      targetDeliveryDate: targetDate.toISOString().split('T')[0],
+      orderQtyKg: parseFloat(orderQtyKg) || 0,
+      orderType: orderType || 'Reel',
+      printWidthMm: parseFloat(printWidthMm) || 0,
+      repeatLengthMm: parseFloat(repeatLengthMm) || 0,
+      totalLaminateGsm: calculationResults.totalLaminateGsm || 0,
+      totalAreaSqm: calculationResults.totalAreaSqm || 0,
+      wastagePct: parseFloat(calculationResults.wastagePct) || 5,
+      minSellingPricePerKg: calculationResults.minSellingPricePerKg || 0,
+      totalMinSellingAmount: calculationResults.totalMinSellingAmount || 0,
+      conversionChargesPerKg: parseFloat(conversionCharges) || 0,
+      fixedProfitPerKg: parseFloat(fixedProfit) || 0,
+      metallocenePct: ocnMetallocene,
+      layers: finalLayers,
+      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '),
+      variants: finalVariants,
+      hasVariants,
+      calculationData: { ...calculationResults, clientName, jobName, orderQtyKg, orderType, layers: finalLayers },
+      summary: calculationResults.summary || {},
+      layerResults: calculationResults.layerResults || [],
+      inkDetails: calculationResults.inkDetails || {},
+      adhesiveDetails: calculationResults.adhesiveDetails || {},
+      orderComments,
+      status: 'Confirmed',
+      revisionNo: 0,
+      amendmentNo: 'Rev 00',
+      revisions: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
     try {
       if (onSaveOrder) await onSaveOrder(newOrder);
+      if (onSaveOcn) await onSaveOcn(ocnRecord);
     } catch (err) {
-      alert(`The sales order was not saved: ${err.message || err}`);
+      alert(`The sales order or OCN was not saved: ${err.message || err}`);
       return;
     }
 
     setShowConfirmModal(false);
     setIsSubmitted(true);
+    setActiveOcnForPdf(ocnRecord);
 
     notifyOrderPunched(newOrder).catch(err => console.error("Order punched email error:", err));
 
@@ -597,25 +684,77 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* Header Controls */}
-      <div className="glass-panel" style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-primary)' }}>
-              <Calculator size={22} style={{ color: 'var(--primary-brand)' }} /> Order Confirmation & Job Punching Area
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-              Input job specs, substrate layers & microns. Calculates exact raw material requirement in Kgs, ink & adhesive costs, and wastage rules.
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn-primary" onClick={() => setShowPDFModal(true)}>
-              <FileText size={18} /> View Order Confirmation Note (PDF)
-            </button>
-          </div>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* Top View Selector Sub-Tabs */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <button
+          type="button"
+          className={activeView === 'form' ? 'btn-primary' : 'btn-secondary'}
+          onClick={() => setActiveView('form')}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+        >
+          <Calculator size={16} /> Job Punching & Costing Area
+        </button>
+        <button
+          type="button"
+          className={activeView === 'ocns' ? 'btn-primary' : 'btn-secondary'}
+          onClick={() => setActiveView('ocns')}
+          style={{ 
+            display: 'inline-flex', 
+            alignItems: 'center', 
+            gap: '6px', 
+            fontWeight: '700',
+            background: activeView === 'ocns' ? '#059669' : undefined,
+            borderColor: activeView === 'ocns' ? '#059669' : undefined
+          }}
+        >
+          <FileCheck size={16} /> Order Confirmations (OCN) Register
+          {ocns && ocns.length > 0 && (
+            <span style={{ 
+              background: activeView === 'ocns' ? '#ffffff' : '#059669', 
+              color: activeView === 'ocns' ? '#059669' : '#ffffff', 
+              padding: '1px 7px', 
+              borderRadius: '10px', 
+              fontSize: '0.72rem', 
+              fontWeight: '800', 
+              marginLeft: '4px' 
+            }}>
+              {ocns.length}
+            </span>
+          )}
+        </button>
       </div>
+
+      {activeView === 'ocns' ? (
+        <OrderConfirmationRegister 
+          ocns={ocns}
+          orders={orders}
+          clients={clients}
+          onNavigateToPunching={() => setActiveView('form')}
+          onSaveAmendment={onSaveOcnAmendment}
+          onRefresh={onRefreshOcns}
+          activeUsername={activeUsername}
+        />
+      ) : (
+        <>
+          {/* Header Controls */}
+          <div className="glass-panel" style={{ padding: '20px 24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-primary)' }}>
+                  <Calculator size={22} style={{ color: 'var(--primary-brand)' }} /> Order Confirmation & Job Punching Area
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
+                  Input job specs, substrate layers & microns. Calculates exact raw material requirement in Kgs, ink & adhesive costs, and wastage rules.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button className="btn-primary" onClick={() => setShowPDFModal(true)}>
+                  <FileText size={18} /> View Order Confirmation Note (PDF)
+                </button>
+              </div>
+            </div>
+          </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) 420px', gap: '24px' }}>
         {/* Left Side: Job Entry Form */}
@@ -1573,11 +1712,14 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
           </div>
         </div>
       )}
+        </>
+      )}
 
       {/* PDF View Modal */}
       {showPDFModal && (
         <OrderConfirmationPDF 
-          calculationData={calculationResults} 
+          ocn={activeOcnForPdf}
+          calculationData={activeOcnForPdf?.calculationData || calculationResults} 
           clientDetails={matchedClient}
           clients={clients}
           onClose={() => setShowPDFModal(false)} 

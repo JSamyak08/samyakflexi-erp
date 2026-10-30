@@ -1,3 +1,5 @@
+import { rawRoleNames } from '../assignedRoles.js';
+
 // Salary-advance stages and the outstanding-advance rule.
 // Payroll recovery runs only after Disbursed. A second advance can be
 // requested by an Admin, but the policy override is recorded at approval.
@@ -60,15 +62,17 @@ export function salaryAdvanceBadgeStyle(status) {
 }
 
 export function isExactAdminRole(role) {
-  return String(role || '').trim().toLowerCase() === 'admin';
+  return rawRoleNames(role).some((name) => name.toLowerCase() === 'admin');
 }
 
 // Matches salary_advances RLS: Admin, or HR & Payroll Manager.
 // Plant, director, and owner are not approvers.
 export function canApproveSalaryAdvanceRole(role, { anonymous = false } = {}) {
   if (anonymous) return true;
-  const roleStr = String(role || '').trim().toLowerCase();
-  return roleStr === 'admin' || roleStr.includes('hr');
+  return rawRoleNames(role).some((name) => {
+    const roleStr = name.toLowerCase();
+    return roleStr === 'admin' || roleStr.includes('hr');
+  });
 }
 
 // The action cell. An unsettled sibling blocks a new request and a

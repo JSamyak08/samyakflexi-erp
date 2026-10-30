@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { userHasAnyRole } from '../assignedRoles';
 import { 
   ShieldAlert, 
   ShieldCheck, 
@@ -186,7 +187,7 @@ export default function AuditLogsManagement({
   };
 
   // Admin access guard
-  if (currentUser?.role !== 'Admin') {
+  if (!userHasAnyRole(currentUser, 'Admin')) {
     return (
       <div className="glass-panel" style={{ padding: '60px 24px', textAlign: 'center', maxWidth: '600px', margin: '40px auto' }}>
         <ShieldAlert size={56} style={{ color: 'var(--danger)', margin: '0 auto 16px' }} />

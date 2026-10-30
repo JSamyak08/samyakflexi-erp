@@ -28,8 +28,25 @@ export async function resolveReadableUrl(url) {
 
   const bucket = decodeURIComponent(match[1]);
   const path = decodeURIComponent(match[2]);
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
-  if (error || !data?.signedUrl) return url;
+
+  let { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
+
+  // If initial attempt fails and bucket is in FALLBACK_BUCKETS, check the alternate bucket
+  if ((error || !data?.signedUrl) && FALLBACK_BUCKETS.includes(bucket)) {
+    const fallbackBucket = FALLBACK_BUCKETS.find(b => b !== bucket);
+    if (fallbackBucket) {
+      const fallbackRes = await supabase.storage.from(fallbackBucket).createSignedUrl(path, 60 * 60);
+      if (fallbackRes.data?.signedUrl) {
+        data = fallbackRes.data;
+        error = null;
+      }
+    }
+  }
+
+  if (error || !data?.signedUrl) {
+    console.warn('[Storage Service] Failed to create signed URL for:', { bucket, path, error });
+    return url;
+  }
 
   signedUrlCache.set(url, { signedUrl: data.signedUrl, expiresAt: Date.now() + 50 * 60 * 1000 });
   return data.signedUrl;
@@ -111,39 +128,99 @@ export async function openArtworkViewer(url, title = 'Artwork File') {
     return;
   }
 
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    const readable = await resolveReadableUrl(url);
-    window.open(readable, '_blank', 'noopener,noreferrer');
-    return;
+  const safeTitle = (title || 'Artwork File').replace(/[<>&"]/g, '');
+  const cleanDownloadName = (title || 'artwork_file').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const isPdf = typeof url === 'string' && (url.toLowerCase().endsWith('.pdf') || url.includes('application/pdf') || url.includes('.pdf?'));
+
+  // Synchronously open a popup tab during the user's gesture to bypass strict popup blockers
+  let win = null;
+  try {
+    win = window.open('', '_blank');
+    if (win && win.document) {
+      win.document.write(`
+        <!DOCTYPE html>
+        <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <title>${safeTitle} - Loading Preview</title>
+            <style>
+              body { margin: 0; background: #0f172a; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; }
+              .box { text-align: center; }
+              .logo { font-size: 1.1rem; font-weight: 800; color: #38bdf8; margin-bottom: 8px; letter-spacing: 0.5px; }
+              .sub { font-size: 0.85rem; color: #94a3b8; }
+            </style>
+          </head>
+          <body>
+            <div class="box">
+              <div class="logo">SAMYAK FLEXI ERP</div>
+              <div class="sub">Generating secure access link...</div>
+            </div>
+          </body>
+        </html>
+      `);
+      win.document.close();
+    }
+  } catch (err) {
+    console.warn('[Storage Service] Popup window open was blocked:', err);
   }
 
-  // For data: URLs or local strings, create an isolated HTML viewer tab
   try {
-    const isPdf = typeof url === 'string' && (url.startsWith('data:application/pdf') || url.includes('application/pdf'));
-    const safeTitle = (title || 'Artwork File').replace(/[<>&"]/g, '');
-    const cleanDownloadName = (title || 'artwork_file').replace(/[^a-zA-Z0-9_-]/g, '_');
-
-    // Convert data URL to Blob URL to ensure fast, uncorrupted, memory-efficient rendering in new tab
     let renderUrl = url;
-    if (typeof url === 'string' && url.startsWith('data:')) {
+
+    // If it's a Supabase storage URL, resolve the short-lived signed URL
+    if (typeof url === 'string' && url.includes('/storage/v1/object/')) {
+      renderUrl = await resolveReadableUrl(url);
+    } else if (typeof url === 'string' && url.startsWith('data:')) {
       const blob = dataUrlToBlob(url);
       if (blob) {
         renderUrl = URL.createObjectURL(blob);
       }
     }
 
-    const win = window.open('', '_blank');
-    if (!win) {
-      // If popup blocker intervened, trigger direct download
+    // Safety guard: if renderUrl is still an unauthenticated private bucket public URL, do NOT navigate to 404
+    const isUnresolvedPrivateUrl = typeof renderUrl === 'string' && renderUrl.includes('/storage/v1/object/public/');
+    if (isUnresolvedPrivateUrl) {
+      if (win && !win.closed) {
+        win.document.body.innerHTML = `
+          <div style="text-align: center; padding: 40px; background: #1e293b; border-radius: 8px; border: 1px solid #ef4444; max-width: 480px; margin: auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">⚠️</div>
+            <h3 style="font-size: 1.1rem; color: #f8fafc; margin-bottom: 8px;">File Access Restricted</h3>
+            <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5; margin-bottom: 16px;">
+              This file is protected in private cloud storage and a secure signed URL could not be generated. Please ensure you are logged into the ERP or re-upload the file.
+            </p>
+            <button onclick="window.close()" style="background:#334155; color:#fff; border:1px solid #475569; padding:8px 16px; border-radius:6px; cursor:pointer;">Close Window</button>
+          </div>
+        `;
+      } else {
+        alert('File access restricted: Signed link could not be generated for private storage.');
+      }
+      return;
+    }
+
+    // If PDF, navigate the window to the PDF file directly so the browser's native PDF reader opens
+    if (isPdf && renderUrl.startsWith('http')) {
+      if (win && !win.closed) {
+        win.location.replace(renderUrl);
+        return;
+      }
+      window.open(renderUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    // If popup was blocked and window is not available, fallback to download
+    if (!win || win.closed) {
       const a = document.createElement('a');
       a.href = renderUrl;
-      a.download = cleanDownloadName;
+      a.download = isPdf ? `${cleanDownloadName}.pdf` : `${cleanDownloadName}.jpg`;
+      a.target = '_blank';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       return;
     }
 
+    // Write full interactive viewer into the opened window
+    win.document.open();
     win.document.write(`
       <!DOCTYPE html>
       <html lang="en">
@@ -285,10 +362,10 @@ export async function openArtworkViewer(url, title = 'Artwork File') {
                 <button class="btn" onclick="resetZoom()" title="Reset (0)">100%</button>
                 <button class="btn" onclick="rotateImg()" title="Rotate (90°)">Rotate</button>
               ` : ''}
-              <a href="${renderUrl}" download="${cleanDownloadName}" class="btn btn-primary">
+              <button onclick="downloadFile()" class="btn btn-primary" title="Download File">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Download File
-              </a>
+              </button>
             </div>
           </div>
           <div class="canvas">
@@ -301,9 +378,9 @@ export async function openArtworkViewer(url, title = 'Artwork File') {
                 <div style="font-size: 2rem; margin-bottom: 12px;">⚠️</div>
                 <h3 style="font-size: 1.1rem; color: #f8fafc; margin-bottom: 8px;">Artwork Preview Unavailable</h3>
                 <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.4; margin-bottom: 16px;">
-                  The artwork proof link is empty or the browser local cache was refreshed. Please re-upload the artwork file in Cylinder Management.
+                  The artwork proof link is empty or the storage token has expired. Please refresh the page or re-upload the artwork file.
                 </p>
-                <a href="${renderUrl}" download="${cleanDownloadName}" class="btn btn-primary" style="margin: 0 auto;">Download Stored Data</a>
+                <button onclick="downloadFile()" class="btn btn-primary" style="margin: 0 auto;">Download Stored Data</button>
               </div>
             </div>
           </div>
@@ -338,6 +415,31 @@ export async function openArtworkViewer(url, title = 'Artwork File') {
               if (e.key === '-' || e.key === '_') zoomOut();
               if (e.key === '0') resetZoom();
             });
+
+            async function downloadFile() {
+              try {
+                const fileUrl = "${renderUrl}";
+                const resp = await fetch(fileUrl);
+                if (!resp.ok) throw new Error('Fetch failed with status ' + resp.status);
+                const blob = await resp.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = blobUrl;
+                a.download = "${isPdf ? `${cleanDownloadName}.pdf` : `${cleanDownloadName}.jpg`}";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+              } catch (err) {
+                const a = document.createElement('a');
+                a.href = "${renderUrl}";
+                a.download = "${cleanDownloadName}";
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              }
+            }
           </script>
         </body>
       </html>
@@ -345,7 +447,11 @@ export async function openArtworkViewer(url, title = 'Artwork File') {
     win.document.close();
   } catch (err) {
     console.error('Error opening artwork preview:', err);
-    // Fallback: trigger download
+    if (win && !win.closed) {
+      try {
+        win.close();
+      } catch (e) {}
+    }
     const a = document.createElement('a');
     a.href = url;
     a.download = (title || 'artwork').replace(/[^a-zA-Z0-9_-]/g, '_');

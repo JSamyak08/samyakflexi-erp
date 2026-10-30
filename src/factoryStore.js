@@ -38,6 +38,7 @@ export const METALLOCENE_ELIGIBLE_FILMS = [
   'MILKY METALLOCENE',
   'MILKY GP',
   'NATURAL GP',
+  'NATURAL GP LD',
   'NATURAL LD GP FILM',
   'MILKY LD GP FILM',
   'NATURAL LD METALLOCENE FILM',
@@ -558,6 +559,87 @@ export const matchRequirementToInventoryItem = (req, inventory = []) => {
 };
 
 /**
+ * Stock and PO selection must not use a requirement id by itself.
+ * Job punching assigns ids from a 900-value range (REQ-100 … REQ-999), so two
+ * open orders often share one id. The later order used to overwrite the
+ * earlier order's balance, which is how ORD-2026-224's 136.82 kg PET line
+ * displayed ORD-2026-217's 521.61 kg.
+ */
+export function requirementLineId(orderId, index) {
+  return `REQ-${orderId || 'ORD'}-${(Number(index) || 0) + 1}`;
+}
+
+export function requirementStockKey(orderId, req, index) {
+  const lineId = req?.id !== undefined && req?.id !== null && String(req.id) !== ''
+    ? String(req.id)
+    : `line-${index ?? 'unknown'}`;
+  return `${String(orderId || '')}::${lineId}`;
+}
+
+function roundKg(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Number(number.toFixed(2));
+}
+
+/**
+ * Balance to purchase for one requirement line.
+ * reservedKg is the kilograms of this line already covered by stock.
+ */
+export function lineMaterialBalance(grossKg, reservedKg) {
+  const gross = roundKg(Math.max(0, Number(grossKg) || 0));
+  const reserved = roundKg(Math.min(gross, Math.max(0, Number(reservedKg) || 0)));
+  const balanceKg = roundKg(Math.max(0, gross - reserved));
+  return {
+    grossKg: gross,
+    reqQty: gross,
+    reservedKg: reserved,
+    balanceKg,
+    isFullyAvailable: gross > 0 && reserved >= gross,
+    isPartiallyAvailable: reserved > 0 && reserved < gross
+  };
+}
+
+/**
+ * Align a stock snapshot to the line on screen.
+ * A snapshot whose required quantity is not this line's gross belongs to
+ * another row, so its reserved kilograms are not applied.
+ */
+export function presentRequirementStock(req, stockInfo) {
+  const gross = Number(req?.qtyKg) || 0;
+  const reportedGross = stockInfo && stockInfo.reqQty !== undefined && stockInfo.reqQty !== null
+    ? Number(stockInfo.reqQty)
+    : null;
+  const sameLine = reportedGross === null || !Number.isFinite(reportedGross) || Math.abs(reportedGross - gross) <= 0.02;
+  const aligned = lineMaterialBalance(gross, sameLine ? stockInfo?.reservedKg : 0);
+  let poStatus = 'Pending PO';
+  if (req?.poIssued) poStatus = 'PO Issued';
+  else if (aligned.isFullyAvailable) poStatus = 'PO Not Required';
+  return {
+    ...aligned,
+    totalInStock: Number(stockInfo?.totalInStock) || 0,
+    matchedItemId: stockInfo?.matchedItemId ?? null,
+    matchedItem: stockInfo?.matchedItem ?? null,
+    poStatus
+  };
+}
+
+export function linkedRequirementMatches(linkedRequirements, orderId, reqId, legacyOrderId) {
+  const list = Array.isArray(linkedRequirements) ? linkedRequirements : [];
+  const id = String(reqId ?? '');
+  const scoped = requirementStockKey(orderId, { id });
+  const allowBareId = legacyOrderId === undefined || String(legacyOrderId || '') === String(orderId || '');
+  return list.some((entry) => {
+    if (entry && typeof entry === 'object') {
+      return String(entry.orderId || '') === String(orderId || '') && String(entry.reqId || entry.id || '') === id;
+    }
+    const text = String(entry ?? '');
+    if (text === scoped) return true;
+    return allowBareId && text === id;
+  });
+}
+
+/**
  * Multi-Order Coordinated Stock Checking & Material Reservation Engine
  * Tracks live stock pools across all active orders and allocates stock sequentially.
  */
@@ -594,16 +676,14 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
     reqs.forEach((req, idx) => {
       const reqQty = parseFloat(req.qtyKg) || 0;
       const matchedInv = matchRequirementToInventoryItem(req, inventory);
-      const reqKey = req.id || `REQ-${order.id}-${idx}`;
+      const reqKey = requirementStockKey(order.id, req, idx);
+      const lineId = req.id || reqKey;
 
       if (!matchedInv || reqQty <= 0) {
+        const empty = lineMaterialBalance(reqQty, 0);
         reqStockInfoMap[reqKey] = {
-          reqQty,
+          ...empty,
           totalInStock: 0,
-          reservedKg: 0,
-          balanceKg: reqQty,
-          isFullyAvailable: false,
-          isPartiallyAvailable: false,
           matchedItemId: null,
           matchedItem: null,
           poStatus: req.poIssued ? 'PO Issued' : 'Pending PO'
@@ -614,41 +694,35 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
       const invKey = String(matchedInv.id);
       const poolEntry = pool[invKey];
       const availForThis = poolEntry ? poolEntry.remainingStockKg : 0;
-      const reservedKg = Math.min(reqQty, availForThis);
-      const balanceKg = Math.max(0, Number((reqQty - reservedKg).toFixed(2)));
-      const isFullyAvailable = reservedKg >= reqQty;
-      const isPartiallyAvailable = reservedKg > 0 && reservedKg < reqQty;
+      const takenKg = Math.min(reqQty, Math.max(0, availForThis));
+      const balance = lineMaterialBalance(reqQty, takenKg);
 
       if (poolEntry) {
-        poolEntry.remainingStockKg = Math.max(0, Number((poolEntry.remainingStockKg - reservedKg).toFixed(2)));
-        poolEntry.totalReservedKg = Number((poolEntry.totalReservedKg + reservedKg).toFixed(2));
+        poolEntry.remainingStockKg = roundKg(Math.max(0, poolEntry.remainingStockKg - balance.reservedKg));
+        poolEntry.totalReservedKg = roundKg(poolEntry.totalReservedKg + balance.reservedKg);
 
-        if (reservedKg > 0) {
+        if (balance.reservedKg > 0) {
           poolEntry.reservations.push({
             orderId: order.id,
             order,
-            reqId: reqKey,
+            reqId: lineId,
             req,
-            grossReqKg: reqQty,
-            reservedKg,
-            balanceKg,
-            isFullyReserved: isFullyAvailable,
-            isPartiallyReserved: isPartiallyAvailable,
-            poStatus: req.poIssued ? 'PO Issued' : (isFullyAvailable ? 'PO Not Required' : 'Pending PO')
+            grossReqKg: balance.grossKg,
+            reservedKg: balance.reservedKg,
+            balanceKg: balance.balanceKg,
+            isFullyReserved: balance.isFullyAvailable,
+            isPartiallyReserved: balance.isPartiallyAvailable,
+            poStatus: req.poIssued ? 'PO Issued' : (balance.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
           });
         }
       }
 
       reqStockInfoMap[reqKey] = {
-        reqQty,
+        ...balance,
         totalInStock: poolEntry ? poolEntry.totalStockKg : 0,
-        reservedKg,
-        balanceKg,
-        isFullyAvailable,
-        isPartiallyAvailable,
         matchedItemId: matchedInv.id,
         matchedItem: matchedInv,
-        poStatus: req.poIssued ? 'PO Issued' : (isFullyAvailable ? 'PO Not Required' : 'Pending PO')
+        poStatus: req.poIssued ? 'PO Issued' : (balance.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
       };
     });
   });
@@ -657,38 +731,38 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
     pool,
     reqStockInfoMap,
     getReqStockInfo: (req, orderId) => {
-      if (!req) return { reqQty: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false, poStatus: 'Pending PO' };
-      const reqKey = req.id || (orderId ? `REQ-${orderId}-${req.filmType}` : null);
-      if (reqKey && reqStockInfoMap[reqKey]) {
-        return reqStockInfoMap[reqKey];
+      if (!req) return { reqQty: 0, grossKg: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false, poStatus: 'Pending PO' };
+      const reqKey = requirementStockKey(orderId, req);
+      const stored = reqKey && reqStockInfoMap[reqKey];
+      if (stored) {
+        const aligned = lineMaterialBalance(req.qtyKg, stored.reservedKg);
+        return {
+          ...stored,
+          ...aligned,
+          poStatus: req.poIssued ? 'PO Issued' : (aligned.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
+        };
       }
       const matched = matchRequirementToInventoryItem(req, inventory);
       if (!matched) {
+        const empty = lineMaterialBalance(req.qtyKg, 0);
         return {
-          reqQty: parseFloat(req.qtyKg) || 0,
+          ...empty,
           totalInStock: 0,
-          reservedKg: 0,
-          balanceKg: parseFloat(req.qtyKg) || 0,
-          isFullyAvailable: false,
-          isPartiallyAvailable: false,
+          matchedItemId: null,
+          matchedItem: null,
           poStatus: req.poIssued ? 'PO Issued' : 'Pending PO'
         };
       }
       const entry = pool[String(matched.id)];
-      const reqQty = parseFloat(req.qtyKg) || 0;
       const totalInStock = entry ? entry.totalStockKg : (Number(matched.availableQtyKg) || 0);
-      const reservedKg = Math.min(reqQty, entry ? entry.remainingStockKg : totalInStock);
-      const isFully = reservedKg >= reqQty;
+      const reservedKg = Math.min(parseFloat(req.qtyKg) || 0, entry ? entry.remainingStockKg : totalInStock);
+      const aligned = lineMaterialBalance(req.qtyKg, reservedKg);
       return {
-        reqQty,
+        ...aligned,
         totalInStock,
-        reservedKg,
-        balanceKg: Math.max(0, Number((reqQty - reservedKg).toFixed(2))),
-        isFullyAvailable: isFully,
-        isPartiallyAvailable: reservedKg > 0 && reservedKg < reqQty,
         matchedItemId: matched.id,
         matchedItem: matched,
-        poStatus: req.poIssued ? 'PO Issued' : (isFully ? 'PO Not Required' : 'Pending PO')
+        poStatus: req.poIssued ? 'PO Issued' : (aligned.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
       };
     }
   };
@@ -1258,20 +1332,59 @@ export const generateBarcodeId = (prefix = 'BC') => {
   return `${prefix}-${dateStr}-${timeMs}${randomHex}`;
 };
 
-export const generateInventoryId = (inventory = []) => {
-  let maxNum = 0;
-  (inventory || []).forEach(item => {
-    const id = String(item?.id || item?.itemCode || '');
-    const match = id.match(/(?:INVT|INV)[-_\s]*(\d+)/i) || id.match(/(\d+)/);
-    if (match && match[1]) {
-      const num = parseInt(match[1], 10);
-      if (!isNaN(num) && num > maxNum && num < 1000000) {
-        maxNum = num;
-      }
-    }
+function inventorySerialFrom(value, loose) {
+  const id = String(value ?? '').trim();
+  if (!id) return 0;
+  const prefixed = id.match(/(?:INVT|INV)[-_\s]*(\d+)/i);
+  const match = prefixed || (loose ? id.match(/(\d+)/) : null);
+  if (!match) return 0;
+  const num = parseInt(match[1], 10);
+  if (!Number.isFinite(num) || num <= 0 || num >= 1000000) return 0;
+  return num;
+}
+
+function visitInventoryRefs(node, bump, depth) {
+  if (node == null || depth > 6) return;
+  if (Array.isArray(node)) {
+    node.forEach((child) => visitInventoryRefs(child, bump, depth));
+    return;
+  }
+  if (typeof node !== 'object') {
+    bump(node, false);
+    return;
+  }
+  ['id', 'itemCode', 'item_code', 'stockItemId', 'stock_item_id', 'masterItemId', 'master_item_id', 'itemId', 'item_id']
+    .forEach((key) => bump(node[key], false));
+  ['lineItems', 'items', 'subItems', 'rolls'].forEach((key) => {
+    if (Array.isArray(node[key])) visitInventoryRefs(node[key], bump, depth + 1);
   });
-  const nextNum = maxNum + 1;
-  return `INVT-${String(nextNum).padStart(4, '0')}`;
+}
+
+/**
+ * Next INVT id is one past the highest number ever used.
+ * Gaps are not filled. Ids that only remain on a GRN or a roll still count,
+ * so a deleted item's number is not given out again.
+ */
+export const generateInventoryId = (inventory = [], ...extras) => {
+  let maxNum = 0;
+  const bump = (value, loose) => {
+    const num = inventorySerialFrom(value, loose);
+    if (num > maxNum) maxNum = num;
+  };
+  (inventory || []).forEach((item) => {
+    if (item == null) return;
+    if (typeof item !== 'object') {
+      bump(item, true);
+      return;
+    }
+    bump(item.id, true);
+    bump(item.itemCode ?? item.item_code, true);
+    bump(item.stockItemId ?? item.stock_item_id, false);
+    bump(item.masterItemId ?? item.master_item_id, false);
+    bump(item.itemId ?? item.item_id, false);
+  });
+  extras.forEach((list) => visitInventoryRefs(list, bump, 0));
+  return `INVT-${String(maxNum + 1).padStart(4, '0')}`;
 };
 
 export const PACKAGING_MATERIAL_TYPES = [

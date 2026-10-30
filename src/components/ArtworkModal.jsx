@@ -82,18 +82,40 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
 
   const handleMouseUp = () => setIsDragging(false);
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!artworkUrl || isCorrupted) return;
+    const cleanName = (title || 'artwork').replace(/[^a-zA-Z0-9_-]/g, '_');
     try {
+      const targetUrl = readableUrl || (await resolveReadableUrl(artworkUrl));
+      if (!targetUrl) return;
+
+      if (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
+        const a = document.createElement('a');
+        a.href = targetUrl;
+        a.download = isPdf ? `${cleanName}.pdf` : `${cleanName}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      // Fetch blob via signed URL to guarantee client download without navigating away
+      const res = await fetch(targetUrl);
+      if (!res.ok) throw new Error('Fetch failed with status ' + res.status);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = readableUrl || artworkUrl;
-      const cleanName = (title || 'artwork').replace(/[^a-zA-Z0-9_-]/g, '_');
-      a.download = isPdf ? `${cleanName}.pdf` : `${cleanName}.png`;
+      a.href = blobUrl;
+      const isPdfBlob = blob.type.includes('pdf') || isPdf;
+      const ext = isPdfBlob ? 'pdf' : (blob.type.includes('jpeg') || blob.type.includes('jpg') ? 'jpg' : 'png');
+      a.download = `${cleanName}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
     } catch (e) {
-      window.open(readableUrl || artworkUrl, '_blank');
+      console.warn('[ArtworkModal] Direct blob download failed, falling back to viewer:', e);
+      openArtworkViewer(readableUrl || artworkUrl, title);
     }
   };
 
@@ -193,7 +215,7 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
               </button>
               <button 
                 type="button" 
-                onClick={() => openArtworkViewer(artworkUrl, title)} 
+                onClick={() => openArtworkViewer(readableUrl || artworkUrl, title)} 
                 className="btn-secondary" 
                 style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', background: '#334155', color: '#f8fafc', border: '1px solid #475569' }}
                 title="Open in new browser tab"

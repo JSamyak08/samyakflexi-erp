@@ -1,18 +1,23 @@
 import React, { useState } from 'react';
-import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
-import { isLDFilm, getFilmSlitWidth } from '../factoryStore';
+import { Printer, ArrowLeft, Edit3, Plus, Trash2, History } from 'lucide-react';
+import { isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm } from '../factoryStore';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { displayAmendmentLabel, revisionNumber, getLayerMetallocenePct, formatOcnFilmName } from '../utils/ocnAmendment';
+import { formatPlantDate } from '../utils/dbDates';
 
-export default function OrderConfirmationPDF({ calculationData, onClose, clientDetails, clients }) {
-  const defaultDocRef = generateDocRefNumber('ocn');
+export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, onClose, clientDetails, clients, onAmendOcn }) {
+  const calculationData = ocn?.calculationData || propCalc || ocn;
+  const defaultDocRef = ocn?.ocnNumber || ocn?.id || generateDocRefNumber('ocn');
   const savedTerms = getDocumentTerms();
+  const revLabel = displayAmendmentLabel(ocn);
+  const isAmended = revisionNumber(ocn) > 0;
 
   const [docRef, setDocRef] = useState(defaultDocRef);
   const [isEditingRef, setIsEditingRef] = useState(false);
-  const [currentOcnTerms, setCurrentOcnTerms] = useState(savedTerms.ocnTerms || []);
+  const [currentOcnTerms, setCurrentOcnTerms] = useState(ocn?.ocnTerms || savedTerms.ocnTerms || []);
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
   const letterhead = loadLetterhead();
@@ -88,7 +93,11 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
       notes: v.notes || ''
     }));
 
-  const layersList = layerResults.length > 0 ? layerResults : [];
+  const layersList = layerResults.length > 0 
+    ? layerResults 
+    : (Array.isArray(calculationData?.layers) && calculationData.layers.length > 0
+        ? calculationData.layers 
+        : (Array.isArray(ocn?.layers) ? ocn.layers : []));
 
   // Resolve Client Details dynamically from Client Directory / Job Master
   const targetClientName = calculationData?.clientName || resolvedClientName || "";
@@ -133,8 +142,18 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
     <div className="pdf-modal-overlay">
       <div className="pdf-modal-toolbar no-print">
         <button className="btn-secondary" onClick={onClose}>
-          <ArrowLeft size={16} /> Back to Job Form
+          <ArrowLeft size={16} /> Close & Return
         </button>
+        {onAmendOcn && ocn && (
+          <button 
+            type="button"
+            className="btn-secondary" 
+            style={{ color: '#b45309', borderColor: '#fde68a', background: '#fffbeb', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            onClick={() => onAmendOcn(ocn)}
+          >
+            <Edit3 size={15} /> Amend OCN ({revLabel})
+          </button>
+        )}
         <button className="btn-primary" onClick={() => window.print()}>
           <Printer size={16} /> Print OCN Note PDF
         </button>
@@ -154,6 +173,19 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
             <div className="letterhead-doc-title">
               <h2>Order Confirmation Note</h2>
               <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
+                <span 
+                  style={{ 
+                    background: isAmended ? '#fffbeb' : '#ecfdf5', 
+                    color: isAmended ? '#b45309' : '#047857', 
+                    border: `1px solid ${isAmended ? '#fde68a' : '#a7f3d0'}`,
+                    padding: '2px 8px', 
+                    borderRadius: '4px', 
+                    fontSize: '11px', 
+                    fontWeight: '800' 
+                  }}
+                >
+                  {revLabel}
+                </span>
                 {isEditingRef ? (
                   <input
                     type="text"
@@ -221,9 +253,9 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
               <tbody>
                 <tr>
                   <td className="label-col">OCN Number</td>
-                  <td className="value-col">{docRef}</td>
+                  <td className="value-col">{docRef} {isAmended ? `(${revLabel})` : ''}</td>
                   <td className="label-col">OCN Date</td>
-                  <td className="value-col">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
+                  <td className="value-col">{ocn?.orderDate ? formatPlantDate(ocn.orderDate) : new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</td>
                 </tr>
                 <tr>
                   <td className="label-col">Job Name</td>
@@ -267,6 +299,13 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
               </tbody>
             </table>
           </div>
+
+          {/* Amendment Notice Banner */}
+          {isAmended && ocn?.amendmentReason && (
+            <div style={{ margin: '8px 0', padding: '6px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '4px', fontSize: '10px', color: '#92400e' }}>
+              <b>Amendment Notice ({revLabel}):</b> Amended on {ocn.amendedAt ? formatPlantDate(ocn.amendedAt) : ''} by {ocn.amendedBy || 'Authorized Staff'}. <b>Reason:</b> {ocn.amendmentReason}
+            </div>
+          )}
 
           {/* Variants Table if enabled */}
           {hasVariants && activeVariants.length > 0 && (
@@ -335,14 +374,33 @@ export default function OrderConfirmationPDF({ calculationData, onClose, clientD
               {layersList.length > 0 ? (
                 layersList.map((layer, index) => {
                   const filmSize = layer.widthMm || layer.filmSize || layer.size || layer.slitWidth || (printWidthMm ? getFilmSlitWidth(layer.filmType, printWidthMm) : null);
+                  const metallocenePct = getLayerMetallocenePct(layer, index, calculationData, ocn);
+                  const metalloceneLabel = metallocenePct
+                    ? (layer.filmType?.toLowerCase().includes('metallocene')
+                        ? (layer.filmType.includes('%') ? '' : `(${metallocenePct})`)
+                        : `(${metallocenePct} Metallocene)`)
+                    : '';
+
                   return (
                     <tr key={index}>
                       <td className="center">{index + 1}</td>
                       <td>
-                        <div className="item-name">{layer.filmType}</div>
+                        <div className="item-name">
+                          {layer.filmType}
+                          {metalloceneLabel && (
+                            <span style={{ marginLeft: '6px', fontWeight: '800', color: '#1e40af' }}>
+                              {metalloceneLabel}
+                            </span>
+                          )}
+                        </div>
                         <div className="item-meta">
                           Substrate Density: {layer.density} g/cm³
-                          {filmSize ? ` • Film Size: ${filmSize} mm` : ''}
+                          {metallocenePct && (
+                            <> • Metallocene: <strong style={{ fontWeight: '800', color: '#0f172a' }}>{metallocenePct}</strong></>
+                          )}
+                          {filmSize && (
+                            <> • <strong style={{ fontWeight: '800', color: '#0f172a' }}>Film Size: {filmSize} mm</strong></>
+                          )}
                         </div>
                       </td>
                       <td className="center">{layer.micron} µ</td>

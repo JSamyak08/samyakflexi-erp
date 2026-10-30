@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { rawRoleNames, userHasAnyRole } from '../assignedRoles';
 import StorageImage from './StorageImage';
 import SearchableSelect from './SearchableSelect';
 import { 
@@ -125,10 +126,10 @@ export default function CylinderManagement({
 }) {
   // Access Control: Only Admin and Plant Manager have Edit/Lock/Delete access
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager'];
-  const userRole = currentUser?.role || '';
-  const canEditCylinders = EDIT_ROLES.includes(userRole);
-  const isAdminOrPlantManager = EDIT_ROLES.includes(userRole);
-  const isAdmin = userRole === 'Admin' || userRole === 'SuperAdmin';
+  const userRole = rawRoleNames(currentUser).join(', ');
+  const canEditCylinders = userHasAnyRole(currentUser, EDIT_ROLES);
+  const isAdminOrPlantManager = canEditCylinders;
+  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
 
   const [searchTerm, setSearchTerm] = useState('');
 
