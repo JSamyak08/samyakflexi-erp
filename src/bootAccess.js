@@ -55,9 +55,11 @@ export const BOOT_NEEDS = {
   purchaseOrders: ['purchase_orders', 'inventory'],
   indents: ['material_indents', 'inventory'],
   barcodes: ['barcodes'],
+  ocns: ['job_punching', 'orders', 'sales'],
 };
 
 const MODULE_CACHE_KEYS = {
+  job_punching: ['samyak_cache_order_confirmations'],
   orders: ['samyak_cache_orders'],
   job_masters: ['samyak_cache_job_masters', 'samyak_cache_job_datasheets'],
   inventory: ['samyak_cache_inventory', 'samyak_cache_grns', 'samyak_cache_inventory_rolls'],

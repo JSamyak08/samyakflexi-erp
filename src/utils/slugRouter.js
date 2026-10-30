@@ -82,7 +82,11 @@ export const MODULES = [
     key: 'job_punching',
     path: '/job-punching',
     legacy: ['/job-punching'],
-    patterns: [{ section: 'form', segs: [], default: true }],
+    patterns: [
+      { section: 'form', segs: [], default: true },
+      { section: 'ocns', segs: ['ocns'] },
+      { section: 'ocn', segs: [':ocnId'], idParam: 'ocnId' },
+    ],
   },
   {
     key: 'orders',
