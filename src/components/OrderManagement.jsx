@@ -1694,6 +1694,33 @@ export default function OrderManagement({
                                 🎨 {order.variants?.length || 0} Variants
                               </span>
                             )}
+                            {(order.ocnNumber || order.jobDetails?.ocnNumber) && (
+                              <span 
+                                className="badge-ocn-tag" 
+                                style={{ 
+                                  background: '#eff6ff', 
+                                  color: '#1d4ed8', 
+                                  border: '1px solid #bfdbfe', 
+                                  padding: '2px 8px', 
+                                  borderRadius: '4px', 
+                                  fontSize: '0.75rem', 
+                                  fontWeight: '800', 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '4px',
+                                  cursor: onNavigateToPunching ? 'pointer' : 'default'
+                                }}
+                                title="Linked Order Confirmation Note (OCN). Click to view in OCN Register"
+                                onClick={(e) => {
+                                  if (onNavigateToPunching) {
+                                    e.stopPropagation();
+                                    onNavigateToPunching({ view: 'ocns', search: order.ocnNumber || order.jobDetails?.ocnNumber });
+                                  }
+                                }}
+                              >
+                                📄 {order.ocnNumber || order.jobDetails?.ocnNumber}
+                              </span>
+                            )}
                             {/* SFG/FG Production Stage Badge */}
                             <span 
                               className="stage-badge" 
@@ -3167,6 +3194,11 @@ export default function OrderManagement({
                     <span style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '600' }}>
                       🔒 Admin Security Granted • Direct Database Upsert
                     </span>
+                    {(editingOrder.ocnNumber || editingOrder.jobDetails?.ocnNumber) && (
+                      <div style={{ fontSize: '0.78rem', color: '#1d4ed8', fontWeight: '700', marginTop: '2px' }}>
+                        📄 Linked OCN: {editingOrder.ocnNumber || editingOrder.jobDetails?.ocnNumber}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button 
