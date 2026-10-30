@@ -6,7 +6,9 @@ import {
   getStickerCategoryInfo,
   generateSingleStickerHtml,
   generateThermalLabelsHtml,
-  printThermalBarcodeLabels
+  printThermalBarcodeLabels,
+  formatStickerDateTime,
+  getStickerDisplayDate
 } from '../src/utils/thermalBarcodePrinter.js';
 import { generateSyncQrSvg } from '../src/utils/qrCodeSvg.js';
 
@@ -89,7 +91,14 @@ test('Thermal Barcode Printer Isolated Engine and Styling', () => {
   assert.ok(singleHtml.includes('thermal-label-sheet'), 'HTML must include thermal-label-sheet class');
   assert.ok(singleHtml.includes('thermal-label-card'), 'HTML must include thermal-label-card class');
 
-  // 8. Test multi-page thermal labels HTML document
+  // 8. Test simplified 24-hour timestamp formatting without seconds
+  assert.equal(formatStickerDateTime('27/10/2026, 4:08:28 pm'), '27/10/2026 16:08', 'Must convert 12h PM with seconds to 24h without seconds');
+  assert.equal(formatStickerDateTime('27/10/2026, 11:45:12 am'), '27/10/2026 11:45', 'Must convert 12h AM with seconds to 24h without seconds');
+  assert.equal(formatStickerDateTime('27/10/2026 16:08:28'), '27/10/2026 16:08', 'Must strip seconds from 24h string');
+  assert.equal(formatStickerDateTime('2026-10-27T10:38:28.000Z'), '27/10/2026 16:08', 'Must convert ISO timestamp to 24h IST without seconds');
+  assert.equal(getStickerDisplayDate({ inwardDatetime: '27/10/2026, 4:08:28 pm' }), '27/10/2026 16:08', 'getStickerDisplayDate must format roll inwardDatetime');
+
+  // 9. Test multi-page thermal labels HTML document
   const multiHtml = generateThermalLabelsHtml([testRoll, { ...testRoll, barcodeId: 'RM-BC-20261029-9068NF5Q' }], {
     name: 'SAMYAK INTERNATIONAL LTD.'
   });

@@ -7,7 +7,8 @@ import { textFrom } from '../utils/barcodeCode';
 import {
   printThermalBarcodeLabels,
   resolveItemPurchaseRate,
-  getStickerCategoryInfo
+  getStickerCategoryInfo,
+  getStickerDisplayDate
 } from '../utils/thermalBarcodePrinter';
 
 export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose }) {
@@ -74,7 +75,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
     const barcodeCodeStr = textFrom(r.barcodeId, r.id) || 'BC-2026-0000';
-    const displayDate = r.inwardDatetime || r.dispatchDate || r.date || new Date().toLocaleDateString('en-IN');
+    const displayDate = getStickerDisplayDate(r);
 
     return (
       <div 

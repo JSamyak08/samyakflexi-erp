@@ -150,6 +150,101 @@ export function getStickerCategoryInfo(r) {
   };
 }
 
+function formatDateInKolkata24h(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+
+  const getPart = (type) => parts.find(p => p.type === type)?.value || '';
+  const day = getPart('day');
+  const month = getPart('month');
+  const year = getPart('year');
+  let hour = getPart('hour');
+  if (hour === '24') hour = '00';
+  const minute = getPart('minute');
+
+  return `${day}/${month}/${year} ${hour}:${minute}`;
+}
+
+/**
+ * Normalizes and formats date & time to a clear, simplified 24-hour timestamp
+ * without seconds: "DD/MM/YYYY HH:mm" (or "DD/MM/YYYY" for date-only values).
+ */
+export function formatStickerDateTime(value, fallback = new Date()) {
+  if (value === undefined || value === null || value === '') {
+    value = fallback;
+  }
+
+  // If already a Date object
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return formatDateInKolkata24h(value);
+  }
+
+  const str = String(value).trim();
+  if (!str) {
+    return formatDateInKolkata24h(new Date());
+  }
+
+  // Case 1: matches DD/MM/YYYY with optional time and AM/PM
+  // e.g. "27/10/2026, 4:08:28 pm" or "27/10/2026 16:08:28" or "27/10/2026 16:08"
+  const dmyMatch = str.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4}|\d{2})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]m)?)?$/i);
+  if (dmyMatch) {
+    const day = String(dmyMatch[1]).padStart(2, '0');
+    const month = String(dmyMatch[2]).padStart(2, '0');
+    let year = dmyMatch[3];
+    if (year.length === 2) year = '20' + year;
+
+    let hour = dmyMatch[4];
+    let minute = dmyMatch[5];
+    const ampm = (dmyMatch[7] || '').toLowerCase();
+
+    if (hour !== undefined && minute !== undefined) {
+      let h = parseInt(hour, 10);
+      const m = String(minute).padStart(2, '0');
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      const hStr = String(h).padStart(2, '0');
+      return `${day}/${month}/${year} ${hStr}:${m}`;
+    }
+    return `${day}/${month}/${year}`;
+  }
+
+  // Case 2: ISO string or standard parseable string
+  // e.g. "2026-10-29T10:38:28.123Z" or "2026-10-29 16:08:28" or "2026-10-29"
+  try {
+    const parsed = new Date(str.includes(' ') && !str.includes('T') ? str.replace(' ', 'T') : str);
+    if (!Number.isNaN(parsed.getTime())) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        const [y, m, d] = str.split('-');
+        return `${d}/${m}/${y}`;
+      }
+      return formatDateInKolkata24h(parsed);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Fallback cleanup if string contains seconds or AM/PM: remove seconds
+  return str.replace(/:(\d{2})(?::\d+)?(\s*[ap]m)?/i, (match, sec, ampm) => {
+    return ampm ? ` ${ampm.trim().toUpperCase()}` : '';
+  });
+}
+
+/**
+ * Returns formatted 24-hour timestamp without seconds for sticker labels
+ */
+export function getStickerDisplayDate(r, fallbackDate = '') {
+  if (!r) return formatStickerDateTime(fallbackDate);
+  const raw = r.inwardDatetime || r.inward_datetime || r.dispatchDate || r.dispatch_date || r.date || r.createdAt || r.created_at || fallbackDate;
+  return formatStickerDateTime(raw);
+}
+
 /**
  * Generates the clean HTML string for a single 4x4 thermal sticker
  */
@@ -161,7 +256,7 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
   const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
   const batchStr = r.batchNo || r.heatNo || r.batch || '-';
   const barcodeCodeStr = textFrom(r.barcodeId, r.id) || 'BC-2026-0000';
-  const displayDate = r.inwardDatetime || r.dispatchDate || r.date || dateStr || new Date().toLocaleDateString('en-IN');
+  const displayDate = getStickerDisplayDate(r, dateStr);
 
   const qrSvg = generateSyncQrSvg(barcodeCodeStr, 1);
 
