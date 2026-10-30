@@ -41,7 +41,7 @@ import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
 import DeadlineReminderBanner from './DeadlineReminderBanner';
-import { assessPrintingDeadlineReminder } from '../utils/orderDeadlineReminder';
+import { assessPrintingDeadlineReminder, canManageOrderDeadline } from '../utils/orderDeadlineReminder';
 import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
@@ -525,14 +525,15 @@ export default function OrderManagement({
   
   // Navigation SubTab: 'orders' | 'requirements'
   const [deadlineBannerHidden, setDeadlineBannerHidden] = useState(false);
-  const printingDeadlineReminders = useMemo(() => (
-    (orders || []).flatMap((order) => {
+  const printingDeadlineReminders = useMemo(() => {
+    if (!canManageOrderDeadline(currentUser?.role)) return [];
+    return (orders || []).flatMap((order) => {
       if (!order) return [];
       const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
       const assessment = assessPrintingDeadlineReminder(order, stageInfo);
       return assessment.active ? [{ order, stageInfo, assessment }] : [];
-    })
-  ), [orders, sfgGoods, productionRecords]);
+    });
+  }, [orders, sfgGoods, productionRecords, currentUser?.role]);
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
   useEffect(() => {
     if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);

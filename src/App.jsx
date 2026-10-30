@@ -11,7 +11,7 @@ import {
   getOrderStageInfo,
   FILM_DENSITIES
 } from './factoryStore';
-import { assessPrintingDeadlineReminder } from './utils/orderDeadlineReminder';
+import { assessPrintingDeadlineReminder, canManageOrderDeadline } from './utils/orderDeadlineReminder';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -1894,14 +1894,15 @@ export default function App() {
   const delayedOrders = useMemo(() => (orders || []).filter(o => isOrderOverdue(o)), [orders]);
   const delayedOrdersCount = delayedOrders.length;
   const [printingDeadlineBannerHidden, setPrintingDeadlineBannerHidden] = useState(false);
-  const printingDeadlineReminders = useMemo(() => (
-    (orders || []).flatMap((order) => {
+  const printingDeadlineReminders = useMemo(() => {
+    if (!canManageOrderDeadline(currentUser?.role)) return [];
+    return (orders || []).flatMap((order) => {
       if (!order) return [];
       const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
       const assessment = assessPrintingDeadlineReminder(order, stageInfo);
       return assessment.active ? [{ order, stageInfo, assessment }] : [];
-    })
-  ), [orders, sfgGoods, productionRecords]);
+    });
+  }, [orders, sfgGoods, productionRecords, currentUser?.role]);
   const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 

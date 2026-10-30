@@ -7,8 +7,8 @@
  * A new revision clears the tick. The reminder returns only when that new
  * date is under two days away and the client has not been marked informed
  * for it. Jobs whose stage track has reached Printing are excluded.
- * Clients are told on WhatsApp by the team. This module does not draft or
- * send mail.
+ * Only Admin and Sales Manager see or save this reminder. Clients are told
+ * on WhatsApp by the team. This module does not draft or send mail.
  */
 
 import { isCylinderOrder } from './orderAutoClose.js';
@@ -17,8 +17,6 @@ export const NEAR_PRINTING_DEADLINE_DAYS = 2;
 
 export const DEADLINE_REMINDER_ROLES = [
   'Admin',
-  'Plant Manager',
-  'Production Manager',
   'Sales Manager',
 ];
 
