@@ -75,7 +75,7 @@ import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerMo
 import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
 import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS } from './bootAccess';
-import { assignedRolesOf, userHasRole } from './assignedRoles';
+import { assignedRolesOf, hasOnlyRole, rawRoleNames, userHasRole } from './assignedRoles';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
@@ -454,7 +454,7 @@ export default function App() {
         handleTabChange(restored.tab, restored.params || {});
         return;
       }
-      const defaultTab = currentUser?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+      const defaultTab = hasOnlyRole(currentUser, 'Printing Operator') ? 'printing_scheduler' : 'dashboard';
       handleTabChange(defaultTab);
       return;
     }
@@ -1776,7 +1776,7 @@ export default function App() {
   const applyAuthenticatedProfile = (profile) => {
     setSessionProfile(profile);
     let nextUser = profile;
-    if (profile?.role === 'Admin') {
+    if (userHasRole(profile, 'Admin')) {
       try {
         const preview = JSON.parse(sessionStorage.getItem('samyak_erp_ui_role_preview') || 'null');
         if (preview && preview.role && preview.email) nextUser = preview;
@@ -1867,7 +1867,7 @@ export default function App() {
       handleTabChange(activeTab, urlParams);
       return;
     }
-    const targetTab = user?.role === 'Printing Operator' ? 'printing_scheduler' : 'dashboard';
+    const targetTab = hasOnlyRole(user, 'Printing Operator') ? 'printing_scheduler' : 'dashboard';
     handleTabChange(targetTab);
   };
 
@@ -4728,7 +4728,7 @@ export default function App() {
               {currentUser?.name || 'Logged User'}
             </div>
             <div style={{ color: '#64748b', fontSize: '0.72rem', marginTop: '1px' }}>
-              Role: <b>{currentUser?.role}</b>
+              Role: <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b>
             </div>
           </div>
           <button 
@@ -4823,13 +4823,13 @@ export default function App() {
                   padding: '2px 8px',
                   minHeight: '28px'
                 }}
-                disabled={!(sessionProfile ? sessionProfile.role === 'Admin' : currentUser?.role === 'Admin')}
+                disabled={!(sessionProfile ? userHasRole(sessionProfile, 'Admin') : userHasRole(currentUser, 'Admin'))}
                 value={currentUser?.id || ''}
                 options={activeUserOptions}
                 onChange={e => {
                   const selectedId = e.target.value;
                   const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
-                  if (selectedUser && sessionProfile?.role === 'Admin') {
+                  if (selectedUser && userHasRole(sessionProfile, 'Admin')) {
                     setCurrentUser(selectedUser);
                     try { sessionStorage.setItem('samyak_erp_ui_role_preview', JSON.stringify(selectedUser)); } catch (e) {}
                   }
@@ -4908,10 +4908,10 @@ export default function App() {
           <div className="glass-panel" data-screen="forbidden" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
             <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
             <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
-              Module Access Restricted for Role ({currentUser?.role})
+              Module Access Restricted for Role ({rawRoleNames(currentUser).join(', ') || 'Guest'})
             </h3>
             <p style={{ color: '#92400e', fontSize: '0.85rem', marginTop: '6px', maxWidth: '500px', margin: '6px auto 16px auto' }}>
-              Your active role <b>{currentUser?.role}</b> has not been granted permission to view this module in the RBAC permissions matrix.
+              Your assigned roles <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b> have not been granted permission to view this module in the RBAC permissions matrix.
             </p>
             <button className="btn-primary" onClick={() => handleTabChange('dashboard')}>
               Return to Executive Dashboard
@@ -4920,7 +4920,7 @@ export default function App() {
         )}
 
         {/* TAB 1: EXECUTIVE DASHBOARD / OPERATOR DASHBOARD */}
-        {moduleOpen && activeTab === 'dashboard' && currentUser?.role === 'Printing Operator' ? (
+        {moduleOpen && activeTab === 'dashboard' && hasOnlyRole(currentUser, 'Printing Operator') ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <div className="glass-panel" style={{ padding: '20px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff', borderRadius: '12px' }}>
               <h2 style={{ fontSize: '1.35rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -5665,7 +5665,14 @@ export default function App() {
             ocns={ocns}
             onSaveOcn={handleSaveOcn}
             onSaveOcnAmendment={handleSaveOcnAmendment}
-            onRefreshOcns={() => fetchSafe(fetchOrderConfirmations, 'Order Confirmations').then(res => res && setOcns(res))}
+            onRefreshOcns={async () => {
+              const data = await fetchOrderConfirmations();
+              if (!Array.isArray(data)) return;
+              const clean = stripDummyRecords(data);
+              setOcns(clean);
+              safeLocalStorageSet('samyak_cache_order_confirmations', clean);
+              syncOcnCounterWithRecords(clean);
+            }}
             urlParams={urlParams}
             activeUsername={currentUser?.username || currentUser?.name || sessionProfile?.username || 'Staff'}
           />
@@ -5817,6 +5824,7 @@ export default function App() {
         {moduleOpen && activeTab === 'material_indents' && (
           <ConsumablesAndIndents 
             urlParams={urlParams}
+            currentUser={currentUser}
             userRole={currentUser?.role || ""}
             userName={currentUser?.name || ""}
             vendors={vendors}

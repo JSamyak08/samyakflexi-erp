@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const migrationUrl = new URL('../supabase/migrations/20261030085102_user_assigned_roles.sql', import.meta.url);
+const migrationUrl = new URL('../supabase/migrations/20261030210000_user_assigned_roles.sql', import.meta.url);
 const migrationSql = fs.readFileSync(migrationUrl, 'utf8');
 
 const EXISTING = [

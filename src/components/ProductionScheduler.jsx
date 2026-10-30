@@ -13,6 +13,7 @@ import {
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
+import { userHasAnyRole } from '../assignedRoles';
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { 
@@ -210,10 +211,10 @@ export default function ProductionScheduler({
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'In Production' | 'Ready' | 'Overdue' | 'Material Pending'
 
   // Permission Check: Only Admin, Plant Manager, and Production Manager can re-arrange the Ready Queue
-  const canRearrangeQueue = useMemo(() => {
-    const role = currentUser?.role;
-    return role === 'Admin' || role === 'Plant Manager' || role === 'Production Manager';
-  }, [currentUser]);
+  const canRearrangeQueue = useMemo(
+    () => userHasAnyRole(currentUser, ['Admin', 'Plant Manager', 'Production Manager']),
+    [currentUser],
+  );
 
   // Filter machines to ONLY Rotogravure printing machine types
   const rotogravureMachines = useMemo(() => {
@@ -991,7 +992,7 @@ export default function ProductionScheduler({
 
     const result = evaluateEndJobGuardrail();
     setEndJobGuardrail(result);
-    if (result.blocks.length || (result.filmTypeBlocks.length && !canOverrideFilmType(currentUser?.role))) {
+    if (result.blocks.length || (result.filmTypeBlocks.length && !canOverrideFilmType(currentUser))) {
       return;
     }
 
@@ -1011,7 +1012,7 @@ export default function ProductionScheduler({
       order: endJobTargetOrder,
       jobMasters,
       limits: guardrailLimits,
-      role: currentUser?.role,
+      role: currentUser,
       entry: {
         orderId: endJobTargetOrder?.id,
         machineName: press?.name || '',
@@ -1042,7 +1043,7 @@ export default function ProductionScheduler({
     try {
       const guardrailResult = evaluateEndJobGuardrail();
       const guardrailDecision = decideGuardrailSave(guardrailResult, {
-        role: currentUser?.role,
+        role: currentUser,
         warningReason: endJobWarningReason,
         filmTypeOverrideReason: endJobFilmOverrideReason,
         overrideBy: currentUser?.name || currentUser?.role || ''
@@ -3139,8 +3140,8 @@ export default function ProductionScheduler({
                     )}
                     {endJobGuardrail.filmTypeBlocks.length > 0 && (
                       <label style={{ display: 'block', marginTop: '10px', fontSize: '0.78rem', fontWeight: '800' }}>
-                        Supervisor reason for a different film type {canOverrideFilmType(currentUser?.role) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
-                        <textarea className="form-control" value={endJobFilmOverrideReason} onChange={(event) => setEndJobFilmOverrideReason(event.target.value)} rows={2} placeholder="Why this film is accepted" disabled={!canOverrideFilmType(currentUser?.role)} />
+                        Supervisor reason for a different film type {canOverrideFilmType(currentUser) ? '*' : '(Admin, Plant Manager, or Production Manager)'}
+                        <textarea className="form-control" value={endJobFilmOverrideReason} onChange={(event) => setEndJobFilmOverrideReason(event.target.value)} rows={2} placeholder="Why this film is accepted" disabled={!canOverrideFilmType(currentUser)} />
                       </label>
                     )}
                   </div>

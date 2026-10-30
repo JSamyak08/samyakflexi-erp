@@ -37,6 +37,7 @@ import {
   calculateOrderStockReservations
 } from '../factoryStore';
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
+import { anyAssignedRole } from '../assignedRoles';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
@@ -289,10 +290,9 @@ export default function OrderManagement({
     }
   };
 
-  const isAdmin = currentUser?.role === 'Admin' || 
-                  currentUser?.role?.toLowerCase() === 'admin' || 
-                  currentUser?.role?.toLowerCase() === 'executive management' || 
-                  currentUser?.role?.toLowerCase() === 'system admin';
+  const isAdmin = anyAssignedRole(currentUser, (_role, lower) =>
+    lower === 'admin' || lower === 'executive management' || lower === 'system admin'
+  );
 
   // Admin Edit Order Modal States
   const [editingOrder, setEditingOrder] = useState(null);
@@ -481,7 +481,7 @@ export default function OrderManagement({
     };
 
     if (editStatus === 'Completed' && editingOrder.closeMode !== 'manual' && editingOrder.status !== 'Completed') {
-      if (!isAdminRole(currentUser?.role)) {
+      if (!isAdminRole(currentUser)) {
         alert('Only Admin can manually close an order.');
         return;
       }
@@ -494,7 +494,7 @@ export default function OrderManagement({
       updatedOrder.overDispatchWarning = null;
     }
     if (editingOrder.closeMode === 'manual' && editStatus !== 'Completed') {
-      if (!isAdminRole(currentUser?.role)) {
+      if (!isAdminRole(currentUser)) {
         alert('Only Admin can reopen a manually closed order.');
         return;
       }
@@ -1229,7 +1229,7 @@ export default function OrderManagement({
 
   const handleAdminClose = (order, event) => {
     if (event) event.stopPropagation();
-    if (!isAdminRole(currentUser?.role)) {
+    if (!isAdminRole(currentUser)) {
       alert('Only Admin can manually close an order.');
       return;
     }
@@ -1241,7 +1241,7 @@ export default function OrderManagement({
 
   const handleAdminReopen = (order, event) => {
     if (event) event.stopPropagation();
-    if (!isAdminRole(currentUser?.role)) {
+    if (!isAdminRole(currentUser)) {
       alert('Only Admin can reopen an order.');
       return;
     }
@@ -1579,7 +1579,7 @@ export default function OrderManagement({
                   <option value="PENDING_PO">Pending PO Issuance</option>
                 </SearchableSelect>
               </div>
-              {isAdminRole(currentUser?.role) && (
+              {isAdminRole(currentUser) && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem', fontWeight: '700', color: '#334155' }}>
                   <input
                     type="checkbox"
@@ -1905,7 +1905,7 @@ export default function OrderManagement({
                                 <CheckCircle2 size={13} /> Complete
                               </button>
                             )}
-                            {isAdminRole(currentUser?.role) && order.status !== 'Completed' && (
+                            {isAdminRole(currentUser) && order.status !== 'Completed' && (
                               <button
                                 className="btn-secondary"
                                 style={{ padding: '6px 12px', fontSize: '0.78rem', color: '#7c2d12', borderColor: '#fdba74', background: '#fff7ed', borderRadius: '6px', fontWeight: '700', whiteSpace: 'nowrap' }}
@@ -1915,7 +1915,7 @@ export default function OrderManagement({
                                 Admin close
                               </button>
                             )}
-                            {isAdminRole(currentUser?.role) && order.status === 'Completed' && (
+                            {isAdminRole(currentUser) && order.status === 'Completed' && (
                               <button
                                 className="btn-secondary"
                                 style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', fontWeight: '700', whiteSpace: 'nowrap' }}

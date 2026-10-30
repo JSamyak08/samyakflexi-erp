@@ -54,6 +54,47 @@ export function userHasRole(user, role) {
   return assignedRolesOf(user).includes(role);
 }
 
+function uniqueTrimmed(values) {
+  const seen = new Set();
+  const names = [];
+  values.forEach((value) => {
+    const role = typeof value === 'string' ? value.trim() : '';
+    if (!role || seen.has(role)) return;
+    seen.add(role);
+    names.push(role);
+  });
+  return names;
+}
+
+/**
+ * Every role string on the account, including aliases that are not in
+ * SYSTEM_ROLES (for example SuperAdmin). A plain string still works.
+ */
+export function rawRoleNames(user) {
+  if (user == null || user === '') return [];
+  if (typeof user === 'string') return uniqueTrimmed([user]);
+  if (Array.isArray(user)) return uniqueTrimmed(user);
+  return uniqueTrimmed([
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    ...(Array.isArray(user.assigned_roles) ? user.assigned_roles : []),
+    user.role,
+  ]);
+}
+
+export function userHasAnyRole(user, allowed) {
+  const wanted = new Set(uniqueTrimmed(Array.isArray(allowed) ? allowed : [allowed]));
+  return rawRoleNames(user).some((role) => wanted.has(role));
+}
+
+export function anyAssignedRole(user, predicate) {
+  return rawRoleNames(user).some((role) => predicate(role, role.toLowerCase()));
+}
+
+export function hasOnlyRole(user, role) {
+  const names = rawRoleNames(user);
+  return names.length > 0 && names.every((name) => name === role);
+}
+
 /**
  * Primary role written back to users.role.
  * Admin wins so directory Admin checks stay aligned with the assignment.

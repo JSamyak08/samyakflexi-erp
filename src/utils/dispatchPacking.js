@@ -1,4 +1,5 @@
 import { toDatabaseTimestamp } from './dbDates.js';
+import { rawRoleNames } from '../assignedRoles.js';
 
 export const DISPATCH_PACKING_PROCESS = 'Dispatch Packing';
 export const GAIN_LOSS_THRESHOLD_SETTING = 'dispatch_packing_gain_loss_threshold_pct';
@@ -15,8 +16,8 @@ export function isDispatchPacking(processName) {
   return String(processName || '').trim() === DISPATCH_PACKING_PROCESS;
 }
 
-export function canSeePackingGainLoss(role) {
-  return String(role || '').trim() === 'Admin';
+export function canSeePackingGainLoss(roleOrUser) {
+  return rawRoleNames(roleOrUser).includes('Admin');
 }
 
 export function packingListStatus(shipment) {

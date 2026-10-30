@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { userHasAnyRole } from '../assignedRoles';
 import { 
   Layers, 
   Package, 
@@ -78,7 +79,7 @@ export default function SFGFGEntryModal({
   const isSFG = mode === 'SFG';
   const title = isSFG ? 'Create Semi-Finished Goods (SFG)' : 'Create Finished Goods (FG)';
   const categoryName = isSFG ? 'Semi-Finished Goods (SFG)' : 'Finished Goods (FG)';
-  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin';
+  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
 
   // Sourced directly from machines stored in settings (Printing Presses / Machine Settings in Supabase)
   const availableMachines = useMemo(() => {
@@ -613,7 +614,7 @@ export default function SFGFGEntryModal({
       context: 'sfg-fg',
       order,
       jobMasters,
-      role: currentUser?.role,
+      role: currentUser,
       entry: {
         orderId: currentJob.orderId,
         machineName,
@@ -630,7 +631,7 @@ export default function SFGFGEntryModal({
       }
     });
     const decision = decideGuardrailSave(guardrail, {
-      role: currentUser?.role,
+      role: currentUser,
       warningReason,
       filmTypeOverrideReason: filmOverrideReason,
       overrideBy: currentUser?.name || ''
@@ -1285,8 +1286,8 @@ export default function SFGFGEntryModal({
                 <textarea className="form-control" rows={2} value={warningReason} onChange={(event) => setWarningReason(event.target.value)} />
               </label>
               <label style={{ fontSize: '0.75rem', fontWeight: '700' }}>
-                Film-type override {canOverrideFilmType(currentUser?.role) ? '' : '(supervisor only)'}
-                <textarea className="form-control" rows={2} value={filmOverrideReason} onChange={(event) => setFilmOverrideReason(event.target.value)} disabled={!canOverrideFilmType(currentUser?.role)} />
+                Film-type override {canOverrideFilmType(currentUser) ? '' : '(supervisor only)'}
+                <textarea className="form-control" rows={2} value={filmOverrideReason} onChange={(event) => setFilmOverrideReason(event.target.value)} disabled={!canOverrideFilmType(currentUser)} />
               </label>
             </div>
           )}

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { anyAssignedRole } from '../assignedRoles';
 import { 
   Users, 
   UserPlus, 
@@ -250,24 +251,26 @@ export default function EmployeeManagement({
   onSaveSalaryPayment
 }) {
   // Check RBAC Permissions
+  const actor = currentUser || userRole;
   const isAuthorized = useMemo(() => {
     if (!currentUser && !userRole) return true;
-    const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
-    return roleStr.includes('admin') || roleStr.includes('plant') || roleStr.includes('hr') || roleStr.includes('production') || roleStr.includes('director') || roleStr.includes('account');
-  }, [currentUser, userRole]);
+    return anyAssignedRole(actor, (_role, lower) =>
+      ['admin', 'plant', 'hr', 'production', 'director', 'account'].some((needle) => lower.includes(needle))
+    );
+  }, [actor, currentUser, userRole]);
 
   const canApprove = useMemo(() => {
     if (!currentUser && !userRole) return true;
-    const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
-    return roleStr.includes('admin') || roleStr.includes('plant') || roleStr.includes('hr') || roleStr.includes('director');
-  }, [currentUser, userRole]);
+    return anyAssignedRole(actor, (_role, lower) =>
+      ['admin', 'plant', 'hr', 'director'].some((needle) => lower.includes(needle))
+    );
+  }, [actor, currentUser, userRole]);
 
-  const isAdmin = useMemo(() => {
-    const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
-    return roleStr === 'admin' || roleStr.includes('admin') || roleStr.includes('director') || roleStr.includes('owner');
-  }, [currentUser, userRole]);
+  const isAdmin = useMemo(() => anyAssignedRole(actor, (_role, lower) =>
+    lower === 'admin' || lower.includes('admin') || lower.includes('director') || lower.includes('owner')
+  ), [actor]);
 
-  const advanceActorRole = currentUser?.role || userRole || '';
+  const advanceActorRole = actor || '';
   const isExactAdmin = useMemo(
     () => isExactAdminRole(advanceActorRole),
     [advanceActorRole]

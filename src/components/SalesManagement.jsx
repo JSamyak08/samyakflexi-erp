@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { pushSlugState } from '../utils/slugRouter';
+import { anyAssignedRole } from '../assignedRoles';
 import { 
   ShoppingBag, 
   Plus, 
@@ -199,8 +200,9 @@ export default function SalesManagement({
 }) {
   const isSalesAuthorized = useMemo(() => {
     if (!currentUser && !userRole) return true;
-    const roleStr = String(currentUser?.role || userRole || '').toLowerCase().trim();
-    return roleStr.includes('admin') || roleStr.includes('sales') || roleStr.includes('plant') || roleStr.includes('director');
+    return anyAssignedRole(currentUser || userRole, (_role, lower) =>
+      lower.includes('admin') || lower.includes('sales') || lower.includes('plant') || lower.includes('director')
+    );
   }, [currentUser, userRole]);
 
   const [quotations, setQuotations] = useState([]);

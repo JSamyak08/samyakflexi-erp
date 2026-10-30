@@ -7,12 +7,18 @@ import { generateFullRolePermissions } from '../src/factoryStore.js';
 import { roleHasModule, canReadPayroll, cachesToDrop } from '../src/bootAccess.js';
 import {
   assignedRolesOf,
+  hasOnlyRole,
   primaryRole,
   resolveAccountRoles,
+  userHasAnyRole,
   userHasRole,
 } from '../src/assignedRoles.js';
 import { mapDirectoryUser } from '../src/utils/activeUserLabel.js';
 import { canManageOrderDeadline } from '../src/utils/orderDeadlineReminder.js';
+import { canOverrideFilmType } from '../src/utils/jobMasterGuardrails.js';
+import { isAdminRole } from '../src/utils/orderAutoClose.js';
+import { canSeePackingGainLoss } from '../src/utils/dispatchPacking.js';
+import { canApproveSalaryAdvanceRole, isExactAdminRole } from '../src/services/salaryAdvance.js';
 
 const matrix = generateFullRolePermissions(false);
 
@@ -95,6 +101,30 @@ test('backfill and primary role keep the existing role unless Admin is assigned'
 
   const fromColumn = assignedRolesOf({ role: 'Shop Floor Operator' });
   assert.deepEqual(fromColumn, ['Shop Floor Operator']);
+});
+
+test('a second role unlocks that role\'s actions', () => {
+  const storeAndPlant = { role: 'Store Manager', roles: ['Store Manager', 'Plant Manager'] };
+  const storeAndQc = { role: 'Store Manager', roles: ['Store Manager', 'QC Chemist'] };
+  const storeAndHr = { role: 'Store Manager', roles: ['Store Manager', 'HR & Payroll Manager'] };
+  const storeAndAdmin = { role: 'Store Manager', roles: ['Store Manager', 'Admin'] };
+
+  assert.equal(userHasAnyRole(storeAndPlant, ['Admin', 'SuperAdmin', 'Plant Manager']), true);
+  assert.equal(userHasAnyRole(storeAndQc, ['Admin', 'Plant Manager']), false);
+  assert.equal(userHasAnyRole(storeAndPlant, ['Admin', 'Plant Manager']), true);
+  assert.equal(canOverrideFilmType(storeAndPlant), true);
+  assert.equal(canOverrideFilmType(storeAndQc), false);
+  assert.equal(canOverrideFilmType('Store Manager'), false);
+  assert.equal(isAdminRole(storeAndAdmin), true);
+  assert.equal(isAdminRole(storeAndPlant), false);
+  assert.equal(canSeePackingGainLoss(storeAndAdmin), true);
+  assert.equal(canSeePackingGainLoss(storeAndPlant), false);
+  assert.equal(canApproveSalaryAdvanceRole(storeAndHr), true);
+  assert.equal(canApproveSalaryAdvanceRole(storeAndPlant), false);
+  assert.equal(isExactAdminRole(storeAndAdmin), true);
+  assert.equal(isExactAdminRole(' admin '), true);
+  assert.equal(hasOnlyRole({ role: 'Printing Operator' }, 'Printing Operator'), true);
+  assert.equal(hasOnlyRole({ role: 'Store Manager', roles: ['Store Manager', 'Printing Operator'] }, 'Printing Operator'), false);
 });
 
 test('the plant role field is a multi-select of the FlexiERP roles', async () => {

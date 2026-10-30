@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { anyAssignedRole } from '../assignedRoles';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { 
   Package, 
@@ -1379,7 +1380,7 @@ export default function InventoryManagement({
   const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
   const [ledgerPageSize, setLedgerPageSize] = useState(50);
 
-  const isAdmin = !currentUser || currentUser.role === 'Admin' || currentUser.role === 'admin' || currentUser.role === 'SuperAdmin';
+  const isAdmin = !currentUser || anyAssignedRole(currentUser, (_role, lower) => lower === 'admin' || lower === 'superadmin');
 
   // PO Directory State
   const [selectedPOForPDF, setSelectedPOForPDF] = useState(null);

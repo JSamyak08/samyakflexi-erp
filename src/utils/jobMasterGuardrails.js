@@ -9,6 +9,8 @@
  * "unknown" and fails the check.
  */
 
+import { rawRoleNames } from '../assignedRoles.js';
+
 export const JM_UNRESOLVED_LABEL = 'Job Master not found / ambiguous';
 export const UNKNOWN = 'unknown';
 
@@ -249,8 +251,13 @@ export function resolveJobMaster({ order = null, record = null, jobMasters = [] 
   return { status: 'missing', via: null, jobMaster: null, message: JM_UNRESOLVED_LABEL };
 }
 
-export function canOverrideFilmType(role) {
-  return FILM_OVERRIDE_ROLES.includes(text(role));
+function recordedRole(roleOrUser) {
+  const names = rawRoleNames(roleOrUser);
+  return names.find((role) => FILM_OVERRIDE_ROLES.includes(role)) || names[0] || '';
+}
+
+export function canOverrideFilmType(roleOrUser) {
+  return rawRoleNames(roleOrUser).some((role) => FILM_OVERRIDE_ROLES.includes(role));
 }
 
 export function mergeGuardrailLimits(overrides) {
@@ -806,8 +813,8 @@ export function decideGuardrailSave(result, { role = '', warningReason = '', fil
     } else {
       filmOverride = {
         reason: filmReason,
-        by: text(overrideBy) || text(role),
-        role: text(role),
+        by: text(overrideBy) || recordedRole(role),
+        role: recordedRole(role),
         findings: film
       };
     }

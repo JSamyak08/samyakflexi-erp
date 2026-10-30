@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { rawRoleNames, userHasAnyRole } from '../assignedRoles';
 import { pushSlugState } from '../utils/slugRouter';
 import { 
   FileSpreadsheet, 
@@ -35,8 +36,8 @@ export default function JobDataSheet({
   onDeleteJobDataSheet,
   urlParams = {}
 }) {
-  const isAdmin = currentUser?.role === 'Admin';
-  const isAuthorizedToViewProfit = isAdmin || currentUser?.role === 'Plant Manager';
+  const isAdmin = userHasAnyRole(currentUser, 'Admin');
+  const isAuthorizedToViewProfit = userHasAnyRole(currentUser, ['Admin', 'Plant Manager']);
 
   const [activeTab, setActiveTab] = useState(urlParams?.section === 'sheet-new' ? 'form' : 'records');
   const [selectedJobId, setSelectedJobId] = useState((orders || [])[0]?.id || '');
@@ -218,7 +219,7 @@ export default function JobDataSheet({
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: isAuthorizedToViewProfit ? '#ecfdf5' : '#fffbeb', border: `1px solid ${isAuthorizedToViewProfit ? '#a7f3d0' : '#fde68a'}`, padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600', color: isAuthorizedToViewProfit ? '#047857' : '#b45309' }}>
               {isAuthorizedToViewProfit ? <ShieldCheck size={16} /> : <Lock size={16} />}
-              Role: <b>{currentUser?.role || 'Guest'}</b> ({isAdmin ? 'Full Admin Access' : 'View Only'})
+              Role: <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b> ({isAdmin ? 'Full Admin Access' : isAuthorizedToViewProfit ? 'Profit Access' : 'View Only'})
             </div>
           </div>
         </div>

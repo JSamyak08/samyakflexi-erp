@@ -169,7 +169,7 @@ export default function DispatchManagement({
   onDeleteDispatchShipment,
   urlParams = {}
 }) {
-  const isAdmin = canSeePackingGainLoss(currentUser?.role);
+  const isAdmin = canSeePackingGainLoss(currentUser);
   const [activeTab, setActiveTab] = useState(() => {
     if (urlParams.subTab === 'coas' || urlParams.tab === 'coas' || urlParams.coaId || urlParams.coaNo) {
       return 'coas';
@@ -177,7 +177,7 @@ export default function DispatchManagement({
     if (urlParams.subTab === 'challans' || urlParams.tab === 'challans' || urlParams.id || urlParams.challanNo) {
       return 'challans';
     }
-    if (canSeePackingGainLoss(currentUser?.role) && (urlParams.section === 'gain-loss' || urlParams.subTab === 'gain-loss' || urlParams.tab === 'gain-loss')) {
+    if (canSeePackingGainLoss(currentUser) && (urlParams.section === 'gain-loss' || urlParams.subTab === 'gain-loss' || urlParams.tab === 'gain-loss')) {
       return 'gain-loss';
     }
     return 'packing'; // Create Packing List is 1st position by default
@@ -185,8 +185,8 @@ export default function DispatchManagement({
 
   useEffect(() => {
     if (urlParams.section !== 'gain-loss' && urlParams.subTab !== 'gain-loss' && urlParams.tab !== 'gain-loss') return;
-    setActiveTab(canSeePackingGainLoss(currentUser?.role) ? 'gain-loss' : 'packing');
-  }, [urlParams.section, urlParams.subTab, urlParams.tab, currentUser?.role]);
+    setActiveTab(canSeePackingGainLoss(currentUser) ? 'gain-loss' : 'packing');
+  }, [urlParams.section, urlParams.subTab, urlParams.tab, currentUser]);
 
   const handleTabSwitch = (tabKey) => {
     setActiveTab(tabKey);
