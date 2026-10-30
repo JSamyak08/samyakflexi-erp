@@ -38,11 +38,13 @@ import {
 import { buildEmployeeAttendanceRow, factoryCalendarDate, mapEmployeeAttendanceRow } from './employeeAttendance';
 import { toSalaryAdvanceRow } from './salaryAdvance';
 import { mapDirectoryUser } from '../utils/activeUserLabel';
+import { buildOcnAmendment } from '../utils/ocnAmendment';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
 import { linesForSave, normalizeInvoiceNo, stampLineIds } from './grnDocument';
 import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
+import { deadlineFieldsFromRow } from '../utils/orderDeadlineReminder';
 export { sanitizeGRN };
 
 /**
@@ -155,6 +157,7 @@ export async function fetchOrders() {
         orderQtyKg: Number(o.order_qty_kg) || 0,
         deliveryDate: o.target_delivery_date || o.delivery_date,
         targetDeliveryDate: o.target_delivery_date || o.delivery_date,
+        ...deadlineFieldsFromRow(o),
         orderDate: jd.orderDate || (o.created_at ? new Date(o.created_at).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')),
         status: o.status || 'Scheduled',
         closedBy: o.closed_by || jd.closedBy || null,
@@ -4211,5 +4214,219 @@ export async function fetchBarcodeRegistry() {
     if (batch.length < pageSize) break;
   }
   return rows;
+}
+
+// =========================================================================
+// ORDER CONFIRMATION NOTES (OCN) & AMENDMENTS PERSISTENCE
+// =========================================================================
+
+const OCN_CACHE_KEY = 'samyak_cache_order_confirmations';
+
+export function getCachedOrderConfirmations() {
+  try {
+    const raw = localStorage.getItem(OCN_CACHE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.error('Failed to parse cached order confirmations:', e);
+    return [];
+  }
+}
+
+export function cacheOrderConfirmations(list) {
+  try {
+    localStorage.setItem(OCN_CACHE_KEY, JSON.stringify(Array.isArray(list) ? list : []));
+  } catch (e) {
+    console.warn('Failed to cache order confirmations in localStorage:', e);
+  }
+}
+
+/**
+ * Fetch all Order Confirmation Notes (from Supabase order_confirmations table merged with local cache)
+ */
+export async function fetchOrderConfirmations() {
+  const cached = getCachedOrderConfirmations();
+  if (!isSupabaseConfigured()) return cached;
+
+  try {
+    const { data, error } = await supabase
+      .from('order_confirmations')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.warn('[order_confirmations fetch]', error.message || error);
+      return cached;
+    }
+
+    const remote = (data || []).map(row => {
+      const payload = row.payload || {};
+      return {
+        ...payload,
+        id: row.id || row.ocn_number,
+        ocnNumber: row.ocn_number || row.id,
+        orderId: row.order_id || payload.orderId || null,
+        jobName: row.job_name || payload.jobName || '',
+        clientName: row.client_name || payload.clientName || '',
+        status: row.status || payload.status || 'Confirmed',
+        revisionNo: row.revision_no ?? payload.revisionNo ?? 0,
+        amendmentNo: row.amendment_no || payload.amendmentNo || 'Rev 00',
+        amendedAt: row.amended_at || payload.amendedAt || null,
+        amendedBy: row.amended_by || payload.amendedBy || null,
+        amendmentReason: row.amendment_reason || payload.amendmentReason || null,
+        createdAt: row.created_at || payload.createdAt,
+        updatedAt: row.updated_at || payload.updatedAt
+      };
+    });
+
+    const map = new Map();
+    remote.forEach(item => map.set(item.id, item));
+    cached.forEach(item => {
+      if (!map.has(item.id)) map.set(item.id, item);
+    });
+
+    const merged = Array.from(map.values()).sort((a, b) => 
+      new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+    );
+
+    cacheOrderConfirmations(merged);
+    return merged;
+  } catch (err) {
+    console.error('[fetchOrderConfirmations]', err);
+    return cached;
+  }
+}
+
+/**
+ * Save or update an Order Confirmation Note in Supabase and cache
+ */
+export async function saveOrderConfirmation(ocn) {
+  if (!ocn || !ocn.ocnNumber) {
+    console.warn('Cannot save order confirmation without ocnNumber');
+    return ocn;
+  }
+
+  const id = ocn.id || ocn.ocnNumber;
+  const ocnNumber = ocn.ocnNumber || id;
+  const fullOcn = {
+    ...ocn,
+    id,
+    ocnNumber,
+    status: ocn.status || 'Confirmed',
+    revisionNo: ocn.revisionNo ?? 0,
+    amendmentNo: ocn.amendmentNo || 'Rev 00',
+    revisions: Array.isArray(ocn.revisions) ? ocn.revisions : [],
+    createdAt: ocn.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  // 1. Update local cache immediately
+  const existingList = getCachedOrderConfirmations();
+  const idx = existingList.findIndex(x => x.id === id || x.ocnNumber === ocnNumber);
+  if (idx >= 0) {
+    existingList[idx] = fullOcn;
+  } else {
+    existingList.unshift(fullOcn);
+  }
+  cacheOrderConfirmations(existingList);
+
+  // 2. Persist to Supabase if configured
+  if (isSupabaseConfigured()) {
+    try {
+      const row = {
+        id,
+        ocn_number: ocnNumber,
+        order_id: fullOcn.orderId || null,
+        job_name: fullOcn.jobName || '',
+        client_name: fullOcn.clientName || '',
+        status: fullOcn.status,
+        revision_no: fullOcn.revisionNo,
+        amendment_no: fullOcn.amendmentNo,
+        amended_at: fullOcn.amendedAt || null,
+        amended_by: fullOcn.amendedBy || null,
+        amendment_reason: fullOcn.amendmentReason || null,
+        payload: fullOcn,
+        updated_at: fullOcn.updatedAt
+      };
+
+      const { error } = await supabase.from('order_confirmations').upsert(row, { onConflict: 'id' });
+      if (error) {
+        console.warn('[order_confirmations upsert error]', error.message || error);
+        saveSystemSetting('samyak_cache_order_confirmations', existingList).catch(() => {});
+      }
+    } catch (err) {
+      console.warn('[saveOrderConfirmation] remote save failed:', err);
+    }
+  }
+
+  return fullOcn;
+}
+
+/**
+ * Apply an amendment to an existing OCN with revision tracking
+ */
+export async function saveOrderConfirmationAmendment(ocnIdOrOptions, amendmentPatch = {}, amendedBy = 'Staff') {
+  let ocnId = ocnIdOrOptions;
+  let patch = amendmentPatch;
+  let author = amendedBy;
+
+  if (ocnIdOrOptions && typeof ocnIdOrOptions === 'object') {
+    const opts = ocnIdOrOptions;
+    ocnId = opts.originalOcn?.id || opts.originalOcn?.ocnNumber || opts.id || opts.ocnId || opts.ocnNumber;
+    patch = { ...(opts.amendmentData || opts.patch || {}), amendmentReason: opts.amendmentReason || opts.amendmentData?.amendmentReason };
+    author = opts.amendedBy || author;
+  }
+
+  const list = getCachedOrderConfirmations();
+  let existing = list.find(x => x.id === ocnId || x.ocnNumber === ocnId);
+  if (!existing) {
+    const fresh = await fetchOrderConfirmations();
+    existing = fresh.find(x => x.id === ocnId || x.ocnNumber === ocnId);
+  }
+  if (!existing) {
+    throw new Error(`Order Confirmation Note "${ocnId}" not found to amend.`);
+  }
+
+  const amended = buildOcnAmendment(existing, patch, author);
+  const saved = await saveOrderConfirmation(amended);
+
+  // If there is an associated order in orders table, keep order in sync
+  if (saved.orderId && isSupabaseConfigured()) {
+    try {
+      const orderPatch = {
+        id: saved.orderId,
+        orderQtyKg: saved.orderQtyKg,
+        orderType: saved.orderType,
+        jobName: saved.jobName,
+        clientName: saved.clientName,
+        targetDeliveryDate: saved.targetDeliveryDate,
+        layers: saved.layers,
+        structure: (saved.layers || []).map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
+        ocnNumber: saved.ocnNumber,
+        ocnId: saved.id
+      };
+      saveOrderToSupabase(orderPatch).catch(e => console.warn('[sync order amendment error]', e));
+    } catch (e) {
+      console.warn('[sync order amendment]', e);
+    }
+  }
+
+  return saved;
+}
+
+/**
+ * Delete / cancel an Order Confirmation Note
+ */
+export async function deleteOrderConfirmation(ocnId) {
+  const list = getCachedOrderConfirmations().filter(x => x.id !== ocnId && x.ocnNumber !== ocnId);
+  cacheOrderConfirmations(list);
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabase.from('order_confirmations').delete().eq('id', ocnId);
+    } catch (e) {
+      console.warn('[deleteOrderConfirmation]', e);
+    }
+  }
+  return true;
 }
 

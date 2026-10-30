@@ -35,8 +35,8 @@ export const DEFAULT_AGEING_SETTINGS = {
   enforceFifoStrictly: true
 };
 
-import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage';
-import { saveSystemSetting, fetchSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService';
+import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage.js';
+import { saveSystemSetting, fetchSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService.js';
 import {
   cacheCompanyProfile,
   COMPANY_PROFILE_SETTING_KEY,
@@ -44,8 +44,8 @@ import {
   getCompanyProfile,
   normalizeCompanyProfile,
   withCompanyTagline,
-} from './companyProfile';
-import { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates } from './filmSubstratesService';
+} from './companyProfile.js';
+import { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates } from './filmSubstratesService.js';
 export { FILM_SUBSTRATES_STORAGE_KEY, DEFAULT_FILM_SUBSTRATES, getFilmSubstrates };
 
 
@@ -354,6 +354,30 @@ export function getNextDocRefNumber(type) {
   }
 
   return docRef;
+}
+
+/**
+ * Ensures ocnCounter in settings is at least max(existing OCNs) + 1
+ */
+export function syncOcnCounterWithRecords(ocnList = []) {
+  if (!Array.isArray(ocnList) || ocnList.length === 0) return;
+  const config = getDocumentPrefixes();
+  let maxSeq = Number(config.ocnCounter) || 108;
+  for (const item of ocnList) {
+    const str = String(item?.ocnNumber || item?.id || '');
+    const parts = str.trim().split('/');
+    const lastPart = parts[parts.length - 1];
+    const match = lastPart ? lastPart.match(/\d+/) : null;
+    const seq = match ? parseInt(match[0], 10) : null;
+    if (seq && seq >= maxSeq) {
+      maxSeq = seq + 1;
+    }
+  }
+  if (maxSeq > (Number(config.ocnCounter) || 108)) {
+    const next = { ...config, ocnCounter: maxSeq };
+    cacheJson(PREFIX_STORAGE_KEY, next);
+    saveDocumentPrefixes(next).catch(() => {});
+  }
 }
 
 const RATES_STORAGE_KEY = 'samyak_processing_rates';

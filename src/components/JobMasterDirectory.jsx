@@ -42,6 +42,7 @@ import { calculateUtilisation, parseGsmValue, getJobPrintedQtyKg, productionReco
 import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm, METALLOCENE_OPTIONS } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
+import { openArtworkViewer } from '../services/supabaseStorageService';
 import { pushSlugState } from '../utils/slugRouter';
 
 /**
@@ -2420,9 +2421,15 @@ export default function JobMasterDirectory({
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <a href={selectedJob.jobCardFileUrl} target="_blank" rel="noopener noreferrer" className="btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      type="button"
+                      className="btn-primary" 
+                      style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', border: 'none' }}
+                      onClick={() => openArtworkViewer(selectedJob.jobCardFileUrl, selectedJob.jobCardFileName || selectedJob.jobName || 'Job Card Artwork')}
+                      title="View / Download Job Card Artwork"
+                    >
                       <Printer size={14} /> View / Download
-                    </a>
+                    </button>
                     <button className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.8rem', color: '#dc2626', borderColor: '#fecaca' }} onClick={handleRemoveFile} title="Remove attached file">
                       <X size={14} /> Remove
                     </button>

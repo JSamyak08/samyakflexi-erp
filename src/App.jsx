@@ -11,6 +11,7 @@ import {
   getOrderStageInfo,
   FILM_DENSITIES
 } from './factoryStore';
+import { assessPrintingDeadlineReminder, canManageOrderDeadline } from './utils/orderDeadlineReminder';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -67,6 +68,7 @@ import AuditLogsManagement from './components/AuditLogsManagement';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
+import DeadlineReminderBanner from './components/DeadlineReminderBanner';
 import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
@@ -77,7 +79,7 @@ import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
-import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
+import { getDocumentPrefixes, getNextDocRefNumber, syncOcnCounterWithRecords } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
@@ -132,6 +134,7 @@ import {
   fetchPelletConsumptionsFromSupabase, savePelletConsumptionToSupabase, deletePelletConsumptionFromSupabase,
   allocatePelletGrnNumber, savePelletInwardWithGrn,
   fetchPurchaseOrders, savePurchaseOrderToSupabase, deletePurchaseOrderFromSupabase, sanitizePurchaseOrder,
+  fetchOrderConfirmations, saveOrderConfirmation, saveOrderConfirmationAmendment, getCachedOrderConfirmations,
   fetchFilmSubstratesFromSupabase,
   fetchAllSystemSettings,
   fetchBarcodeRegistry,
@@ -513,6 +516,31 @@ export default function App() {
   const [pelletConsumptions, setPelletConsumptions] = useState([]);
   const [pelletLoadError, setPelletLoadError] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [ocns, setOcns] = useState(() => getCachedOrderConfirmations());
+
+  const handleSaveOcn = async (ocnRecord) => {
+    requireDatabaseConnection('save order confirmation');
+    const saved = await saveOrderConfirmation(ocnRecord);
+    setOcns(prev => {
+      const currentList = Array.isArray(prev) ? prev : [];
+      const next = [saved, ...currentList.filter(item => item && item.id !== saved.id && item.ocnNumber !== saved.ocnNumber)];
+      safeLocalStorageSet('samyak_cache_order_confirmations', next);
+      return next;
+    });
+    return saved;
+  };
+
+  const handleSaveOcnAmendment = async ({ originalOcn, amendmentData, amendmentReason, amendedBy }) => {
+    requireDatabaseConnection('amend order confirmation');
+    const updated = await saveOrderConfirmationAmendment({ originalOcn, amendmentData, amendmentReason, amendedBy });
+    setOcns(prev => {
+      const currentList = Array.isArray(prev) ? prev : [];
+      const next = currentList.map(item => item && item.id === updated.id ? updated : item);
+      safeLocalStorageSet('samyak_cache_order_confirmations', next);
+      return next;
+    });
+    return updated;
+  };
 
   const handleSavePurchaseOrder = async (po) => {
     requireDatabaseConnection('save purchase order');
@@ -1128,7 +1156,8 @@ export default function App() {
           supaCoAs,
           supaPelletInwards,
           supaPelletConsumptions,
-          supaPOs
+          supaPOs,
+          supaOcns
         ] = await Promise.all([
           need(BOOT_NEEDS.grns) ? fetchSafe(fetchGRNs, 'GRNs') : Promise.resolve(null),
           need(BOOT_NEEDS.productionRecords) ? fetchSafe(fetchProductionRecords, 'Production Records') : Promise.resolve(null),
@@ -1142,7 +1171,8 @@ export default function App() {
           need(BOOT_NEEDS.coas) ? fetchSafe(fetchCertificatesOfAnalysisFromSupabase, 'Certificates of Analysis') : Promise.resolve(null),
           need(BOOT_NEEDS.pellets) ? fetchPelletBook(fetchPelletInwardsFromSupabase) : Promise.resolve({ data: null, error: null }),
           need(BOOT_NEEDS.pellets) ? fetchPelletBook(fetchPelletConsumptionsFromSupabase) : Promise.resolve({ data: null, error: null }),
-          need(BOOT_NEEDS.purchaseOrders) ? fetchSafe(fetchPurchaseOrders, 'Purchase Orders') : Promise.resolve(null)
+          need(BOOT_NEEDS.purchaseOrders) ? fetchSafe(fetchPurchaseOrders, 'Purchase Orders') : Promise.resolve(null),
+          need(BOOT_NEEDS.ocns) ? fetchSafe(fetchOrderConfirmations, 'Order Confirmations') : Promise.resolve(null)
         ]);
 
         if (!isMounted) return;
@@ -1245,6 +1275,13 @@ export default function App() {
           const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
           remember('purchase_orders', 'samyak_cache_purchase_orders', cleanPOs);
+        }
+
+        if (Array.isArray(supaOcns)) {
+          const cleanOcns = stripDummyRecords(supaOcns);
+          setOcns(cleanOcns);
+          remember('job_punching', 'samyak_cache_order_confirmations', cleanOcns);
+          syncOcnCounterWithRecords(cleanOcns);
         }
 
         if (allow('barcodes')) {
@@ -1550,6 +1587,14 @@ export default function App() {
               setPurchaseOrders(clean);
               safeLocalStorageSet('samyak_cache_purchase_orders', clean);
             }
+          } else if (table === 'order_confirmations') {
+            const data = await fetchOrderConfirmations();
+            if (Array.isArray(data)) {
+              const clean = stripDummyRecords(data);
+              setOcns(clean);
+              safeLocalStorageSet('samyak_cache_order_confirmations', clean);
+              syncOcnCounterWithRecords(clean);
+            }
           } else if (table === 'system_settings') {
             const settings = await fetchAllSystemSettings();
             if (settings && typeof settings === 'object') {
@@ -1606,6 +1651,10 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'purchase_orders' }, (payload) => {
         console.log(`⚡ [Realtime] Live update on purchase_orders (${payload?.eventType || 'SYNC'})`);
         refreshEntity('purchase_orders');
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_confirmations' }, (payload) => {
+        console.log(`⚡ [Realtime] Live update on order_confirmations (${payload?.eventType || 'SYNC'})`);
+        refreshEntity('order_confirmations');
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_masters' }, (payload) => {
         console.log(`⚡ [Realtime] Live update on job_masters (${payload?.eventType || 'SYNC'})`);
@@ -1891,6 +1940,16 @@ export default function App() {
   const isRecDue = isReconciliationDue();
   const delayedOrders = useMemo(() => (orders || []).filter(o => isOrderOverdue(o)), [orders]);
   const delayedOrdersCount = delayedOrders.length;
+  const [printingDeadlineBannerHidden, setPrintingDeadlineBannerHidden] = useState(false);
+  const printingDeadlineReminders = useMemo(() => {
+    if (!canManageOrderDeadline(currentUser?.role)) return [];
+    return (orders || []).flatMap((order) => {
+      if (!order) return [];
+      const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
+      const assessment = assessPrintingDeadlineReminder(order, stageInfo);
+      return assessment.active ? [{ order, stageInfo, assessment }] : [];
+    });
+  }, [orders, sfgGoods, productionRecords, currentUser?.role]);
   const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
@@ -2314,6 +2373,11 @@ export default function App() {
       setOrders((prev) => prev.map((order) => updated.get(order.id) || order));
     }
     return decisions;
+  };
+
+  const handleOrderDeadlineSaved = async (order, auditText) => {
+    setOrders((prev) => prev.map((item) => (item.id === order.id ? { ...item, ...order } : item)));
+    await logAudit('UPDATE', 'Orders', auditText || `Updated the pre-printing deadline for ${order.id}`, order.id);
   };
 
   const handleUpdateOrder = async (updatedOrder) => {
@@ -4321,15 +4385,32 @@ export default function App() {
               <div className="sidebar-section-header">Orders & Pre-Costing</div>
 
               {isTabAllowed('job_punching') && (
-                <div 
-                  className={`nav-item ${activeTab === 'job_punching' ? 'active' : ''}`}
-                  onClick={() => handleTabChange('job_punching')}
-                >
-                  <span className="nav-icon-box" style={{ color: '#d97706' }}>
-                    <Calculator size={18} />
-                  </span>
-                  <span>Job Punching & Costing</span>
-                </div>
+                <>
+                  <div 
+                    className={`nav-item ${activeTab === 'job_punching' && urlParams.view !== 'ocns' && urlParams.section !== 'ocns' ? 'active' : ''}`}
+                    onClick={() => handleTabChange('job_punching', { view: 'form' })}
+                  >
+                    <span className="nav-icon-box" style={{ color: '#d97706' }}>
+                      <Calculator size={18} />
+                    </span>
+                    <span>Job Punching & Costing</span>
+                  </div>
+
+                  <div 
+                    className={`nav-item ${activeTab === 'job_punching' && (urlParams.view === 'ocns' || urlParams.section === 'ocns') ? 'active' : ''}`}
+                    onClick={() => handleTabChange('job_punching', { view: 'ocns' })}
+                  >
+                    <span className="nav-icon-box" style={{ color: '#2563eb' }}>
+                      <FileCheck size={18} />
+                    </span>
+                    <span>Order Confirmations (OCN)</span>
+                    {ocns && ocns.length > 0 && (
+                      <span className="nav-badge-pill" style={{ marginLeft: 'auto', background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: '700', fontSize: '0.72rem', padding: '1px 6px', borderRadius: '10px' }}>
+                        {ocns.length}
+                      </span>
+                    )}
+                  </div>
+                </>
               )}
 
               {isTabAllowed('orders') && (
@@ -4676,7 +4757,7 @@ export default function App() {
               {moduleOpen && activeTab === 'dashboard' && 'Executive Operations Dashboard'}
               {moduleOpen && activeTab === 'sales' && 'Sales Management Engine'}
               {moduleOpen && activeTab === 'production_records' && 'Job Production Records & Approval Workflow'}
-              {moduleOpen && activeTab === 'job_punching' && 'Order Confirmation & Job Punching'}
+              {moduleOpen && activeTab === 'job_punching' && (urlParams.view === 'ocns' || urlParams.section === 'ocns' ? 'Order Confirmations (OCN) Register & Amendments' : 'Order Confirmation & Job Punching')}
               {moduleOpen && activeTab === 'orders' && 'Order Management & PO Issuance'}
               {moduleOpen && activeTab === 'job_masters' && 'Job Master Technical Directory & Specs'}
               {moduleOpen && activeTab === 'clients' && 'Client Onboarding & Directory'}
@@ -4883,6 +4964,15 @@ export default function App() {
           </div>
         ) : moduleOpen && activeTab === 'dashboard' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+            {!printingDeadlineBannerHidden && (
+              <DeadlineReminderBanner
+                reminders={printingDeadlineReminders}
+                canPlanPrinting={isTabAllowed('printing_scheduler')}
+                onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
+                onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
+                onDismiss={() => setPrintingDeadlineBannerHidden(true)}
+              />
+            )}
             {/* Redesigned Executive Operational Alerts Hub */}
             {(delayedOrdersCount > 0 || (lowStockInks || []).length > 0) && (
               <div style={{
@@ -5282,6 +5372,13 @@ export default function App() {
                               ) : (
                                 <span className="badge badge-us">{o.status}</span>
                               )}
+                              {printingDeadlineReminders.some((item) => item.order.id === o.id) && (
+                                <div style={{ marginTop: '6px' }}>
+                                  <span className="badge-delayed-tag" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }}>
+                                    PLAN PRINTING
+                                  </span>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );
@@ -5296,8 +5393,11 @@ export default function App() {
                 <div className="glass-card">
                   <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>⚙️ Plant Quick Shortcuts</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_punching')}>
-                      <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> Job Punching & OCN Note PDF
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_punching', { view: 'form' })}>
+                      <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> Job Punching & Costing
+                    </button>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_punching', { view: 'ocns' })}>
+                      <FileCheck size={16} style={{ color: '#2563eb' }} /> Saved OCNs Register ({ocns?.length || 0})
                     </button>
                     <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('orders')}>
                       <ShoppingBag size={16} style={{ color: '#059669' }} /> Issue Bulk Purchase Orders (POs)
@@ -5559,12 +5659,19 @@ export default function App() {
         {/* TAB 1: JOB PUNCHING & PRE-COSTING */}
         {moduleOpen && activeTab === 'job_punching' && (
           <JobPunchingForm 
-            key={selectedJobMasterForPunch?.id || urlParams.jobMasterId || 'punch'}
+            key={selectedJobMasterForPunch?.id || urlParams.jobMasterId || (urlParams.view === 'ocns' || urlParams.section === 'ocns' ? 'ocns' : 'punch')}
             onSaveOrder={handleAddOrder} 
             onNavigateToDashboard={() => handleTabChange('dashboard')} 
             initialJobMasterData={selectedJobMasterForPunch || (jobMasters || []).find((job) => String(job.id) === String(urlParams.jobMasterId)) || null}
             clients={clients}
             jobMasters={jobMasters}
+            orders={orders}
+            ocns={ocns}
+            onSaveOcn={handleSaveOcn}
+            onSaveOcnAmendment={handleSaveOcnAmendment}
+            onRefreshOcns={() => fetchSafe(fetchOrderConfirmations, 'Order Confirmations').then(res => res && setOcns(res))}
+            urlParams={urlParams}
+            activeUsername={currentUser?.username || currentUser?.name || sessionProfile?.username || 'Staff'}
           />
         )}
 
@@ -5588,12 +5695,15 @@ export default function App() {
             onDeleteOrder={handleDeleteOrder}
             onUpdateCylinder={handleUpdateCylinder}
             onAddGRN={handleAddGRN}
-            onNavigateToPunching={() => handleTabChange('job_punching')}
+            onNavigateToPunching={(params) => handleTabChange('job_punching', params || {})}
             onNavigateToProductionRecords={() => handleTabChange('production_records')}
             orderCloseSettings={orderCloseSettings}
             onSaveOrderCloseSettings={handleSaveOrderCloseSettings}
             onManualCloseOrder={handleManualCloseOrder}
             onManualReopenOrder={handleManualReopenOrder}
+            canPlanPrinting={isTabAllowed('printing_scheduler')}
+            onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
+            onOrderDeadlineSaved={handleOrderDeadlineSaved}
           />
         )}
 
