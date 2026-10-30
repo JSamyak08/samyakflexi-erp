@@ -1,6 +1,6 @@
 /**
  * Persist a revised order deadline and the client-informed checklist.
- * Mail is not sent from here. The screen only opens a draft the user sends.
+ * The team tells the client on WhatsApp. This module does not send mail.
  */
 
 import { supabase } from './supabaseClient.js';

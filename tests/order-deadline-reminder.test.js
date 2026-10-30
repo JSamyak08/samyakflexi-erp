@@ -4,10 +4,8 @@ import fs from 'node:fs';
 import { getOrderStageInfo } from '../src/factoryStore.js';
 import {
   assessPrintingDeadlineReminder,
-  buildClientDelayMessage,
   calendarDaysUntil,
   canManageOrderDeadline,
-  mailtoHref,
   nextClientInformed,
   nextDeadlineRevision,
   orderNeedsPrintingDeadlineReminder,
@@ -103,32 +101,57 @@ test('Printing and every later stage on the track are excluded', () => {
   assert.equal(stageTrackReachedPrinting(waiting), false);
 });
 
-test('the reminder quiets only after a revised date and client informed, then returns when that date nears', () => {
-  const order = filmOrder({
+test('client informed quiets the current revision even inside 2 days, and a new date starts again', () => {
+  const stage = getOrderStageInfo(filmOrder(), [], []);
+  const toldWhileClose = filmOrder({
     originalDeadline: '2026-10-31',
-    revisedDeadline: '2026-11-20',
-    clientInformed: true,
-  });
-  const stage = getOrderStageInfo(order, [], []);
-  const quiet = assessPrintingDeadlineReminder(order, stage, { today: TODAY });
-  assert.equal(quiet.quieted, true);
-  assert.equal(quiet.clockDate, '2026-11-20');
-  assert.equal(quiet.active, false);
-
-  const notTold = filmOrder({ revisedDeadline: '2026-11-20', clientInformed: false });
-  assert.equal(orderNeedsPrintingDeadlineReminder(notTold, stage, { today: TODAY }), true);
-
-  const noDate = filmOrder({ clientInformed: true });
-  assert.equal(orderNeedsPrintingDeadlineReminder(noDate, stage, { today: TODAY }), true);
-
-  const stillClose = filmOrder({
     revisedDeadline: '2026-10-31',
     clientInformed: true,
     clientInformedBy: 'Sales',
   });
-  const again = assessPrintingDeadlineReminder(stillClose, stage, { today: TODAY });
-  assert.equal(again.clockDate, '2026-10-31');
-  assert.equal(again.active, true);
+  const quiet = assessPrintingDeadlineReminder(toldWhileClose, stage, { today: TODAY });
+  assert.equal(quiet.informedForRevision, true);
+  assert.equal(quiet.clockDate, '2026-10-31');
+  assert.equal(quiet.approaching, true);
+  assert.equal(quiet.active, false);
+
+  const farAndTold = filmOrder({ revisedDeadline: '2026-11-20', clientInformed: true });
+  assert.equal(orderNeedsPrintingDeadlineReminder(farAndTold, stage, { today: TODAY }), false);
+
+  const farNotTold = filmOrder({ revisedDeadline: '2026-11-20', clientInformed: false });
+  assert.equal(orderNeedsPrintingDeadlineReminder(farNotTold, stage, { today: TODAY }), false);
+  assert.equal(orderNeedsPrintingDeadlineReminder(farNotTold, stage, { today: '2026-11-19' }), true);
+
+  const noRevisedDate = filmOrder({ clientInformed: true });
+  assert.equal(orderNeedsPrintingDeadlineReminder(noRevisedDate, stage, { today: TODAY }), true);
+
+  const revisedNear = nextDeadlineRevision(toldWhileClose, {
+    revisedDeadline: '2026-10-30',
+    reason: 'Press slot moved',
+    actor: 'Asha Shah',
+    now: '2026-10-30T06:00:00.000Z',
+  });
+  assert.equal(revisedNear.ok, true);
+  assert.equal(revisedNear.order.clientInformed, false);
+  assert.equal(orderNeedsPrintingDeadlineReminder(revisedNear.order, stage, { today: TODAY }), true);
+
+  const toldAgain = nextClientInformed(revisedNear.order, {
+    informed: true,
+    actor: 'Asha Shah',
+    now: '2026-10-30T07:00:00.000Z',
+  });
+  assert.equal(toldAgain.order.clientInformedDeadline, '2026-10-30');
+  assert.equal(orderNeedsPrintingDeadlineReminder(toldAgain.order, stage, { today: TODAY }), false);
+
+  const revisedFar = nextDeadlineRevision(toldAgain.order, {
+    revisedDeadline: '2026-11-20',
+    reason: 'Customer asked for a later date',
+    actor: 'Asha Shah',
+    now: '2026-10-30T08:00:00.000Z',
+  });
+  assert.equal(revisedFar.order.clientInformed, false);
+  assert.equal(orderNeedsPrintingDeadlineReminder(revisedFar.order, stage, { today: TODAY }), false);
+  assert.equal(orderNeedsPrintingDeadlineReminder(revisedFar.order, stage, { today: '2026-11-19' }), true);
 });
 
 test('a revision keeps the commercial date and clears client informed', () => {
@@ -172,7 +195,7 @@ test('a revision keeps the commercial date and clears client informed', () => {
   assert.equal(missingReason.ok, false);
 });
 
-test('client informed records who and when, and does not invent a send', () => {
+test('client informed is recorded for the current revised date and is not an email', () => {
   const order = filmOrder({ revisedDeadline: '2026-11-12' });
   const marked = nextClientInformed(order, {
     informed: true,
@@ -182,20 +205,15 @@ test('client informed records who and when, and does not invent a send', () => {
   assert.equal(marked.ok, true);
   assert.equal(marked.order.clientInformed, true);
   assert.equal(marked.order.clientInformedBy, 'Asha Shah');
-  assert.equal(marked.order.revisedDeadline, '2026-11-12');
+  assert.equal(marked.order.clientInformedDeadline, '2026-11-12');
   assert.equal(marked.history.eventType, 'client_informed');
+  assert.match(marked.audit, /2026-11-12/);
 
-  const draft = buildClientDelayMessage(marked.order, { contactPerson: 'Ravi' });
-  assert.equal(draft.to, '');
-  assert.equal(draft.sendsAutomatically, false);
-  assert.match(draft.subject, /Atta 5kg/);
-  assert.match(draft.body, /Original delivery date: 2026-10-31/);
-  assert.match(draft.body, /Revised delivery date: 2026-11-12/);
-  assert.match(draft.body, /Hello Ravi/);
-  const href = mailtoHref(draft);
-  assert.match(href, /^mailto:/);
-  assert.doesNotMatch(href, /send-email/);
-  assert.doesNotMatch(href, /api/);
+  const tooSoon = nextClientInformed(filmOrder(), {
+    informed: true,
+    actor: 'Asha Shah',
+  });
+  assert.equal(tooSoon.ok, false);
 });
 
 test('only sales, plant, production, and admin can update the reminder', () => {
@@ -220,6 +238,11 @@ test('the reminder screen never calls the email API', () => {
     const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /\/api\/send-email/);
     assert.doesNotMatch(source, /sendERPEmailNotification/);
+    assert.doesNotMatch(source, /mailto:/);
+    assert.doesNotMatch(source, /Review client message/);
     assert.doesNotMatch(source, /localStorage/);
   }
+  const screen = fs.readFileSync(new URL('../src/components/OrderDeadlineReminder.jsx', import.meta.url), 'utf8');
+  assert.match(screen, /Update the client about the revised date \(WhatsApp\)/);
+  assert.match(screen, /Client informed/);
 });

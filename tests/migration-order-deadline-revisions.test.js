@@ -141,6 +141,25 @@ test('a locked-down database limits deadline history to order access and the com
   assert.equal(frozen.rows[0].target_delivery_date.toISOString().slice(0, 10), '2026-12-01');
 
   await db.exec(`
+    UPDATE public.orders
+    SET client_informed = true, client_informed_by = 'Asha', client_informed_at = now()
+    WHERE id = 'ORD-9'
+  `);
+  await db.exec(`
+    UPDATE public.orders
+    SET revised_deadline = '2026-11-25', client_informed = true, client_informed_by = 'Asha'
+    WHERE id = 'ORD-9'
+  `);
+  const cleared = await db.query(`
+    SELECT revised_deadline, client_informed, client_informed_by, client_informed_at
+    FROM public.orders
+  `);
+  assert.equal(cleared.rows[0].revised_deadline.toISOString().slice(0, 10), '2026-11-25');
+  assert.equal(cleared.rows[0].client_informed, null);
+  assert.equal(cleared.rows[0].client_informed_by, null);
+  assert.equal(cleared.rows[0].client_informed_at, null);
+
+  await db.exec(`
     CREATE OR REPLACE FUNCTION private.has_role(allowed text[]) RETURNS boolean
     LANGUAGE sql STABLE AS $$ SELECT false $$;
   `);

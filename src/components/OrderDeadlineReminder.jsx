@@ -1,11 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Mail, Printer } from 'lucide-react';
+import { CheckCircle2, Printer } from 'lucide-react';
 import {
   assessPrintingDeadlineReminder,
-  buildClientDelayMessage,
   canManageOrderDeadline,
   deadlineActorLabel,
-  mailtoHref,
 } from '../utils/orderDeadlineReminder.js';
 import {
   fetchOrderDeadlineHistory,
@@ -31,7 +29,6 @@ export default function OrderDeadlineReminder({
   order,
   stageInfo,
   currentUser,
-  clients = [],
   canPlanPrinting = false,
   onPlanPrinting,
   onSaved,
@@ -42,25 +39,15 @@ export default function OrderDeadlineReminder({
     [order, stageInfo]
   );
   const canManage = canManageOrderDeadline(currentUser?.role);
-  const client = useMemo(() => {
-    const name = String(order?.clientName || '').trim().toLowerCase();
-    return (clients || []).find((item) => String(item?.name || '').trim().toLowerCase() === name) || null;
-  }, [clients, order?.clientName]);
-  const draftSeed = useMemo(() => buildClientDelayMessage(order, client), [order, client]);
   const [revisedDate, setRevisedDate] = useState(assessment.revisedDate || '');
   const [reason, setReason] = useState('');
-  const [messageOpen, setMessageOpen] = useState(false);
-  const [draftBody, setDraftBody] = useState(draftSeed.body);
-  const [draftSubject, setDraftSubject] = useState(draftSeed.subject);
   const [history, setHistory] = useState([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setRevisedDate(assessment.revisedDate || '');
-    setDraftBody(draftSeed.body);
-    setDraftSubject(draftSeed.subject);
-  }, [order?.id, assessment.revisedDate, draftSeed.body, draftSeed.subject]);
+  }, [order?.id, assessment.revisedDate]);
 
   useEffect(() => {
     if (variant !== 'detail' || !order?.id) return undefined;
@@ -108,14 +95,6 @@ export default function OrderDeadlineReminder({
     }));
   };
 
-  const openMail = () => {
-    const href = mailtoHref({ to: '', subject: draftSubject, body: draftBody });
-    const link = document.createElement('a');
-    link.href = href;
-    link.rel = 'noopener';
-    link.click();
-  };
-
   return (
     <div
       onClick={(event) => event.stopPropagation()}
@@ -137,8 +116,9 @@ export default function OrderDeadlineReminder({
         <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#78350f', lineHeight: 1.45 }}>
           Original deadline {assessment.originalDate || 'not recorded'}
           {assessment.revisedDate ? ` · revised to ${assessment.revisedDate}` : ''}.
-          Set a new date, put the job on the Printing Scheduler, and tick Client informed after you tell them.
-          The reminder stays until both are done, then waits for the new date.
+          Set a new date and plan the press. Client informed applies to this revised date only:
+          once it is saved, this reminder stays quiet even if that date is still inside 2 days.
+          A new date brings it back when that date is under 2 days away.
         </p>
       </div>
 
@@ -192,68 +172,34 @@ export default function OrderDeadlineReminder({
         )}
       </form>
 
-      <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.8rem', color: '#78350f', fontWeight: '700' }}>
-        <input
-          type="checkbox"
-          checked={assessment.clientInformed}
-          disabled={!canManage || saving}
-          onChange={toggleInformed}
-          style={{ marginTop: '2px' }}
-        />
-        <span>
-          Client informed
-          {assessment.clientInformed && order.clientInformedBy && (
-            <span style={{ fontWeight: '600', color: '#92400e' }}>
-              {' '}· {order.clientInformedBy}{order.clientInformedAt ? `, ${stamp(order.clientInformedAt)}` : ''}
-            </span>
-          )}
-        </span>
-      </label>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-        <button
-          type="button"
-          className="btn-secondary"
-          onClick={() => setMessageOpen((open) => !open)}
-          style={{ padding: '6px 10px', fontSize: '0.78rem', fontWeight: '700', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <Mail size={13} /> {messageOpen ? 'Hide message draft' : 'Review client message'}
-        </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <p style={{ margin: 0, fontSize: '0.8rem', color: '#78350f', fontWeight: '700' }}>
+          Update the client about the revised date (WhatsApp)
+        </p>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.8rem', color: '#78350f', fontWeight: '700' }}>
+          <input
+            type="checkbox"
+            checked={assessment.clientInformed}
+            disabled={!canManage || saving}
+            onChange={toggleInformed}
+            style={{ marginTop: '2px' }}
+          />
+          <span>
+            Client informed
+            {assessment.clientInformed && order.clientInformedBy && (
+              <span style={{ fontWeight: '600', color: '#92400e' }}>
+                {' '}· {order.clientInformedBy}{order.clientInformedAt ? `, ${stamp(order.clientInformedAt)}` : ''}
+                {assessment.revisedDate ? ` · for ${assessment.revisedDate}` : ''}
+              </span>
+            )}
+          </span>
+        </label>
         {!canManage && (
           <span style={{ fontSize: '0.75rem', color: '#92400e' }}>
             Sales, plant, production, or admin can save this.
           </span>
         )}
       </div>
-
-      {messageOpen && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', border: '1px solid #fde68a', borderRadius: '8px', padding: '10px' }}>
-          <p style={{ margin: 0, fontSize: '0.75rem', color: '#92400e', fontWeight: '700' }}>
-            Nothing is sent from FlexiERP. Review the text, then open it in your mail app and send it yourself.
-          </p>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-            Subject
-            <input className="form-control" value={draftSubject} onChange={(event) => setDraftSubject(event.target.value)} />
-          </label>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.72rem', fontWeight: '700', color: '#78350f' }}>
-            Message
-            <textarea className="form-control" rows={8} value={draftBody} onChange={(event) => setDraftBody(event.target.value)} />
-          </label>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button type="button" className="btn-secondary" style={{ fontSize: '0.78rem', fontWeight: '700' }} onClick={openMail}>
-              Open in my mail app
-            </button>
-            <button
-              type="button"
-              className="btn-secondary"
-              style={{ fontSize: '0.78rem', fontWeight: '700' }}
-              onClick={() => navigator.clipboard?.writeText(`${draftSubject}\n\n${draftBody}`)}
-            >
-              Copy message
-            </button>
-          </div>
-        </div>
-      )}
 
       {error && <div style={{ color: '#b91c1c', fontSize: '0.78rem', fontWeight: '700' }}>{error}</div>}
 

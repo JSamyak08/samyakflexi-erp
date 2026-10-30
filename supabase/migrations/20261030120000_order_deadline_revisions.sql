@@ -87,6 +87,12 @@ BEGIN
           NEW.original_deadline := COALESCE(OLD.target_delivery_date, OLD.delivery_date);
         END IF;
 
+        IF NEW.revised_deadline IS DISTINCT FROM OLD.revised_deadline THEN
+          NEW.client_informed := NULL;
+          NEW.client_informed_at := NULL;
+          NEW.client_informed_by := NULL;
+        END IF;
+
         RETURN NEW;
       END;
       $body$

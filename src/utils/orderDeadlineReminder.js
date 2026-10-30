@@ -1,11 +1,14 @@
 /**
  * Pre-printing deadline reminder.
  *
- * The clock is the commercial delivery date until someone saves a revised
- * deadline AND marks the client informed. After both, the reminder stays
- * quiet until that revised date is under two days away (or already past).
- * Jobs whose stage track has reached Printing are out of this reminder.
- * Nothing here sends mail.
+ * The clock is the revised deadline once one is saved, otherwise the
+ * commercial date. Client informed belongs to that revision: saving it
+ * quiets the reminder even when the revised date is still under two days.
+ * A new revision clears the tick. The reminder returns only when that new
+ * date is under two days away and the client has not been marked informed
+ * for it. Jobs whose stage track has reached Printing are excluded.
+ * Clients are told on WhatsApp by the team. This module does not draft or
+ * send mail.
  */
 
 import { isCylinderOrder } from './orderAutoClose.js';
@@ -123,11 +126,11 @@ export function assessPrintingDeadlineReminder(order, stageInfo, options = {}) {
   const originalDate = commercialDeadline(order);
   const revisedDate = dateOnlyString(order?.revisedDeadline);
   const clientInformed = order?.clientInformed === true;
-  const quieted = Boolean(revisedDate) && clientInformed;
-  const clockDate = quieted ? revisedDate : originalDate;
+  const informedForRevision = Boolean(revisedDate) && clientInformed;
+  const clockDate = revisedDate || originalDate;
   const daysRemaining = calendarDaysUntil(clockDate, today);
   const approaching = daysRemaining !== null && daysRemaining < NEAR_PRINTING_DEADLINE_DAYS;
-  const active = Boolean(order) && !cylinder && !completed && !reachedPrinting && approaching;
+  const active = Boolean(order) && !cylinder && !completed && !reachedPrinting && approaching && !informedForRevision;
   return {
     active,
     reachedPrinting,
@@ -136,7 +139,8 @@ export function assessPrintingDeadlineReminder(order, stageInfo, options = {}) {
     originalDate,
     revisedDate,
     clientInformed,
-    quieted,
+    informedForRevision,
+    quieted: informedForRevision,
     clockDate,
     daysRemaining,
     approaching,
@@ -221,6 +225,7 @@ export function nextDeadlineRevision(order, { revisedDeadline, reason, actor, no
     clientInformed: false,
     clientInformedAt: null,
     clientInformedBy: null,
+    clientInformedDeadline: null,
     targetDeliveryDate: order.targetDeliveryDate,
     deliveryDate: order.deliveryDate,
   };
@@ -250,6 +255,10 @@ export function nextClientInformed(order, { informed, actor, now } = {}) {
   const who = String(actor || '').trim();
   if (!who) return { ok: false, error: 'The signed-in user could not be identified.' };
   const checked = informed === true;
+  const revisedDate = dateOnlyString(order.revisedDeadline);
+  if (checked && !revisedDate) {
+    return { ok: false, error: 'Save a revised deadline before marking the client informed.' };
+  }
   if (checked === (order.clientInformed === true) && !checked) {
     return { ok: false, error: 'Client informed is already clear.' };
   }
@@ -262,6 +271,7 @@ export function nextClientInformed(order, { informed, actor, now } = {}) {
     clientInformed: checked,
     clientInformedAt: checked ? actedAt : null,
     clientInformedBy: checked ? who : null,
+    clientInformedDeadline: checked ? revisedDate : null,
   };
   const history = {
     id: revisionId(order.id, actedAt),
@@ -276,42 +286,7 @@ export function nextClientInformed(order, { informed, actor, now } = {}) {
     clientInformed: checked,
   };
   const audit = checked
-    ? `Marked client informed for ${order.id} (${who}).`
+    ? `Marked client informed for ${order.id} on revised date ${revisedDate} (${who}).`
     : `Cleared client informed for ${order.id}.`;
   return { ok: true, order: nextOrder, history, audit };
-}
-
-export function buildClientDelayMessage(order, client) {
-  const assessment = assessPrintingDeadlineReminder(order, { pipeline: [{ id: 'printing', isUpcoming: true }] });
-  const original = assessment.originalDate || 'not recorded';
-  const revised = assessment.revisedDate || 'still to be agreed';
-  const contact = String(client?.contactPerson || order?.clientName || 'team').trim() || 'team';
-  const qty = order?.orderQtyKg != null && order.orderQtyKg !== '' ? `${order.orderQtyKg} kg` : 'the ordered quantity';
-  const subject = `Delivery date update for ${order?.jobName || 'your order'} (${order?.id || ''})`.trim();
-  const body = [
-    `Hello ${contact},`,
-    '',
-    `We need to confirm the delivery date for ${order?.jobName || 'this job'} (order ${order?.id || ''}, ${qty}).`,
-    '',
-    `Original delivery date: ${original}`,
-    `Revised delivery date: ${revised}`,
-    '',
-    'Please reply if this date works for you.',
-    '',
-    'Samyak International',
-  ].join('\n');
-  return {
-    to: '',
-    subject,
-    body,
-    sendsAutomatically: false,
-  };
-}
-
-export function mailtoHref({ to = '', subject = '', body = '' } = {}) {
-  const params = [];
-  if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
-  if (body) params.push(`body=${encodeURIComponent(body)}`);
-  const query = params.length ? `?${params.join('&')}` : '';
-  return `mailto:${encodeURIComponent(String(to || '').trim())}${query}`;
 }

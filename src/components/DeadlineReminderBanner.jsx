@@ -63,7 +63,7 @@ export default function DeadlineReminderBanner({
             </div>
             <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '3px 0 0', lineHeight: '1.4' }}>
               These jobs are under 2 days from delivery, or already late, and the stage track has not reached Printing.
-              Revise the date, plan the press, and mark the client informed. Dismissing this only hides the list until reload.
+              Revise the date, plan the press, and tick Client informed after the WhatsApp update. That tick quiets the current revision. Dismissing this only hides the list until reload.
             </p>
           </div>
         </div>

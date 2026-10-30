@@ -1939,7 +1939,6 @@ export default function OrderManagement({
                         order={order}
                         stageInfo={stageInfo}
                         currentUser={currentUser}
-                        clients={clients}
                         canPlanPrinting={canPlanPrinting}
                         onPlanPrinting={onPlanPrinting}
                         onSaved={onOrderDeadlineSaved}
@@ -1954,7 +1953,6 @@ export default function OrderManagement({
                           order={order}
                           stageInfo={stageInfo}
                           currentUser={currentUser}
-                          clients={clients}
                           canPlanPrinting={canPlanPrinting}
                           onPlanPrinting={onPlanPrinting}
                           onSaved={onOrderDeadlineSaved}
