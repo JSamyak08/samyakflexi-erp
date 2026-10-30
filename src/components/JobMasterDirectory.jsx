@@ -243,26 +243,39 @@ export default function JobMasterDirectory({
   const [pouchHeight, setPouchHeight] = useState('');
   const [materialForm, setMaterialForm] = useState('Reel Form');
 
-  // Unified Unique Clients Options (from clients prop + orders + jobMasters)
+  // Unified Unique Clients Options (from clients prop + cached clients + orders + jobMasters)
   const allClientOptions = useMemo(() => {
+    let clientSource = Array.isArray(clients) && clients.length > 0 ? clients : [];
+    if (clientSource.length === 0) {
+      try {
+        const cached = localStorage.getItem('samyak_cache_clients');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) clientSource = parsed;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
     const map = new Map();
-    (clients || []).forEach(c => {
-      const name = c.name || c.companyName;
-      if (name && !map.has(name)) {
-        map.set(name, { id: c.id, name, gstin: c.gstin, phone: c.phone });
+    clientSource.forEach(c => {
+      const name = (c?.name || c?.clientName || c?.companyName || '').trim();
+      if (name && !map.has(name.toLowerCase())) {
+        map.set(name.toLowerCase(), { id: c.id, name, gstin: c.gstin, phone: c.phone });
       }
     });
     (orders || []).forEach(o => {
-      if (o.clientName && !map.has(o.clientName)) {
-        map.set(o.clientName, { id: `CLI-${o.clientName}`, name: o.clientName });
+      const name = (o?.clientName || '').trim();
+      if (name && !map.has(name.toLowerCase())) {
+        map.set(name.toLowerCase(), { id: `CLI-${name}`, name });
       }
     });
     (jobMasters || []).forEach(j => {
-      if (j.clientName && !map.has(j.clientName)) {
-        map.set(j.clientName, { id: `CLI-${j.clientName}`, name: j.clientName });
+      const name = (j?.clientName || '').trim();
+      if (name && !map.has(name.toLowerCase())) {
+        map.set(name.toLowerCase(), { id: `CLI-${name}`, name });
       }
     });
-    return Array.from(map.values());
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [clients, orders, jobMasters]);
 
   const filteredClients = useMemo(() => {

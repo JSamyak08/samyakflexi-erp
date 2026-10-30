@@ -5573,6 +5573,7 @@ export default function App() {
           <OrderManagement 
             urlParams={urlParams}
             orders={orders} 
+            clients={clients}
             vendors={vendors}
             inventory={inventory}
             grns={grns}

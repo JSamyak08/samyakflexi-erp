@@ -39,12 +39,13 @@ import {
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
-import { saveOrderToSupabase, savePurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
   urlParams = {},
   orders = [], 
+  clients = [],
   vendors = [], 
   inventory = [],
   grns = [],
@@ -358,23 +359,84 @@ export default function OrderManagement({
     return list;
   }, [jobMasters, editJobName]);
 
+  const [internalClients, setInternalClients] = useState(() => {
+    if (Array.isArray(clients) && clients.length > 0) return clients;
+    try {
+      const cached = localStorage.getItem('samyak_cache_clients');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) { /* ignore */ }
+    return [];
+  });
+
+  useEffect(() => {
+    if (Array.isArray(clients) && clients.length > 0) {
+      setInternalClients(clients);
+    } else if (internalClients.length === 0) {
+      fetchClients().then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setInternalClients(data);
+        }
+      }).catch(err => console.warn('Could not load client directory in OrderManagement:', err));
+    }
+  }, [clients]);
+
   const editClientNameOptions = useMemo(() => {
-    const clientSet = new Set();
-    (jobMasters || []).forEach(j => { if (j?.clientName) clientSet.add(j.clientName.trim()); });
-    (orders || []).forEach(o => { if (o?.clientName) clientSet.add(o.clientName.trim()); });
-    
-    const list = Array.from(clientSet).map(c => ({
-      value: c,
-      label: c
-    }));
-    if (editClientName && !list.some(o => String(o?.value || '').toLowerCase().trim() === String(editClientName).toLowerCase().trim())) {
+    const clientMap = new Map();
+
+    // 1. Primary Source: Registered Client Directory table
+    (internalClients || []).forEach(c => {
+      const name = (c?.name || c?.clientName || c?.companyName || '').trim();
+      if (name && !clientMap.has(name.toLowerCase())) {
+        const subtitle = c?.gstin ? `GSTIN: ${c.gstin}` : (c?.address ? String(c.address).slice(0, 35) + '...' : 'Client Directory');
+        clientMap.set(name.toLowerCase(), {
+          value: name,
+          label: name,
+          subtitle
+        });
+      }
+    });
+
+    // 2. Secondary Source: Job Masters
+    (jobMasters || []).forEach(j => {
+      const name = (j?.clientName || '').trim();
+      if (name && !clientMap.has(name.toLowerCase())) {
+        clientMap.set(name.toLowerCase(), {
+          value: name,
+          label: name,
+          subtitle: 'From Job Master'
+        });
+      }
+    });
+
+    // 3. Fallback Source: Existing Orders
+    (orders || []).forEach(o => {
+      const name = (o?.clientName || '').trim();
+      if (name && !clientMap.has(name.toLowerCase())) {
+        clientMap.set(name.toLowerCase(), {
+          value: name,
+          label: name,
+          subtitle: 'From Existing Order'
+        });
+      }
+    });
+
+    const list = Array.from(clientMap.values()).sort((a, b) => 
+      a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+    );
+
+    if (editClientName && !clientMap.has(editClientName.trim().toLowerCase())) {
       list.unshift({
-        value: editClientName,
-        label: editClientName
+        value: editClientName.trim(),
+        label: editClientName.trim(),
+        subtitle: 'Current Order Client'
       });
     }
+
     return list;
-  }, [jobMasters, orders, editClientName]);
+  }, [internalClients, jobMasters, orders, editClientName]);
 
   const handleSaveEditedOrder = async (e) => {
     e.preventDefault();
