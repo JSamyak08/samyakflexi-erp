@@ -22,7 +22,8 @@ import {
   AlertTriangle,
   RotateCcw,
   Check,
-  Tag
+  Tag,
+  FileCheck
 } from 'lucide-react';
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import OrderConfirmationRegister from './OrderConfirmationRegister';
