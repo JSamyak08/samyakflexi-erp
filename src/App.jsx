@@ -11,7 +11,15 @@ import {
   getOrderStageInfo,
   FILM_DENSITIES
 } from './factoryStore';
-import { assessPrintingDeadlineReminder, canManageOrderDeadline } from './utils/orderDeadlineReminder';
+import {
+  canManageOrderDeadline,
+  normalizePrintingLeadDays,
+  plantCalendarDate,
+  printingDeadlineReminderRows,
+  planPrintingDeadlineNotices,
+  PRINTING_LEAD_DAYS_SETTING,
+  DEFAULT_PRINTING_LEAD_DAYS,
+} from './utils/orderDeadlineReminder';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -69,6 +77,7 @@ import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
 import DeadlineReminderBanner from './components/DeadlineReminderBanner';
+import PrintingDeadlineSummaryCard from './components/PrintingDeadlineSummaryCard';
 import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
@@ -107,6 +116,7 @@ import {
 import { recordDispatchPackingConsumption } from './services/dispatchPacking';
 import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './services/supabaseClient';
 import { cancelQcOverdueEscalationDigest, runQcOverdueEscalationDigest } from './services/qcEscalationDigest';
+import { publishPrintingDeadlineDigest } from './services/printingDeadlineDigest';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
@@ -465,6 +475,21 @@ export default function App() {
   // Supabase is the store of record. Screens stay on the loader until that fetch finishes.
   const [orders, setOrders] = useState([]);
   const [orderCloseSettings, setOrderCloseSettings] = useState({ enabled: true, tolerancePct: 10 });
+  const [printingLeadDays, setPrintingLeadDays] = useState(DEFAULT_PRINTING_LEAD_DAYS);
+  const [deadlineSummary, setDeadlineSummary] = useState(null);
+  const [deadlineDigestReady, setDeadlineDigestReady] = useState(false);
+  const deadlineDigestKeyRef = useRef('');
+  const [deadlineSources, setDeadlineSources] = useState({
+    jobMasters: false,
+    inventory: false,
+    cylinders: false,
+    schedules: false,
+    machineAssignments: false,
+    grns: false,
+    purchaseOrders: false,
+    productionRecords: false,
+    storeIssues: false,
+  });
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersError, setOrdersError] = useState(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
@@ -908,6 +933,135 @@ export default function App() {
     setMachines(e2eScrapPreview.machines);
     setProductionRecords(e2eScrapPreview.productionRecords);
   }, [e2eScrapPreview]);
+
+  const [e2ePrintingDeadline] = useState(() => {
+    if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('e2e') === 'printing-deadline';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!e2ePrintingDeadline) return undefined;
+    const today = plantCalendarDate(new Date());
+    const shift = (days) => {
+      const [year, month, day] = today.split('-').map(Number);
+      return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+    };
+    const overdueOrder = {
+      id: 'ORD-2026-310',
+      jobName: 'Atta 5kg overdue',
+      clientName: 'Sharma Traders',
+      orderQtyKg: 80,
+      status: 'Scheduled',
+      targetDeliveryDate: shift(-2),
+      deliveryDate: shift(-2),
+      materialRequirements: [{
+        id: 'REQ-310-1',
+        filmType: 'PET',
+        micron: 12,
+        widthMm: 1000,
+        qtyKg: 80,
+        poIssued: false,
+      }],
+    };
+    const dueSoonOrder = {
+      id: 'ORD-2026-311',
+      jobName: 'Masala pouch due soon',
+      clientName: 'Sharma Traders',
+      orderQtyKg: 120,
+      status: 'Scheduled',
+      jobMasterId: 'JM-E2E-311',
+      targetDeliveryDate: shift(2),
+      deliveryDate: shift(2),
+      materialRequirements: [{
+        id: 'REQ-311-1',
+        filmType: 'PET',
+        micron: 12,
+        widthMm: 800,
+        qtyKg: 120,
+        poIssued: true,
+        poNumber: 'PO-E2E-311',
+      }],
+    };
+    const jobMastersPreview = [{
+      id: 'JM-E2E-311',
+      jobName: 'Masala pouch due soon',
+      approvedByHead: true,
+      artworkUrl: 'https://erp.samyakinternational.in/artwork/masala.pdf',
+      jobCardFileUrl: 'https://erp.samyakinternational.in/artwork/masala.pdf',
+    }];
+    const cylindersPreview = [{
+      id: 'CYL-E2E-311',
+      jobMasterId: 'JM-E2E-311',
+      jobName: 'Masala pouch due soon',
+      approvedByHead: false,
+      artworkUrl: '',
+    }];
+    const purchaseOrdersPreview = [{
+      id: 'PO-E2E-311',
+      poNumber: 'PO-E2E-311',
+      linkedOrderId: 'ORD-2026-311',
+      status: 'Pending Delivery',
+    }];
+    const grnsPreview = [{
+      id: 'GRN-E2E-311',
+      poNumber: 'PO-E2E-311',
+      status: 'Pending QC Approval',
+      qcStatus: 'Pending QC',
+    }];
+    const sources = {
+      jobMasters: true,
+      inventory: true,
+      cylinders: true,
+      schedules: true,
+      machineAssignments: true,
+      grns: true,
+      purchaseOrders: true,
+      productionRecords: true,
+      storeIssues: true,
+    };
+    const context = {
+      leadDays: 3,
+      today,
+      inventory: [],
+      inventoryChecked: true,
+      jobMasters: jobMastersPreview,
+      jobMastersChecked: true,
+      cylinders: cylindersPreview,
+      cylindersChecked: true,
+      purchaseOrders: purchaseOrdersPreview,
+      purchaseOrdersChecked: true,
+      grns: grnsPreview,
+      grnsChecked: true,
+      schedules: [],
+      schedulesChecked: true,
+      machineAssignments: {},
+      machineAssignmentsChecked: true,
+      productionRecords: [],
+      productionRecordsChecked: true,
+      storeIssues: [],
+      storeIssuesChecked: true,
+    };
+    const previewOrders = [overdueOrder, dueSoonOrder];
+    setOrders(previewOrders);
+    setJobMasters(jobMastersPreview);
+    setCylinders(cylindersPreview);
+    setInventory([]);
+    setPurchaseOrders(purchaseOrdersPreview);
+    setGrns(grnsPreview);
+    setSchedules([]);
+    setProductionRecords([]);
+    setStoreIssueTransactions([]);
+    setPrintingLeadDays(3);
+    setDeadlineSources(sources);
+    const reminders = printingDeadlineReminderRows(previewOrders, context);
+    const plan = planPrintingDeadlineNotices({ reminders, plantDay: today, existing: [] });
+    setDeadlineSummary(plan.summary);
+    return undefined;
+  }, [e2ePrintingDeadline]);
 
   // Fetch all tables from Supabase on initial load or credential changes
   useEffect(() => {
@@ -1408,6 +1562,7 @@ export default function App() {
           applyRemoteCompanyProfile(allSettings.company_profile);
           loadedCloseSettings = normalizeAutoCloseSettings(allSettings);
           setOrderCloseSettings(loadedCloseSettings);
+          setPrintingLeadDays(normalizePrintingLeadDays(allSettings[PRINTING_LEAD_DAYS_SETTING]));
         }
 
         const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
@@ -1425,6 +1580,21 @@ export default function App() {
           setPressQueueOrder(Array.isArray(pressBoard.queueOrder) ? pressBoard.queueOrder : []);
           setPressMachineAssignments(pressBoard.machineAssignments || {});
           setPressActiveRunningJob(pressBoard.activeRunningJob || null);
+        }
+        if (isMounted) {
+          setDeadlineSources((prev) => ({
+            ...prev,
+            jobMasters: Array.isArray(supaJobMasters) || prev.jobMasters,
+            inventory: Array.isArray(supaInv) || prev.inventory,
+            cylinders: Array.isArray(supaCyls) || prev.cylinders,
+            schedules: Array.isArray(supaSchedules) || prev.schedules,
+            machineAssignments: Boolean(pressBoard) || prev.machineAssignments,
+            grns: Array.isArray(supaGRNs) || prev.grns,
+            purchaseOrders: Array.isArray(supaPOs) || prev.purchaseOrders,
+            productionRecords: Array.isArray(supaProd) || prev.productionRecords,
+            storeIssues: Array.isArray(storeRows) || prev.storeIssues,
+          }));
+          setDeadlineDigestReady(true);
         }
         try {
           const decisions = planAutoCloseUpdates(loadedOrders, {
@@ -1613,6 +1783,9 @@ export default function App() {
                 safeLocalStorageSet('samyak_storage_bays_master', JSON.stringify(settings.storage_bays_master));
               }
               applyRemoteCompanyProfile(settings.company_profile);
+              if (settings[PRINTING_LEAD_DAYS_SETTING] !== undefined) {
+                setPrintingLeadDays(normalizePrintingLeadDays(settings[PRINTING_LEAD_DAYS_SETTING]));
+              }
             }
           }
         } catch (err) {
@@ -1937,15 +2110,65 @@ export default function App() {
   const delayedOrders = useMemo(() => (orders || []).filter(o => isOrderOverdue(o)), [orders]);
   const delayedOrdersCount = delayedOrders.length;
   const [printingDeadlineBannerHidden, setPrintingDeadlineBannerHidden] = useState(false);
+  const printingDeadlineContext = useMemo(() => ({
+    leadDays: printingLeadDays,
+    productionRecords,
+    inventory: deadlineSources.inventory ? inventory : undefined,
+    inventoryChecked: deadlineSources.inventory,
+    jobMasters: deadlineSources.jobMasters ? jobMasters : undefined,
+    jobMastersChecked: deadlineSources.jobMasters,
+    cylinders: deadlineSources.cylinders ? cylinders : undefined,
+    cylindersChecked: deadlineSources.cylinders,
+    purchaseOrders: deadlineSources.purchaseOrders ? purchaseOrders : undefined,
+    purchaseOrdersChecked: deadlineSources.purchaseOrders,
+    grns: deadlineSources.grns ? grns : undefined,
+    grnsChecked: deadlineSources.grns,
+    schedules: deadlineSources.schedules ? schedules : undefined,
+    schedulesChecked: deadlineSources.schedules,
+    machineAssignments: deadlineSources.machineAssignments ? pressMachineAssignments : undefined,
+    machineAssignmentsChecked: deadlineSources.machineAssignments,
+    storeIssues: deadlineSources.storeIssues ? storeIssueTransactions : undefined,
+    storeIssuesChecked: deadlineSources.storeIssues,
+    productionRecordsChecked: deadlineSources.productionRecords,
+  }), [
+    printingLeadDays,
+    productionRecords,
+    inventory,
+    jobMasters,
+    cylinders,
+    purchaseOrders,
+    grns,
+    schedules,
+    pressMachineAssignments,
+    storeIssueTransactions,
+    deadlineSources,
+  ]);
   const printingDeadlineReminders = useMemo(() => {
     if (!canManageOrderDeadline(currentUser)) return [];
-    return (orders || []).flatMap((order) => {
-      if (!order) return [];
-      const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
-      const assessment = assessPrintingDeadlineReminder(order, stageInfo);
-      return assessment.active ? [{ order, stageInfo, assessment }] : [];
+    return printingDeadlineReminderRows(orders, {
+      ...printingDeadlineContext,
+      getStageInfo: (order) => getOrderStageInfo(order, sfgGoods, productionRecords),
     });
-  }, [orders, sfgGoods, productionRecords, currentUser]);
+  }, [orders, sfgGoods, productionRecords, currentUser, printingDeadlineContext]);
+
+  useEffect(() => {
+    if (!deadlineDigestReady || !isSupaActive || !canManageOrderDeadline(currentUser)) return undefined;
+    const plantDay = plantCalendarDate(new Date());
+    const signature = `${plantDay}|${printingLeadDays}|${printingDeadlineReminders.map((item) => `${item.order.id}:${item.assessment.stage}`).join(',')}`;
+    if (deadlineDigestKeyRef.current === signature) return undefined;
+    let cancelled = false;
+    publishPrintingDeadlineDigest({
+      reminders: printingDeadlineReminders,
+      users,
+      plantDay,
+    }).then((result) => {
+      if (cancelled || !result) return;
+      deadlineDigestKeyRef.current = signature;
+      const next = result.summary || result.existingSummary;
+      if (next) setDeadlineSummary(next);
+    }).catch((err) => console.warn('[deadline digest] Skipped:', err?.message || err));
+    return () => { cancelled = true; };
+  }, [deadlineDigestReady, isSupaActive, currentUser, printingLeadDays, printingDeadlineReminders, users]);
   const pendingQCGRNsCount = (grns || []).filter(g => g.status === 'Pending QC').length;
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
@@ -2437,6 +2660,14 @@ export default function App() {
     await saveSystemSetting(ORDER_AUTO_CLOSE_SETTING, settings.enabled);
     await saveSystemSetting(ORDER_CLOSE_TOLERANCE_SETTING, settings.tolerancePct);
     await logAudit('UPDATE', 'Orders', `Order auto-close is ${settings.enabled ? 'on' : 'off'} at ±${settings.tolerancePct}%.`, 'order-auto-close');
+  };
+
+  const handleSavePrintingLeadDays = async (days) => {
+    const next = normalizePrintingLeadDays(days);
+    setPrintingLeadDays(next);
+    await saveSystemSetting(PRINTING_LEAD_DAYS_SETTING, next);
+    await logAudit('UPDATE', 'Settings', `Printing deadline reminder lead time is ${next} days.`, PRINTING_LEAD_DAYS_SETTING);
+    return next;
   };
 
   // Handlers for Starting and Ending Printing Jobs from Scheduler
@@ -4977,10 +5208,17 @@ export default function App() {
             {!printingDeadlineBannerHidden && (
               <DeadlineReminderBanner
                 reminders={printingDeadlineReminders}
+                leadDays={printingLeadDays}
                 canPlanPrinting={isTabAllowed('printing_scheduler')}
                 onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
                 onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
                 onDismiss={() => setPrintingDeadlineBannerHidden(true)}
+              />
+            )}
+            {canManageOrderDeadline(currentUser) && (
+              <PrintingDeadlineSummaryCard
+                summary={deadlineSummary}
+                onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
               />
             )}
             {/* Redesigned Executive Operational Alerts Hub */}
@@ -5384,8 +5622,12 @@ export default function App() {
                               )}
                               {printingDeadlineReminders.some((item) => item.order.id === o.id) && (
                                 <div style={{ marginTop: '6px' }}>
-                                  <span className="badge-delayed-tag" style={{ background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' }}>
-                                    PLAN PRINTING
+                                  <span className="badge-delayed-tag" style={{
+                                    background: printingDeadlineReminders.find((item) => item.order.id === o.id)?.assessment.stage === 'overdue' ? '#fee2e2' : '#fff7ed',
+                                    color: printingDeadlineReminders.find((item) => item.order.id === o.id)?.assessment.stage === 'overdue' ? '#991b1b' : '#c2410c',
+                                    border: '1px solid #fdba74',
+                                  }}>
+                                    {printingDeadlineReminders.find((item) => item.order.id === o.id)?.assessment.stage === 'overdue' ? 'OVERDUE · PRINT NOT STARTED' : 'DUE BEFORE PRINTING'}
                                   </span>
                                 </div>
                               )}
@@ -5721,6 +5963,9 @@ export default function App() {
             canPlanPrinting={isTabAllowed('printing_scheduler')}
             onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
             onOrderDeadlineSaved={handleOrderDeadlineSaved}
+            printingLeadDays={printingLeadDays}
+            reminderContext={printingDeadlineContext}
+            printingDeadlineSummary={deadlineSummary}
           />
         )}
 
@@ -6026,6 +6271,8 @@ export default function App() {
             onDeleteMachine={handleDeleteMachine}
             urlParams={urlParams}
             currentUser={currentUser}
+            printingLeadDays={printingLeadDays}
+            onSavePrintingLeadDays={handleSavePrintingLeadDays}
           />
         )}
 

@@ -33,10 +33,11 @@ export default function OrderDeadlineReminder({
   onPlanPrinting,
   onSaved,
   variant = 'inline',
+  reminderContext = null,
 }) {
   const assessment = useMemo(
-    () => assessPrintingDeadlineReminder(order, stageInfo),
-    [order, stageInfo]
+    () => assessPrintingDeadlineReminder(order, stageInfo, reminderContext || {}),
+    [order, stageInfo, reminderContext]
   );
   const canManage = canManageOrderDeadline(currentUser);
   const [revisedDate, setRevisedDate] = useState(assessment.revisedDate || '');
@@ -102,24 +103,29 @@ export default function OrderDeadlineReminder({
         margin: variant === 'inline' ? '0 20px 16px' : '0 0 16px',
         padding: '14px 16px',
         borderRadius: '10px',
-        border: '1px solid #fde68a',
-        background: '#fffbeb',
+        border: `1px solid ${assessment.stage === 'overdue' ? '#fecaca' : '#fde68a'}`,
+        background: assessment.stage === 'overdue' ? '#fef2f2' : '#fffbeb',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
       }}
     >
       <div>
-        <div style={{ fontSize: '0.86rem', fontWeight: '800', color: '#92400e' }}>
-          Delivery is {assessment.distanceLabel}, and Printing has not started
+        <div style={{ fontSize: '0.86rem', fontWeight: '800', color: assessment.stage === 'overdue' ? '#991b1b' : '#92400e' }}>
+          {assessment.stage === 'overdue' ? assessment.overdueLabel : `Delivery is ${assessment.distanceLabel}`}
+          {' '}· status {assessment.status || order.status || 'Open'} · printing has not started
         </div>
         <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: '#78350f', lineHeight: 1.45 }}>
           Original deadline {assessment.originalDate || 'not recorded'}
           {assessment.revisedDate ? ` · revised to ${assessment.revisedDate}` : ''}.
-          Set a new date and plan the press. Client informed applies to this revised date only:
-          once it is saved, this reminder stays quiet even if that date is still inside 2 days.
-          A new date brings it back when that date is under 2 days away.
+          This stays visible until a print run starts or the order is closed or cancelled.
+          Client informed records the WhatsApp update for the revised date. It does not hide the reminder.
         </p>
+        {assessment.blockers?.length > 0 && (
+          <p style={{ margin: '6px 0 0', fontSize: '0.78rem', color: '#7f1d1d', fontWeight: '700' }}>
+            Blocking printing: {assessment.blockers.map((blocker) => blocker.label).join(' · ')}
+          </p>
+        )}
       </div>
 
       <form onSubmit={saveDate} style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'flex-end' }}>
