@@ -1,0 +1,140 @@
+/**
+ * Order Confirmation Note (OCN) Amendments & Revisions Engine
+ * Handles revision numbering, amendment tracking, history snapshots, and display labels.
+ */
+
+/**
+ * Returns numeric revision number of an OCN (defaults to 0 for untouched OCNs)
+ */
+export function revisionNumber(ocn) {
+  if (!ocn) return 0;
+  const num = Number(ocn.revisionNo ?? ocn.revision_no);
+  return Number.isFinite(num) && num >= 0 ? Math.floor(num) : 0;
+}
+
+/**
+ * Calculates next revision integer
+ */
+export function nextRevisionNumber(ocn) {
+  return revisionNumber(ocn) + 1;
+}
+
+/**
+ * Formats a revision number into a label: Rev 00, Rev 01, Rev 02, etc.
+ */
+export function formatAmendmentLabel(revNo) {
+  const num = Math.max(0, Math.floor(Number(revNo) || 0));
+  return `Rev ${String(num).padStart(2, '0')}`;
+}
+
+/**
+ * Returns formatted amendment label for an OCN
+ */
+export function displayAmendmentLabel(ocn) {
+  if (!ocn) return 'Rev 00';
+  if (typeof ocn.amendmentNo === 'string' && ocn.amendmentNo.trim()) {
+    return ocn.amendmentNo.trim();
+  }
+  if (typeof ocn.amendment_no === 'string' && ocn.amendment_no.trim()) {
+    return ocn.amendment_no.trim();
+  }
+  return formatAmendmentLabel(revisionNumber(ocn));
+}
+
+/**
+ * Extracts sequence number from an OCN number string like 'SIL/OCN/26-27/124' -> 124
+ */
+export function parseOcnSequenceNumber(ocnNumber) {
+  if (!ocnNumber || typeof ocnNumber !== 'string') return null;
+  const parts = ocnNumber.trim().split('/');
+  const lastPart = parts[parts.length - 1];
+  const match = lastPart.match(/\d+/);
+  if (!match) return null;
+  const num = parseInt(match[0], 10);
+  return Number.isFinite(num) ? num : null;
+}
+
+/**
+ * Builds an amended OCN object with archived previous revision snapshot
+ * 
+ * @param {Object} currentOcn - Existing OCN record
+ * @param {Object} patch - Fields being updated
+ * @param {string} amendedBy - Username or staff name performing the amendment
+ * @returns {Object} Amended OCN record
+ */
+export function buildOcnAmendment(currentOcn, patch = {}, amendedBy = 'Staff') {
+  if (!currentOcn) throw new Error('Cannot amend a null or undefined OCN');
+  
+  const reason = (patch.amendmentReason || patch.reason || '').trim();
+  if (!reason) {
+    throw new Error('Amendment reason is required to modify an Order Confirmation Note');
+  }
+
+  const prevRev = revisionNumber(currentOcn);
+  const nextRev = nextRevisionNumber(currentOcn);
+  const nextLabel = formatAmendmentLabel(nextRev);
+  const now = new Date().toISOString();
+
+  // Create clean snapshot of previous state
+  const previousRevisions = Array.isArray(currentOcn.revisions) ? currentOcn.revisions : [];
+  const snapshot = { ...currentOcn };
+  delete snapshot.revisions;
+
+  const revisionEntry = {
+    revisionNo: prevRev,
+    amendmentNo: displayAmendmentLabel(currentOcn),
+    amendedAt: currentOcn.amendedAt || currentOcn.updatedAt || currentOcn.createdAt || now,
+    amendedBy: currentOcn.amendedBy || currentOcn.createdBy || 'Initial Author',
+    reason: currentOcn.amendmentReason || 'Initial Confirmation Note',
+    snapshot
+  };
+
+  return {
+    ...currentOcn,
+    ...patch,
+    id: currentOcn.id,
+    ocnNumber: currentOcn.ocnNumber || currentOcn.id,
+    orderId: patch.orderId || currentOcn.orderId,
+    revisionNo: nextRev,
+    amendmentNo: nextLabel,
+    amendedAt: now,
+    amendedBy: amendedBy || 'Staff',
+    amendmentReason: reason,
+    status: 'Amended',
+    revisions: [...previousRevisions, revisionEntry],
+    updatedAt: now
+  };
+}
+
+/**
+ * Generates audit history list of all revisions for an OCN
+ */
+export function ocnHistoryEntries(ocn) {
+  if (!ocn) return [];
+  const entries = [];
+  const pastRevisions = Array.isArray(ocn.revisions) ? ocn.revisions : [];
+
+  pastRevisions.forEach((rev) => {
+    entries.push({
+      revisionNo: rev.revisionNo,
+      amendmentNo: rev.amendmentNo,
+      date: rev.amendedAt,
+      by: rev.amendedBy,
+      reason: rev.reason,
+      isCurrent: false,
+      snapshot: rev.snapshot
+    });
+  });
+
+  entries.push({
+    revisionNo: revisionNumber(ocn),
+    amendmentNo: displayAmendmentLabel(ocn),
+    date: ocn.amendedAt || ocn.updatedAt || ocn.createdAt,
+    by: ocn.amendedBy || ocn.createdBy || 'Staff',
+    reason: ocn.amendmentReason || (pastRevisions.length > 0 ? 'Current Revision' : 'Initial Order Confirmation'),
+    isCurrent: true,
+    snapshot: ocn
+  });
+
+  return entries;
+}

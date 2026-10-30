@@ -56,3 +56,4 @@ test('JobMasterDirectory, ProductionScheduler, ArtworkModal, and StorageService 
     'supabaseStorageService must guard against unresolved private bucket URLs'
   );
 });
+
