@@ -250,7 +250,7 @@ test('the reminder screen never calls the email API', () => {
   assert.doesNotMatch(screen, /Production Manager/);
   const ordersScreen = fs.readFileSync(new URL('../src/components/OrderManagement.jsx', import.meta.url), 'utf8');
   const dashboard = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(ordersScreen, /canManageOrderDeadline\(currentUser\?\.role\)/);
-  assert.match(dashboard, /canManageOrderDeadline\(currentUser\?\.role\)/);
+  assert.match(ordersScreen, /canManageOrderDeadline\(currentUser\)/);
+  assert.match(dashboard, /canManageOrderDeadline\(currentUser\)/);
   assert.match(ordersScreen, /canPlanPrinting/);
 });

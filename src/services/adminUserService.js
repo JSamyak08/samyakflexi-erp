@@ -38,6 +38,7 @@ export function createDirectoryUser(user) {
     email: user.email,
     name: user.name,
     role: user.role,
+    roles: user.roles,
     department: user.department,
     status: user.status || 'Active',
   });
@@ -50,6 +51,7 @@ export function updateDirectoryUser(user) {
     email: user.email,
     name: user.name,
     role: user.role,
+    roles: user.roles,
     department: user.department,
     status: user.status || 'Active',
   });

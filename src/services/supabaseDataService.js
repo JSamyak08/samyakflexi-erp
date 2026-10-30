@@ -10,6 +10,7 @@ import { assertPersistableMeasures } from '../utils/productionRecordQuality';
 import { measureColumnsForSave, netUsableForSave } from '../utils/jobMasterGuardrails';
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
+import { assignedRolesOf, primaryRole } from '../assignedRoles';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -1736,7 +1737,7 @@ export async function fetchUsers() {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, username, full_name, email, role, department, active, status')
+      .select('id, username, full_name, email, role, assigned_roles, department, active, status')
       .order('full_name');
     if (error) {
       handleSupabaseError(error, 'users');
@@ -1761,12 +1762,15 @@ export async function saveUserToSupabase(user) {
     await ensureValidSession();
     const userId = user.id || `USR-${Math.floor(1000 + Math.random() * 9000)}`;
 
+    const roles = assignedRolesOf(user);
+    const role = primaryRole(roles, user.role) || user.role || 'Shop Floor Operator';
     const fullPayload = {
       id: userId,
       username: user.email?.toLowerCase() || userId,
       full_name: user.name || '',
       email: user.email || '',
-      role: user.role || 'Shop Floor Operator',
+      role,
+      assigned_roles: roles.length ? roles : [role],
       department: user.department || 'Operations',
       active: user.status !== 'Inactive',
       status: user.status || 'Active'

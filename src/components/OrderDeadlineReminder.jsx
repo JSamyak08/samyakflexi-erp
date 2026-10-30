@@ -38,7 +38,7 @@ export default function OrderDeadlineReminder({
     () => assessPrintingDeadlineReminder(order, stageInfo),
     [order, stageInfo]
   );
-  const canManage = canManageOrderDeadline(currentUser?.role);
+  const canManage = canManageOrderDeadline(currentUser);
   const [revisedDate, setRevisedDate] = useState(assessment.revisedDate || '');
   const [reason, setReason] = useState('');
   const [history, setHistory] = useState([]);
