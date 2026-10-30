@@ -6,6 +6,7 @@ import {
   DEFAULT_PROCESSING_RATES,
   calculateJobRawMaterials,
   isLDFilm,
+  requirementLineId,
   isMetalloceneEligibleFilm,
   METALLOCENE_OPTIONS
 } from '../factoryStore';
@@ -527,8 +528,9 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
         }))
       : [];
 
+    const orderId = getNextDocRefNumber('order');
     const newOrder = {
-      id: getNextDocRefNumber('order'),
+      id: orderId,
       jobName,
       clientName,
       orderType: orderType || 'Pouching',
@@ -569,8 +571,8 @@ export default function JobPunchingForm({ onSaveOrder, onNavigateToDashboard, in
       layers: finalLayers,
       structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
       calculationDetails: calculationResults,
-      materialRequirements: calculationResults.layerResults.map(l => ({
-        id: `REQ-${Math.floor(100 + Math.random() * 900)}`,
+      materialRequirements: calculationResults.layerResults.map((l, idx) => ({
+        id: requirementLineId(orderId, idx),
         filmType: l.filmType,
         micron: l.micron,
         widthMm: l.widthMm,

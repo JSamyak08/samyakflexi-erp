@@ -34,7 +34,9 @@ import {
   getOrderStatusInfo,
   getOrderStageInfo,
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
-  calculateOrderStockReservations
+  calculateOrderStockReservations,
+  presentRequirementStock,
+  requirementStockKey
 } from '../factoryStore';
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
@@ -577,7 +579,7 @@ export default function OrderManagement({
       const statusInfo = getOrderStatusInfo(order);
 
       reqs.forEach(req => {
-        const stockInfo = getStockCheckForReq(req, order.id) || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
+        const stockInfo = presentRequirementStock(req, getStockCheckForReq(req, order.id));
         const filmLow = (req.filmType || '').toLowerCase();
         let category = 'Film';
         if (filmLow.includes('ink')) category = 'Ink';
@@ -755,13 +757,14 @@ export default function OrderManagement({
   // Generated PO PDF preview state
   const [activePoPdfData, setActivePoPdfData] = useState(null);
 
-  const toggleSelectReq = (reqId) => {
+  const toggleSelectReq = (orderId, req) => {
+    const key = requirementStockKey(orderId, req);
     setSelectedReqIds(prev => {
       const copy = { ...prev };
-      if (copy[reqId]) {
-        delete copy[reqId];
+      if (copy[key]) {
+        delete copy[key];
       } else {
-        copy[reqId] = true;
+        copy[key] = true;
       }
       return copy;
     });
@@ -769,25 +772,27 @@ export default function OrderManagement({
 
   const toggleSelectAllForOrder = (order) => {
     const reqs = getOrderMaterialRequirements(order);
-    const allSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
+    const allSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[requirementStockKey(order.id, r)]);
 
     const newMap = { ...selectedReqIds };
     reqs.forEach(r => {
-      if (allSelected) delete newMap[r.id];
-      else newMap[r.id] = true;
+      const key = requirementStockKey(order.id, r);
+      if (allSelected) delete newMap[key];
+      else newMap[key] = true;
     });
     setSelectedReqIds(newMap);
   };
 
   // Bulk select helpers for the Consolidated Requirements view
   const handleSelectAllFilteredReqs = () => {
-    const allSelected = filteredRequirements.length > 0 && filteredRequirements.every(r => selectedReqIds[r.id]);
+    const allSelected = filteredRequirements.length > 0 && filteredRequirements.every(r => selectedReqIds[requirementStockKey(r.orderId, r)]);
     const newMap = { ...selectedReqIds };
     filteredRequirements.forEach(r => {
+      const key = requirementStockKey(r.orderId, r);
       if (allSelected) {
-        delete newMap[r.id];
+        delete newMap[key];
       } else {
-        newMap[r.id] = true;
+        newMap[key] = true;
       }
     });
     setSelectedReqIds(newMap);
@@ -797,7 +802,7 @@ export default function OrderManagement({
     const newMap = { ...selectedReqIds };
     allMaterialRequirements.forEach(r => {
       if (r.isShortage) {
-        newMap[r.id] = true;
+        newMap[requirementStockKey(r.orderId, r)] = true;
       }
     });
     setSelectedReqIds(newMap);
@@ -812,7 +817,7 @@ export default function OrderManagement({
     const list = [];
     orders.forEach(order => {
       getOrderMaterialRequirements(order).forEach(req => {
-        if (selectedReqIds[req.id]) {
+        if (selectedReqIds[requirementStockKey(order.id, req)]) {
           list.push({
             orderId: order.id,
             jobName: order.jobName,
@@ -834,7 +839,7 @@ export default function OrderManagement({
     }
     const involved = (orders || []).filter((order) => (
       materialPlanFor(order).offers.length > 0
-      && getOrderMaterialRequirements(order).some((req) => selectedReqIds[req.id])
+      && getOrderMaterialRequirements(order).some((req) => selectedReqIds[requirementStockKey(order.id, req)])
     ));
     for (const order of involved) {
       await reservePrintedSfg(order, choiceForOrder(order));
@@ -851,18 +856,19 @@ export default function OrderManagement({
       else if (req.filmType.includes('Ink')) rate = 1500;
       else if (req.filmType.includes('Adhesive')) rate = 270;
 
-      const stockInfo = getStockCheckForReq(req, req.orderId) || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
+      const stockInfo = presentRequirementStock(req, getStockCheckForReq(req, req.orderId));
 
       return {
         id: req.id,
+        lineKey: requirementStockKey(req.orderId, req),
         orderId: req.orderId,
         jobName: req.jobName,
         filmType: req.filmType,
         micron: req.micron,
         widthMm: req.widthMm,
-        grossQtyKg: req.qtyKg,
-        reservedKg: stockInfo?.reservedKg ?? 0,
-        qtyKg: (stockInfo?.balanceKg ?? 0) > 0 ? stockInfo.balanceKg : req.qtyKg, // Defaults to shortage balance or gross qty
+        grossQtyKg: stockInfo.grossKg,
+        reservedKg: stockInfo.reservedKg,
+        qtyKg: stockInfo.balanceKg,
         rate: rate
       };
     });
@@ -871,9 +877,9 @@ export default function OrderManagement({
     setIsPoModalOpen(true);
   };
 
-  const handlePoItemChange = (id, field, value) => {
+  const handlePoItemChange = (lineKey, field, value) => {
     setEditablePoItems(prev => prev.map(item => {
-      if (item.id === id) {
+      if (item.lineKey === lineKey) {
         return { ...item, [field]: value };
       }
       return item;
@@ -1108,7 +1114,8 @@ export default function OrderManagement({
       const rate = parseFloat(item.rate) || 0;
 
       return {
-        id: item.id,
+        id: item.lineKey || item.id,
+        requirementId: item.id,
         orderId: item.orderId,
         itemDesc: `${item.filmType} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''}`.trim(),
         spec: `${item.filmType} ${item.micron && item.micron !== '-' ? item.micron + 'µ' : ''} | Width: ${item.widthMm}mm`,
@@ -1156,7 +1163,7 @@ export default function OrderManagement({
       let orderUpdated = false;
       const existingReqs = getOrderMaterialRequirements(order);
       const updatedReqs = existingReqs.map(r => {
-        if (selectedReqIds[r.id]) {
+        if (selectedReqIds[requirementStockKey(order.id, r)]) {
           orderUpdated = true;
           return { ...r, poIssued: true, poNumber: poNo };
         }
@@ -1611,7 +1618,7 @@ export default function OrderManagement({
                 const printedSfgPlan = materialPlanFor(order);
                 const reqs = printedSfgPlan.requirements;
                 const allocationChoice = choiceForOrder(order);
-                const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[r.id]);
+                const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[requirementStockKey(order.id, r)]);
 
                 const cardBorder = isOverdue ? '2px solid #ef4444' : (isNearing ? '2px solid #f59e0b' : '1px solid var(--border-color)');
                 const cardBg = isOverdue ? '#fef2f2' : (isNearing ? '#fffbeb' : 'transparent');
@@ -2200,17 +2207,17 @@ export default function OrderManagement({
                                 </thead>
                                 <tbody>
                                   {reqs.map(req => {
-                                    const isChecked = !!selectedReqIds[req.id];
-                                    const stockInfo = getStockCheckForReq(req, order.id) || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
+                                    const isChecked = !!selectedReqIds[requirementStockKey(order.id, req)];
+                                    const stockInfo = presentRequirementStock(req, getStockCheckForReq(req, order.id));
 
                                     return (
-                                      <tr key={req.id} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
+                                      <tr key={requirementStockKey(order.id, req)} style={{ background: isChecked ? '#eff6ff' : 'transparent' }}>
                                         <td style={{ textAlign: 'center' }}>
                                           <input 
                                             type="checkbox"
                                             style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                             checked={isChecked}
-                                            onChange={() => toggleSelectReq(req.id)}
+                                            onChange={() => toggleSelectReq(order.id, req)}
                                           />
                                         </td>
                                         <td style={{ fontWeight: '600', whiteSpace: 'nowrap' }}>{req.filmType}</td>
@@ -2572,7 +2579,7 @@ export default function OrderManagement({
                         <input 
                           type="checkbox"
                           style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                          checked={filteredRequirements.length > 0 && filteredRequirements.every(r => selectedReqIds[r.id])}
+                          checked={filteredRequirements.length > 0 && filteredRequirements.every(r => selectedReqIds[requirementStockKey(r.orderId, r)])}
                           onChange={handleSelectAllFilteredReqs}
                           title="Select / Deselect all visible filtered items"
                         />
@@ -2601,12 +2608,12 @@ export default function OrderManagement({
                       </tr>
                     ) : (
                       requirementsPagination.paginatedItems.map(req => {
-                        const isChecked = !!selectedReqIds[req.id];
-                        const stockInfo = req.stockInfo || { balanceKg: 0, reservedKg: 0, reqQty: parseFloat(req.qtyKg) || 0, isFullyAvailable: false, isPartiallyAvailable: false };
+                        const isChecked = !!selectedReqIds[requirementStockKey(req.orderId, req)];
+                        const stockInfo = presentRequirementStock(req, req.stockInfo);
 
                         return (
                           <tr 
-                            key={req.id} 
+                            key={requirementStockKey(req.orderId, req)} 
                             style={{ 
                               background: isChecked ? '#eff6ff' : (req.isShortage ? '#fffdf7' : 'transparent'),
                               transition: 'background 0.15s ease'
@@ -2618,7 +2625,7 @@ export default function OrderManagement({
                                 type="checkbox"
                                 style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                                 checked={isChecked}
-                                onChange={() => toggleSelectReq(req.id)}
+                                onChange={() => toggleSelectReq(req.orderId, req)}
                               />
                             </td>
 
@@ -3024,7 +3031,7 @@ export default function OrderManagement({
                           const qty = parseFloat(item.qtyKg) || 0;
                           const rate = parseFloat(item.rate) || 0;
                           return (
-                            <tr key={item.id}>
+                            <tr key={item.lineKey || item.id}>
                               <td><b>{item.orderId}</b>: {item.jobName}</td>
                               <td style={{ fontWeight: '600' }}>{item.filmType} {item.micron !== '-' ? item.micron + 'µ' : ''}</td>
                               <td>{item.widthMm}mm</td>
@@ -3034,7 +3041,7 @@ export default function OrderManagement({
                                   className="form-control" 
                                   style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
                                   value={item.qtyKg} 
-                                  onChange={e => handlePoItemChange(item.id, 'qtyKg', e.target.value)} 
+                                  onChange={e => handlePoItemChange(item.lineKey || item.id, 'qtyKg', e.target.value)} 
                                 />
                               </td>
                               <td>
@@ -3043,7 +3050,7 @@ export default function OrderManagement({
                                   className="form-control" 
                                   style={{ padding: '3px 6px', fontSize: '0.8rem', fontWeight: '700' }}
                                   value={item.rate} 
-                                  onChange={e => handlePoItemChange(item.id, 'rate', e.target.value)} 
+                                  onChange={e => handlePoItemChange(item.lineKey || item.id, 'rate', e.target.value)} 
                                 />
                               </td>
                               <td style={{ textAlign: 'right', fontWeight: '800', color: 'var(--primary-brand)' }}>
