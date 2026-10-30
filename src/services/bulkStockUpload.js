@@ -3,6 +3,7 @@
  * Inventory ids are generated. They are never read from the file.
  */
 
+import { findInventoryItemBySpec } from './inventoryIdentity.js';
 import {
   calculateFilmRollLength,
   FILM_DENSITIES,
@@ -31,7 +32,10 @@ export const BULK_STOCK_CSV_COLUMNS = [
   'SubstrateOrGrade',
   'Micron',
   'WidthMm',
-  'WeightKg',
+  'NetWeightKg',
+  'GrossWeightKg',
+  'TareWeightKg',
+  'CoreWeightKg',
   'Barcode',
   'UOM',
   'Location',
@@ -42,10 +46,10 @@ export const BULK_STOCK_CSV_COLUMNS = [
 ];
 
 export const BULK_STOCK_SAMPLE_ROWS = [
-  ['Film Substrates', 'PET 12 Micron 1000mm', 'PET', '12', '1000', '250.5', 'RM-BC-20261028-1001', 'Kg', 'Bay A - Rack 1', '500', 'FlexiPoly Films Ltd', 'BATCH-PET-101', '135'],
-  ['Film Substrates', 'pet 12 micron 1000mm', 'PET', '12', '1000', '180', 'RM-BC-20261028-1002', 'Kg', 'Bay A - Rack 1', '500', 'FlexiPoly Films Ltd', 'BATCH-PET-101', '135'],
-  ['Film Substrates', 'PET 12 Micron 1000mm', 'PET', '12', '1000', '95.25', '', 'Kg', 'Bay A - Rack 1', '500', 'FlexiPoly Films Ltd', 'BATCH-PET-101', '135'],
-  ['Printing Inks', 'Cyan Solvent Printing Ink', 'Cyan Process Ink', '', '', '40', '', 'Kg', 'Ink Store Bay 1', '20', 'Siegwerk Inks Ltd', 'INK-CY-882', '240']
+  ['Film Substrates', 'PET 12 Micron 1000mm', 'PET', '12', '1000', '251.5', '254', '2.5', '1', 'RM-BC-20261028-1001', 'Kg', 'Bay A - Rack 1', '500', 'FlexiPoly Films Ltd', 'BATCH-PET-101', '135'],
+  ['Film Substrates', 'pet 12 micron 1000mm', 'PET', '12', '1000', '181', '183', '2', '1', 'RM-BC-20261028-1002', 'Kg', 'Bay A - Rack 1', '500', 'FlexiPoly Films Ltd', 'BATCH-PET-101', '135'],
+  ['Film Substrates', 'PET 12 Micron 1000mm', 'PET', '12', '1000', '', '98', '1.75', '1', '', 'Kg', 'Bay A - Rack 1', '500', 'FlexiPoly Films Ltd', 'BATCH-PET-101', '135'],
+  ['Printing Inks', 'Cyan Solvent Printing Ink', 'Cyan Process Ink', '', '', '40', '', '', '', '', 'Kg', 'Ink Store Bay 1', '20', 'Siegwerk Inks Ltd', 'INK-CY-882', '240']
 ];
 
 export const OPENING_RECEIPT_TYPE = 'Opening Stock Receipt (Bulk Upload)';
@@ -132,7 +136,10 @@ export function bulkErrorRowsCsv(plan) {
         source.SubstrateOrGrade ?? '',
         source.Micron ?? '',
         source.WidthMm ?? '',
-        source.WeightKg ?? '',
+        source.NetWeightKg ?? '',
+        source.GrossWeightKg ?? '',
+        source.TareWeightKg ?? '',
+        source.CoreWeightKg ?? '',
         source.Barcode ?? '',
         source.UOM ?? '',
         source.Location ?? '',
@@ -192,6 +199,14 @@ function parseWeight(val) {
   return { ok: true, value: round2(n), text };
 }
 
+function parseOptionalWeight(raw) {
+  const text = raw === undefined || raw === null ? '' : String(raw);
+  if (!text.trim()) return { blank: true, ok: true, value: null, text };
+  const parsed = parseWeight(text);
+  if (!parsed.ok || parsed.value < 0) return { blank: false, ok: false, value: null, text };
+  return { blank: false, ok: true, value: parsed.value, text };
+}
+
 function parseOptionalNumber(val) {
   const text = String(val ?? '').trim();
   if (!text) return { ok: true, value: null };
@@ -216,6 +231,10 @@ function classifyHeader(cleanH) {
   if (cleanH.includes('substrate') || cleanH.includes('grade') || cleanH.includes('filmtype') || cleanH.includes('polymer')) return 'substrate';
   if (cleanH.includes('micron') || cleanH.includes('gauge')) return 'micron';
   if (cleanH.includes('width')) return 'width';
+  if (cleanH.includes('gross')) return 'gross';
+  if (cleanH.includes('tare')) return 'tare';
+  if (cleanH.includes('core') && cleanH.includes('weight')) return 'core';
+  if (cleanH.includes('netweight') || cleanH === 'netkg') return 'net';
   if (
     cleanH.includes('weight')
     || cleanH.includes('availableqty')
@@ -295,6 +314,42 @@ function fingerprintFor(row) {
     String(row.lastBatch || '').trim().toLowerCase(),
     String(row.lastVendor || '').trim().toLowerCase()
   ].join('|');
+}
+
+/**
+ * A new stock id that already exists in the database is given a free id
+ * before anything is written. An intentional update of an existing id is left alone.
+ */
+export function reassignNewInventoryIds(payload, { existingIds = [], updatingIds = [] } = {}) {
+  const updating = new Set((updatingIds || []).map((id) => String(id)));
+  const pool = (existingIds || []).filter(Boolean).map((id) => ({ id: String(id) }));
+  const reserved = [];
+  const taken = new Set(pool.map((item) => String(item.id).trim().toLowerCase()));
+  (payload?.items || []).forEach((item) => {
+    const previous = String(item?.id || '');
+    if (!previous || updating.has(previous)) return;
+    if (!taken.has(previous.toLowerCase())) {
+      taken.add(previous.toLowerCase());
+      pool.push({ id: previous });
+      return;
+    }
+    const nextId = allocateUniqueInventoryId(pool, reserved);
+    reserved.push(nextId);
+    pool.push({ id: nextId });
+    taken.add(nextId.toLowerCase());
+    item.id = nextId;
+    item.itemCode = nextId;
+    (payload.rolls || []).forEach((roll) => {
+      if (String(roll.itemId) === previous) roll.itemId = nextId;
+    });
+    (payload.adjustments || []).forEach((adjustment) => {
+      if (String(adjustment.itemId) === previous) {
+        adjustment.itemId = nextId;
+        adjustment.itemCode = nextId;
+      }
+    });
+  });
+  return payload;
 }
 
 export function allocateUniqueInventoryId(existingItems = [], reserved = [], generateId = generateInventoryId) {
@@ -403,7 +458,7 @@ export function parseBulkStockCsv(text, {
     if (field && headerMap[field] === undefined) headerMap[field] = index;
   });
 
-  const hasNamedHeaders = ['itemName', 'category', 'weight', 'barcode'].some((field) => headerMap[field] !== undefined);
+  const hasNamedHeaders = ['itemName', 'category', 'weight', 'net', 'gross', 'barcode'].some((field) => headerMap[field] !== undefined);
   if (headerMap.inventoryId !== undefined) {
     notices.push('The Inventory ID column was ignored. Stock ids are generated automatically and are not taken from the file.');
   }
@@ -447,36 +502,81 @@ export function parseBulkStockCsv(text, {
     if (categoryResult.error) errors.push(categoryResult.error);
     if (!itemName) errors.push('Item name is missing.');
 
-    const weightRaw = readCell(cells, 'weight', 5);
-    const weight = parseWeight(weightRaw);
-    if (!weight.ok || weight.value <= 0) errors.push('WeightKg must be a positive number');
+    const legacyWeightRaw = readCell(cells, 'weight', 5);
+    const netColumnRaw = readCell(cells, 'net', 5);
+    const weightRaw = headerMap.net !== undefined
+      ? (String(netColumnRaw || '').trim() ? netColumnRaw : legacyWeightRaw)
+      : legacyWeightRaw;
+    const grossRaw = readCell(cells, 'gross', 6);
+    const tareRaw = readCell(cells, 'tare', 7);
+    const coreRaw = readCell(cells, 'core', 8);
+    const gross = parseOptionalWeight(grossRaw);
+    const tare = parseOptionalWeight(tareRaw);
+    const core = parseOptionalWeight(coreRaw);
+    const net = parseOptionalWeight(weightRaw);
+    if (!gross.ok) errors.push('GrossWeightKg must be a number zero or greater');
+    if (!tare.ok) errors.push('TareWeightKg must be a number zero or greater');
+    if (!core.ok) errors.push('CoreWeightKg must be a number zero or greater');
+    if (!net.ok) errors.push('NetWeightKg must be a positive number');
+    const grossN = gross.ok && !gross.blank ? gross.value : null;
+    const tareN = tare.ok && !tare.blank ? tare.value : 0;
+    const coreN = core.ok && !core.blank ? core.value : 0;
+    let resolvedNet = null;
+    let netSource = 'entered';
+    if (grossN !== null) {
+      const minimumGross = round2(tareN + coreN);
+      if (grossN + 0.001 < minimumGross) {
+        errors.push(`GrossWeightKg ${grossN} is less than TareWeightKg + CoreWeightKg (${minimumGross})`);
+      }
+      const expectedNet = round2(grossN - tareN);
+      if (net.blank) {
+        resolvedNet = expectedNet;
+        netSource = 'computed';
+      } else if (net.ok && Math.abs(net.value - expectedNet) > 0.01) {
+        errors.push(`NetWeightKg ${net.value} does not match Gross − Tare (${expectedNet}). Core weight is recorded separately and is not subtracted.`);
+        resolvedNet = net.value;
+      } else if (net.ok) {
+        resolvedNet = net.value;
+      }
+    } else if (net.ok && !net.blank) {
+      resolvedNet = net.value;
+    } else if (net.blank) {
+      errors.push('NetWeightKg must be a positive number');
+    }
+    if (resolvedNet !== null && resolvedNet <= 0 && !errors.some((error) => error.startsWith('NetWeightKg'))) {
+      errors.push('NetWeightKg must be a positive number');
+    }
+    const weight = { ok: resolvedNet !== null && resolvedNet > 0, value: resolvedNet, text: weightRaw };
 
     const micron = parseOptionalNumber(readCell(cells, 'micron', 3));
     const width = parseOptionalNumber(readCell(cells, 'width', 4));
     if (!micron.ok) errors.push('Micron is not a number.');
     if (!width.ok) errors.push('Width is not a number.');
 
-    const reorder = parseOptionalNumber(readCell(cells, 'reorder', 9));
-    const unitCost = parseOptionalNumber(readCell(cells, 'unitCost', 12));
+    const reorder = parseOptionalNumber(readCell(cells, 'reorder', 12));
+    const unitCost = parseOptionalNumber(readCell(cells, 'unitCost', 15));
     if (!reorder.ok) errors.push('Reorder level is not a number.');
     if (!unitCost.ok) errors.push('Unit cost is not a number.');
     if (unitCost.ok && unitCost.value !== null && unitCost.value < 0) errors.push('Unit cost cannot be negative.');
 
-    const givenBarcode = String(readCell(cells, 'barcode', 6) || '').trim();
+    const givenBarcode = String(readCell(cells, 'barcode', 9) || '').trim();
     const sourceCells = {
       Category: readCell(cells, 'category', 0),
       ItemName: readCell(cells, 'itemName', 1),
       SubstrateOrGrade: readCell(cells, 'substrate', 2),
       Micron: readCell(cells, 'micron', 3),
       WidthMm: readCell(cells, 'width', 4),
-      WeightKg: weightRaw,
-      Barcode: readCell(cells, 'barcode', 6),
-      UOM: readCell(cells, 'uom', 7),
-      Location: readCell(cells, 'location', 8),
-      ReorderLevel: readCell(cells, 'reorder', 9),
-      LastVendor: readCell(cells, 'vendor', 10),
-      LastBatch: readCell(cells, 'batch', 11),
-      UnitCostRs: readCell(cells, 'unitCost', 12)
+      NetWeightKg: weightRaw,
+      GrossWeightKg: grossRaw,
+      TareWeightKg: tareRaw,
+      CoreWeightKg: coreRaw,
+      Barcode: readCell(cells, 'barcode', 9),
+      UOM: readCell(cells, 'uom', 10),
+      Location: readCell(cells, 'location', 11),
+      ReorderLevel: readCell(cells, 'reorder', 12),
+      LastVendor: readCell(cells, 'vendor', 13),
+      LastBatch: readCell(cells, 'batch', 14),
+      UnitCostRs: readCell(cells, 'unitCost', 15)
     };
     const category = categoryResult.category;
     const isRoll = isFilmCategory(category) && !categoryResult.error;
@@ -493,16 +593,20 @@ export function parseBulkStockCsv(text, {
       micron: micron.ok ? micron.value : null,
       widthMm: width.ok ? width.value : null,
       weight: weight.ok ? weight.value : null,
-      weightText: weight.text || String(weightRaw || ''),
+      weightText: netSource === 'computed' ? String(resolvedNet) : (weight.text || String(weightRaw || '')),
+      netSource,
+      grossWeightKg: grossN === null ? (weight.ok ? weight.value : 0) : grossN,
+      tareWeightKg: tareN,
+      coreWeightKg: coreN,
       sourceCells,
       givenBarcode: isRoll ? givenBarcode : '',
       barcode: isRoll ? givenBarcode : '',
       barcodeSource: isRoll && givenBarcode ? 'given' : 'none',
-      unit: String(readCell(cells, 'uom', 7) || '').trim() || (isRoll ? 'Kg' : 'Kg'),
-      location: String(readCell(cells, 'location', 8) || '').trim() || 'Main Factory Store',
+      unit: String(readCell(cells, 'uom', 10) || '').trim() || (isRoll ? 'Kg' : 'Kg'),
+      location: String(readCell(cells, 'location', 11) || '').trim() || 'Main Factory Store',
       reorderLevel: reorder.ok && reorder.value !== null ? reorder.value : 1000,
-      lastVendor: String(readCell(cells, 'vendor', 10) || '').trim() || 'Local Vendor',
-      lastBatch: String(readCell(cells, 'batch', 11) || '').trim() || 'BULK-BATCH',
+      lastVendor: String(readCell(cells, 'vendor', 13) || '').trim() || 'Local Vendor',
+      lastBatch: String(readCell(cells, 'batch', 14) || '').trim() || 'BULK-BATCH',
       unitPrice: unitCost.ok && unitCost.value !== null ? unitCost.value : 0,
       isRoll,
       errors,
@@ -590,7 +694,18 @@ export function parseBulkStockCsv(text, {
     });
     const importable = groupRows.filter((row) => !row.blocked);
     const sameName = (inventory || []).filter((item) => itemNameKey(item?.itemName) === firstNamed.nameKey);
-    const existing = nameIndex.get(firstNamed.nameKey) || null;
+    const exact = nameIndex.get(firstNamed.nameKey) || null;
+    const specRow = importable[0] || firstNamed;
+    const specMatch = exact ? null : findInventoryItemBySpec(inventory, {
+      itemName: firstNamed.itemName,
+      category,
+      micron: specRow.micron,
+      widthMm: specRow.widthMm
+    });
+    const existing = exact || specMatch || null;
+    if (specMatch && !exact) {
+      notices.push(`"${firstNamed.itemName}" matches the existing stock ledger ${specMatch.id}. Rolls are added there instead of creating a second item.`);
+    }
     if (sameName.length > 1 && existing) {
       notices.push(`More than one inventory item is named "${firstNamed.itemName}". New rolls are added to ${existing.id}.`);
     }
@@ -754,8 +869,9 @@ export function buildBulkImportPayload(plan, {
           inwardDatetime: nowIso,
           vendorName: row.lastVendor || '',
           batchNo: row.lastBatch || 'BULK-BATCH',
-          grossWeightKg: row.weight,
-          tareWeightKg: 0,
+          grossWeightKg: row.grossWeightKg,
+          tareWeightKg: row.tareWeightKg,
+          coreWeightKg: row.coreWeightKg,
           netWeightKg: row.weight,
           availableWeightKg: row.weight,
           lengthMeters: lengthMeters || 0,

@@ -63,6 +63,7 @@ import {
   isOpeningStockReceipt,
   itemNameKey,
   parseBulkStockCsv,
+  reassignNewInventoryIds,
   sampleBulkStockCsv
 } from '../services/bulkStockUpload';
 import {
@@ -4176,6 +4177,14 @@ export default function InventoryManagement({
     }
     setBulkImporting(true);
     try {
+      const { data: existingItems, error: existingItemError } = await supabase.from('inventory').select('id');
+      if (existingItemError) throw existingItemError;
+      reassignNewInventoryIds(payload, {
+        existingIds: (existingItems || []).map((row) => row.id),
+        updatingIds: (bulkPlan.groups || [])
+          .filter((group) => group.match === 'existing')
+          .map((group) => group.plannedId)
+      });
       if (payload.rolls.length > 0) {
         const { data: existingRolls, error: existingRollError } = await supabase.from('inventory_rolls').select('barcode_id');
         if (existingRollError) throw existingRollError;
@@ -9247,9 +9256,18 @@ export default function InventoryManagement({
           };
         });
 
+        const rollByBarcode = new Map((inventoryRolls || []).map((roll) => [
+          String(roll.barcodeId || roll.id || '').trim().toLowerCase(),
+          roll
+        ]));
         const bulkReceiptLines = (stockLedgerAdjustments || [])
           .filter(a => isOpeningStockReceipt(a) && isItemMatch(a, item))
-          .map(a => ({
+          .map(a => {
+            const roll = rollByBarcode.get(String(a.barcode || '').trim().toLowerCase());
+            const weightNote = roll
+              ? `Gross ${roll.grossWeightKg ?? '—'} kg, tare ${roll.tareWeightKg ?? '—'} kg, core ${roll.coreWeightKg ?? '—'} kg, net ${roll.netWeightKg ?? a.qtyKg} kg`
+              : (a.reason || OPENING_RECEIPT_TYPE);
+            return {
             txId: `BULK_${a.id}`,
             category: 'inward',
             type: '📥 Opening Stock Receipt',
@@ -9269,8 +9287,9 @@ export default function InventoryManagement({
             barcode: a.barcode || '',
             batchNo: a.barcode || 'BULK',
             status: 'In Stock',
-            notes: a.reason || OPENING_RECEIPT_TYPE
-          }));
+            notes: weightNote
+          };
+          });
         const receiptBarcodes = new Set(bulkReceiptLines.map(line => String(line.barcode || '').trim().toLowerCase()).filter(Boolean));
         const itemIds = new Set([item.id, item.itemCode, ...(item.subItems || []).flatMap(sub => [sub.id, sub.itemCode])].filter(Boolean).map(String));
         const itemNames = new Set([item, ...(item.subItems || [])].map(entry => itemNameKey(entry.itemName)).filter(Boolean));
@@ -10179,7 +10198,7 @@ export default function InventoryManagement({
               </div>
               <div data-testid="bulk-sample-preview" style={{ marginTop: '14px', overflowX: 'auto' }}>
                 <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                  Sample columns: Category, ItemName, SubstrateOrGrade, Micron, WidthMm, WeightKg, Barcode, UOM, Location, ReorderLevel, LastVendor, LastBatch, UnitCostRs. No Inventory ID.
+                  Sample columns: Category, ItemName, SubstrateOrGrade, Micron, WidthMm, NetWeightKg, GrossWeightKg, TareWeightKg, CoreWeightKg, Barcode, UOM, Location, ReorderLevel, LastVendor, LastBatch, UnitCostRs. Net is gross minus tare, the same as a GRN roll. Core weight is stored and is not subtracted again. An old WeightKg header is still accepted. No Inventory ID.
                 </div>
                 <table className="data-table" style={{ fontSize: '0.72rem', margin: 0 }}>
                   <thead>
@@ -10191,10 +10210,10 @@ export default function InventoryManagement({
                     </tr>
                   </thead>
                   <tbody>
-                    <tr><td>PET 12 Micron 1000mm</td><td>Film Substrates</td><td>250.5 kg</td><td>RM-BC-20261028-1001 (given)</td></tr>
-                    <tr><td>pet 12 micron 1000mm</td><td>Film Substrates</td><td>180 kg</td><td>RM-BC-20261028-1002 (given)</td></tr>
-                    <tr><td>PET 12 Micron 1000mm</td><td>Film Substrates</td><td>95.25 kg</td><td>blank — auto-generated</td></tr>
-                    <tr><td>Cyan Solvent Printing Ink</td><td>Printing Inks</td><td>40 kg</td><td>no roll</td></tr>
+                    <tr><td>PET 12 Micron 1000mm</td><td>Film Substrates</td><td>Gross 254 − tare 2.5, core 1, net 251.5 kg</td><td>RM-BC-20261028-1001 (given)</td></tr>
+                    <tr><td>pet 12 micron 1000mm</td><td>Film Substrates</td><td>Gross 183 − tare 2, core 1, net 181 kg</td><td>RM-BC-20261028-1002 (given)</td></tr>
+                    <tr><td>PET 12 Micron 1000mm</td><td>Film Substrates</td><td>Gross 98 − tare 1.75, core 1, net blank (computed 96.25 kg)</td><td>blank — auto-generated</td></tr>
+                    <tr><td>Cyan Solvent Printing Ink</td><td>Printing Inks</td><td>40 kg net, no gross, tare, or core</td><td>no roll</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -10235,7 +10254,7 @@ export default function InventoryManagement({
                   )}
                 </div>
                 <div style={{ fontSize: '0.78rem', color: '#475569', marginBottom: '10px' }}>
-                  An existing item is matched by its name after trimming, ignoring letter case. Rolls are added to that item. This is the only match used.
+                  An existing item is matched by its name after trimming, ignoring letter case. If that name is new but the same category, micron, and width already have a ledger, the rolls are added there instead of creating a second item.
                 </div>
                 {bulkPlan.groups.map((group) => (
                   <div key={group.nameKey} data-testid="bulk-group" style={{ border: '1px solid #cbd5e1', borderRadius: '8px', padding: '10px', marginBottom: '10px', background: group.match === 'existing' ? '#fffbeb' : '#f0fdf4' }}>
@@ -10260,7 +10279,10 @@ export default function InventoryManagement({
                       <tr style={{ background: '#f8fafc' }}>
                         <th>Row</th>
                         <th>Item</th>
-                        <th>Weight</th>
+                        <th>Gross</th>
+                        <th>Tare</th>
+                        <th>Core</th>
+                        <th>Net</th>
                         <th>Barcode</th>
                         <th>Result</th>
                       </tr>
@@ -10270,7 +10292,13 @@ export default function InventoryManagement({
                         <tr key={`${row.lineNumber}-${row.barcode || row.itemName}`} data-testid={row.blocked ? 'bulk-row-error' : 'bulk-row-ok'} style={{ background: row.blocked ? '#fef2f2' : 'transparent' }}>
                           <td>{row.lineNumber}</td>
                           <td>{row.itemName || '—'}</td>
-                          <td>{row.weightText || row.weight || '—'}</td>
+                          <td>{row.sourceCells?.GrossWeightKg || '—'}</td>
+                          <td>{row.sourceCells?.TareWeightKg || '—'}</td>
+                          <td>{row.sourceCells?.CoreWeightKg || '—'}</td>
+                          <td>
+                            {row.weight || '—'}
+                            {row.netSource === 'computed' ? <span style={{ display: 'block', color: '#0369a1' }}>computed</span> : null}
+                          </td>
                           <td>
                             {row.isRoll ? (
                               <span data-testid="bulk-barcode">
