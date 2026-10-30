@@ -16,7 +16,7 @@ const saveSql = fs.readFileSync(
   'utf8'
 );
 const lockSql = fs.readFileSync(
-  new URL('../supabase/migrations/20261030140000_grn_lock_after_qc_approval.sql', import.meta.url),
+  new URL('../supabase/migrations/20261030200100_grn_lock_after_qc_approval.sql', import.meta.url),
   'utf8'
 );
 
