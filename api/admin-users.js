@@ -5,9 +5,9 @@ import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 import { readUsername } from '../src/utils/activeUserLabel.js';
 import { resolveAppOrigin } from './appOrigin.js';
 import { readSmtpConfig } from './smtpConfig.js';
-import { SYSTEM_ROLES as ROLES } from '../src/roles.js';
+import { resolveAccountRoles, assignedRolesOf, primaryRole } from '../src/assignedRoles.js';
 
-const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
+const PROFILE_COLUMNS = 'id, username, full_name, email, role, assigned_roles, department, status, active, auth_user_id';
 
 function serverEnv(name, fallback = '') {
   return process.env[name] || fallback;
@@ -65,12 +65,14 @@ async function loadProfileByAuthId(service, authId) {
   return second.data || null;
 }
 
-function assertRole(role) {
-  if (!ROLES.includes(role)) {
-    const error = new Error('Choose one of the ten plant roles.');
+function accountRoles(body, previousRole = '') {
+  const resolved = resolveAccountRoles(body, previousRole);
+  if (!resolved.roles.length || !resolved.role) {
+    const error = new Error('Choose one or more of the plant roles.');
     error.status = 400;
     throw error;
   }
+  return resolved;
 }
 
 function assertEmail(email) {
@@ -191,12 +193,14 @@ async function issueRecovery(service, email, name, options = {}) {
 }
 
 function publicUser(row) {
+  const roles = assignedRolesOf({ roles: row.assigned_roles, role: row.role });
   return {
     id: row.id,
     username: readUsername(row),
     name: row.full_name || row.email,
     email: row.email,
-    role: row.role,
+    role: primaryRole(roles, row.role) || row.role,
+    roles,
     department: row.department || '',
     status: row.status || (row.active === false ? 'Inactive' : 'Active'),
   };
@@ -205,10 +209,10 @@ function publicUser(row) {
 async function createAccount(service, res, body, callerAuthId, deps = {}) {
   const email = String(body.email || '').trim().toLowerCase();
   const name = String(body.name || '').trim();
-  const role = body.role;
+  const resolved = accountRoles(body);
+  const { role, roles } = resolved;
   const status = body.status === 'Inactive' ? 'Inactive' : 'Active';
   assertEmail(email);
-  assertRole(role);
   if (!name) {
     return reply(res, 400, { success: false, message: 'Name is required.' });
   }
@@ -218,7 +222,7 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
     password: randomBytes(32).toString('base64url'),
     email_confirm: true,
     user_metadata: { full_name: name },
-    app_metadata: { role },
+    app_metadata: { role, roles },
   });
 
   let authId = created.data?.user?.id || null;
@@ -233,7 +237,7 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
   }
 
   await service.auth.admin.updateUserById(authId, {
-    app_metadata: { role },
+    app_metadata: { role, roles },
     user_metadata: { full_name: name },
   });
 
@@ -242,6 +246,7 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
     email,
     username: email,
     role,
+    assigned_roles: roles,
     department: body.department || null,
     status,
     active: status === 'Active',
@@ -310,14 +315,9 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
 
 async function updateAccount(service, res, body, caller) {
   const id = String(body.id || '');
-  const role = body.role;
   const status = body.status === 'Inactive' ? 'Inactive' : 'Active';
-  assertRole(role);
   if (!id || id.startsWith('USR-SETTING-')) {
     return reply(res, 400, { success: false, message: 'That account cannot be edited here.' });
-  }
-  if (caller.id === id && (role !== 'Admin' || status !== 'Active')) {
-    return reply(res, 400, { success: false, message: 'You cannot remove your own Admin access.' });
   }
 
   const { data: current, error: readError } = await service
@@ -331,11 +331,16 @@ async function updateAccount(service, res, body, caller) {
 
   const email = String(body.email || current.email || '').trim().toLowerCase();
   assertEmail(email);
+  const { role, roles } = accountRoles(body, current.role);
+  if (caller.id === id && (role !== 'Admin' || status !== 'Active')) {
+    return reply(res, 400, { success: false, message: 'You cannot remove your own Admin access.' });
+  }
   const profile = {
     full_name: String(body.name || current.full_name || '').trim(),
     email,
     username: email,
     role,
+    assigned_roles: roles,
     department: body.department || null,
     status,
     active: status === 'Active',
@@ -346,7 +351,7 @@ async function updateAccount(service, res, body, caller) {
   if (current.auth_user_id) {
     await service.auth.admin.updateUserById(current.auth_user_id, {
       email,
-      app_metadata: { role },
+      app_metadata: { role, roles },
       user_metadata: { full_name: profile.full_name },
     });
   }

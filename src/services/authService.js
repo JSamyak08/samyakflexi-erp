@@ -1,17 +1,20 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { isCompanyAddress, parseMailbox } from './emailPolicy';
 import { readUsername } from '../utils/activeUserLabel';
+import { assignedRolesOf, primaryRole } from '../assignedRoles';
 
-const PROFILE_COLUMNS = 'id, username, full_name, email, role, department, status, active, auth_user_id';
+const PROFILE_COLUMNS = 'id, username, full_name, email, role, assigned_roles, department, status, active, auth_user_id';
 
 function mapProfile(profile) {
   const username = readUsername(profile);
+  const roles = assignedRolesOf({ roles: profile.assigned_roles, role: profile.role });
   return {
     id: profile.id,
     username,
     name: profile.full_name || username || profile.email || 'User',
     email: profile.email,
-    role: profile.role,
+    role: primaryRole(roles, profile.role) || profile.role,
+    roles,
     department: profile.department || '',
     status: profile.status || (profile.active === false ? 'Inactive' : 'Active'),
   };

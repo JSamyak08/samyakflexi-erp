@@ -526,14 +526,14 @@ export default function OrderManagement({
   // Navigation SubTab: 'orders' | 'requirements'
   const [deadlineBannerHidden, setDeadlineBannerHidden] = useState(false);
   const printingDeadlineReminders = useMemo(() => {
-    if (!canManageOrderDeadline(currentUser?.role)) return [];
+    if (!canManageOrderDeadline(currentUser)) return [];
     return (orders || []).flatMap((order) => {
       if (!order) return [];
       const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
       const assessment = assessPrintingDeadlineReminder(order, stageInfo);
       return assessment.active ? [{ order, stageInfo, assessment }] : [];
     });
-  }, [orders, sfgGoods, productionRecords, currentUser?.role]);
+  }, [orders, sfgGoods, productionRecords, currentUser]);
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
   useEffect(() => {
     if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);
