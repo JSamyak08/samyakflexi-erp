@@ -58,7 +58,7 @@ export default function OrderDeadlineReminder({
     return () => { active = false; };
   }, [variant, order?.id, order?.revisedDeadline, order?.clientInformed, order?.deadlineRevisedAt]);
 
-  if (!assessment.active) return null;
+  if (!canManage || !assessment.active) return null;
 
   const persist = async (resultPromise) => {
     setSaving(true);
@@ -194,11 +194,6 @@ export default function OrderDeadlineReminder({
             )}
           </span>
         </label>
-        {!canManage && (
-          <span style={{ fontSize: '0.75rem', color: '#92400e' }}>
-            Sales, plant, production, or admin can save this.
-          </span>
-        )}
       </div>
 
       {error && <div style={{ color: '#b91c1c', fontSize: '0.78rem', fontWeight: '700' }}>{error}</div>}

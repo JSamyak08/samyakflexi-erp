@@ -216,11 +216,11 @@ test('client informed is recorded for the current revised date and is not an ema
   assert.equal(tooSoon.ok, false);
 });
 
-test('only sales, plant, production, and admin can update the reminder', () => {
+test('only admin and sales manager can see or update the reminder', () => {
   assert.equal(canManageOrderDeadline('Admin'), true);
-  assert.equal(canManageOrderDeadline('Plant Manager'), true);
-  assert.equal(canManageOrderDeadline('Production Manager'), true);
   assert.equal(canManageOrderDeadline('Sales Manager'), true);
+  assert.equal(canManageOrderDeadline('Plant Manager'), false);
+  assert.equal(canManageOrderDeadline('Production Manager'), false);
   assert.equal(canManageOrderDeadline('Store Manager'), false);
   assert.equal(canManageOrderDeadline('Printing Operator'), false);
   assert.equal(canManageOrderDeadline('Purchase Manager'), false);
@@ -245,4 +245,12 @@ test('the reminder screen never calls the email API', () => {
   const screen = fs.readFileSync(new URL('../src/components/OrderDeadlineReminder.jsx', import.meta.url), 'utf8');
   assert.match(screen, /Update the client about the revised date \(WhatsApp\)/);
   assert.match(screen, /Client informed/);
+  assert.match(screen, /if \(!canManage \|\| !assessment\.active\) return null/);
+  assert.doesNotMatch(screen, /Plant Manager/);
+  assert.doesNotMatch(screen, /Production Manager/);
+  const ordersScreen = fs.readFileSync(new URL('../src/components/OrderManagement.jsx', import.meta.url), 'utf8');
+  const dashboard = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+  assert.match(ordersScreen, /canManageOrderDeadline\(currentUser\?\.role\)/);
+  assert.match(dashboard, /canManageOrderDeadline\(currentUser\?\.role\)/);
+  assert.match(ordersScreen, /canPlanPrinting/);
 });
