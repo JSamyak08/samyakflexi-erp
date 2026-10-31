@@ -15,6 +15,7 @@ import {
   RotateCcw, 
   Printer, 
   ArrowDownToLine, 
+  Download, 
   Cpu, 
   SlidersHorizontal, 
   Layers, 
@@ -45,6 +46,7 @@ import PelletFuelManagement from './PelletFuelManagement';
 import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockAlert } from '../services/emailService';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import TablePagination, { usePagination } from './TablePagination';
+import { downloadConsumablesStockWorkbook } from '../utils/consumablesStockExport';
 
 // Default Plant Machine List for flexible packaging operations
 export const PLANT_MACHINES = [
@@ -999,13 +1001,26 @@ export default function ConsumablesAndIndents({
 
           {/* Filters Bar: Machine-wise Filter, Low Quantity Filter & Category Filter */}
           <div className="glass-panel" style={{ padding: '18px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', gap: '12px', flexWrap: 'wrap' }}>
               <h3 style={{ fontSize: '0.95rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
                 <SlidersHorizontal size={16} style={{ color: 'var(--primary-brand)' }} /> Filter Store Inventory
               </h3>
-              <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Showing <b>{(sortedAndFilteredConsumables || []).length}</b> of <b>{(consumables || []).length}</b> Items
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                  Showing <b>{(sortedAndFilteredConsumables || []).length}</b> of <b>{(consumables || []).length}</b> Items
+                </span>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  data-testid="download-consumables-stock"
+                  disabled={sortedAndFilteredConsumables.length === 0}
+                  title="Download every store row that matches the current search and filters"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700' }}
+                  onClick={() => downloadConsumablesStockWorkbook(sortedAndFilteredConsumables)}
+                >
+                  <Download size={15} /> Download Excel
+                </button>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '12px' }}>
