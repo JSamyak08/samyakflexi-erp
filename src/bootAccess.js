@@ -84,6 +84,52 @@ const PAYROLL_CACHE_KEYS = [
   'samyak_cache_salary_payments',
 ];
 
+const LANDING_ORDER = [
+  'dashboard',
+  'production_records',
+  'printing_scheduler',
+  'inventory',
+  'purchase_orders',
+  'material_indents',
+  'sales',
+  'job_punching',
+  'orders',
+  'dispatch',
+  'sfg_store',
+  'ink_management',
+  'pellet_fuel',
+  'cylinders',
+  'job_masters',
+  'clients',
+  'vendors',
+  'barcodes',
+  'scrap_analytics',
+  'employees',
+];
+
+/**
+ * First module this person can open. Dashboard is first only when the
+ * matrix allows it. A Printing Operator whose dashboard flag is off lands
+ * on Printing, and a Store Manager lands on Inventory.
+ */
+function namesOf(roleOrUser) {
+  if (roleOrUser && typeof roleOrUser === 'object' && !Array.isArray(roleOrUser)) {
+    return asRoleList([
+      ...(Array.isArray(roleOrUser.roles) ? roleOrUser.roles : []),
+      ...(Array.isArray(roleOrUser.assigned_roles) ? roleOrUser.assigned_roles : []),
+      roleOrUser.role,
+    ]);
+  }
+  return asRoleList(roleOrUser);
+}
+
+export function firstAllowedModule(matrix, roleOrUser) {
+  const roles = namesOf(roleOrUser);
+  if (roles.includes('Admin')) return 'dashboard';
+  const allowed = LANDING_ORDER.find((key) => roleHasModule(matrix, roles, key));
+  return allowed || 'dashboard';
+}
+
 export function cachesToDrop(matrix, role) {
   const keys = [];
   Object.entries(MODULE_CACHE_KEYS).forEach(([moduleKey, storageKeys]) => {

@@ -221,10 +221,14 @@ test('admin-users never returns a setup link and redirects only to the ERP host'
     assertNoLink(res.body);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].to, ADMIN_REROUTE);
-    assert.equal(sent[0].text.includes('secret-token'), true);
+    assert.equal(sent[0].text.includes('https://erp.samyakinternational.in/auth/confirm'), true);
+    assert.equal(sent[0].text.includes('type=recovery'), true);
+    assert.equal(sent[0].text.includes(HASHED), true);
+    assert.equal(sent[0].text.includes('secret-token'), false);
+    assert.equal(sent[0].text.includes('supabase.co'), false);
     assert.equal(JSON.stringify(res.body).includes('secret-token'), false);
     const linkCall = service.calls.find(call => call.name === 'generateLink');
-    assert.equal(linkCall.args.options.redirectTo, 'https://erp.samyakinternational.in/reset-password');
+    assert.equal(linkCall.args.options.redirectTo, 'https://erp.samyakinternational.in/auth/confirm');
   });
 });
 
@@ -277,31 +281,50 @@ test('password links use APP_ORIGIN and ignore the caller origin', async () => {
     });
     assert.equal(res.statusCode, 200);
     const linkCall = service.calls.find(call => call.name === 'generateLink');
-    assert.equal(linkCall.args.options.redirectTo, 'https://preview.example.test/reset-password');
+    assert.equal(linkCall.args.options.redirectTo, 'https://preview.example.test/auth/confirm');
   });
 });
 
-test('password links fail when APP_ORIGIN is missing', async () => {
+test('password links fall back to the production ERP when APP_ORIGIN is missing or a vercel.app host', async () => {
   await withMailEnv(async () => {
     delete process.env.APP_ORIGIN;
     const service = serviceFor(adminProfile);
     const res = mockRes();
-    let opened = false;
+    const sent = [];
     await handleAdminUsers(request({
       action: 'send_reset',
       email: 'buyer@plant.com',
       origin: 'https://flexierp-preview.vercel.app',
     }), res, {
       serviceClient: () => service,
-      createTransport: () => {
-        opened = true;
-        throw new Error('SMTP must not be opened');
-      },
+      createTransport: () => ({
+        sendMail: async (mail) => {
+          sent.push(mail);
+          return { messageId: 'stub' };
+        },
+      }),
     });
-    assert.equal(opened, false);
-    assert.equal(res.statusCode, 500);
-    assert.match(res.body.message, /APP_ORIGIN/);
-    assert.equal(service.calls.some(call => call.name === 'generateLink'), false);
+    assert.equal(res.statusCode, 200);
+    const linkCall = service.calls.find(call => call.name === 'generateLink');
+    assert.equal(linkCall.args.options.redirectTo, 'https://erp.samyakinternational.in/auth/confirm');
+    assert.equal(sent[0].text.includes('https://erp.samyakinternational.in/auth/confirm'), true);
+    assert.equal(sent[0].text.includes('vercel.app'), false);
+
+    process.env.APP_ORIGIN = 'https://samyakflexi-erp-git-main-samyak-international-ltd.vercel.app';
+    const vercelService = serviceFor(adminProfile);
+    const vercelRes = mockRes();
+    await handleAdminUsers(request({
+      action: 'send_reset',
+      email: 'buyer@plant.com',
+      origin: 'https://flexierp-preview.vercel.app',
+    }), vercelRes, {
+      serviceClient: () => vercelService,
+      createTransport: () => ({
+        sendMail: async () => ({ messageId: 'stub' }),
+      }),
+    });
+    const vercelLink = vercelService.calls.find(call => call.name === 'generateLink');
+    assert.equal(vercelLink.args.options.redirectTo, 'https://erp.samyakinternational.in/auth/confirm');
   });
 });
 
@@ -318,8 +341,10 @@ test('redirect and domain locks are in the source', () => {
   assert.doesNotMatch(policy, /plant\\\.com\|/);
   assert.doesNotMatch(auth, /redirectTo: 'https:\/\/erp\.samyakinternational\.in\/reset-password'/);
   assert.match(auth, /VITE_APP_ORIGIN/);
+  assert.match(auth, /\/auth\/confirm/);
   assert.doesNotMatch(invite, /Share this setup link/);
-  assert.match(invite, /const origin = 'https:\/\/erp\.samyakinternational\.in'/);
+  assert.match(invite, /authConfirmUrl/);
+  assert.doesNotMatch(invite, /action_link/);
 });
 
 async function expectDenied(db, sql, params) {

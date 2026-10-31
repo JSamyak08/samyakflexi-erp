@@ -9,6 +9,7 @@ import {
   pushSlugState,
   sameRoute,
   isRecoveryLocation,
+  isAuthCallbackLocation,
   rememberReturnTo,
   consumeReturnTo,
   clearReturnTo,
@@ -38,6 +39,7 @@ const CANONICAL = [
   ['/login', 'login', 'signin'],
   ['/login/forgot-password', 'login', 'forgot-password'],
   ['/reset-password', 'login', 'recovery'],
+  ['/auth/confirm', 'login', 'confirm'],
   ['/dashboard', 'dashboard', 'home'],
   ['/sales', 'sales', 'quotations'],
   ['/sales/quotations/new', 'sales', 'quotation-new'],
@@ -278,6 +280,11 @@ test('recovery hashes stay on the recovery screen and are not treated as routes'
   const code = parse('/reset-password?code=pkce-code');
   assert.equal(code.tab, 'login');
   assert.equal(isRecoveryLocation({ pathname: '/reset-password', search: '?code=pkce-code', hash: '' }), true);
+  const confirm = parse('/auth/confirm?token_hash=abc&type=recovery&next=/reset-password');
+  assert.equal(confirm.tab, 'login');
+  assert.equal(confirm.section, 'confirm');
+  assert.equal(isRecoveryLocation({ pathname: '/auth/confirm', search: '?token_hash=abc&type=recovery', hash: '' }), true);
+  assert.equal(isAuthCallbackLocation({ pathname: '/auth/confirm', search: '?token_hash=abc&type=signup', hash: '' }), true);
 });
 
 test('return-to remembers a deep link and ignores the login page', () => {

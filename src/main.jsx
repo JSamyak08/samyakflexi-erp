@@ -1,4 +1,10 @@
 import './instrument'
+import { redirectProductionVercelHost } from './utils/canonicalOrigin.js'
+
+if (typeof window !== 'undefined') {
+  const productionHost = redirectProductionVercelHost(window.location);
+  if (productionHost) window.location.replace(productionHost);
+}
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'

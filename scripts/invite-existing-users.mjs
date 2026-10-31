@@ -16,10 +16,14 @@ import { createClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
 import { randomBytes } from 'node:crypto';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
+import { authConfirmUrl } from '../src/utils/authLinks.js';
+import { resolvePublicOrigin } from '../src/utils/canonicalOrigin.js';
 
 const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const origin = 'https://erp.samyakinternational.in';
+const origin = resolvePublicOrigin({
+  configured: process.env.PUBLIC_SITE_URL || process.env.APP_ORIGIN || '',
+});
 
 if (!url || !serviceKey) {
   console.error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
@@ -107,9 +111,12 @@ for (const row of rows || []) {
   const recovery = await service.auth.admin.generateLink({
     type: 'recovery',
     email,
-    options: { redirectTo: `${origin}/reset-password` },
+    options: { redirectTo: `${origin}/auth/confirm` },
   });
-  const actionLink = recovery.data?.properties?.action_link;
+  const tokenHash = recovery.data?.properties?.hashed_token || '';
+  const actionLink = tokenHash
+    ? authConfirmUrl(origin, { tokenHash, type: 'recovery', next: '/reset-password' })
+    : '';
   const mailed = actionLink ? await sendMail(email, row.full_name || email, actionLink).catch(() => false) : false;
   invited += 1;
   if (mailed) {

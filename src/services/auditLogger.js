@@ -104,8 +104,12 @@ export async function saveAuditLogToSupabase(entry) {
     throw new Error('Supabase database connection is not available.');
   }
   await ensureValidSession();
-  const payload = mapAuditLogToDbPayload(entry);
-  const { error } = await supabase.from('audit_logs').upsert(payload, { onConflict: 'id' });
+  const { error } = await supabase.rpc('record_audit_log', {
+    p_action_type: entry.actionType || 'UPDATE',
+    p_module: entry.module || 'System',
+    p_details: entry.details || '',
+    p_target_id: entry.targetId ? String(entry.targetId) : null,
+  });
   if (error) handleSupabaseError(error, 'audit_logs');
 }
 
