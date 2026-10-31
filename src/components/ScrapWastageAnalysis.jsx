@@ -595,7 +595,6 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1.5px solid #cbd5e1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                <th style={{ padding: '12px 16px' }}>Record Source & ID</th>
                 <th style={{ padding: '12px 16px' }}>Date</th>
                 <th style={{ padding: '12px 16px' }}>Job Name & Order ID</th>
                 <th style={{ padding: '12px 16px' }}>Operator / Inspector</th>
@@ -603,6 +602,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                 <th style={{ padding: '12px 16px', textAlign: 'right' }}>Scrap Weight (Kg)</th>
                 <th style={{ padding: '12px 16px', textAlign: 'center' }}>Scrap / Wastage %</th>
                 <th style={{ padding: '12px 16px' }}>Defect Category / Remarks</th>
+                <th style={{ padding: '12px 16px' }}>Record Source & ID</th>
               </tr>
             </thead>
             <tbody>
@@ -629,30 +629,6 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                         transition: 'background 0.15s ease'
                       }}
                     >
-                      {/* Record Source & ID */}
-                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
-                          <span style={{
-                            fontSize: '0.7rem',
-                            fontWeight: '800',
-                            padding: '2px 7px',
-                            borderRadius: '4px',
-                            background: isScrapStore ? '#f1f5f9' : '#eff6ff',
-                            color: isScrapStore ? '#475569' : '#1d4ed8',
-                            border: `1px solid ${isScrapStore ? '#cbd5e1' : '#bfdbfe'}`,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}>
-                            {isScrapStore ? <Trash2 size={11} /> : <Layers size={11} />}
-                            {r.sourceLabel}
-                          </span>
-                          <span style={{ fontFamily: 'monospace', fontWeight: '800', color: isHigh ? '#dc2626' : '#0f172a', fontSize: '0.82rem' }}>
-                            {r.id}
-                          </span>
-                        </div>
-                      </td>
-
                       {/* Date */}
                       <td style={{ padding: '12px 16px', color: '#475569', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
                         {r.dateDisplay}
@@ -714,6 +690,30 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                         </div>
                         <div style={{ fontSize: '0.74rem', color: '#64748b', marginTop: '2px' }}>
                           Status: <strong>{r.status}</strong>
+                        </div>
+                      </td>
+
+                      {/* Record Source & ID */}
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                          <span style={{
+                            fontSize: '0.7rem',
+                            fontWeight: '800',
+                            padding: '2px 7px',
+                            borderRadius: '4px',
+                            background: isScrapStore ? '#f1f5f9' : '#eff6ff',
+                            color: isScrapStore ? '#475569' : '#1d4ed8',
+                            border: `1px solid ${isScrapStore ? '#cbd5e1' : '#bfdbfe'}`,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}>
+                            {isScrapStore ? <Trash2 size={11} /> : <Layers size={11} />}
+                            {r.sourceLabel}
+                          </span>
+                          <span style={{ fontFamily: 'monospace', fontWeight: '800', color: isHigh ? '#dc2626' : '#0f172a', fontSize: '0.82rem' }}>
+                            {r.id}
+                          </span>
                         </div>
                       </td>
 

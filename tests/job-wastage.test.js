@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   HIGH_SCRAP_THRESHOLD_PCT,
   ORDER_QTY_UNIT,
@@ -182,4 +183,28 @@ test('qc scrap ids are not part of the process wastage delete list', () => {
   });
   assert.equal(plan.scrap.deleteIds.some((id) => String(id).startsWith('SCRAP-LOG')), false);
   assert.equal(plan.scrap.deleteIds.includes('print-scrap:ORD-1:plain-setting'), false);
+});
+
+test('unified scrap table keeps Record Source & ID after defect remarks', () => {
+  const source = readFileSync(new URL('../src/components/ScrapWastageAnalysis.jsx', import.meta.url), 'utf8');
+  const start = source.indexOf('{/* Main Unified Registry Table */}');
+  assert.ok(start >= 0);
+  const table = source.slice(start, source.indexOf('</table>', start));
+  const thead = table.slice(0, table.indexOf('</thead>'));
+  const headers = [...thead.matchAll(/<th\b[^>]*>\s*([^<]+?)\s*<\/th>/g)].map((match) => match[1].trim());
+  assert.deepEqual(headers, [
+    'Date',
+    'Job Name & Order ID',
+    'Operator / Inspector',
+    'Gross Output / Qty (Kg)',
+    'Scrap Weight (Kg)',
+    'Scrap / Wastage %',
+    'Defect Category / Remarks',
+    'Record Source & ID'
+  ]);
+
+  const row = table.slice(table.indexOf('recordsPagination.paginatedItems.map'));
+  const labels = [...row.matchAll(/\{\/\*\s*([^*]+?)\s*\*\/\}/g)].map((match) => match[1].trim());
+  assert.equal(labels[0], 'Date');
+  assert.deepEqual(labels.slice(-2), ['Defect Category / Remarks', 'Record Source & ID']);
 });
