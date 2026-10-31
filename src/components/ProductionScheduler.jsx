@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { NOT_RECORDED, computeDryInkSolids, finiteNumber, parseOptionalKg } from '../utils/productionRecordQuality';
 import {
   GUARDRAIL_SETTING_KEY,
@@ -173,6 +173,7 @@ export default function ProductionScheduler({
   onSaveSchedule,
   onDeleteSchedule,
   onUpdateOrder,
+  onSavePrintProgress,
   onStartJob,
   onEndJob,
   onReorderQueue,
@@ -813,26 +814,55 @@ export default function ProductionScheduler({
     }
   }, [activeRunningJob?.id]);
 
-  // Live Autosave helper for Active Printing Run
+  // Live autosave for the active print run. One pending write, not one request per keystroke.
+  const saveProgressRef = useRef(onSavePrintProgress);
+  saveProgressRef.current = onSavePrintProgress;
+  const progressState = useRef({ timer: null, pending: null, inflight: false });
+
+  const flushPrintProgress = () => {
+    const state = progressState.current;
+    const job = state.pending;
+    state.pending = null;
+    if (!job) return;
+    const save = saveProgressRef.current;
+    if (!save) return;
+    state.inflight = true;
+    Promise.resolve(save(job))
+      .then(() => {
+        if (!progressState.current.pending) {
+          setIsAutosavingRolls(false);
+          setLastAutosavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        }
+      })
+      .catch(() => {
+        setIsAutosavingRolls(false);
+      })
+      .finally(() => {
+        progressState.current.inflight = false;
+        if (progressState.current.pending) flushPrintProgress();
+      });
+  };
+
+  useEffect(() => () => {
+    if (progressState.current.timer) clearTimeout(progressState.current.timer);
+  }, []);
+
   const handleAutosaveInputRolls = (updatedList) => {
     setInputRollsList(updatedList);
-    if (activeRunningJob) {
-      setIsAutosavingRolls(true);
-      const updatedJob = {
-        ...activeRunningJob,
-        inputRollsList: updatedList
-      };
-      setActiveRunningJob(updatedJob);
-
-      if (onUpdateOrder) {
-        onUpdateOrder(updatedJob);
-      }
-
-      setTimeout(() => {
-        setIsAutosavingRolls(false);
-        setLastAutosavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      }, 400);
-    }
+    if (!activeRunningJob) return;
+    setIsAutosavingRolls(true);
+    const updatedJob = {
+      ...activeRunningJob,
+      inputRollsList: updatedList
+    };
+    setActiveRunningJobState(updatedJob);
+    const state = progressState.current;
+    state.pending = updatedJob;
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      state.timer = null;
+      if (!state.inflight) flushPrintProgress();
+    }, 500);
   };
 
   const handleInputRollBarcodeChangeActiveRun = (bId, index) => {
@@ -1329,7 +1359,9 @@ export default function ProductionScheduler({
       }
     } catch (err) {
       console.error("Error ending printing job:", err);
-      alert(err?.message || "Failed to save job completion data. Please try again.");
+      if (!err?.alreadyAlerted) {
+        alert(err?.message || "Failed to save job completion data. Please try again.");
+      }
     } finally {
       setIsSubmittingEndJob(false);
     }
