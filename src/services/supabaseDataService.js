@@ -47,6 +47,7 @@ import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
 import { deadlineFieldsFromRow } from '../utils/orderDeadlineReminder';
+import { closeColumnsForOrderSave, closeDetail, explicitCloseMode, statusForOrderSave } from '../utils/orderCloseWrite';
 export { sanitizeGRN };
 
 /**
@@ -286,14 +287,14 @@ export async function saveOrderToSupabase(order) {
     actualMetersPrinted,
     printedOutputKg,
     isPrintingCompleted,
-    closedBy: order.closedBy ?? order.jobDetails?.closedBy ?? null,
-    closedAt: order.closedAt ?? order.jobDetails?.closedAt ?? null,
-    closeReason: order.closeReason ?? order.jobDetails?.closeReason ?? null,
-    closeMode: order.closeMode ?? order.jobDetails?.closeMode ?? null,
-    overDispatchWarning: order.overDispatchWarning ?? order.jobDetails?.overDispatchWarning ?? null,
-    reopenedBy: order.reopenedBy ?? order.jobDetails?.reopenedBy ?? null,
-    reopenedAt: order.reopenedAt ?? order.jobDetails?.reopenedAt ?? null,
-    reopenReason: order.reopenReason ?? order.jobDetails?.reopenReason ?? null,
+    closedBy: closeDetail(order, 'closedBy'),
+    closedAt: closeDetail(order, 'closedAt'),
+    closeReason: closeDetail(order, 'closeReason'),
+    closeMode: explicitCloseMode(order),
+    overDispatchWarning: closeDetail(order, 'overDispatchWarning'),
+    reopenedBy: closeDetail(order, 'reopenedBy'),
+    reopenedAt: closeDetail(order, 'reopenedAt'),
+    reopenReason: closeDetail(order, 'reopenReason'),
     jobMasterId: order.jobMasterId || order.jobDetails?.jobMasterId || null,
     skuCode: order.skuCode || order.jobDetails?.skuCode || null,
     jobCode: order.jobCode || order.jobDetails?.jobCode || order.skuCode || null,
@@ -326,23 +327,23 @@ export async function saveOrderToSupabase(order) {
     order_qty_kg: Number(order.orderQtyKg) || 0,
     delivery_date: targetDateVal,
     target_delivery_date: targetDateVal,
-    status: order.status || 'Scheduled',
     job_details: jobDetails,
     raw_material_requirements: matReqs
   };
+  const statusForSave = statusForOrderSave(order);
+  if (statusForSave) fullPayload.status = statusForSave;
 
   // orders has no order_id column (the primary key is id). Strip it if a caller spread it in.
   delete fullPayload.order_id;
   delete fullPayload.available_qty_kg;
-  const closeColumns = {
-    closed_by: jobDetails.closedBy,
-    closed_at: jobDetails.closedAt,
-    close_reason: jobDetails.closeReason,
-    close_mode: jobDetails.closeMode,
+  const closeColumns = closeColumnsForOrderSave(order) || {};
+  const writeRow = {
+    ...fullPayload,
+    ...closeColumns,
     over_dispatch_warning: jobDetails.overDispatchWarning,
     job_master_id: jobDetails.jobMasterId || null
   };
-  let { error: fullErr } = await supabase.from('orders').upsert({ ...fullPayload, ...closeColumns }, { onConflict: 'id' });
+  let { error: fullErr } = await supabase.from('orders').upsert(writeRow, { onConflict: 'id' });
   if (fullErr && /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|job_master_id|schema cache/i.test(fullErr.message || '')) {
     ({ error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' }));
   }

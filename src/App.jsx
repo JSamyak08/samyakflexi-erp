@@ -115,6 +115,8 @@ import {
   ORDER_AUTO_CLOSE_SETTING,
   ORDER_CLOSE_TOLERANCE_SETTING
 } from './utils/orderAutoClose';
+import { alertOrderSaveError } from './utils/alertOnce';
+import { applyPrintRunResult, recordPrintRun } from './services/printRun';
 import {
   applyDispatchPackingConsumption,
   consumptionFromLog,
@@ -2833,8 +2835,7 @@ export default function App() {
       await logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
     } catch (err) {
       console.error('[ORDERS][UPDATE] Failed to update order in Supabase:', err);
-      alert(`Failed to update order ${updatedOrder?.id} in Supabase database: ${err.message || err}`);
-      throw err;
+      throw alertOrderSaveError(updatedOrder?.id, err);
     }
   };
   const handleUpdateOrderStatus = handleUpdateOrder;
@@ -2876,21 +2877,65 @@ export default function App() {
   };
 
   // Handlers for Starting and Ending Printing Jobs from Scheduler
+  const handleSavePrintProgress = async (job) => {
+    if (!job?.id) return;
+    try {
+      const saved = await recordPrintRun(job.id, 'progress', {
+        inputRollsList: job.inputRollsList || [],
+        machineId: job.machineId || null
+      });
+      const next = applyPrintRunResult(job, saved);
+      setOrders(prev => prev.map((order) => {
+        if (order.id !== next.id) return order;
+        return {
+          ...order,
+          inputRollsList: next.inputRollsList,
+          machineId: next.machineId || order.machineId,
+          printingStatus: next.printingStatus || order.printingStatus,
+          jobDetails: {
+            ...(order.jobDetails || {}),
+            inputRollsList: next.inputRollsList,
+            printingStatus: next.printingStatus || order.jobDetails?.printingStatus,
+            machineId: next.machineId || order.jobDetails?.machineId
+          }
+        };
+      }));
+      setPressActiveRunningJob((prev) => (prev && prev.id === next.id ? { ...prev, inputRollsList: next.inputRollsList } : prev));
+      try {
+        await handleActiveRunningJobChange(next);
+      } catch {
+        // The press-board save reports its own failure. The order progress is already stored.
+      }
+    } catch (err) {
+      throw alertOrderSaveError(job.id, err);
+    }
+  };
+
   const handleStartPrintingJob = async (order, machineId, startTime) => {
     const startIso = startTime || new Date().toISOString();
     const resolution = resolveJobMaster({ order, jobMasters });
     const spec = printLayerSpec(resolution.jobMaster);
-    const updatedOrder = {
-      ...order,
-      status: 'In Production',
-      printingStatus: 'In Production',
-      machineId: machineId || order.machineId,
-      printingStartTime: startIso,
-      printingEndTime: null,
-      isPrintingCompleted: false,
-      jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : (order.jobMasterId || null)
-    };
-    await handleUpdateOrder(updatedOrder);
+    let updatedOrder;
+    try {
+      const saved = await recordPrintRun(order.id, 'start', {
+        machineId: machineId || order.machineId || null,
+        printingStartTime: startIso,
+        jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : (order.jobMasterId || null),
+        inputRollsList: order.inputRollsList || []
+      });
+      updatedOrder = applyPrintRunResult({
+        ...order,
+        printingStatus: 'In Production',
+        machineId: machineId || order.machineId,
+        printingStartTime: startIso,
+        printingEndTime: null,
+        isPrintingCompleted: false,
+        jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : (order.jobMasterId || null)
+      }, saved);
+    } catch (err) {
+      throw alertOrderSaveError(order.id, err);
+    }
+    setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
     await handleActiveRunningJobChange(updatedOrder);
     await handleSaveSchedule({
       id: `SCHED-${order.id}`,
@@ -2974,23 +3019,41 @@ export default function App() {
     const inkGsmInSpeed = Number.isFinite(parseFloat(endData.inkGsmInSpeed)) ? parseFloat(endData.inkGsmInSpeed) : null;
     const printedOutputKg = parseFloat(endData.printedOutputKg) || parseFloat(order.printLayerNetKg || order.quantityKg || order.quantity || order.orderQtyKg || 0);
 
-    const updatedOrder = {
-      ...order,
-      status: 'In Production',
-      printingStatus: 'Completed',
-      isPrintingCompleted: true,
-      printingEndTime: endIso,
-      printingDurationMinutes: computedDurationMinutes,
-      printingDurationFormatted: durationFormatted,
-      actualMetersPrinted,
-      inkGsmInSpeed,
-      printedOutputKg,
-      printingNotes: endData.notes || '',
-      inputRollsList: endData.inputRollsList || order.inputRollsList || [],
-      outputRolls: endData.rollsBreakdown || order.outputRolls || [],
-      rollsBreakdown: endData.rollsBreakdown || order.rollsBreakdown || []
-    };
-    await handleUpdateOrder(updatedOrder);
+    let updatedOrder;
+    try {
+      const saved = await recordPrintRun(order.id, 'end', {
+        machineId: order.machineId || null,
+        printingStartTime: order.printingStartTime || null,
+        printingEndTime: endIso,
+        printingDurationMinutes: computedDurationMinutes,
+        printingDurationFormatted: durationFormatted,
+        actualMetersPrinted,
+        inkGsmInSpeed,
+        printedOutputKg,
+        printingNotes: endData.notes || '',
+        inputRollsList: endData.inputRollsList || order.inputRollsList || [],
+        nextProcess: order.nextProcess || null
+      });
+      updatedOrder = applyPrintRunResult({
+        ...order,
+        printingStatus: 'Completed',
+        isPrintingCompleted: true,
+        printingEndTime: endIso,
+        printingDurationMinutes: computedDurationMinutes,
+        printingDurationFormatted: durationFormatted,
+        actualMetersPrinted,
+        inkGsmInSpeed,
+        printedOutputKg,
+        printingNotes: endData.notes || '',
+        inputRollsList: endData.inputRollsList || order.inputRollsList || [],
+        outputRolls: endData.rollsBreakdown || order.outputRolls || [],
+        rollsBreakdown: endData.rollsBreakdown || order.rollsBreakdown || [],
+        nextProcess: order.nextProcess || null
+      }, saved);
+    } catch (err) {
+      throw alertOrderSaveError(order.id, err);
+    }
+    setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
     await handleActiveRunningJobChange(null);
 
     // Update corresponding Production Record (or create if missing)
@@ -5483,6 +5546,7 @@ export default function App() {
               onSaveInventoryItem={handleSaveInventoryItem}
               onReorderQueue={handleReorderQueue}
               onMachineAssignmentChange={handleMachineAssignmentsChange}
+              onSavePrintProgress={handleSavePrintProgress}
               onActiveRunningJobChange={handleActiveRunningJobChange}
             />
           </div>
@@ -6544,6 +6608,7 @@ export default function App() {
             onSaveInventoryItem={handleSaveInventoryItem}
             onReorderQueue={handleReorderQueue}
             onMachineAssignmentChange={handleMachineAssignmentsChange}
+            onSavePrintProgress={handleSavePrintProgress}
             onActiveRunningJobChange={handleActiveRunningJobChange}
             urlParams={urlParams}
           />
