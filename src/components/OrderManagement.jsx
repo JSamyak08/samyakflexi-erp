@@ -1767,6 +1767,7 @@ export default function OrderManagement({
               <DeadlineReminderBanner
                 reminders={printingDeadlineReminders}
                 leadDays={printingLeadDays}
+                userKey={currentUser?.id || currentUser?.email || ''}
                 canPlanPrinting={canPlanPrinting}
                 onOpenOrder={(order) => {
                   setSearchTerm(order.id);
@@ -1780,6 +1781,8 @@ export default function OrderManagement({
             {canManageOrderDeadline(currentUser) && activeSubTab === 'orders' && (
               <PrintingDeadlineSummaryCard
                 summary={printingDeadlineSummary}
+                leadDays={printingLeadDays}
+                userKey={currentUser?.id || currentUser?.email || ''}
                 onOpenOrder={(order) => {
                   setSearchTerm(order.id);
                   setExpandedOrders((prev) => ({ ...prev, [order.id]: true }));
