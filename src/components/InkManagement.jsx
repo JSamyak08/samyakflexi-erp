@@ -39,6 +39,7 @@ import { generateDocRefNumber, getNextDocRefNumber, getInventoryAgeingSettings, 
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { notifyPurchaseOrderIssued } from '../services/emailService';
 import { savePurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { buildInkPoLine, joinMissingFields, missingInkCommercialFields, readHsnCode } from '../utils/inkHsn';
 
 
 function vendorRecord(vendor) {
@@ -58,53 +59,8 @@ function findVendorForInk(ink, vendors) {
   return vendorRecord(match);
 }
 
-function missingInkCommercialFields(ink) {
-  const missing = [];
-  if (!String(ink.manufacturer || '').trim()) missing.push('manufacturer');
-  if (!String(ink.hsnCode || '').trim()) missing.push('HSN');
-  const solids = Number(ink.solidContentPct);
-  if (!Number.isFinite(solids) || solids <= 0) missing.push('solid content');
-  const variation = Number(ink.solidVariationPct);
-  if (!Number.isFinite(variation) || variation < 0) missing.push('solid variation');
-  const rate = Number(ink.pricePerKg);
-  if (!Number.isFinite(rate) || rate <= 0) missing.push('rate');
-  return missing;
-}
-
-function inkOrderQuantity(ink) {
-  const settings = getMaterialCostSettings();
-  const minPoQtyKg = Number(settings.minPoQtyKg);
-  const defaultReorderLevelKg = Number(settings.defaultReorderLevelKg);
-  if (!Number.isFinite(minPoQtyKg) || minPoQtyKg < 0 || !Number.isFinite(defaultReorderLevelKg) || defaultReorderLevelKg < 0) {
-    return { error: 'Ink purchase quantity settings are missing. Set minPoQtyKg and defaultReorderLevelKg in Document Settings before raising a purchase order.' };
-  }
-  const hasReorder = ink.reorderLevelKg !== '' && ink.reorderLevelKg != null && Number.isFinite(Number(ink.reorderLevelKg));
-  const reorder = hasReorder ? Number(ink.reorderLevelKg) : defaultReorderLevelKg;
-  const stock = Number(ink.stockQtyKg) || 0;
-  return { qty: Math.max(minPoQtyKg, Math.ceil((reorder * 2) - stock)) };
-}
-
 function inkPoLine(ink) {
-  const missing = missingInkCommercialFields(ink);
-  if (missing.length) {
-    return { error: `${ink.productCode || ink.shade || 'An ink'} is missing ${missing.join(', ')}. Set those on the ink before raising a purchase order.` };
-  }
-  const quantity = inkOrderQuantity(ink);
-  if (quantity.error) return quantity;
-  return {
-    item: {
-      id: ink.id,
-      productCode: ink.productCode,
-      shade: ink.shade,
-      inkType: ink.inkType,
-      solidContentPct: Number(ink.solidContentPct),
-      solidVariationPct: Number(ink.solidVariationPct),
-      manufacturer: String(ink.manufacturer).trim(),
-      hsnCode: String(ink.hsnCode).trim(),
-      qtyKg: quantity.qty,
-      rate: Number(ink.pricePerKg),
-    },
-  };
+  return buildInkPoLine(ink, getMaterialCostSettings());
 }
 
 export default function InkManagement({
@@ -250,7 +206,7 @@ export default function InkManagement({
     setInkType(ink.inkType || 'Reverse Ink');
     setManufacturer(ink.manufacturer || '');
     setSupplierId(ink.supplierId || '');
-    setHsnCode(ink.hsnCode || '');
+    setHsnCode(readHsnCode(ink));
     setSolidContentPct(ink.solidContentPct ?? '');
     setSolidVariationPct(ink.solidVariationPct ?? '');
     setPricePerKg(ink.pricePerKg ?? '');
@@ -424,13 +380,14 @@ export default function InkManagement({
       "Stock Qty (Kg)",
       "Reorder Level (Kg)",
       "Solvent Type",
+      "HSN",
       "Notes"
     ];
 
     const sampleRows = [
-      ["DIC-REV-CYAN-01", "Process Cyan", "Reverse Ink", "DIC Inks", "DIC India Ltd", "42", "2", "320", "200", "80", "Ethyl Acetate + IPA", "High tint strength & adhesion for PET film"],
-      ["SIE-SURF-WHITE-02", "Opaque White", "Surface Ink", "Siegwerk", "Siegwerk India", "50", "2", "280", "350", "150", "Toluene + Ethyl Acetate", "High opacity surface white for LDPE"],
-      ["FLI-REV-MAGENTA-03", "Process Magenta", "Reverse Ink", "Flint Group", "Flint Group Ltd", "40", "2", "350", "150", "60", "Ethyl Acetate + IPA", "Lamination grade reverse ink"]
+      ["DIC-REV-CYAN-01", "Process Cyan", "Reverse Ink", "DIC Inks", "DIC India Ltd", "42", "2", "320", "200", "80", "Ethyl Acetate + IPA", "3215", "High tint strength & adhesion for PET film"],
+      ["SIE-SURF-WHITE-02", "Opaque White", "Surface Ink", "Siegwerk", "Siegwerk India", "50", "2", "280", "350", "150", "Toluene + Ethyl Acetate", "3215", "High opacity surface white for LDPE"],
+      ["FLI-REV-MAGENTA-03", "Process Magenta", "Reverse Ink", "Flint Group", "Flint Group Ltd", "40", "2", "350", "150", "60", "Ethyl Acetate + IPA", "3215", "Lamination grade reverse ink"]
     ];
 
     const csvContent = "data:text/csv;charset=utf-8," + 
@@ -458,6 +415,7 @@ export default function InkManagement({
       "Stock Qty (Kg)",
       "Reorder Level (Kg)",
       "Solvent Type",
+      "HSN",
       "Notes"
     ];
 
@@ -473,6 +431,7 @@ export default function InkManagement({
       ink.stockQtyKg !== undefined ? ink.stockQtyKg : 0,
       ink.reorderLevelKg !== undefined ? ink.reorderLevelKg : 100,
       ink.solventType || 'Ethyl Acetate + IPA',
+      readHsnCode(ink),
       ink.notes || ''
     ]);
 
@@ -545,6 +504,7 @@ export default function InkManagement({
         const stockIdx = getIndex(['stock', 'qty', 'stockqty']);
         const reorderIdx = getIndex(['reorder', 'minstock', 'reorderlevel']);
         const solventIdx = getIndex(['solvent', 'solventtype']);
+        const hsnIdx = getIndex(['hsncode', 'hsnsac', 'hsn']);
         const notesIdx = getIndex(['notes', 'remark', 'remarks', 'description']);
 
         const parsedInks = [];
@@ -568,7 +528,8 @@ export default function InkManagement({
           const stockVal = parseFloat(stockIdx >= 0 ? cols[stockIdx] : cols[8]) || 100;
           const reorderVal = parseFloat(reorderIdx >= 0 ? cols[reorderIdx] : cols[9]) || 50;
           const solventVal = (solventIdx >= 0 ? cols[solventIdx] : cols[10]) || 'Ethyl Acetate + IPA';
-          const notesVal = (notesIdx >= 0 ? cols[notesIdx] : cols[11]) || '';
+          const hsnVal = hsnIdx >= 0 ? (cols[hsnIdx] || '') : '';
+          const notesVal = (notesIdx >= 0 ? cols[notesIdx] : cols[hsnIdx >= 0 ? 12 : 11]) || '';
 
           const matchedVendor = vendors.find(v => {
             const vName = (v.companyName || v.name || '').toLowerCase();
@@ -593,6 +554,7 @@ export default function InkManagement({
             reorderLevelKg: reorderVal,
             unit: 'Kg',
             solventType: solventVal.trim() || 'Ethyl Acetate + IPA',
+            hsnCode: String(hsnVal || '').trim(),
             notes: notesVal.trim(),
             isDuplicate
           });
@@ -651,6 +613,7 @@ export default function InkManagement({
           stockQtyKg: newStock,
           reorderLevelKg: item.reorderLevelKg !== undefined ? item.reorderLevelKg : existingInk.reorderLevelKg,
           solventType: item.solventType || existingInk.solventType,
+          hsnCode: readHsnCode(item) || readHsnCode(existingInk),
           notes: item.notes || existingInk.notes,
           priceHistory: [historyEntry, ...(existingInk.priceHistory || [])]
         };
@@ -675,6 +638,7 @@ export default function InkManagement({
           reorderLevelKg: item.reorderLevelKg,
           unit: 'Kg',
           solventType: item.solventType,
+          hsnCode: readHsnCode(item),
           notes: item.notes,
           priceHistory: [
             { price: item.pricePerKg, date: new Date().toISOString().split('T')[0], reason: 'Stock Adjustment (Bulk Upload)', stockDiff: item.stockQtyKg, newStock: item.stockQtyKg }
@@ -823,8 +787,13 @@ export default function InkManagement({
       const missing = missingInkCommercialFields(item);
       const qtyVal = Number(item.qtyKg);
       const rateVal = Number(item.rate);
-      if (missing.length || !Number.isFinite(qtyVal) || qtyVal <= 0 || !Number.isFinite(rateVal) || rateVal <= 0) {
-        alert(`${item.productCode || 'A line'} is missing ${missing.concat(!Number.isFinite(qtyVal) || qtyVal <= 0 ? ['quantity'] : [], !Number.isFinite(rateVal) || rateVal <= 0 ? ['rate'] : []).join(', ')}.`);
+      const gaps = [
+        ...missing,
+        ...(!Number.isFinite(qtyVal) || qtyVal <= 0 ? ['quantity'] : []),
+        ...(!Number.isFinite(rateVal) || rateVal <= 0 ? ['rate'] : []),
+      ];
+      if (gaps.length) {
+        alert(`${item.productCode || 'A line'} is missing ${joinMissingFields(gaps)}.`);
         return;
       }
       items.push({
@@ -832,7 +801,7 @@ export default function InkManagement({
         itemId: item.productCode,
         description: `${item.shade} (${item.inkType}) - Solid Content: ${item.solidContentPct}% (±${item.solidVariationPct}%)`,
         make: String(item.manufacturer).trim(),
-        hsnCode: String(item.hsnCode).trim(),
+        hsnCode: readHsnCode(item),
         qtyKg: qtyVal,
         rate: rateVal,
         amount: Number((qtyVal * rateVal).toFixed(2))
