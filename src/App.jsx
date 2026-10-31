@@ -34,6 +34,7 @@ import {
   Users,
   Bell,
   LogOut,
+  Lock,
   ClipboardList,
   Database,
   UserCheck,
@@ -6209,6 +6210,8 @@ export default function App() {
             printingLeadDays={printingLeadDays}
             reminderContext={printingDeadlineContext}
             printingDeadlineSummary={deadlineSummary}
+            inventoryRolls={inventoryRolls}
+            storeIssueTransactions={storeIssueTransactions}
           />
         )}
 
