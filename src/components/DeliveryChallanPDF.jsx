@@ -3,7 +3,9 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2, FileText } from 'lucide-react'
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '../utils/pdfHelpers';
-import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { printDeliveryChallan, CHALLAN_LOGO_FALLBACK } from '../utils/printDeliveryChallan';
+import './deliveryChallanPrint.css';
 
 export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa }) {
   const defaultChallanNo = challanData?.challanNo || generateDocRefNumber('dc');
@@ -16,14 +18,12 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
       ? challanData.termsAndConditions 
       : (savedTerms.dcTerms || [])
   );
+  const [logoSrc, setLogoSrc] = useState(() => getCompanyLogo() || CHALLAN_LOGO_FALLBACK);
   const letterhead = loadLetterhead();
 
   if (!challanData) return null;
   if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
   const COMPANY_DETAILS = letterhead.company;
-  
-  const signatureImage = getAuthorisedSignature();
-  const logoImage = getCompanyLogo();
 
   const handleUpdateTerm = (index, value) => {
     const updated = [...currentDcTerms];
@@ -69,6 +69,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
   } = challanData;
 
   const displayName = clientName || partyName || "N/A";
+  const partyLabel = String(partyType || 'Client').toUpperCase();
 
   const CHALLAN_NATURE_OPTIONS = [
     'Returnable Material',
@@ -131,17 +132,27 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
             <FileText size={16} /> + Quality CoA Report (FG)
           </button>
         )}
-        <button className="btn-primary" onClick={() => window.print()}>
+        <button className="btn-primary" onClick={() => printDeliveryChallan(document.getElementById('printable-dc'))}>
           <Printer size={16} /> Print Delivery Challan
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document">
+        <div className="printable-document" id="printable-dc">
           {/* Header */}
           <div className="letterhead-header" style={{ paddingBottom: '8px', marginBottom: '8px' }}>
             <div className="letterhead-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
+              <img
+                src={logoSrc}
+                alt="Samyak International Ltd Logo"
+                className="samyak-logo-img"
+                style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }}
+                onError={() => {
+                  setLogoSrc((current) => (
+                    String(current || '').endsWith(CHALLAN_LOGO_FALLBACK) ? current : CHALLAN_LOGO_FALLBACK
+                  ));
+                }}
+              />
               <p className="letterhead-company-sub" style={{ marginTop: '2px', fontSize: '8px', fontWeight: '800', color: '#374151' }}>
                 {COMPANY_DETAILS.tagline}
               </p>
@@ -170,14 +181,14 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: '9px', color: '#4b5563', textAlign: 'right', fontWeight: 'bold', marginTop: '1px' }}>
+              <div className="dc-kicker" style={{ fontSize: '9px', color: '#4b5563', textAlign: 'right', fontWeight: 'bold', marginTop: '1px' }}>
                 (DISPATCH & MOVEMENT NOTE)
               </div>
             </div>
           </div>
 
           {/* Purpose of Goods Movement / Challan Nature Bar (Only Selected Choice) */}
-          <div style={{ border: `1px solid ${selectedNature === 'QC Reject - Return to Vendor' ? '#fecaca' : '#cbd5e1'}`, background: selectedNature === 'QC Reject - Return to Vendor' ? '#fff5f5' : '#f8fafc', padding: '4px 10px', borderRadius: '4px', marginBottom: '6px', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="dc-nature" style={{ border: `1px solid ${selectedNature === 'QC Reject - Return to Vendor' ? '#fecaca' : '#cbd5e1'}`, background: selectedNature === 'QC Reject - Return to Vendor' ? '#fff5f5' : '#f8fafc', padding: '4px 10px', borderRadius: '4px', marginBottom: '6px', fontSize: '9px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontWeight: '800', color: selectedNature === 'QC Reject - Return to Vendor' ? '#991b1b' : '#334155', textTransform: 'uppercase', fontSize: '8px', letterSpacing: '0.5px' }}>
               PURPOSE OF GOODS MOVEMENT / CHALLAN NATURE:
             </span>
@@ -211,7 +222,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                   <div className="address-box-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '9.5px', marginBottom: '3px', paddingBottom: '2px' }}>
                     <span>{toTitleCase(displayName)}</span>
                     <span style={{ background: partyType === 'Vendor' ? '#d97706' : '#2563eb', color: '#fff', fontSize: '7.5px', padding: '1px 4px', borderRadius: '3px', fontWeight: 'bold' }}>
-                      {partyType.toUpperCase()}
+                      {partyLabel}
                     </span>
                   </div>
                   <div className="address-line" style={{ margin: '1px 0', fontSize: '8.5px' }}>{clientAddress}</div>
@@ -295,10 +306,10 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
           </table>
 
           {/* Tax Calculation & Summary Table */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '6px', gap: '12px' }}>
+          <div className="dc-summary" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '6px', gap: '12px' }}>
             {/* Amount in words & Remarks */}
-            <div style={{ flex: 1 }}>
-              <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '5px 8px', background: '#f8fafc', marginBottom: '4px' }}>
+            <div className="dc-words" style={{ flex: 1, minWidth: 0 }}>
+              <div className="dc-words-box" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '5px 8px', background: '#f8fafc', marginBottom: '4px' }}>
                 <div style={{ fontSize: '8px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Total Amount in Words:</div>
                 <div style={{ fontSize: '9.5px', fontWeight: 'bold', color: '#0f172a', marginTop: '1px' }}>
                   {numberToWords(gstCalc.grandTotal)}
@@ -306,14 +317,14 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
               </div>
 
               {remarks && (
-                <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '4px 8px', fontSize: '9.5px', color: '#334155' }}>
+                <div className="dc-remarks" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '4px 8px', fontSize: '9.5px', color: '#334155' }}>
                   <strong>Dispatch Remarks:</strong> {remarks}
                 </div>
               )}
             </div>
 
             {/* Financial Breakdown Card */}
-            <table style={{ width: '270px', borderCollapse: 'collapse', fontSize: '9.5px', border: '1px solid #cbd5e1' }}>
+            <table className="dc-totals" style={{ width: '270px', borderCollapse: 'collapse', fontSize: '9.5px', border: '1px solid #cbd5e1' }}>
               <tbody>
                 <tr>
                   <td style={{ padding: '3px 8px', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>Total Net Qty:</td>
@@ -438,7 +449,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
 
           {/* Editable Terms & Conditions Section */}
           <div className="pdf-closing">
-          <div className="terms-section pdf-keep-with-next" style={{ marginTop: '6px' }}>
+          <div className="terms-section dc-terms pdf-keep-with-next" style={{ marginTop: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px dashed #cbd5e1', paddingBottom: '2px', marginBottom: '4px' }}>
               <div style={{ fontSize: '9px', fontWeight: '800', color: '#475569', textTransform: 'uppercase' }}>
                 Terms & Conditions of Dispatch & Supply
@@ -480,9 +491,9 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
           </div>
 
           {/* Dual Seal & Signature Boxes (Company Dispatch vs Receiving Company) */}
-          <div className="pdf-signature-block" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+          <div className="pdf-signature-block dc-sign-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '6px', pageBreakInside: 'avoid', breakInside: 'avoid' }}>
             {/* Left Box: Receiving Company Seal & Signature */}
-            <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '8px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '90px', background: '#fafafa' }}>
+            <div className="dc-sign-card" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '8px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '90px', background: '#fafafa' }}>
               <div>
                 <div style={{ fontSize: '9.5px', fontWeight: '800', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '3px', marginBottom: '4px' }}>
                   RECEIVING COMPANY ACKNOWLEDGEMENT & STAMP
@@ -497,7 +508,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                   <div style={{ borderTop: '1px dashed #94a3b8', width: '130px', paddingTop: '2px', fontSize: '8.5px', fontWeight: 'bold', color: '#475569' }}>
                     Receiver Name & Phone
                   </div>
-                  <div style={{ fontSize: '7.5px', color: '#94a3b8' }}>Date & Time of Delivery</div>
+                  <div className="dc-fine" style={{ fontSize: '7.5px', color: '#94a3b8' }}>Date & Time of Delivery</div>
                 </div>
                 <div style={{ border: '1px dashed #cbd5e1', width: '70px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5px', color: '#94a3b8', textAlign: 'center' }}>
                   Receiving Company Stamp
@@ -506,7 +517,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
             </div>
 
             {/* Right Box: Samyak Dispatch Department Seal & Signature */}
-            <div style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '8px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '90px', background: '#fafafa' }}>
+            <div className="dc-sign-card" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '8px 12px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '90px', background: '#fafafa' }}>
               <div>
                 <div style={{ fontSize: '9.5px', fontWeight: '800', color: '#1e293b', borderBottom: '1px solid #e2e8f0', paddingBottom: '3px', marginBottom: '4px' }}>
                   FOR SAMYAK INTERNATIONAL LIMITED (DISPATCH DEPT)
@@ -521,7 +532,7 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
                   <div style={{ borderTop: '1px dashed #94a3b8', width: '160px', paddingTop: '2px', fontSize: '8.5px', fontWeight: 'bold', color: '#1e293b' }}>
                     Plant Manager / HOD Signature
                   </div>
-                  <div style={{ fontSize: '7.5px', color: '#64748b' }}>Date & Time of Approval</div>
+                  <div className="dc-fine" style={{ fontSize: '7.5px', color: '#64748b' }}>Date & Time of Approval</div>
                 </div>
 
                 <div style={{ border: '1px dashed #cbd5e1', width: '70px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '7.5px', color: '#94a3b8', textAlign: 'center' }}>

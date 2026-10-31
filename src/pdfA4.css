@@ -364,6 +364,11 @@
     padding: 0 !important;
   }
 
+  /*
+   * :has() must stay in its own rule. A browser that does not support it
+   * drops the entire selector list, leaves these ancestors at height 0 /
+   * visibility hidden, and the print comes out as a blank page.
+   */
   #root,
   .app-container,
   .main-content,
@@ -372,7 +377,24 @@
   .modal-content,
   .glass-panel,
   .pdf-paper-container,
-  .printable-jobcard-host,
+  .printable-jobcard-host {
+    visibility: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    border: none !important;
+    transform: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
   div:has(.printable-document),
   div:has(.printable-landscape-card) {
     visibility: visible !important;
