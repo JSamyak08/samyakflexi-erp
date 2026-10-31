@@ -93,6 +93,16 @@ import { getDocumentPrefixes, getNextDocRefNumber, syncOcnCounterWithRecords } f
 import { mergeRollsIntoList } from './services/grnDocument';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
+import {
+  ACTIVE_USER_PREVIEW_KEY,
+  activeUserReadonlyLabel,
+  chooseActiveUser,
+  clearActiveUserOverride,
+  readStoredActiveUserPreview,
+  realUserCanSwitchActiveUser,
+  resolveActiveUser,
+  stripActiveUserQuery,
+} from './utils/activeUserSwitch';
 import { readE2eScrapStorePreview } from './utils/scrapStoreFilters';
 import { assertPersistableMeasures } from './utils/productionRecordQuality';
 import {
@@ -307,13 +317,29 @@ function e2eStubUser() {
   } catch {
     /* session storage can be blocked */
   }
+  const role = e2eRoleAtBoot || 'Admin';
+  const name = role === 'Admin' ? 'E2E Admin' : `E2E ${role}`;
   return {
     id: 'e2e-admin',
-    name: 'E2E Admin',
-    fullName: 'E2E Admin',
+    name,
+    fullName: name,
     email: 'e2e@samyakinternational.in',
-    role: e2eRoleAtBoot || 'Admin'
+    role,
   };
+}
+
+function stripActiveUserQueryFromLocation() {
+  if (typeof window === 'undefined') return;
+  try {
+    const url = new URL(window.location.href);
+    const nextSearch = stripActiveUserQuery(url.search);
+    const next = `${url.pathname}${nextSearch}${url.hash}`;
+    if (next !== `${url.pathname}${url.search}${url.hash}`) {
+      window.history.replaceState(window.history.state, '', next);
+    }
+  } catch {
+    /* the address bar can be unreadable */
+  }
 }
 
 function routeFromHref(href) {
@@ -708,14 +734,17 @@ export default function App() {
 
   const activeUserOptions = useMemo(() => {
     const list = [...activeUsersList];
-    if (currentUser?.id && !list.some(u => String(u.id) === String(currentUser.id))) {
-      list.unshift(currentUser);
+    for (const extra of [sessionProfile, currentUser]) {
+      if (extra?.id && !list.some(u => String(u.id) === String(extra.id))) {
+        list.unshift(extra);
+      }
     }
     return list.map(u => ({
       value: String(u.id),
       label: activeUserLabel(u),
     }));
-  }, [activeUsersList, currentUser]);
+  }, [activeUsersList, currentUser, sessionProfile]);
+  const canSwitchActiveUser = realUserCanSwitchActiveUser(sessionProfile);
 
   const isUserTabAllowed = (user, tabKey) => roleHasModule(rolePermissions, assignedRolesOf(user), tabKey);
 
@@ -933,6 +962,40 @@ export default function App() {
     setMachines(e2eScrapPreview.machines);
     setProductionRecords(e2eScrapPreview.productionRecords);
   }, [e2eScrapPreview]);
+
+  const [e2eActiveUserPreview] = useState(() => {
+    if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('e2e') === 'active-user';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!e2eActiveUserPreview) return undefined;
+    const self = e2eStubUser();
+    setUsers([
+      self,
+      {
+        id: 'e2e-sales',
+        username: 'rita.sales',
+        name: 'Rita Sales',
+        email: 'rita.sales@samyakinternational.in',
+        role: 'Sales Manager',
+        roles: ['Sales Manager'],
+      },
+      {
+        id: 'e2e-store',
+        username: 'store.lead',
+        name: 'Store Lead',
+        email: 'store.lead@samyakinternational.in',
+        role: 'Store Manager',
+        roles: ['Store Manager'],
+      },
+    ].filter(Boolean));
+    return undefined;
+  }, [e2eActiveUserPreview]);
 
   const [e2ePrintingDeadline] = useState(() => {
     if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
@@ -1983,14 +2046,16 @@ export default function App() {
 
   const applyAuthenticatedProfile = (profile) => {
     setSessionProfile(profile);
-    let nextUser = profile;
-    if (userHasRole(profile, 'Admin')) {
-      try {
-        const preview = JSON.parse(sessionStorage.getItem('samyak_erp_ui_role_preview') || 'null');
-        if (preview && preview.role && preview.email) nextUser = preview;
-      } catch (e) {}
+    let preview = null;
+    let search = '';
+    try { preview = readStoredActiveUserPreview(sessionStorage); } catch { preview = null; }
+    try { search = window.location.search; } catch { search = ''; }
+    const resolved = resolveActiveUser({ sessionUser: profile, preview, search });
+    if (resolved.clearPreview) {
+      try { clearActiveUserOverride(sessionStorage, localStorage); } catch { /* storage can be blocked */ }
     }
-    setCurrentUser(nextUser);
+    if (resolved.stripQuery) stripActiveUserQueryFromLocation();
+    setCurrentUser(resolved.user);
     setIsAuthenticated(true);
     setMustSetPassword(false);
   };
@@ -2001,8 +2066,17 @@ export default function App() {
 
     if (!isSupaActive) {
       const stub = e2eStubUser();
+      let preview = null;
+      let search = '';
+      try { preview = readStoredActiveUserPreview(sessionStorage); } catch { preview = null; }
+      try { search = window.location.search; } catch { search = ''; }
+      const resolved = resolveActiveUser({ sessionUser: stub, preview, search });
+      if (resolved.clearPreview) {
+        try { clearActiveUserOverride(sessionStorage, localStorage); } catch { /* storage can be blocked */ }
+      }
+      if (resolved.stripQuery) stripActiveUserQueryFromLocation();
       setSessionProfile(stub);
-      setCurrentUser(stub);
+      setCurrentUser(resolved.user);
       setIsAuthenticated(Boolean(stub));
       setIsAuthReady(true);
       return;
@@ -5060,7 +5134,7 @@ export default function App() {
           </div>
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
-          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div data-testid="app-header-user" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             {/* Database Health Badge - Concise Icon & Status Dot */}
             <div 
               onClick={() => runDatabaseHealthCheck()}
@@ -5090,31 +5164,41 @@ export default function App() {
             </div>
 
             <WeighingScaleWidget />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
+            <div data-testid="active-user-control" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
               <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
               <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
-              <SearchableSelect 
-                style={{ minWidth: '180px', display: 'inline-block' }}
-                triggerStyle={{ 
-                  border: 'none', 
-                  background: 'transparent', 
-                  fontWeight: '700', 
-                  color: 'var(--text-primary)', 
-                  padding: '2px 8px',
-                  minHeight: '28px'
-                }}
-                disabled={!(sessionProfile ? userHasRole(sessionProfile, 'Admin') : userHasRole(currentUser, 'Admin'))}
-                value={currentUser?.id || ''}
-                options={activeUserOptions}
-                onChange={e => {
-                  const selectedId = e.target.value;
-                  const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId));
-                  if (selectedUser && userHasRole(sessionProfile, 'Admin')) {
-                    setCurrentUser(selectedUser);
-                    try { sessionStorage.setItem('samyak_erp_ui_role_preview', JSON.stringify(selectedUser)); } catch (e) {}
-                  }
-                }}
-              />
+              {canSwitchActiveUser ? (
+                <SearchableSelect
+                  id="active-user-switch"
+                  style={{ minWidth: '180px', display: 'inline-block' }}
+                  triggerStyle={{
+                    border: 'none',
+                    background: 'transparent',
+                    fontWeight: '700',
+                    color: 'var(--text-primary)',
+                    padding: '2px 8px',
+                    minHeight: '28px'
+                  }}
+                  value={currentUser?.id || ''}
+                  options={activeUserOptions}
+                  onChange={e => {
+                    const selectedId = e.target.value;
+                    const selectedUser = activeUsersList.find(u => String(u.id) === String(selectedId))
+                      || (String(sessionProfile?.id) === String(selectedId) ? sessionProfile : null);
+                    const choice = chooseActiveUser(sessionProfile, selectedUser);
+                    if (!choice.ok || !choice.user) return;
+                    setCurrentUser(choice.user);
+                    try {
+                      if (choice.clearPreview) sessionStorage.removeItem(ACTIVE_USER_PREVIEW_KEY);
+                      else sessionStorage.setItem(ACTIVE_USER_PREVIEW_KEY, JSON.stringify(choice.user));
+                    } catch (err) { /* storage can be blocked */ }
+                  }}
+                />
+              ) : (
+                <span data-testid="active-user-label" style={{ fontWeight: '700', color: 'var(--text-primary)', padding: '2px 4px' }}>
+                  {activeUserReadonlyLabel(currentUser)}
+                </span>
+              )}
             </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
