@@ -11,6 +11,7 @@ import { measureColumnsForSave, netUsableForSave } from '../utils/jobMasterGuard
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
+import { mapInkMasterToRow, mapInkRowToMaster, readHsnCode } from '../utils/inkHsn';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -2798,26 +2799,7 @@ export async function fetchInks() {
 
     if (!data) return [];
 
-    return data.map(i => ({
-      id: i.id,
-      productCode: i.product_code,
-      shade: i.shade,
-      inkType: i.ink_type || 'Reverse Ink',
-      manufacturer: i.manufacturer,
-      supplierId: i.supplier_id,
-      supplierName: i.supplier_name,
-      solidContentPct: parseFloat(i.solid_content_pct) || 40,
-      solidVariationPct: parseFloat(i.solid_variation_pct) || 2,
-      pricePerKg: parseFloat(i.price_per_kg) || 0,
-      stockQtyKg: parseFloat(i.stock_qty_kg) || 0,
-      reorderLevelKg: parseFloat(i.reorder_level_kg) || 0,
-      unit: i.unit || 'Kg',
-      solventType: i.solvent_type || '',
-      notes: i.notes || '',
-      priceHistory: i.price_history || [],
-      createdAt: i.created_at,
-      lastUpdated: i.last_updated
-    }));
+    return data.map(mapInkRowToMaster);
   } catch (err) {
     console.error("Error fetching inks from Supabase:", err);
     throw err;
@@ -2832,22 +2814,7 @@ export async function saveInkToSupabase(ink) {
   await ensureValidSession();
 
   const payload = {
-    id: ink.id,
-    product_code: ink.productCode,
-    shade: ink.shade,
-    ink_type: ink.inkType || 'Reverse Ink',
-    manufacturer: ink.manufacturer || '',
-    supplier_id: ink.supplierId || null,
-    supplier_name: ink.supplierName || '',
-    solid_content_pct: parseFloat(ink.solidContentPct) || 40,
-    solid_variation_pct: parseFloat(ink.solidVariationPct) || 2,
-    price_per_kg: parseFloat(ink.pricePerKg) || 0,
-    stock_qty_kg: parseFloat(ink.stockQtyKg) || 0,
-    reorder_level_kg: parseFloat(ink.reorderLevelKg) || 0,
-    unit: ink.unit || 'Kg',
-    solvent_type: ink.solventType || '',
-    notes: ink.notes || '',
-    price_history: ink.priceHistory || [],
+    ...mapInkMasterToRow(ink),
     last_updated: new Date().toISOString()
   };
 
@@ -3973,7 +3940,7 @@ export function sanitizePurchaseOrder(raw) {
       micron: it.micron || '',
       widthMm: it.widthMm ? Number(it.widthMm) : null,
       make: it.make || it.brand || '',
-      hsnCode: it.hsnCode || it.hsn || '',
+      hsnCode: readHsnCode(it),
       unit: it.unit || 'Kg',
       qtyKg: qty,
       rate: rate,

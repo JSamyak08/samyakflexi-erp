@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { purchaseLineHsn } from '../utils/inkHsn';
 import { pushSlugState } from '../utils/slugRouter';
 import { anyAssignedRole, rawRoleNames } from '../assignedRoles';
 import SearchableSelect from './SearchableSelect';
@@ -350,7 +351,7 @@ export default function ConsumablesAndIndents({
           description: targetItemForPO ? (targetItemForPO.name || targetItemForPO.itemName) : "Material Requisition Consumable",
           itemId: targetItemForPO?.itemCode || "CON-MAT-001",
           make: targetItemForPO?.category || "Factory Supply",
-          hsnCode: "3215",
+          hsnCode: purchaseLineHsn(targetItemForPO, '3215'),
           qtyKg: qty,
           rate: price,
           cgstRate: gstRate / 2,

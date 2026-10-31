@@ -519,6 +519,7 @@ CREATE TABLE IF NOT EXISTS public.inks (
     reorder_level_kg NUMERIC DEFAULT 0,
     unit TEXT DEFAULT 'Kg',
     solvent_type TEXT,
+    hsn_code TEXT,
     notes TEXT,
     price_history JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ DEFAULT NOW(),

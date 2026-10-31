@@ -38,6 +38,7 @@ import TablePagination, { usePagination } from './TablePagination';
 import { getCompanyProfile } from '../services/companyProfile';
 import { generateDocRefNumber, getDocumentPrefixes, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { allocateGrnNumber, fetchPurchaseOrderRevisions, saveAmendedPurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { purchaseLineHsn } from '../utils/inkHsn';
 import {
   amendmentActorName,
   buildPurchaseOrderAmendment,
@@ -335,7 +336,7 @@ export default function PurchaseOrderManagement({
       micron: itemToAdd.micron || '',
       widthMm: itemToAdd.widthMm ? Number(itemToAdd.widthMm) : null,
       make: itemToAdd.make || itemToAdd.lastVendor || '',
-      hsnCode: itemToAdd.hsnCode || itemToAdd.hsn || '3920',
+      hsnCode: purchaseLineHsn(itemToAdd, '3920'),
       unit: itemToAdd.unit || 'Kg',
       qtyKg: Number(itemToAdd.qtyKg || itemToAdd.quantity || 100),
       rate: Number(itemToAdd.rate || itemToAdd.unitPrice || itemToAdd.purchaseRatePerKg || 165),
