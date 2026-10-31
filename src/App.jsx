@@ -130,7 +130,7 @@ import { publishPrintingDeadlineDigest } from './services/printingDeadlineDigest
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
-  fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase, sanitizeInventoryItem,
+  fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase, archiveInventoryItemsFromSupabase, reactivateInventoryItemsFromSupabase, writeOffInventoryItemsFromSupabase, sanitizeInventoryItem,
   fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase, sanitizeGRN,
   fetchCylinders, saveCylinderToSupabase, saveCylinderBatchToSupabase, deleteCylinderFromSupabase,
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
@@ -3238,20 +3238,62 @@ export default function App() {
     logAudit('UPDATE', 'Inventory', `Saved stock item ${cleanItem.itemCode || cleanItem.id} - "${cleanItem.itemName}" (${cleanItem.availableQtyKg} ${cleanItem.unit || 'Kg'})`, cleanItem.id);
   };
 
+  const applyInventoryDisposition = (result, { removeDeleted = false } = {}) => {
+    const items = result?.items || [];
+    const byId = new Map();
+    items.forEach((item) => {
+      if (item?.itemId) byId.set(String(item.itemId), item);
+      if (item?.itemCode) byId.set(String(item.itemCode), item);
+    });
+    setInventory((prev) => prev.flatMap((row) => {
+      const match = byId.get(String(row.id)) || byId.get(String(row.itemCode || ''));
+      if (!match) return [row];
+      if (removeDeleted && match.action === 'deleted') return [];
+      return [{
+        ...row,
+        isActive: match.isActive !== false,
+        is_active: match.isActive !== false,
+        availableQtyKg: match.stockQtyKg !== undefined && match.stockQtyKg !== null ? Number(match.stockQtyKg) : row.availableQtyKg,
+        archivedAt: match.action === 'reactivated' ? null : (match.archivedAt || row.archivedAt || null),
+        archivedBy: match.action === 'reactivated' ? null : (match.archivedBy || row.archivedBy || null),
+        archiveReason: match.action === 'reactivated' ? null : (match.archiveReason || row.archiveReason || null)
+      }];
+    }));
+    const written = new Set((result?.barcodesMarked || []).map((row) => String(row.barcode || '').toLowerCase()).filter(Boolean));
+    if (written.size) {
+      setInventoryRolls((prev) => prev.map((roll) => (
+        written.has(String(roll.barcodeId || roll.id || '').toLowerCase())
+          ? { ...roll, status: 'Written Off', availableWeightKg: 0, qcStatus: 'Void' }
+          : roll
+      )));
+    }
+    return result;
+  };
+
   const handleDeleteInventoryItem = async (itemId, reason) => {
     const ids = [...new Set((Array.isArray(itemId) ? itemId : [itemId]).map((id) => String(id || '').trim()).filter(Boolean))];
     if (!ids.length) return null;
     requireDatabaseConnection('delete inventory item');
     const result = await deleteInventoryItemFromSupabase(ids, reason);
-    const idSet = new Set(ids);
-    (result?.items || []).forEach((item) => {
-      if (item?.itemId) idSet.add(String(item.itemId));
-      if (item?.itemCode) idSet.add(String(item.itemCode));
-    });
-    setInventory(prev => prev.filter(i => !idSet.has(String(i.id)) && !idSet.has(String(i.itemCode || ''))));
-    setInventoryRolls(prev => prev.filter(roll => !idSet.has(String(roll.itemId || roll.item_id || ''))));
-    setStoreIssueTransactions(prev => prev.filter(tx => !idSet.has(String(tx.itemId || tx.stockItemId || ''))));
-    return result;
+    return applyInventoryDisposition(result, { removeDeleted: true });
+  };
+
+  const handleArchiveInventoryItems = async (itemIds, reason) => {
+    requireDatabaseConnection('archive inventory item');
+    const result = await archiveInventoryItemsFromSupabase(itemIds, reason);
+    return applyInventoryDisposition(result);
+  };
+
+  const handleReactivateInventoryItems = async (itemIds, reason) => {
+    requireDatabaseConnection('reactivate inventory item');
+    const result = await reactivateInventoryItemsFromSupabase(itemIds, reason);
+    return applyInventoryDisposition(result);
+  };
+
+  const handleWriteOffInventoryItems = async (itemIds, reason, barcodes, archive) => {
+    requireDatabaseConnection('write off inventory stock');
+    const result = await writeOffInventoryItemsFromSupabase(itemIds, reason, barcodes, archive);
+    return applyInventoryDisposition(result);
   };
 
   const handleAddUser = async (newUser) => {
@@ -4148,14 +4190,26 @@ export default function App() {
 
   const handleDeleteInk = async (inkId) => {
     requireDatabaseConnection('delete ink');
-    await deleteInkFromSupabase(inkId);
+    const reason = `Deleted with ink product ${inkId}`;
+    let archived = false;
     try {
-      await deleteInventoryItemFromSupabase(inkId, `Deleted with ink product ${inkId}`);
+      await handleDeleteInventoryItem(inkId, reason);
     } catch (error) {
-      if (!/not found/i.test(String(error?.message || error))) throw error;
+      const message = String(error?.message || error);
+      if (/not found/i.test(message)) {
+        archived = false;
+      } else if (/archive it instead/i.test(message)) {
+        await handleArchiveInventoryItems([inkId], `Archived with ink product ${inkId}`);
+        archived = true;
+      } else {
+        throw error;
+      }
     }
+    await deleteInkFromSupabase(inkId);
     setInks(prev => prev.filter(i => i.id !== inkId));
-    setInventory(prev => prev.filter(i => i.id !== inkId && i.itemCode !== inkId));
+    if (!archived) {
+      setInventory(prev => prev.filter(i => i.id !== inkId && i.itemCode !== inkId));
+    }
     logAudit('DELETE', 'Ink Management', `Deleted ink product code ${inkId}`, inkId);
   };
 
@@ -6215,6 +6269,9 @@ export default function App() {
             onUpdateInventory={handleUpdateInventory}
             onSaveInventoryItem={handleSaveInventoryItem}
             onDeleteInventoryItem={handleDeleteInventoryItem}
+            onArchiveInventoryItems={handleArchiveInventoryItems}
+            onReactivateInventoryItems={handleReactivateInventoryItems}
+            onWriteOffInventoryItems={handleWriteOffInventoryItems}
             onAddVendor={handleAddVendor}
             inventoryRolls={inventoryRolls}
             dispatchShipments={dispatchShipments}

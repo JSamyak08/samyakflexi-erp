@@ -605,11 +605,14 @@ export default function SFGStoreManagement({
     if (!Array.isArray(inventoryRolls)) return [];
     return inventoryRolls.filter(r => {
       const avail = Number(r.availableWeightKg ?? r.netWeightKg ?? 0);
-      const isNotConsumed = r.status !== 'Consumed';
+      const status = String(r.status || '').toLowerCase();
+      const retired = status === 'written off' || status === 'deleted' || status === 'void' || status === 'consumed';
+      const item = (inventory || []).find((row) => String(row.id) === String(r.itemId || ''));
+      const archived = item && (item.isActive === false || item.is_active === false);
       const isNotCurrentRoll = (r.barcodeId || r.id) !== (selectedItemForConsume?.sfgBatchCode || selectedItemForConsume?.id);
-      return avail > 0 && isNotConsumed && isNotCurrentRoll;
+      return avail > 0 && !retired && !archived && isNotCurrentRoll;
     });
-  }, [inventoryRolls, selectedItemForConsume]);
+  }, [inventoryRolls, inventory, selectedItemForConsume]);
 
   // Handle Consume Modal Open
   const handleOpenConsumeModal = (item) => {

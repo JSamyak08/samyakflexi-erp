@@ -10,7 +10,10 @@ const {
   deletedBarcodeMessage,
   filterBarcodeRows,
   findDeletedBarcode,
+  findRetiredBarcode,
   isDeletedBarcode,
+  isRetiredBarcode,
+  isWrittenOffBarcode,
   mergeBarcodeRows,
   sourceModuleForCode,
 } = await import('../src/utils/barcodeRegistry.js');
@@ -167,6 +170,16 @@ test('search and module filter narrow the barcode column', () => {
   assert.equal(found.deletedReason, 'Wrong film was stored under PET');
   assert.match(deletedBarcodeMessage(found), /Wrong film was stored under PET/);
   assert.equal(filterBarcodeRows(deleted, { query: 'wrong film' }).length, 1);
+
+  assert.equal(isWrittenOffBarcode({ status: 'Written Off' }), true);
+  assert.equal(isDeletedBarcode({ status: 'Written Off' }), false);
+  assert.equal(isRetiredBarcode({ status: 'Deleted' }), true);
+  const writtenOff = findRetiredBarcode([
+    { barcode: 'RM-BC-PET-1', sourceModule: BARCODE_SOURCE.rm, status: 'Written Off', deletedReason: 'Gauge was wrong' }
+  ], 'rm-bc-pet-1');
+  assert.equal(writtenOff.deletedReason, 'Gauge was wrong');
+  assert.match(deletedBarcodeMessage(writtenOff), /Written Off/);
+  assert.match(deletedBarcodeMessage(writtenOff), /Gauge was wrong/);
 });
 
 test('barcodes permission follows inventory roles and leaves the other keys alone', () => {

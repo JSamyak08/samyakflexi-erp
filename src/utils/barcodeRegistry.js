@@ -110,7 +110,7 @@ function remember(map, row) {
     deletedAt: plain(row.deletedAt, row.deleted_at),
     deletedBy: plain(row.deletedBy, row.deleted_by),
   };
-  if (!existing || (isDeletedBarcode(next) && !isDeletedBarcode(existing))) {
+  if (!existing || (isRetiredBarcode(next) && !isRetiredBarcode(existing))) {
     map.set(key, next);
   }
 }
@@ -458,8 +458,24 @@ export function collectBarcodes(sources = {}) {
   });
 }
 
+export function barcodeDisposition(row) {
+  const status = String(row?.status || '').trim().toLowerCase();
+  if (status === 'deleted') return 'deleted';
+  if (status === 'written off' || status === 'void' || status === 'written off / void') return 'written_off';
+  return '';
+}
+
 export function isDeletedBarcode(row) {
-  return String(row?.status || '').trim().toLowerCase() === 'deleted';
+  return barcodeDisposition(row) === 'deleted';
+}
+
+export function isWrittenOffBarcode(row) {
+  return barcodeDisposition(row) === 'written_off';
+}
+
+/** Deleted and written-off barcodes are not stock and cannot be used again. */
+export function isRetiredBarcode(row) {
+  return Boolean(barcodeDisposition(row));
 }
 
 export function findDeletedBarcode(rows, query) {
@@ -468,13 +484,20 @@ export function findDeletedBarcode(rows, query) {
   return (rows || []).find((row) => isDeletedBarcode(row) && codeKey(row.barcode) === key) || null;
 }
 
+export function findRetiredBarcode(rows, query) {
+  const key = codeKey(query);
+  if (!key) return null;
+  return (rows || []).find((row) => isRetiredBarcode(row) && codeKey(row.barcode) === key) || null;
+}
+
 export function deletedBarcodeMessage(row) {
   const code = plain(row?.barcode) || 'This barcode';
   const reason = plain(row?.deletedReason, row?.deleted_reason) || 'No reason recorded';
   const who = plain(row?.deletedBy, row?.deleted_by);
   const when = plain(row?.deletedAt, row?.deleted_at);
   const whoWhen = [who ? `by ${who}` : '', when ? `at ${when}` : ''].filter(Boolean).join(' ');
-  return `${code} is Deleted${whoWhen ? ` (${whoWhen})` : ''}. Reason: ${reason}. It is not stock and cannot be received, issued, or consumed.`;
+  const label = isWrittenOffBarcode(row) ? 'Written Off' : 'Deleted';
+  return `${code} is ${label}${whoWhen ? ` (${whoWhen})` : ''}. Reason: ${reason}. It is not stock and cannot be received, issued, or consumed.`;
 }
 
 export function mergeBarcodeRows(...lists) {
@@ -486,7 +509,7 @@ export function mergeBarcodeRows(...lists) {
     const key = rowKey(sourceModule, barcode);
     const existing = map.get(key);
     const next = { ...row, barcode, sourceModule };
-    if (!existing || (isDeletedBarcode(next) && !isDeletedBarcode(existing))) {
+    if (!existing || (isRetiredBarcode(next) && !isRetiredBarcode(existing))) {
       map.set(key, next);
     }
   });

@@ -56,7 +56,8 @@ import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/ema
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete } from '../services/supabaseDataService';
 import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
-import { deletedBarcodeMessage, findDeletedBarcode } from '../utils/barcodeRegistry';
+import { isInventoryItemActive } from '../services/inventoryArchive';
+import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
 import {
   OPENING_RECEIPT_TYPE,
   buildBulkImportPayload,
@@ -291,6 +292,9 @@ export default function InventoryManagement({
   onUpdateInventory,
   onSaveInventoryItem,
   onDeleteInventoryItem,
+  onArchiveInventoryItems,
+  onReactivateInventoryItems,
+  onWriteOffInventoryItems,
   onSaveProductionRecord,
   onAddVendor,
   inventoryRolls = [],
@@ -801,6 +805,7 @@ export default function InventoryManagement({
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   const [selectedStockIds, setSelectedStockIds] = useState(() => new Set());
   const [deletePrompt, setDeletePrompt] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const [isQuickAdjOpen, setIsQuickAdjOpen] = useState(false);
   const [adjType, setAdjType] = useState('Physical Audit (+)');
@@ -2093,6 +2098,8 @@ export default function InventoryManagement({
   };
 
   const filteredStockItemsForGrn = (groupedInventory || []).filter(item => {
+    const subs = item.subItems || [item];
+    if (subs.every((sub) => !isInventoryItemActive(sub))) return false;
     const term = (grnItemSearchTerm || '').toLowerCase().trim();
     const title = (item.itemName || `${item.filmType || ''} ${item.micron || ''} ${item.widthMm || ''}`).toLowerCase();
     const code = String(item.itemCode || item.primaryId || item.id || '').toLowerCase();
@@ -2350,7 +2357,7 @@ export default function InventoryManagement({
       const map = new Map((prev || []).map((row) => [`${row.sourceModule}|${String(row.barcode).toLowerCase()}`, row]));
       (rows || []).forEach((row) => {
         if (!row?.barcode) return;
-        map.set(`${row.sourceModule}|${String(row.barcode).toLowerCase()}`, { ...row, status: 'Deleted' });
+        map.set(`${row.sourceModule}|${String(row.barcode).toLowerCase()}`, { ...row, status: row.status || 'Deleted' });
       });
       return [...map.values()];
     });
@@ -2362,7 +2369,8 @@ export default function InventoryManagement({
     setDeletePrompt({ ids: unique, label, preview: null, reason: '', error: '', busy: true });
     try {
       const preview = await previewInventoryItemDelete(unique);
-      setDeletePrompt((prev) => (prev && prev.ids.join() === unique.join() ? { ...prev, preview, busy: false } : prev));
+      const selectedBarcodes = (preview?.items || []).flatMap((item) => (item.rolls || []).map((roll) => roll.barcode)).filter(Boolean);
+      setDeletePrompt((prev) => (prev && prev.ids.join() === unique.join() ? { ...prev, preview, selectedBarcodes, busy: false } : prev));
     } catch (err) {
       setDeletePrompt(null);
       alert(`Could not prepare this delete: ${describeSaveError(err)}`);
@@ -2371,6 +2379,19 @@ export default function InventoryManagement({
 
   const handleDeleteStockItem = (item) => {
     if (!item || !item.id) return;
+    const subs = item.subItems || [item];
+    if (subs.every((sub) => !isInventoryItemActive(sub))) {
+      setDeletePrompt({
+        ids: stockItemIds(item),
+        label: stockItemLabel(item),
+        preview: { mode: 'reactivate' },
+        reason: '',
+        error: '',
+        busy: false,
+        selectedBarcodes: []
+      });
+      return;
+    }
     openDeletePrompt(stockItemIds(item), stockItemLabel(item));
   };
 
@@ -2396,36 +2417,65 @@ export default function InventoryManagement({
     if (!deletePrompt || deletePrompt.busy) return;
     const reason = deletePrompt.reason.trim();
     if (!reason) {
-      setDeletePrompt((prev) => prev ? { ...prev, error: 'Enter a reason. It is stored on each barcode and in the audit log.' } : prev);
+      setDeletePrompt((prev) => prev ? { ...prev, error: 'Enter a reason. It is stored with the audit log.' } : prev);
       return;
     }
-    if (!onDeleteInventoryItem) {
-      setDeletePrompt((prev) => prev ? { ...prev, error: 'Deleting a stock item is not available.' } : prev);
-      return;
-    }
+    const mode = deletePrompt.preview?.mode || 'delete';
     setDeletePrompt((prev) => prev ? { ...prev, busy: true, error: '' } : prev);
     try {
-      const result = await onDeleteInventoryItem(deletePrompt.ids, reason);
-      const idSet = new Set(deletePrompt.ids.map(String));
-      (result?.items || []).forEach((item) => {
-        if (item?.itemId) idSet.add(String(item.itemId));
-        if (item?.itemCode) idSet.add(String(item.itemCode));
-      });
-      setStockLedgerAdjustments((prev) => (prev || []).filter((row) => {
-        const pointers = [row?.itemId, row?.stockItemId, row?.masterItemId, row?.itemCode]
-          .map((value) => String(value || '').trim())
-          .filter(Boolean);
-        return !pointers.some((id) => idSet.has(id));
-      }));
+      let result = null;
+      if (mode === 'reactivate') {
+        if (!onReactivateInventoryItems) throw new Error('Reactivating a stock item is not available.');
+        result = await onReactivateInventoryItems(deletePrompt.ids, reason);
+      } else if (mode === 'write_off') {
+        if (!onWriteOffInventoryItems) throw new Error('Writing off stock is not available.');
+        const allBarcodes = (deletePrompt.preview?.items || []).flatMap((item) => (item.rolls || []).map((roll) => roll.barcode)).filter(Boolean);
+        const chosen = (deletePrompt.selectedBarcodes || allBarcodes).filter(Boolean);
+        if (allBarcodes.length && !chosen.length) {
+          setDeletePrompt((prev) => prev ? { ...prev, busy: false, error: 'Select at least one roll to write off, or leave them all selected to write off the remaining stock and archive.' } : prev);
+          return;
+        }
+        const archive = !allBarcodes.length || chosen.length === allBarcodes.length;
+        result = await onWriteOffInventoryItems(deletePrompt.ids, reason, archive ? null : chosen, archive);
+        const writtenRolls = (deletePrompt.preview?.items || []).flatMap((item) => (item.rolls || [])
+          .filter((roll) => archive || chosen.includes(roll.barcode))
+          .map((roll) => ({
+            id: `WO-${item.itemId}-${roll.barcode}`,
+            itemId: item.itemId,
+            itemCode: item.itemCode || item.itemId,
+            itemName: item.itemName,
+            qtyKg: -Math.abs(Number(roll.kg) || 0),
+            type: 'Write Off',
+            reason,
+            barcode: roll.barcode,
+            date: new Date().toISOString()
+          })));
+        if (writtenRolls.length) {
+          setStockLedgerAdjustments((prev) => [...writtenRolls, ...(prev || [])]);
+        }
+      } else if (mode === 'archive') {
+        if (!onArchiveInventoryItems) throw new Error('Archiving a stock item is not available.');
+        result = await onArchiveInventoryItems(deletePrompt.ids, reason);
+      } else {
+        if (!onDeleteInventoryItem) throw new Error('Deleting a stock item is not available.');
+        result = await onDeleteInventoryItem(deletePrompt.ids, reason);
+      }
+      if (result?.barcodesMarked?.length) rememberDeletedBarcodes(result.barcodesMarked);
       setSelectedStockIds((prev) => {
         const next = new Set(prev);
-        idSet.forEach((id) => next.delete(id));
+        deletePrompt.ids.forEach((id) => next.delete(String(id)));
         return next;
       });
-      rememberDeletedBarcodes(result?.barcodesMarked);
       const label = deletePrompt.label;
+      const done = mode === 'reactivate'
+        ? `Stock item "${label}" is active again.`
+        : mode === 'archive'
+          ? `Stock item "${label}" was archived. Its ledger, rolls, and barcodes stay.`
+          : mode === 'write_off'
+            ? `Remaining stock for "${label}" was written off${(deletePrompt.selectedBarcodes || []).length && (deletePrompt.selectedBarcodes || []).length < ((deletePrompt.preview?.items || []).flatMap((item) => item.rolls || []).length) ? '' : ' and the item was archived'}. Barcodes stay marked Written Off.`
+            : `Unused stock item "${label}" was deleted. Nothing else was removed.`;
       setDeletePrompt(null);
-      alert(`Stock item "${label}" was deleted. Its roll barcodes stay in Barcodes, marked Deleted.`);
+      alert(done);
     } catch (err) {
       setDeletePrompt((prev) => prev ? { ...prev, busy: false, error: describeSaveError(err) } : prev);
     }
@@ -3110,7 +3160,7 @@ export default function InventoryManagement({
     const deletedHits = [];
     for (const roll of newRolls || []) {
       const code = roll.barcodeId || roll.barcode || roll.id;
-      const cached = findDeletedBarcode(deletedBarcodes, code);
+          const cached = findRetiredBarcode(deletedBarcodes, code);
       if (cached) {
         deletedHits.push(cached);
         continue;
@@ -3707,7 +3757,7 @@ export default function InventoryManagement({
     }
     setScanErrorMessage('');
 
-    const cachedDeleted = findDeletedBarcode(deletedBarcodes, code);
+    const cachedDeleted = findRetiredBarcode(deletedBarcodes, code);
     let deletedHit = cachedDeleted;
     if (!deletedHit) {
       try {
@@ -3730,6 +3780,7 @@ export default function InventoryManagement({
 
     // 1. Search in inventoryRolls by barcodeId, id, vendorRollNo, batchNo, barcode
     const matchedRoll = (inventoryRolls || []).find(r => {
+      if (isRetiredBarcode(r)) return false;
       const bId = codeKey(r.barcodeId);
       const rId = codeKey(r.id);
       const vRoll = codeKey(r.vendorRollNo);
@@ -3974,6 +4025,13 @@ export default function InventoryManagement({
       isQCRejected = true;
     }
 
+    if (targetItem && !isInventoryItemActive(targetItem)) {
+      setSelectedInvItem(null);
+      setScannedItemDetails(null);
+      setScanErrorMessage(`Stock item ${targetItem.itemName || targetItem.id} is archived and cannot be issued, consumed, or received.`);
+      return;
+    }
+
     setSelectedInvItem(targetItem);
     setScannedItemDetails({
       item: targetItem,
@@ -4035,7 +4093,7 @@ export default function InventoryManagement({
     const finalVendor = scannedItemDetails?.vendorName || selectedBatchObj?.vendorName || itemToIssue.lastVendor || 'Company Stock';
     const finalGrnNo = scannedItemDetails?.grnNo || selectedBatchObj?.grnNo || '';
     const finalBarcode = scannedItemDetails?.barcodeId || selectedBatchObj?.barcode || finalBatchNo || `BAR-ISS-${itemToIssue.id}`;
-    const deletedIssue = findDeletedBarcode(deletedBarcodes, finalBarcode) || findDeletedBarcode(deletedBarcodes, scannedItemDetails?.barcodeId);
+    const deletedIssue = findRetiredBarcode(deletedBarcodes, finalBarcode) || findRetiredBarcode(deletedBarcodes, scannedItemDetails?.barcodeId);
     if (deletedIssue) {
       alert(deletedBarcodeMessage(deletedIssue));
       return;
@@ -4322,7 +4380,7 @@ export default function InventoryManagement({
         const clashes = payload.rolls.filter((roll) => takenBarcodes.has(String(roll.barcodeId || '').trim().toLowerCase()));
         const deletedRolls = [];
         for (const roll of payload.rolls) {
-          const cached = findDeletedBarcode(deletedBarcodes, roll.barcodeId);
+          const cached = findRetiredBarcode(deletedBarcodes, roll.barcodeId);
           if (cached) {
             deletedRolls.push(cached);
             continue;
@@ -4396,12 +4454,16 @@ export default function InventoryManagement({
   });
 
   const filteredInventory = (groupedInventory || []).filter(i => {
+    const subs = i.subItems || [i];
+    if (stockCategoryFilter === 'ARCHIVED') {
+      if (subs.some((sub) => isInventoryItemActive(sub))) return false;
+    } else if (!showArchived && subs.every((sub) => !isInventoryItemActive(sub))) return false;
     // 1. Category / Over-Aged Filter
     if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
       if (stockCategoryFilter === 'OVERAGED') {
         const hasOverAged = (i.subItems || [i]).some(sub => isItemOverAged(sub, ageingSettings, safeGrns, inventoryRolls));
         if (!hasOverAged) return false;
-      } else {
+      } else if (stockCategoryFilter !== 'ARCHIVED') {
         const itemCat = i.category || 'Film Substrates';
         if (itemCat !== stockCategoryFilter) {
           return false;
@@ -5339,6 +5401,7 @@ export default function InventoryManagement({
                   onChange={e => setStockCategoryFilter(e.target.value)}
                 >
                   <option value="ALL">🌐 All Inventory Item Categories</option>
+                  <option value="ARCHIVED">Archived stock items</option>
                   {overAgedItemsCount > 0 && (
                     <option value="OVERAGED" style={{ color: '#dc2626', fontWeight: '800' }}>
                       ⚠️ Over-Aged Stock Items ({overAgedItemsCount})
@@ -5356,6 +5419,10 @@ export default function InventoryManagement({
                   <option value="Safety Gear (PPE)">Safety Gear (PPE)</option>
                 </SearchableSelect>
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} />
+                Show archived
+              </label>
             </div>
 
 
@@ -5482,6 +5549,7 @@ export default function InventoryManagement({
 
                   const rowIds = stockItemIds(item);
                   const rowSelected = rowIds.length > 0 && rowIds.every((id) => selectedStockIds.has(id));
+                  const rowArchived = (item.subItems || [item]).every((sub) => !isInventoryItemActive(sub));
                   return (
                     <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
                       <td>
@@ -5521,6 +5589,11 @@ export default function InventoryManagement({
                         >
                           {title}
                         </button>
+                        {rowArchived && (
+                          <div style={{ marginTop: '4px' }}>
+                            <span className="badge" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', fontSize: '0.68rem', fontWeight: '800' }}>Archived</span>
+                          </div>
+                        )}
                         {item.itemCode && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.itemCode}</div>
                         )}
@@ -5663,11 +5736,11 @@ export default function InventoryManagement({
                           
                           <button 
                             className="btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fecaca' }}
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', color: rowArchived ? '#0369a1' : '#dc2626', borderColor: rowArchived ? '#bae6fd' : '#fecaca' }}
                             onClick={() => handleDeleteStockItem(item)}
-                            title="Delete Stock Item"
+                            title={rowArchived ? 'Reactivate stock item' : 'Delete an unused item, or archive an item that has history'}
                           >
-                            <Trash2 size={14} /> Delete
+                            <Trash2 size={14} /> {rowArchived ? 'Reactivate' : 'Delete / Archive'}
                           </button>
                         </div>
                       </td>
@@ -8460,7 +8533,7 @@ export default function InventoryManagement({
                   }}
                 >
                   <option value="">-- Choose Item from Inventory Directory --</option>
-                  {(inventory || []).filter(i => {
+                  {(inventory || []).filter(i => isInventoryItemActive(i)).filter(i => {
                     const s = (stockSearchTerm || '').toLowerCase();
                     const filmType = codeKey(i.filmType);
                     const itemName = codeKey(i.itemName);
@@ -9102,7 +9175,7 @@ export default function InventoryManagement({
                   style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.25)', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
                   onClick={() => handleDeleteStockItem(editingStockItem)}
                 >
-                  <Trash2 size={16} /> Delete Item
+                  <Trash2 size={16} /> {(editingStockItem?.subItems || [editingStockItem]).every((sub) => sub && !isInventoryItemActive(sub)) ? 'Reactivate' : 'Delete / Archive'}
                 </button>
 
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -9118,32 +9191,69 @@ export default function InventoryManagement({
           </div>
         </div>
       )}
-      {deletePrompt && (
+      {deletePrompt && (() => {
+        const mode = deletePrompt.preview?.mode || 'delete';
+        const onHandRolls = (deletePrompt.preview?.items || []).flatMap((item) => item.rolls || []);
+        const title = mode === 'reactivate' ? 'Reactivate stock item' : mode === 'archive' ? 'Deactivate / Archive' : mode === 'write_off' ? 'Stock must be cleared first' : 'Delete unused stock item';
+        const submitLabel = deletePrompt.busy
+          ? 'Saving…'
+          : mode === 'reactivate'
+            ? 'Reactivate'
+            : mode === 'archive'
+              ? 'Deactivate / Archive'
+              : mode === 'write_off'
+                ? 'Write off remaining stock & archive'
+                : 'Delete unused item';
+        return (
         <div className="modal-overlay" onClick={() => { if (!deletePrompt.busy) setDeletePrompt(null); }}>
-          <div className="glass-card modal-content" style={{ width: '560px', maxWidth: '95vw' }} onClick={(event) => event.stopPropagation()}>
-            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem' }}>Delete stock item</h3>
+          <div className="glass-card modal-content" style={{ width: '600px', maxWidth: '95vw' }} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem' }}>{title}</h3>
             <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              Permanently delete <strong>{deletePrompt.label}</strong> ({deletePrompt.ids.join(', ')}).
-              This removes the item together with its rolls and ledger entries. GRN headers that also cover other items stay.
+              <strong>{deletePrompt.label}</strong> ({deletePrompt.ids.join(', ')}).
             </p>
-            {deletePrompt.preview ? (
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', marginBottom: '12px', fontSize: '0.88rem' }}>
-                <div><strong>{deletePrompt.preview.rolls}</strong> roll{deletePrompt.preview.rolls === 1 ? '' : 's'}</div>
-                <div><strong>{deletePrompt.preview.barcodes}</strong> barcode{deletePrompt.preview.barcodes === 1 ? '' : 's'} kept in Barcodes and marked Deleted</div>
-                <div><strong>{deletePrompt.preview.ledgerEntries}</strong> ledger entr{deletePrompt.preview.ledgerEntries === 1 ? 'y' : 'ies'}</div>
-                <div><strong>{Number(deletePrompt.preview.totalKg || 0).toLocaleString('en-IN')}</strong> kg</div>
-                {deletePrompt.preview.consumedOrIssued && (
-                  <p style={{ margin: '10px 0 0', color: '#b91c1c', fontWeight: '700' }}>
-                    Warning: {deletePrompt.preview.consumedOrIssuedRolls} roll{deletePrompt.preview.consumedOrIssuedRolls === 1 ? '' : 's'} {deletePrompt.preview.consumedOrIssuedRolls === 1 ? 'was' : 'were'} consumed or issued to a job. {deletePrompt.preview.consumedOrIssuedRolls === 1 ? 'It is' : 'They are'} still removed from stock. The barcode stays marked Deleted.
-                  </p>
+            {!deletePrompt.preview ? (
+              <p style={{ fontSize: '0.88rem' }}>Checking transactions and stock on hand…</p>
+            ) : mode === 'delete' ? (
+              <p style={{ fontSize: '0.88rem', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px' }}>
+                This item has never been used. No rolls, receipts, issues, or ledger entries will be removed. Only the unused master record is deleted.
+              </p>
+            ) : mode === 'archive' ? (
+              <p style={{ fontSize: '0.88rem', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '12px', color: '#9a3412' }}>
+                This item cannot be deleted because it has transactions. Deactivate / Archive hides it from stock lists and from new GRNs, issues, and consumption. The ledger, rolls, barcodes, and job history stay viewable. An authorised user can reactivate it.
+              </p>
+            ) : mode === 'write_off' ? (
+              <div style={{ fontSize: '0.88rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px', color: '#991b1b' }}>
+                <p style={{ margin: '0 0 8px' }}>
+                  This item cannot be deleted, and it cannot be archived while <strong>{Number(deletePrompt.preview.onHandKg || 0).toLocaleString('en-IN')} kg</strong> is still on hand
+                  ({deletePrompt.preview.onHandRolls || 0} In Stock or QC Hold roll{(deletePrompt.preview.onHandRolls || 0) === 1 ? '' : 's'}).
+                  Write the stock off, scrap it, or transfer it with a stock adjustment. A write-off posts an adjustment out and marks each barcode Written Off.
+                </p>
+                {onHandRolls.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: '#7f1d1d' }}>
+                    {onHandRolls.map((roll) => (
+                      <label key={roll.barcode} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={(deletePrompt.selectedBarcodes || []).includes(roll.barcode)}
+                          onChange={(event) => setDeletePrompt((prev) => {
+                            if (!prev) return prev;
+                            const current = new Set(prev.selectedBarcodes || []);
+                            if (event.target.checked) current.add(roll.barcode);
+                            else current.delete(roll.barcode);
+                            return { ...prev, selectedBarcodes: [...current] };
+                          })}
+                        />
+                        <span>{roll.barcode} · {roll.kg} kg · {roll.status}</span>
+                      </label>
+                    ))}
+                  </div>
                 )}
               </div>
             ) : (
-              <p style={{ fontSize: '0.88rem' }}>Checking rolls, barcodes, and ledger entries…</p>
+              <p style={{ fontSize: '0.88rem' }}>
+                Reactivate this archived item. Its history was not removed. A reason is written to the audit log.
+              </p>
             )}
-            <p style={{ fontSize: '0.86rem', color: '#7f1d1d', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 12px' }}>
-              Barcodes are not erased. Each roll barcode stays in the Barcodes section with a red Deleted label, this reason, who deleted it, and when. Deleted barcodes are not stock and cannot be received, issued, or consumed.
-            </p>
             <form onSubmit={confirmDeleteStockItems}>
               <label style={{ display: 'block', fontWeight: '700', margin: '12px 0 6px' }} htmlFor="delete-stock-reason">Reason (required)</label>
               <textarea
@@ -9153,7 +9263,7 @@ export default function InventoryManagement({
                 maxLength={2000}
                 value={deletePrompt.reason}
                 onChange={(event) => setDeletePrompt((prev) => prev ? { ...prev, reason: event.target.value, error: '' } : prev)}
-                placeholder="Why is this stock item being deleted?"
+                placeholder={mode === 'reactivate' ? 'Why is this item being reactivated?' : 'Why is this stock item being deleted, archived, or written off?'}
                 style={{ minHeight: '80px' }}
               />
               {deletePrompt.error && (
@@ -9161,14 +9271,15 @@ export default function InventoryManagement({
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
                 <button type="button" className="btn-secondary" disabled={deletePrompt.busy} onClick={() => setDeletePrompt(null)}>Cancel</button>
-                <button type="submit" className="btn-primary" disabled={deletePrompt.busy || !deletePrompt.preview || !deletePrompt.reason.trim()} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
-                  {deletePrompt.busy ? 'Deleting…' : 'Delete item'}
+                <button type="submit" className="btn-primary" disabled={deletePrompt.busy || !deletePrompt.preview || !deletePrompt.reason.trim()} style={{ background: mode === 'reactivate' ? '#0369a1' : '#dc2626', borderColor: mode === 'reactivate' ? '#0369a1' : '#dc2626' }}>
+                  {submitLabel}
                 </button>
               </div>
             </form>
           </div>
         </div>
-      )}
+        );
+      })()}
       {/* Raw Material Stock Ledger & Barcode Tracking Modal */}
       {selectedItemForPurchaseHistory && (() => {
         const item = sanitizeInventoryItem(selectedItemForPurchaseHistory);
@@ -9197,7 +9308,7 @@ export default function InventoryManagement({
             (r.grn_no && g.grnNo && r.grn_no === g.grnNo) ||
             (r.grnNo && g.id && r.grnNo === g.id))
             && rollBelongsOnItemLedger(r, item).include
-            && !findDeletedBarcode(deletedBarcodes, r.barcodeId || r.barcode || r.id)
+            && !findRetiredBarcode(deletedBarcodes, r.barcodeId || r.barcode || r.id)
           );
 
           let resolvedBarcode = '';
@@ -9474,7 +9585,7 @@ export default function InventoryManagement({
           if (!barcode || receiptBarcodes.has(barcode)) return false;
           if (roll.grnNo || roll.grnId || roll.grn_no) return false;
           if (String(roll.status || 'In Stock') !== 'In Stock') return false;
-          if (findDeletedBarcode(deletedBarcodes, roll.barcodeId || roll.barcode || roll.id)) return false;
+          if (findRetiredBarcode(deletedBarcodes, roll.barcodeId || roll.barcode || roll.id)) return false;
           const link = rollBelongsOnItemLedger(roll, item);
           return link.include && (Number(roll.availableWeightKg ?? roll.netWeightKg) || 0) > 0;
         }).map(roll => {
@@ -9543,7 +9654,7 @@ export default function InventoryManagement({
         };
 
         const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines]
-          .filter((tx) => !findDeletedBarcode(deletedBarcodes, tx.barcode));
+          .filter((tx) => !findRetiredBarcode(deletedBarcodes, tx.barcode));
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
         // 7. Calculate Chronological Running Balance (Pending QC and Rejected QC Hold do NOT add to usable stock!)
