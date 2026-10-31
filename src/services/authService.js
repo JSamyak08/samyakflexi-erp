@@ -2,6 +2,8 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { isCompanyAddress, parseMailbox } from './emailPolicy';
 import { readUsername } from '../utils/activeUserLabel';
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
+import { resolvePublicOrigin } from '../utils/canonicalOrigin';
+import { isOtpType, safeNextPath } from '../utils/authLinks';
 
 const PROFILE_COLUMNS = 'id, username, full_name, email, role, assigned_roles, department, status, active, auth_user_id';
 
@@ -128,14 +130,13 @@ export async function sendPasswordResetEmail(email) {
     return { success: false, message: 'Supabase is not configured. Password reset unavailable.' };
   }
 
-  const configuredOrigin = String(import.meta.env.VITE_APP_ORIGIN || '').trim().replace(/\/$/, '');
-  const origin = configuredOrigin || (typeof window !== 'undefined' ? window.location.origin : '');
-  if (!origin) {
-    return { success: false, message: 'VITE_APP_ORIGIN is not configured. Set it before sending a password reset.' };
-  }
+  const origin = resolvePublicOrigin({
+    configured: import.meta.env.VITE_PUBLIC_SITE_URL || import.meta.env.VITE_APP_ORIGIN || '',
+    locationOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+  });
 
   const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-    redirectTo: `${origin}/reset-password`,
+    redirectTo: `${origin}/auth/confirm`,
   });
 
   if (error) return { success: false, message: error.message };
@@ -152,6 +153,85 @@ export async function updateOwnPassword(newPassword) {
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) return { success: false, message: error.message };
   return { success: true };
+}
+
+const RECOVERY_OTP = new Set(['recovery', 'invite']);
+let redirectTask = null;
+let redirectKey = '';
+
+function callbackLocation(loc) {
+  if (loc && loc.href) return new URL(loc.href);
+  if (typeof window === 'undefined') return null;
+  return new URL(window.location.href);
+}
+
+function stripAuthParams(nextPath) {
+  if (typeof window === 'undefined') return;
+  const path = safeNextPath(nextPath, '/login');
+  window.history.replaceState({ tab: path === '/reset-password' ? 'login' : 'login' }, '', path);
+}
+
+/**
+ * Finish a password, invite, or confirm link inside the ERP.
+ * token_hash is verified here. A PKCE code is exchanged when the client
+ * has not already consumed it. The supabase.co host is never opened.
+ */
+export async function completeAuthRedirect(loc) {
+  const url = callbackLocation(loc);
+  if (!url || !isSupabaseConfigured()) return { status: 'none' };
+  const key = `${url.pathname}${url.search}${url.hash}`;
+  if (redirectTask && redirectKey === key) return redirectTask;
+  redirectKey = key;
+  redirectTask = runAuthRedirect(url).catch((error) => {
+    redirectTask = null;
+    return { status: 'error', message: error?.message || 'This link is invalid or has expired. Request a new one.' };
+  });
+  return redirectTask;
+}
+
+async function runAuthRedirect(url) {
+  const hashParams = new URLSearchParams(String(url.hash || '').replace(/^#/, ''));
+  const tokenHash = url.searchParams.get('token_hash') || hashParams.get('token_hash') || '';
+  const type = url.searchParams.get('type') || hashParams.get('type') || '';
+  const code = url.searchParams.get('code') || '';
+  const next = safeNextPath(url.searchParams.get('next') || '', type === 'recovery' || type === 'invite' ? '/reset-password' : '/');
+
+  if (tokenHash) {
+    if (!isOtpType(type)) {
+      return { status: 'error', message: 'This sign-in link is not recognized. Request a new one.' };
+    }
+    const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+    if (error) {
+      return { status: 'error', message: 'This link is invalid or has expired. Request a new one.' };
+    }
+    if (RECOVERY_OTP.has(type)) {
+      stripAuthParams('/reset-password');
+      return { status: 'recovery' };
+    }
+    stripAuthParams(next === '/reset-password' ? '/' : next);
+    return { status: 'signed-in' };
+  }
+
+  if (code) {
+    const existing = await supabase.auth.getSession();
+    if (!existing.data?.session) {
+      const exchanged = await supabase.auth.exchangeCodeForSession(code);
+      if (exchanged.error) {
+        const again = await supabase.auth.getSession();
+        if (!again.data?.session) {
+          return { status: 'error', message: 'This link is invalid or has expired. Request a new one.' };
+        }
+      }
+    }
+    const recovery = type === 'recovery' || url.pathname === '/reset-password';
+    stripAuthParams(recovery ? '/reset-password' : (next === '/reset-password' ? '/' : next));
+    return { status: recovery ? 'recovery' : 'signed-in' };
+  }
+
+  if (type === 'recovery' || String(url.hash || '').includes('type=recovery')) {
+    return { status: 'recovery' };
+  }
+  return { status: 'none' };
 }
 
 export async function signOutUser() {

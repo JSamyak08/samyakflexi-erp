@@ -477,7 +477,9 @@ export async function importLegacyBusinessRecords({ supabase, local = {}, settin
   imported.certificate_of_analyses = await insertMissing(supabase, 'certificate_of_analyses', bundle.certificates.map(coaToRow));
   imported.pellet_inwards = await insertMissing(supabase, 'pellet_inwards', bundle.pelletInwards.map(pelletInToRow));
   imported.pellet_consumptions = await insertMissing(supabase, 'pellet_consumptions', bundle.pelletConsumptions.map(pelletOutToRow));
-  imported.audit_logs = await insertMissing(supabase, 'audit_logs', bundle.auditLogs.map(auditToRow));
+  // Browser copies are not copied in. record_audit_log stamps auth.uid(),
+  // so a bulk upload would attribute old rows to whoever is signed in.
+  imported.audit_logs = 0;
 
   if (bundle.press) {
     const { data, error } = await supabase.from('press_board').select('id').eq('id', PLANT_PRESS_ID).maybeSingle();
@@ -681,19 +683,6 @@ function pelletOutToRow(item) {
     operating_hours: Number(item.operatingHours) || 0,
     reference_printing_done_kg: Number(item.referencePrintingDoneKg) || 0,
     payload: item
-  };
-}
-
-function auditToRow(item) {
-  return {
-    id: String(item.id),
-    username: item.username || 'System',
-    user_role: item.userRole || item.user_role || '',
-    action_type: item.actionType || item.action_type || 'UPDATE',
-    module: item.module || 'System',
-    details: item.details || '',
-    target_id: item.targetId || item.target_id || null,
-    created_at: item.timestamp || item.created_at || new Date().toISOString()
   };
 }
 

@@ -15,7 +15,7 @@ import {
 import { signInUser, sendPasswordResetEmail, updateOwnPassword } from '../services/authService';
 
 
-export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUpdated, initialView = 'signin', onViewChange }) {
+export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUpdated, initialView = 'signin', onViewChange, linkError = '' }) {
 
   const [viewMode, setViewMode] = useState(initialView === 'forgot_password' ? 'forgot_password' : 'signin');
 
@@ -243,10 +243,10 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                 </div>
               )}
 
-              {error && (
+              {(linkError || error) && (
                 <div className="auth-error-alert">
                   <AlertCircle size={18} />
-                  <span>{error}</span>
+                  <span>{error || linkError}</span>
                 </div>
               )}
 

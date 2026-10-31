@@ -1,4 +1,24 @@
 {
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "samyakflexi-erp.vercel.app" }],
+      "destination": "https://erp.samyakinternational.in/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "samyakflexi-erp-samyak-international-ltd.vercel.app" }],
+      "destination": "https://erp.samyakinternational.in/:path*",
+      "permanent": false
+    },
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "samyakflexi-erp-git-main-samyak-international-ltd.vercel.app" }],
+      "destination": "https://erp.samyakinternational.in/:path*",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { resolveOutboundRecipients } from '../src/services/emailPolicy.js';
 import { readUsername } from '../src/utils/activeUserLabel.js';
 import { resolveAppOrigin } from './appOrigin.js';
+import { authConfirmUrl } from '../src/utils/authLinks.js';
 import { readSmtpConfig } from './smtpConfig.js';
 import { resolveAccountRoles, assignedRolesOf, primaryRole } from '../src/assignedRoles.js';
 
@@ -158,7 +159,7 @@ async function sendSetupMail(to, name, actionLink, options = {}) {
 }
 
 async function issueRecovery(service, email, name, options = {}) {
-  const redirectTo = `${safeOrigin()}/reset-password`;
+  const redirectTo = `${safeOrigin()}/auth/confirm`;
   const { data, error } = await service.auth.admin.generateLink({
     type: 'recovery',
     email,
@@ -174,7 +175,22 @@ async function issueRecovery(service, email, name, options = {}) {
     failure.status = 400;
     throw failure;
   }
-  const actionLink = data?.properties?.action_link || '';
+  const tokenHash = data?.properties?.hashed_token || '';
+  if (!tokenHash) {
+    console.error('Account email was not delivered', {
+      to: String(email || '').slice(0, 200),
+      kind: options.kind || 'automated',
+      blocked: false,
+    });
+    const failure = new Error('Could not prepare the password email.');
+    failure.status = 400;
+    throw failure;
+  }
+  const actionLink = authConfirmUrl(safeOrigin(), {
+    tokenHash,
+    type: 'recovery',
+    next: '/reset-password',
+  });
   const delivery = await sendSetupMail(email, name, actionLink, {
     kind: options.kind,
     service,

@@ -332,6 +332,7 @@ export const MODULES = [
 
 const SPECIAL_PATHS = [
   { path: '/reset-password', module: 'login', section: 'recovery' },
+  { path: '/auth/confirm', module: 'login', section: 'confirm' },
   { path: '/payroll', module: 'employees', section: 'payroll' },
   { path: '/attendance', module: 'employees', section: 'attendance' },
   { path: '/job-datasheet', module: 'production_records', section: 'job-data-sheets' },
@@ -702,10 +703,10 @@ export function parseLocation({ pathname = '/', search = '', hash = '' } = {}) {
   const special = SPECIAL_PATHS.find((item) => normalizePath(item.path) === path.toLowerCase() || normalizePath(item.path) === path);
   if (special) {
     const mod = MODULE_BY_KEY.get(special.module);
-    if (special.section === 'recovery') {
+    if (special.section === 'recovery' || special.section === 'confirm') {
       return finishRoute(mod, defaultPattern(mod), {}, query, {
-        sectionOverride: 'recovery',
-        recovery: true,
+        sectionOverride: special.section,
+        recovery: special.section === 'recovery',
         hash: recovery ? hash : '',
       });
     }
@@ -865,6 +866,10 @@ export function buildCanonical(moduleKey, params = {}) {
     const query = keptQuery({ ...params, section: undefined, tab: undefined, subTab: undefined, subtab: undefined, id: undefined }, { section: 'recovery' });
     return `/reset-password${formatQuery(query)}`;
   }
+  if (params.section === 'confirm') {
+    const query = keptQuery({ ...params, section: undefined, tab: undefined, subTab: undefined, subtab: undefined, id: undefined }, { section: 'confirm' });
+    return `/auth/confirm${formatQuery(query)}`;
+  }
   const alias = moduleKey === 'scrap_wastage' ? 'scrap_analytics' : moduleKey === 'job_datasheet' ? 'production_records' : moduleKey;
   const mod = MODULE_BY_KEY.get(alias) || MODULE_BY_KEY.get('dashboard');
   let section = inferSection(mod, moduleKey === 'job_datasheet' ? { ...params, section: params.section || 'job-data-sheets' } : params);
@@ -894,6 +899,7 @@ export function buildHref(moduleKey, params = {}, phase = ROUTING_PHASE) {
   if (alias === 'login' && phase >= 3) {
     if (params.section === 'forgot-password' || params.section === 'forgot_password') return '/login/forgot-password';
     if (params.section === 'recovery') return '/reset-password';
+    if (params.section === 'confirm') return '/auth/confirm';
     return '/login';
   }
   if (alias === 'pellet_fuel' && phase < 5) {
@@ -1007,20 +1013,33 @@ export function pushSlugState(tabKey, queryParams = {}, replace = false) {
   }
 }
 
+export function isAuthCallbackLocation(loc) {
+  const hash = loc?.hash ?? (typeof window !== 'undefined' ? window.location.hash : '');
+  const pathname = loc?.pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '');
+  const search = loc?.search ?? (typeof window !== 'undefined' ? window.location.search : '');
+  const path = normalizePath(pathname);
+  if (path === '/auth/confirm' || path === '/reset-password') return true;
+  if (isRecoveryHash(hash)) return true;
+  if (search.includes('token_hash=') || search.includes('code=')) return true;
+  return false;
+}
+
 export function isRecoveryLocation(loc) {
   const hash = loc?.hash ?? (typeof window !== 'undefined' ? window.location.hash : '');
   const pathname = loc?.pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '');
   const search = loc?.search ?? (typeof window !== 'undefined' ? window.location.search : '');
+  const path = normalizePath(pathname);
   if (isRecoveryHash(hash)) return true;
-  if (normalizePath(pathname) === '/reset-password') return true;
-  if (search.includes('code=') && (normalizePath(pathname) === '/reset-password' || normalizePath(pathname) === '/login')) return true;
+  if (path === '/reset-password') return true;
+  if (search.includes('code=') && (path === '/reset-password' || path === '/login' || path === '/auth/confirm')) return true;
+  if ((search.includes('type=recovery') || search.includes('type=invite')) && (path === '/auth/confirm' || search.includes('token_hash='))) return true;
   return false;
 }
 
 export function rememberReturnTo(href) {
   try {
     if (typeof sessionStorage === 'undefined') return;
-    if (!href || href.startsWith('/login') || href.startsWith('/reset-password')) return;
+    if (!href || href.startsWith('/login') || href.startsWith('/reset-password') || href.startsWith('/auth/confirm')) return;
     sessionStorage.setItem(RETURN_KEY, href);
   } catch {
     /* session storage can be blocked */

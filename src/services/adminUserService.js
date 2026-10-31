@@ -13,7 +13,7 @@ async function postAdmin(body) {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ ...body, origin: window.location.origin }),
+    body: JSON.stringify(body),
   });
 
   let payload = null;

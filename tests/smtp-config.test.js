@@ -27,9 +27,12 @@ test('SMTP config requires every setting and does not infer TLS from port 465', 
   assert.throws(() => readSmtpConfig({}), /SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS/);
 });
 
-test('APP_ORIGIN is required and must be an origin', () => {
+test('APP_ORIGIN is an origin, and a missing or vercel.app host falls back to production', () => {
   assert.equal(resolveAppOrigin({ APP_ORIGIN: 'https://preview.example.test/' }), 'https://preview.example.test');
-  assert.throws(() => resolveAppOrigin({}), /APP_ORIGIN is not configured/);
+  assert.equal(resolveAppOrigin({}), 'https://erp.samyakinternational.in');
+  assert.equal(resolveAppOrigin({ APP_ORIGIN: 'https://samyakflexi-erp.vercel.app' }), 'https://erp.samyakinternational.in');
+  assert.equal(resolveAppOrigin({ APP_ORIGIN: 'https://eamstsaqkbeiywfaanhi.supabase.co' }), 'https://erp.samyakinternational.in');
+  assert.equal(resolveAppOrigin({ PUBLIC_SITE_URL: 'https://erp.samyakinternational.in' }), 'https://erp.samyakinternational.in');
   assert.throws(() => resolveAppOrigin({ APP_ORIGIN: 'https://preview.example.test/reset' }), /origin only/);
   assert.throws(() => resolveAppOrigin({ APP_ORIGIN: 'ftp://preview.example.test' }), /http or https/);
 });

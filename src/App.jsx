@@ -84,7 +84,7 @@ import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
-import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS } from './bootAccess';
+import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS, firstAllowedModule } from './bootAccess';
 import { assignedRolesOf, hasOnlyRole, rawRoleNames, userHasRole } from './assignedRoles';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
@@ -92,7 +92,7 @@ import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getDocumentPrefixes, getNextDocRefNumber, syncOcnCounterWithRecords } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
-import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
+import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, isAuthCallbackLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
 import {
   ACTIVE_USER_PREVIEW_KEY,
@@ -164,7 +164,7 @@ import {
 } from './services/supabaseDataService';
 import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
 import { buildPelletCompanionGrn, findPelletInventoryItem, fuelActorName } from './services/pelletFuel';
-import { fetchSessionProfile, signOutUser } from './services/authService';
+import { fetchSessionProfile, signOutUser, completeAuthRedirect } from './services/authService';
 import {
   PartialSaveError,
   writeWithRetry,
@@ -399,6 +399,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => e2eStubUser());
   const [sessionProfile, setSessionProfile] = useState(null);
   const [mustSetPassword, setMustSetPassword] = useState(false);
+  const [authLinkError, setAuthLinkError] = useState('');
   const passwordRecoveryRef = useRef(false);
   const recoveryHandledRef = useRef(false);
   const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(e2eStubUser()));
@@ -467,13 +468,15 @@ export default function App() {
   useEffect(() => {
     if (!isAuthReady || typeof window === 'undefined') return;
     const loc = window.location;
-    if (!recoveryHandledRef.current && isRecoveryLocation(loc)) {
-      passwordRecoveryRef.current = true;
-      setMustSetPassword(true);
+    if (!recoveryHandledRef.current && isAuthCallbackLocation(loc)) {
+      if (isRecoveryLocation(loc)) {
+        passwordRecoveryRef.current = true;
+        setMustSetPassword(true);
+      }
       return;
     }
     if (!isAuthenticated || !currentUser) {
-      if (loc.pathname !== '/login' && !loc.pathname.startsWith('/login/')) {
+      if (!isAuthCallbackLocation(loc) && loc.pathname !== '/login' && !loc.pathname.startsWith('/login/')) {
         rememberReturnTo(loc.pathname + loc.search + loc.hash);
         window.history.replaceState({ tab: 'login' }, '', '/login');
       }
@@ -491,11 +494,18 @@ export default function App() {
         handleTabChange(restored.tab, restored.params || {});
         return;
       }
-      const defaultTab = hasOnlyRole(currentUser, 'Printing Operator') ? 'printing_scheduler' : 'dashboard';
+      const defaultTab = firstAllowedModule(rolePermissions, assignedRolesOf(currentUser));
       handleTabChange(defaultTab);
       return;
     }
     const route = getRouteFromUrl();
+    if (!route.unknown && !isTabAllowed(activeTab)) {
+      const home = firstAllowedModule(rolePermissions, assignedRolesOf(currentUser));
+      if (home && home !== activeTab && isTabAllowed(home)) {
+        handleTabChange(home);
+        return;
+      }
+    }
     if (!route.unknown) pushSlugState(activeTab, urlParams, true);
   }, [isAuthenticated, currentUser, isAuthReady, activeTab]);
 
@@ -750,6 +760,14 @@ export default function App() {
   const isUserTabAllowed = (user, tabKey) => roleHasModule(rolePermissions, assignedRolesOf(user), tabKey);
 
   const isTabAllowed = (tabKey) => isUserTabAllowed(currentUser, tabKey);
+
+  useEffect(() => {
+    if (!isAuthReady || !isAuthenticated || !currentUser || typeof window === 'undefined') return;
+    if (isAuthCallbackLocation(window.location) || routeInfo.unknown) return;
+    if (isTabAllowed(activeTab)) return;
+    const home = firstAllowedModule(rolePermissions, currentUser);
+    if (home && home !== activeTab && isTabAllowed(home)) handleTabChange(home);
+  }, [isAuthReady, isAuthenticated, currentUser, activeTab, rolePermissions, routeInfo.unknown]);
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
 
@@ -1275,18 +1293,23 @@ export default function App() {
       };
 
       try {
-        try {
-          const localSnapshot = snapshotBrowserStorage(window.localStorage);
-          const settingsSnapshot = await fetchAllSystemSettings().catch(() => ({}));
-          await importLegacyBusinessRecords({
-            supabase,
-            local: localSnapshot,
-            settings: settingsSnapshot || {}
-          });
-          clearImportedLocalKeys(window.localStorage, localKeysToClear(localSnapshot));
-        } catch (importErr) {
-          console.error('[Legacy import] Browser copies were kept because the upload failed:', importErr);
-          alert(`Some records saved only in this browser could not be uploaded. They were left on this device. ${describeSaveError(importErr)}`);
+        // Only an Admin may upload leftover browser copies. Other roles were
+        // hitting RLS on every sign-in and showing a save error for a change
+        // they did not make.
+        if (assignedRolesOf(currentUser || sessionProfile).includes('Admin')) {
+          try {
+            const localSnapshot = snapshotBrowserStorage(window.localStorage);
+            const settingsSnapshot = await fetchAllSystemSettings().catch(() => ({}));
+            await importLegacyBusinessRecords({
+              supabase,
+              local: localSnapshot,
+              settings: settingsSnapshot || {}
+            });
+            clearImportedLocalKeys(window.localStorage, localKeysToClear(localSnapshot));
+          } catch (importErr) {
+            console.error('[Legacy import] Browser copies were kept because the upload failed:', importErr);
+            alert(`Some records saved only in this browser could not be uploaded. They were left on this device. ${describeSaveError(importErr)}`);
+          }
         }
 
         const accessUser = currentUser || sessionProfile;
@@ -2144,6 +2167,25 @@ export default function App() {
       if (event === 'PASSWORD_RECOVERY' || (typeof window !== 'undefined' && window.location.hash.includes('type=recovery'))) {
         passwordRecoveryRef.current = true;
       }
+      if (typeof window !== 'undefined' && isAuthCallbackLocation(window.location)) {
+        const callback = await completeAuthRedirect(window.location);
+        if (!mounted) return;
+        if (callback.status === 'recovery') {
+          passwordRecoveryRef.current = true;
+          setAuthLinkError('');
+          setMustSetPassword(true);
+          setIsAuthenticated(false);
+          setIsAuthReady(true);
+          return;
+        }
+        if (callback.status === 'error') {
+          setAuthLinkError(callback.message || 'This link is invalid or has expired. Request a new one.');
+          setMustSetPassword(false);
+          passwordRecoveryRef.current = false;
+          setIsAuthReady(true);
+          return;
+        }
+      }
       if (passwordRecoveryRef.current) {
         setMustSetPassword(true);
         setIsAuthenticated(false);
@@ -2188,7 +2230,6 @@ export default function App() {
 
   const handleLogin = (user) => {
     setIsSigningIn(true);
-    logAudit('AUTH', 'User Management', `User ${user?.name || user?.email || 'User'} signed in to the system`, user?.id, user);
     applyAuthenticatedProfile(user);
     const saved = consumeReturnTo();
     const restored = saved ? routeFromHref(saved) : null;
@@ -2205,7 +2246,7 @@ export default function App() {
       handleTabChange(activeTab, urlParams);
       return;
     }
-    const targetTab = hasOnlyRole(user, 'Printing Operator') ? 'printing_scheduler' : 'dashboard';
+    const targetTab = firstAllowedModule(rolePermissions, assignedRolesOf(user));
     handleTabChange(targetTab);
   };
 
@@ -2221,7 +2262,6 @@ export default function App() {
 
   const handleLogout = () => {
     cancelQcOverdueEscalationDigest();
-    logAudit('AUTH', 'User Management', `User ${currentUser?.name || currentUser?.email || 'User'} signed out of the system`, currentUser?.id);
     try {
       localStorage.removeItem('samyak_erp_current_user');
       sessionStorage.removeItem('samyak_erp_ui_role_preview');
@@ -4704,6 +4744,7 @@ export default function App() {
       <AuthScreen
         onLogin={handleLogin}
         recoveryMode={mustSetPassword}
+        linkError={authLinkError}
         initialView={routeInfo.section === 'forgot-password' ? 'forgot_password' : 'signin'}
         onViewChange={(mode) => {
           const section = mode === 'forgot_password' ? 'forgot-password' : 'signin';
@@ -5392,6 +5433,7 @@ export default function App() {
 
         {!routeInfo.unknown && !isTabAllowed(activeTab) && (
           <div className="glass-panel" data-screen="forbidden" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
+            {/* lucide Lock, not window.Lock. Chrome's Web Locks API throws Illegal constructor when called as a component. */}
             <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
             <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
               Module Access Restricted for Role ({rawRoleNames(currentUser).join(', ') || 'Guest'})
@@ -5399,8 +5441,8 @@ export default function App() {
             <p style={{ color: '#92400e', fontSize: '0.85rem', marginTop: '6px', maxWidth: '500px', margin: '6px auto 16px auto' }}>
               Your assigned roles <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b> have not been granted permission to view this module in the RBAC permissions matrix.
             </p>
-            <button className="btn-primary" onClick={() => handleTabChange('dashboard')}>
-              Return to Executive Dashboard
+            <button className="btn-primary" onClick={() => handleTabChange(firstAllowedModule(rolePermissions, assignedRolesOf(currentUser)))}>
+              Open your workspace
             </button>
           </div>
         )}
