@@ -52,7 +52,7 @@ import {
 } from '../utils/poAmendment';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
-import { resolveReceiptItem } from '../services/inventoryIdentity';
+import { planReceiptStockLink } from '../services/inventoryIdentity';
 import { calculateOrderStockReservations, generateInventoryId, linkedRequirementMatches, presentRequirementStock, requirementStockKey } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
@@ -1227,6 +1227,10 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           generateInventoryId,
           idSources: [grns]
         });
+        if (prepared.linkError) {
+          alert(prepared.linkError);
+          return;
+        }
         const multiGRN = {
           ...prepared.newGRN,
           originalPoItemName: origNameClean,
@@ -1283,14 +1287,20 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
       const countUnits = parseInt(grnFormData.rollsCount, 10) || 1;
       const unitWeight = Number((enteredWeight / countUnits).toFixed(2));
-      const existingStock = resolveReceiptItem(inventory, {
+      const linePlan = planReceiptStockLink(inventory, {
         itemName: enteredNameClean,
         category: grnFormData.category || 'Raw Materials',
         filmType: grnFormData.filmType || '',
         micron: grnFormData.micron || '-',
         widthMm: grnFormData.widthMm || '-',
-        stockItemId: activeGrnModalData.item?.itemId || activeGrnModalData.item?.stockItemId || ''
+        stockItemId: activeGrnModalData.item?.itemId || activeGrnModalData.item?.stockItemId || '',
+        itemId: activeGrnModalData.item?.itemId || ''
       });
+      if (linePlan.action === 'block') {
+        alert(linePlan.message);
+        return;
+      }
+      const existingStock = linePlan.action === 'use' ? linePlan.item : null;
       const newInvId = existingStock ? String(existingStock.id) : generateInventoryId(inventory, grns);
 
       const itemsBreakdown = Array.from({ length: countUnits }, (_, i) => ({

@@ -1,4 +1,5 @@
 import { getInventoryAgeingSettings, DEFAULT_AGEING_SETTINGS } from '../services/settingsService';
+import { ledgerRowLink } from '../services/inventoryLedgerMatch';
 
 /**
  * Parses flexible raw date strings or Date objects into a valid Date object
@@ -43,14 +44,13 @@ export function getItemInwardDate(item, grns = [], rolls = []) {
   });
 
   // 2. Check matching GRNs if provided
-  const matchingGrnsList = Array.isArray(grns) && grns.length > 0 ? grns.filter(g => {
-    if (!g) return false;
-    if (g.itemId && (g.itemId === item.id || g.itemId === item.itemCode)) return true;
-    if (g.stockItemId && (g.stockItemId === item.id || g.stockItemId === item.itemCode)) return true;
-    const gName = (g.itemName || g.filmType || '').toLowerCase().trim();
-    const iName = (item.itemName || item.filmType || '').toLowerCase().trim();
-    return gName && iName && (gName === iName || gName.includes(iName) || iName.includes(gName));
-  }) : (item.matchingGRNs || []);
+  const matchingGrnsList = Array.isArray(grns) && grns.length > 0 ? grns.filter((g) => g && ledgerRowLink({
+    itemId: g.itemId,
+    stockItemId: g.stockItemId,
+    masterItemId: g.masterItemId,
+    itemCode: g.itemCode,
+    itemName: g.itemName
+  }, item).include) : (item.matchingGRNs || []);
 
   matchingGrnsList.forEach(g => {
     const parsed = parseDateFlexible(g.receivedDate || g.grnDate || g.inwardDate || g.createdAt || g.createdDate || g.date);

@@ -4,6 +4,9 @@
  * the user confirms a PO, and clearing that PO drops only the fields it wrote.
  */
 
+import { findInventoryItemById } from './inventoryIdentity.js';
+import { isInventoryItemActive } from './inventoryArchive.js';
+
 export function planVendorPick(matchingPoNumbers) {
   const suggestedPoNumbers = (matchingPoNumbers || []).filter(Boolean);
   return {
@@ -83,14 +86,28 @@ export function describePoForSuggestion(po, deliveryInfo = {}) {
 
 export function filmStockIdForPoItem(inventory, item) {
   if (!item) return '';
-  const matched = (inventory || []).find((row) => {
-    const catMatch = String(row.category || '').toLowerCase() === 'film substrates';
-    const typeMatch = String(row.filmType || '').toUpperCase() === String(item.filmType || '').toUpperCase();
-    const micronMatch = String(row.micron || '') === String(item.micron || '');
-    const widthMatch = String(row.widthMm || '') === String(item.widthMm || '');
-    return catMatch && typeMatch && micronMatch && widthMatch;
+  const explicit = String(item.itemId || item.stockItemId || '').trim();
+  if (explicit) {
+    const picked = findInventoryItemById(inventory, explicit);
+    if (picked && isInventoryItemActive(picked)) return String(picked.id || picked.itemCode || '');
+    return '';
+  }
+  const filmType = String(item.filmType || '').trim().toUpperCase();
+  const micron = item.micron;
+  const width = item.widthMm;
+  if (!filmType || micron === '' || micron === null || micron === undefined || width === '' || width === null || width === undefined) {
+    return '';
+  }
+  const matches = (inventory || []).filter((row) => {
+    if (!isInventoryItemActive(row)) return false;
+    if (String(row.category || '').toLowerCase() !== 'film substrates') return false;
+    if (String(row.filmType || '').trim().toUpperCase() !== filmType) return false;
+    if (String(row.micron) !== String(micron)) return false;
+    if (String(row.widthMm) !== String(width)) return false;
+    return true;
   });
-  return matched ? (matched.id || matched.itemCode || '') : '';
+  if (matches.length !== 1) return '';
+  return String(matches[0].id || matches[0].itemCode || '');
 }
 
 function present(value) {
@@ -124,7 +141,8 @@ export function grnFieldsFromPo(po, { pendingQty = 0, filmStockId = '', formatFi
     micron = present(firstItem.micron) ? firstItem.micron : '';
     widthMm = present(firstItem.widthMm) ? firstItem.widthMm : '';
     itemName = nameFilm(firstItem.filmType || 'PET', firstItem.widthMm || 1000, firstItem.micron || 12);
-    stockItemId = filmStockId || '';
+    const lineId = String(firstItem.itemId || firstItem.stockItemId || '').trim();
+    stockItemId = lineId || filmStockId || '';
   } else {
     itemName = firstItem.itemDesc || firstItem.description || firstItem.itemName || '';
     stockItemId = firstItem.itemId || firstItem.stockItemId || '';

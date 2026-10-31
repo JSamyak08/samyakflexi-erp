@@ -4,7 +4,11 @@
  * the store screen already uses.
  */
 
-import { resolveQcStockTarget, resolveReceiptItem } from './inventoryIdentity.js';
+import {
+  filmReceiptNameConflict,
+  planReceiptStockLink,
+  resolveQcStockTarget
+} from './inventoryIdentity.js';
 
 function asNumber(value, fallback = 0) {
   const n = Number(value);
@@ -192,6 +196,44 @@ function lineItemName(line, helpers) {
   return String(line.itemName || '').trim().replace(/µ/g, 'Micron') || `${line.category || 'Item'} Inward Item`;
 }
 
+/** Link one captured receipt line by item id, or by one exact name. */
+export function planCapturedReceiptLink(inventory, captured = {}, helpers = {}) {
+  const isFilm = (captured.category || 'Film Substrates') === 'Film Substrates';
+  const itemName = lineItemName(captured, helpers);
+  const conflict = isFilm ? filmReceiptNameConflict(captured.itemName, itemName) : '';
+  if (conflict) return { action: 'block', item: null, itemName, message: conflict };
+  const plan = planReceiptStockLink(inventory, {
+    stockItemId: captured.stockItemId,
+    itemId: captured.itemId,
+    masterItemId: captured.masterItemId,
+    itemName,
+    category: captured.category || 'Film Substrates',
+    filmType: isFilm ? captured.filmType : (captured.category || ''),
+    micron: isFilm ? (parseFloat(captured.micron) || 0) : '-',
+    widthMm: isFilm ? (parseFloat(captured.widthMm) || 0) : '-'
+  });
+  return { ...plan, itemName };
+}
+
+export function receiptLinesLinkError(inventory, lines, helpers = {}) {
+  const pool = [...(inventory || [])];
+  for (const line of lines || []) {
+    const plan = planCapturedReceiptLink(pool, line, helpers);
+    if (plan.action === 'block') return plan.message;
+    if (plan.action === 'create') {
+      pool.push({
+        id: `new-${pool.length}`,
+        itemName: plan.itemName,
+        category: line.category || 'Film Substrates',
+        filmType: line.filmType,
+        micron: line.micron,
+        widthMm: line.widthMm
+      });
+    }
+  }
+  return '';
+}
+
 export function prepareMultiLineReceipt({
   header,
   capturedLines,
@@ -211,7 +253,9 @@ export function prepareMultiLineReceipt({
   const pool = [...(inventory || [])];
   const touchedExisting = new Map();
   const lineCount = capturedLines.length;
-  const builtLines = capturedLines.map((captured, index) => {
+  let builtLines;
+  try {
+  builtLines = capturedLines.map((captured, index) => {
     const lineNo = index + 1;
     const isFilm = (captured.category || 'Film Substrates') === 'Film Substrates';
     const isCylinder = captured.category === 'Rotogravure Cylinders';
@@ -255,16 +299,13 @@ export function prepareMultiLineReceipt({
     const category = captured.category || 'Film Substrates';
     const micron = isFilm ? (parseFloat(captured.micron) || 0) : '-';
     const widthMm = isFilm ? (parseFloat(captured.widthMm) || 0) : '-';
-    const existing = resolveReceiptItem(pool, {
-      stockItemId: captured.stockItemId,
-      masterItemId: captured.masterItemId,
-      itemName,
-      category,
-      filmType: isFilm ? captured.filmType : category,
-      micron,
-      widthMm,
-      metallocenePct: metallocene
-    });
+    const linked = planCapturedReceiptLink(pool, captured, helpers);
+    if (linked.action === 'block') {
+      const error = new Error(linked.message);
+      error.linkError = linked.message;
+      throw error;
+    }
+    const existing = linked.action === 'use' ? linked.item : null;
     let lotId;
     let createdLot = false;
     if (existing) {
@@ -341,6 +382,12 @@ export function prepareMultiLineReceipt({
       createdLot
     };
   });
+  } catch (err) {
+    if (err && err.linkError) {
+      return { linkError: err.linkError, newGRN: null, inventoryLots: [], updatedItems: [], rolls: [] };
+    }
+    throw err;
+  }
 
   const summary = summarizeReceiptLines(builtLines);
   const anyCylinder = builtLines.every((line) => line.isCylinder);
