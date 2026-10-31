@@ -40,6 +40,8 @@ import {
   findInventoryRollByScan,
   textFrom
 } from '../utils/barcodeCode';
+import { deletedBarcodeMessage, findDeletedBarcode } from '../utils/barcodeRegistry';
+import { loadDeletedBarcodes } from '../services/supabaseDataService';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -78,6 +80,7 @@ export default function UniversalBarcodeScannerModal({
   const [copied, setCopied] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [activePoPdfData, setActivePoPdfData] = useState(null);
+  const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   
   const inputRef = useRef(null);
   const videoRef = useRef(null);
@@ -103,6 +106,15 @@ export default function UniversalBarcodeScannerModal({
       setActiveBarcode('');
     }
   }, [isOpen, stopCamera]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    let active = true;
+    loadDeletedBarcodes().then((rows) => {
+      if (active) setDeletedBarcodes(rows);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [isOpen]);
 
   // Clean up camera stream on unmount
   useEffect(() => {
@@ -289,6 +301,19 @@ export default function UniversalBarcodeScannerModal({
   const searchResults = useMemo(() => {
     const query = codeKey(activeBarcode);
     if (!query) return null;
+
+    const deletedHit = findDeletedBarcode(deletedBarcodes, activeBarcode);
+    if (deletedHit) {
+      return {
+        deleted: true,
+        query: activeBarcode,
+        barcode: deletedHit.barcode,
+        message: deletedBarcodeMessage(deletedHit),
+        reason: deletedHit.deletedReason || 'No reason recorded',
+        deletedBy: deletedHit.deletedBy || '',
+        deletedAt: deletedHit.deletedAt || ''
+      };
+    }
 
     // Extract potential GRN code if barcode is formatted as (CON|RM)-BC-YYYYMMDD-XXX or similar
     const grnExtract = query.replace(/^(con|rm)-bc-/, '').replace(/-\d+$/, '');
@@ -829,10 +854,10 @@ export default function UniversalBarcodeScannerModal({
     }
 
     return { notFound: true, query: activeBarcode };
-  }, [activeBarcode, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords]);
+  }, [activeBarcode, deletedBarcodes, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords]);
 
   const handleCopyDetails = () => {
-    if (!searchResults || searchResults.notFound) return;
+    if (!searchResults || searchResults.notFound || searchResults.deleted) return;
     const textLines = [
       `=== SAMYAK FLEXI-ERP BARCODE INSPECTION ===`,
       `Category: ${searchResults.entityCategory}`,
@@ -1122,6 +1147,40 @@ export default function UniversalBarcodeScannerModal({
               <p style={{ fontSize: '0.82rem', color: '#64748b', maxWidth: '440px', margin: '0 auto' }}>
                 Point any USB handheld scanner gun at a barcode sticker, scan via camera, or type an ID above to instantly view its detailed specifications and production history.
               </p>
+            </div>
+          ) : searchResults?.deleted ? (
+            <div
+              style={{
+                textAlign: 'center',
+                padding: '40px 16px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '12px'
+              }}
+            >
+              <AlertCircle size={40} style={{ color: '#dc2626', marginBottom: '12px' }} />
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#991b1b', margin: '0 0 8px 0' }}>
+                Deleted
+              </h3>
+              <p style={{ fontSize: '0.9rem', color: '#7f1d1d', maxWidth: '520px', margin: '0 auto 8px auto' }}>
+                Barcode <strong>{searchResults.barcode}</strong> was deleted and is not stock.
+              </p>
+              <p style={{ fontSize: '0.86rem', color: '#7f1d1d', maxWidth: '520px', margin: '0 auto 8px auto' }}>
+                Reason: {searchResults.reason}
+              </p>
+              {(searchResults.deletedBy || searchResults.deletedAt) && (
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 auto 16px auto' }}>
+                  {[searchResults.deletedBy, searchResults.deletedAt].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleClear}
+                style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+              >
+                Clear & Scan Next Barcode
+              </button>
             </div>
           ) : searchResults?.notFound ? (
             <div 
@@ -1424,7 +1483,7 @@ export default function UniversalBarcodeScannerModal({
               </button>
             )}
 
-            {searchResults && !searchResults.notFound && (
+            {searchResults && !searchResults.notFound && !searchResults.deleted && (
               <button
                 type="button"
                 onClick={handleCopyDetails}

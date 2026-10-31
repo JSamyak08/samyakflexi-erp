@@ -95,8 +95,8 @@ function remember(map, row) {
   const sourceModule = plain(row?.sourceModule);
   if (!barcode || !sourceModule) return;
   const key = rowKey(sourceModule, barcode);
-  if (map.has(key)) return;
-  map.set(key, {
+  const existing = map.get(key);
+  const next = {
     barcode,
     sourceModule,
     description: plain(row.description),
@@ -106,7 +106,13 @@ function remember(map, row) {
     location: plain(row.location),
     sourceTable: plain(row.sourceTable),
     sourceColumn: plain(row.sourceColumn),
-  });
+    deletedReason: plain(row.deletedReason, row.deleted_reason),
+    deletedAt: plain(row.deletedAt, row.deleted_at),
+    deletedBy: plain(row.deletedBy, row.deleted_by),
+  };
+  if (!existing || (isDeletedBarcode(next) && !isDeletedBarcode(existing))) {
+    map.set(key, next);
+  }
 }
 
 function addItem(map, item, fallback, depth = 0) {
@@ -428,11 +434,47 @@ export function collectBarcodes(sources = {}) {
     });
   });
 
+  (sources.deletedBarcodes || []).forEach((row) => {
+    remember(map, {
+      barcode: row?.barcode,
+      sourceModule: plain(row?.sourceModule, row?.source_module) || sourceModuleForCode(row?.barcode, BARCODE_SOURCE.rm),
+      description: plain(row?.description, row?.itemName),
+      referenceNo: plain(row?.referenceNo, row?.reference_no),
+      createdAt: plain(row?.createdAt, row?.created_at),
+      status: 'Deleted',
+      location: plain(row?.location),
+      sourceTable: 'deleted_barcodes',
+      sourceColumn: 'barcode',
+      deletedReason: plain(row?.deletedReason, row?.deleted_reason),
+      deletedAt: plain(row?.deletedAt, row?.deleted_at),
+      deletedBy: plain(row?.deletedBy, row?.deleted_by),
+    });
+  });
+
   return [...map.values()].sort((left, right) => {
     const byDate = String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
     if (byDate) return byDate;
     return left.barcode.localeCompare(right.barcode);
   });
+}
+
+export function isDeletedBarcode(row) {
+  return String(row?.status || '').trim().toLowerCase() === 'deleted';
+}
+
+export function findDeletedBarcode(rows, query) {
+  const key = codeKey(query);
+  if (!key) return null;
+  return (rows || []).find((row) => isDeletedBarcode(row) && codeKey(row.barcode) === key) || null;
+}
+
+export function deletedBarcodeMessage(row) {
+  const code = plain(row?.barcode) || 'This barcode';
+  const reason = plain(row?.deletedReason, row?.deleted_reason) || 'No reason recorded';
+  const who = plain(row?.deletedBy, row?.deleted_by);
+  const when = plain(row?.deletedAt, row?.deleted_at);
+  const whoWhen = [who ? `by ${who}` : '', when ? `at ${when}` : ''].filter(Boolean).join(' ');
+  return `${code} is Deleted${whoWhen ? ` (${whoWhen})` : ''}. Reason: ${reason}. It is not stock and cannot be received, issued, or consumed.`;
 }
 
 export function mergeBarcodeRows(...lists) {
@@ -442,7 +484,11 @@ export function mergeBarcodeRows(...lists) {
     const sourceModule = plain(row?.sourceModule);
     if (!barcode || !sourceModule) return;
     const key = rowKey(sourceModule, barcode);
-    if (!map.has(key)) map.set(key, { ...row, barcode, sourceModule });
+    const existing = map.get(key);
+    const next = { ...row, barcode, sourceModule };
+    if (!existing || (isDeletedBarcode(next) && !isDeletedBarcode(existing))) {
+      map.set(key, next);
+    }
   });
   return [...map.values()].sort((left, right) => {
     const byDate = String(right.createdAt || '').localeCompare(String(left.createdAt || ''));
@@ -456,7 +502,7 @@ export function filterBarcodeRows(rows, { query = '', sourceModule = '' } = {}) 
   return (rows || []).filter((row) => {
     if (sourceModule && row?.sourceModule !== sourceModule) return false;
     if (!needle) return true;
-    return [row.barcode, row.description, row.referenceNo, row.status, row.location, row.sourceModule, row.sourceTable]
+    return [row.barcode, row.description, row.referenceNo, row.status, row.location, row.sourceModule, row.sourceTable, row.deletedReason, row.deletedBy]
       .some((value) => String(value || '').toLowerCase().includes(needle));
   });
 }

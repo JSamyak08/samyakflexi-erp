@@ -54,14 +54,15 @@ import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, 
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber } from '../services/supabaseDataService';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete } from '../services/supabaseDataService';
+import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
+import { deletedBarcodeMessage, findDeletedBarcode } from '../utils/barcodeRegistry';
 import {
   OPENING_RECEIPT_TYPE,
   buildBulkImportPayload,
   bulkErrorRowsCsv,
   stockUploadErrorFileName,
   isOpeningStockReceipt,
-  itemNameKey,
   parseBulkStockCsv,
   reassignNewInventoryIds,
   sampleBulkStockCsv
@@ -767,6 +768,14 @@ export default function InventoryManagement({
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    loadDeletedBarcodes().then((rows) => {
+      if (active) setDeletedBarcodes(rows);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   const [editingTxId, setEditingTxId] = useState(null);
   const [editingBarcodeVal, setEditingBarcodeVal] = useState('');
 
@@ -789,6 +798,9 @@ export default function InventoryManagement({
   // Ledger Filter & Quick Adjustment State
   const [ledgerFilterTab, setLedgerFilterTab] = useState('all'); // 'all', 'inward', 'usage', 'reconciliation'
   const [ledgerSearchTerm, setLedgerSearchTerm] = useState('');
+  const [deletedBarcodes, setDeletedBarcodes] = useState([]);
+  const [selectedStockIds, setSelectedStockIds] = useState(() => new Set());
+  const [deletePrompt, setDeletePrompt] = useState(null);
 
   const [isQuickAdjOpen, setIsQuickAdjOpen] = useState(false);
   const [adjType, setAdjType] = useState('Physical Audit (+)');
@@ -2326,20 +2338,96 @@ export default function InventoryManagement({
     alert(`Stock item ${targetId} (${finalItemName}) ${actionText} successfully!`);
   };
 
-  const handleDeleteStockItem = async (item) => {
+  const stockItemIds = (item) => {
+    const ids = item?.allInventoryIds?.length ? item.allInventoryIds : [item?.id];
+    return [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))];
+  };
+
+  const stockItemLabel = (item) => item?.itemName || `${item?.filmType || 'Item'} ${item?.micron && item.micron !== '-' ? `${item.micron} Micron` : ''}`.trim();
+
+  const rememberDeletedBarcodes = (rows) => {
+    setDeletedBarcodes((prev) => {
+      const map = new Map((prev || []).map((row) => [`${row.sourceModule}|${String(row.barcode).toLowerCase()}`, row]));
+      (rows || []).forEach((row) => {
+        if (!row?.barcode) return;
+        map.set(`${row.sourceModule}|${String(row.barcode).toLowerCase()}`, { ...row, status: 'Deleted' });
+      });
+      return [...map.values()];
+    });
+  };
+
+  const openDeletePrompt = async (ids, label) => {
+    const unique = [...new Set((ids || []).map((id) => String(id || '').trim()).filter(Boolean))];
+    if (!unique.length) return;
+    setDeletePrompt({ ids: unique, label, preview: null, reason: '', error: '', busy: true });
+    try {
+      const preview = await previewInventoryItemDelete(unique);
+      setDeletePrompt((prev) => (prev && prev.ids.join() === unique.join() ? { ...prev, preview, busy: false } : prev));
+    } catch (err) {
+      setDeletePrompt(null);
+      alert(`Could not prepare this delete: ${describeSaveError(err)}`);
+    }
+  };
+
+  const handleDeleteStockItem = (item) => {
     if (!item || !item.id) return;
-    const targetIds = item.allInventoryIds && item.allInventoryIds.length > 0 ? item.allInventoryIds : [item.id];
-    const displayName = item.itemName || `${item.filmType || 'Item'} ${item.micron && item.micron !== '-' ? item.micron + ' Micron' : ''}`;
-    if (window.confirm(`Are you sure you want to permanently delete stock item "${displayName}" (${targetIds.join(', ')})?`)) {
-      if (onDeleteInventoryItem) {
-        for (const id of targetIds) {
-          await onDeleteInventoryItem(id);
-        }
-      } else if (onUpdateInventory) {
-        const updatedInv = inventory.filter(i => !targetIds.includes(String(i.id)));
-        onUpdateInventory(updatedInv);
-      }
-      alert(`Stock item "${displayName}" deleted successfully.`);
+    openDeletePrompt(stockItemIds(item), stockItemLabel(item));
+  };
+
+  const handleDeleteSelectedStock = () => {
+    const ids = [...selectedStockIds];
+    if (!ids.length) return;
+    openDeletePrompt(ids, `${ids.length} selected stock item${ids.length === 1 ? '' : 's'}`);
+  };
+
+  const toggleStockSelection = (ids, checked) => {
+    setSelectedStockIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => {
+        if (checked) next.add(String(id));
+        else next.delete(String(id));
+      });
+      return next;
+    });
+  };
+
+  const confirmDeleteStockItems = async (event) => {
+    event.preventDefault();
+    if (!deletePrompt || deletePrompt.busy) return;
+    const reason = deletePrompt.reason.trim();
+    if (!reason) {
+      setDeletePrompt((prev) => prev ? { ...prev, error: 'Enter a reason. It is stored on each barcode and in the audit log.' } : prev);
+      return;
+    }
+    if (!onDeleteInventoryItem) {
+      setDeletePrompt((prev) => prev ? { ...prev, error: 'Deleting a stock item is not available.' } : prev);
+      return;
+    }
+    setDeletePrompt((prev) => prev ? { ...prev, busy: true, error: '' } : prev);
+    try {
+      const result = await onDeleteInventoryItem(deletePrompt.ids, reason);
+      const idSet = new Set(deletePrompt.ids.map(String));
+      (result?.items || []).forEach((item) => {
+        if (item?.itemId) idSet.add(String(item.itemId));
+        if (item?.itemCode) idSet.add(String(item.itemCode));
+      });
+      setStockLedgerAdjustments((prev) => (prev || []).filter((row) => {
+        const pointers = [row?.itemId, row?.stockItemId, row?.masterItemId, row?.itemCode]
+          .map((value) => String(value || '').trim())
+          .filter(Boolean);
+        return !pointers.some((id) => idSet.has(id));
+      }));
+      setSelectedStockIds((prev) => {
+        const next = new Set(prev);
+        idSet.forEach((id) => next.delete(id));
+        return next;
+      });
+      rememberDeletedBarcodes(result?.barcodesMarked);
+      const label = deletePrompt.label;
+      setDeletePrompt(null);
+      alert(`Stock item "${label}" was deleted. Its roll barcodes stay in Barcodes, marked Deleted.`);
+    } catch (err) {
+      setDeletePrompt((prev) => prev ? { ...prev, busy: false, error: describeSaveError(err) } : prev);
     }
   };
 
@@ -3019,6 +3107,26 @@ export default function InventoryManagement({
       grnPoNo
     } = grnConfirmationModal.pendingData;
 
+    const deletedHits = [];
+    for (const roll of newRolls || []) {
+      const code = roll.barcodeId || roll.barcode || roll.id;
+      const cached = findDeletedBarcode(deletedBarcodes, code);
+      if (cached) {
+        deletedHits.push(cached);
+        continue;
+      }
+      try {
+        const hits = await findDeletedBarcodeHits([code]);
+        if (hits[0]) deletedHits.push(hits[0]);
+      } catch {
+        // The database trigger still rejects a deleted barcode if this lookup is unavailable.
+      }
+    }
+    if (deletedHits.length) {
+      alert(`These barcodes are Deleted and cannot be received on a GRN:\n${deletedHits.map((hit) => deletedBarcodeMessage(hit)).join('\n')}`);
+      return;
+    }
+
     const lots = Array.isArray(newInvItems) && newInvItems.length > 0
       ? newInvItems
       : (newInvItem ? [newInvItem] : []);
@@ -3589,7 +3697,7 @@ export default function InventoryManagement({
   };
 
   // 2D Barcode / QR Code Scanner Resolution for Material Issue & Return
-  const handleBarcodeScanLookup = (rawCode) => {
+  const handleBarcodeScanLookup = async (rawCode) => {
     const code = String(rawCode !== undefined ? rawCode : (issueScanQuery || '')).trim();
     if (!code) {
       setSelectedInvItem(null);
@@ -3598,6 +3706,23 @@ export default function InventoryManagement({
       return;
     }
     setScanErrorMessage('');
+
+    const cachedDeleted = findDeletedBarcode(deletedBarcodes, code);
+    let deletedHit = cachedDeleted;
+    if (!deletedHit) {
+      try {
+        const hits = await findDeletedBarcodeHits([code]);
+        deletedHit = hits[0] || null;
+      } catch {
+        deletedHit = null;
+      }
+    }
+    if (deletedHit) {
+      setSelectedInvItem(null);
+      setScannedItemDetails(null);
+      setScanErrorMessage(deletedBarcodeMessage(deletedHit));
+      return;
+    }
 
     const cleanCode = code.toLowerCase().trim();
     const strippedCode = cleanCode.replace(/^(lot|bc|bar-iss|bar|roll|inv|grn|item)[-_:]\s*/i, '').trim();
@@ -3910,6 +4035,11 @@ export default function InventoryManagement({
     const finalVendor = scannedItemDetails?.vendorName || selectedBatchObj?.vendorName || itemToIssue.lastVendor || 'Company Stock';
     const finalGrnNo = scannedItemDetails?.grnNo || selectedBatchObj?.grnNo || '';
     const finalBarcode = scannedItemDetails?.barcodeId || selectedBatchObj?.barcode || finalBatchNo || `BAR-ISS-${itemToIssue.id}`;
+    const deletedIssue = findDeletedBarcode(deletedBarcodes, finalBarcode) || findDeletedBarcode(deletedBarcodes, scannedItemDetails?.barcodeId);
+    if (deletedIssue) {
+      alert(deletedBarcodeMessage(deletedIssue));
+      return;
+    }
 
     const maxAvail = scannedItemDetails?.availableQty ?? (itemToIssue.availableQtyKg || 0);
     if (issueType === 'issue' && maxAvail < qty) {
@@ -4190,6 +4320,24 @@ export default function InventoryManagement({
         if (existingRollError) throw existingRollError;
         const takenBarcodes = new Set((existingRolls || []).map((row) => String(row.barcode_id || '').trim().toLowerCase()).filter(Boolean));
         const clashes = payload.rolls.filter((roll) => takenBarcodes.has(String(roll.barcodeId || '').trim().toLowerCase()));
+        const deletedRolls = [];
+        for (const roll of payload.rolls) {
+          const cached = findDeletedBarcode(deletedBarcodes, roll.barcodeId);
+          if (cached) {
+            deletedRolls.push(cached);
+            continue;
+          }
+          try {
+            const hits = await findDeletedBarcodeHits([roll.barcodeId]);
+            if (hits[0]) deletedRolls.push(hits[0]);
+          } catch {
+            // The database trigger still rejects a deleted barcode.
+          }
+        }
+        if (deletedRolls.length) {
+          alert(`These barcodes are Deleted and cannot be uploaded as stock:\n${deletedRolls.map((hit) => deletedBarcodeMessage(hit)).join('\n')}`);
+          return;
+        }
         if (clashes.length) {
           alert(`These barcodes are already in stock, so nothing from this file was saved:\n${clashes.map((roll) => roll.barcodeId).join(', ')}\n\nOpen the file again so the preview can block those rows.`);
           return;
@@ -5222,6 +5370,17 @@ export default function InventoryManagement({
                 <Plus size={16} /> Add New Stock Item
               </button>
 
+              {selectedStockIds.size > 0 && (
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '6px 12px', color: '#dc2626', borderColor: '#fecaca', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={handleDeleteSelectedStock}
+                >
+                  <Trash2 size={15} /> Delete selected ({selectedStockIds.size})
+                </button>
+              )}
+
               <button 
                 className="btn-secondary" 
                 style={{ fontSize: '0.8rem', padding: '6px 12px' }}
@@ -5268,6 +5427,17 @@ export default function InventoryManagement({
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: '36px' }}>
+                    <input
+                      type="checkbox"
+                      aria-label="Select stock items on this page"
+                      checked={stockPagination.paginatedItems.length > 0 && stockPagination.paginatedItems.every((row) => stockItemIds(row).every((id) => selectedStockIds.has(id)))}
+                      onChange={(event) => {
+                        const ids = stockPagination.paginatedItems.flatMap((row) => stockItemIds(row));
+                        toggleStockSelection(ids, event.target.checked);
+                      }}
+                    />
+                  </th>
                   <th>Inventory ID</th>
                   <th>Item Name & Code</th>
                   <th>Category</th>
@@ -5310,8 +5480,18 @@ export default function InventoryManagement({
                   const effectiveAllocated = Number(((item.allocatedQtyKg || 0) + allocatedForOrders).toFixed(2));
                   const usableFreeStock = Math.max(0, Number(((item.availableQtyKg || 0) - allocatedForOrders).toFixed(2)));
 
+                  const rowIds = stockItemIds(item);
+                  const rowSelected = rowIds.length > 0 && rowIds.every((id) => selectedStockIds.has(id));
                   return (
                     <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${title}`}
+                          checked={rowSelected}
+                          onChange={(event) => toggleStockSelection(rowIds, event.target.checked)}
+                        />
+                      </td>
                       <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
                         <div>{item.primaryId || item.id}</div>
                         {item.subItems && item.subItems.length > 1 && (
@@ -8938,77 +9118,68 @@ export default function InventoryManagement({
           </div>
         </div>
       )}
+      {deletePrompt && (
+        <div className="modal-overlay" onClick={() => { if (!deletePrompt.busy) setDeletePrompt(null); }}>
+          <div className="glass-card modal-content" style={{ width: '560px', maxWidth: '95vw' }} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ margin: '0 0 8px', fontSize: '1.15rem' }}>Delete stock item</h3>
+            <p style={{ margin: '0 0 12px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              Permanently delete <strong>{deletePrompt.label}</strong> ({deletePrompt.ids.join(', ')}).
+              This removes the item together with its rolls and ledger entries. GRN headers that also cover other items stay.
+            </p>
+            {deletePrompt.preview ? (
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px 14px', marginBottom: '12px', fontSize: '0.88rem' }}>
+                <div><strong>{deletePrompt.preview.rolls}</strong> roll{deletePrompt.preview.rolls === 1 ? '' : 's'}</div>
+                <div><strong>{deletePrompt.preview.barcodes}</strong> barcode{deletePrompt.preview.barcodes === 1 ? '' : 's'} kept in Barcodes and marked Deleted</div>
+                <div><strong>{deletePrompt.preview.ledgerEntries}</strong> ledger entr{deletePrompt.preview.ledgerEntries === 1 ? 'y' : 'ies'}</div>
+                <div><strong>{Number(deletePrompt.preview.totalKg || 0).toLocaleString('en-IN')}</strong> kg</div>
+                {deletePrompt.preview.consumedOrIssued && (
+                  <p style={{ margin: '10px 0 0', color: '#b91c1c', fontWeight: '700' }}>
+                    Warning: {deletePrompt.preview.consumedOrIssuedRolls} roll{deletePrompt.preview.consumedOrIssuedRolls === 1 ? '' : 's'} {deletePrompt.preview.consumedOrIssuedRolls === 1 ? 'was' : 'were'} consumed or issued to a job. {deletePrompt.preview.consumedOrIssuedRolls === 1 ? 'It is' : 'They are'} still removed from stock. The barcode stays marked Deleted.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p style={{ fontSize: '0.88rem' }}>Checking rolls, barcodes, and ledger entries…</p>
+            )}
+            <p style={{ fontSize: '0.86rem', color: '#7f1d1d', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 12px' }}>
+              Barcodes are not erased. Each roll barcode stays in the Barcodes section with a red Deleted label, this reason, who deleted it, and when. Deleted barcodes are not stock and cannot be received, issued, or consumed.
+            </p>
+            <form onSubmit={confirmDeleteStockItems}>
+              <label style={{ display: 'block', fontWeight: '700', margin: '12px 0 6px' }} htmlFor="delete-stock-reason">Reason (required)</label>
+              <textarea
+                id="delete-stock-reason"
+                className="form-control"
+                required
+                maxLength={2000}
+                value={deletePrompt.reason}
+                onChange={(event) => setDeletePrompt((prev) => prev ? { ...prev, reason: event.target.value, error: '' } : prev)}
+                placeholder="Why is this stock item being deleted?"
+                style={{ minHeight: '80px' }}
+              />
+              {deletePrompt.error && (
+                <p style={{ color: '#b91c1c', fontSize: '0.84rem', margin: '8px 0 0' }}>{deletePrompt.error}</p>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                <button type="button" className="btn-secondary" disabled={deletePrompt.busy} onClick={() => setDeletePrompt(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={deletePrompt.busy || !deletePrompt.preview || !deletePrompt.reason.trim()} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
+                  {deletePrompt.busy ? 'Deleting…' : 'Delete item'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       {/* Raw Material Stock Ledger & Barcode Tracking Modal */}
       {selectedItemForPurchaseHistory && (() => {
         const item = sanitizeInventoryItem(selectedItemForPurchaseHistory);
         const unitStr = item.unit || 'Kg';
         const itemActualUnitPrice = Number(item.unitPrice || item.purchaseRatePerKg || item.pricePerKg || 0);
 
-        // Universal Item Matcher for Films, Inks, Solvents, Adhesives, Blades, Tapes, PPE & Spares
-        const isItemMatch = (candidate, target) => {
-          if (!candidate || !target) return false;
-          const targetList = target.subItems && target.subItems.length > 0 ? [target, ...target.subItems] : [target];
-
-          return targetList.some(t => {
-            // 1. Direct ID / Code match
-            if (candidate.stockItemId && (candidate.stockItemId === t.id || candidate.stockItemId === t.itemCode)) return true;
-            if (candidate.itemId && (candidate.itemId === t.id || candidate.itemId === t.itemCode)) return true;
-            if (candidate.id && (candidate.id === t.id || candidate.id === t.itemCode)) return true;
-            if (candidate.itemCode && (candidate.itemCode === t.itemCode || candidate.itemCode === t.id)) return true;
-
-            // 2. Strict Item Name match
-            const cName = (candidate.itemName || candidate.filmType || '').trim().toLowerCase();
-            const tName = (t.itemName || t.filmType || '').trim().toLowerCase();
-            if (cName && tName && (cName === tName)) return true;
-
-            // 3. Category & Film / Substrate match
-            const isTargetFilm = (t.category || 'Film Substrates') === 'Film Substrates';
-            const isCandidateFilm = (candidate.category || 'Film Substrates') === 'Film Substrates' || 
-              ['PET', 'METPET', 'BOPP', 'LDPE', 'CPP', 'POLY', 'LD'].some(f => (candidate.filmType || '').toUpperCase().includes(f));
-
-            if (isTargetFilm && isCandidateFilm) {
-              const normalizeFilm = (str) => (str || '')
-                .toLowerCase()
-                .replace(/film/g, '')
-                .replace(/substrates?/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
-              const cFilm = normalizeFilm(candidate.filmType);
-              const tFilm = normalizeFilm(t.filmType);
-              const filmMatches = cFilm === tFilm || (cFilm && tFilm && (cFilm.includes(tFilm) || tFilm.includes(cFilm)));
-              
-              // Numeric specs check
-              const cMicron = parseFloat(candidate.micron);
-              const tMicron = parseFloat(t.micron);
-              const micronMatches = (isNaN(cMicron) && isNaN(tMicron)) || (cMicron === tMicron) || !t.micron || t.micron === '-';
-
-              const cWidth = parseFloat(candidate.widthMm);
-              const tWidth = parseFloat(t.widthMm);
-              const widthMatches = (isNaN(cWidth) && isNaN(tWidth)) || (cWidth === tWidth) || !t.widthMm || t.widthMm === '-';
-
-              if (filmMatches && micronMatches && widthMatches) return true;
-            }
-
-            // 4. Non-Film Category Match (Inks, Solvents, Adhesives, Blades, PPE, Spares)
-            if (!isTargetFilm) {
-              const cCat = (candidate.category || '').toLowerCase();
-              const tCat = (t.category || '').toLowerCase();
-              if (cCat && tCat && cCat === tCat) {
-                if (cName && tName && (cName.includes(tName) || tName.includes(cName))) return true;
-              }
-              if (cName && tName) {
-                if (tName.includes('ink') && cName.includes('ink')) return true;
-                if (tName.includes('solvent') && cName.includes('solvent')) return true;
-                if (tName.includes('adhesive') && cName.includes('adhesive')) return true;
-                if (tName.includes('blade') && cName.includes('blade')) return true;
-                if (tName.includes('tape') && cName.includes('tape')) return true;
-                if (tName.includes('glove') && cName.includes('glove')) return true;
-              }
-            }
-
-            return false;
-          });
-        };
+        // A ledger row belongs to this item by id. A row with no item id may
+        // match an exact name and is shown as unlinked / legacy.
+        const itemLink = (candidate) => ledgerRowLink(candidate, item);
+        const isItemMatch = (candidate) => itemLink(candidate).include;
+        const fallbackRate = itemActualUnitPrice || (DEFAULT_DAILY_RATES[item.filmType] || 0);
 
         // 1. Gather Inward Receipts (GRNs)
         const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item));
@@ -9018,13 +9189,15 @@ export default function InventoryManagement({
           const isRejected = g.status === 'Rejected' || g.qcStatus === 'Rejected' || g.status === 'QC Hold' || g.qcStatus === 'QC Hold' || g.location === 'QC Hold Store';
           const isPending = !isApproved && !isRejected;
 
-          const rate = Number(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[g.filmType] || 0));
+          const rate = ledgerRowRate(g, itemActualUnitPrice || (DEFAULT_DAILY_RATES[g.filmType] || 0));
           const qty = g.netWeightKg || 0;
           // Find actual child rolls associated with this GRN
           const matchingRolls = (inventoryRolls || []).filter(r => 
-            (r.grnNo && g.grnNo && r.grnNo === g.grnNo) ||
+            ((r.grnNo && g.grnNo && r.grnNo === g.grnNo) ||
             (r.grn_no && g.grnNo && r.grn_no === g.grnNo) ||
-            (r.grnNo && g.id && r.grnNo === g.id)
+            (r.grnNo && g.id && r.grnNo === g.id))
+            && rollBelongsOnItemLedger(r, item).include
+            && !findDeletedBarcode(deletedBarcodes, r.barcodeId || r.barcode || r.id)
           );
 
           let resolvedBarcode = '';
@@ -9081,7 +9254,8 @@ export default function InventoryManagement({
             status: statusStr,
             itemRemarks: finalRemark,
             remarks: finalRemark,
-            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`
+            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`,
+            legacy: itemLink(g).legacy
           };
         });
 
@@ -9146,7 +9320,7 @@ export default function InventoryManagement({
             if (isItemMatch(mat, item)) {
               const txId = `JOB_${rec.id}_${mat.id || idx}`;
               const qty = mat.netConsumedQtyKg || mat.issueQtyKg || 0;
-              const rate = Number(mat.unitPricePerKg || mat.unitPrice || mat.purchaseRate || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[item.filmType] || 0));
+              const rate = ledgerRowRate(mat, fallbackRate);
               jobUsageLines.push({
                 txId,
                 category: 'usage',
@@ -9165,7 +9339,8 @@ export default function InventoryManagement({
                 barcode: customBarcodesMap[txId] || mat.barcode || `BAR-JOB-${(rec.orderId || '89').replace('ORD-2026-', '')}`,
                 batchNo: mat.batchNo || mat.barcode || item.lastBatch || '',
                 status: rec.status || 'Consumed in Production',
-                notes: `Gross Issued: ${mat.issueQtyKg || 0} ${unitStr} | Returned: ${mat.returnQtyKg || 0} ${unitStr} | Net: ${qty} ${unitStr}`
+                notes: `Gross Issued: ${mat.issueQtyKg || 0} ${unitStr} | Returned: ${mat.returnQtyKg || 0} ${unitStr} | Net: ${qty} ${unitStr}`,
+                legacy: itemLink(mat).legacy
               });
             }
           });
@@ -9177,7 +9352,7 @@ export default function InventoryManagement({
           .map(tx => {
             const isIssue = tx.issueType === 'issue';
             const qty = tx.qtyKg || 0;
-            const rate = Number(tx.unitPrice || tx.purchaseRatePerKg || tx.ratePerKg || item.unitPrice || item.purchaseRatePerKg || (DEFAULT_DAILY_RATES[item.filmType] || 0));
+            const rate = ledgerRowRate(tx, fallbackRate);
             return {
               txId: tx.id,
               category: isIssue ? 'usage' : 'inward',
@@ -9196,7 +9371,8 @@ export default function InventoryManagement({
               barcode: customBarcodesMap[tx.id] || tx.barcode || `BAR-TX-${tx.id}`,
               batchNo: tx.batchNo || tx.barcode || item.lastBatch || '',
               status: isIssue ? 'Issued' : 'Returned',
-              notes: tx.notes || (isIssue ? 'Manual shopfloor issue' : 'Unused stock returned')
+              notes: tx.notes || (isIssue ? 'Manual shopfloor issue' : 'Unused stock returned'),
+              legacy: itemLink(tx).legacy
             };
           });
 
@@ -9206,7 +9382,7 @@ export default function InventoryManagement({
           .map(a => {
             const txId = `ADJ_${a.id}`;
             const qty = a.qtyKg || 0;
-            const rate = itemActualUnitPrice;
+            const rate = ledgerRowRate(a, itemActualUnitPrice);
             return {
               txId,
               category: 'reconciliation',
@@ -9223,7 +9399,8 @@ export default function InventoryManagement({
               totalValue: Math.abs(qty) * rate,
               barcode: customBarcodesMap[txId] || a.barcode || `BAR-AUDIT-${a.id}`,
               status: 'Reconciled',
-              notes: a.reason || 'Physical Stock Reconciliation'
+              notes: a.reason || 'Physical Stock Reconciliation',
+              legacy: itemLink(a).legacy
             };
           });
 
@@ -9281,27 +9458,29 @@ export default function InventoryManagement({
             inwardQtyKg: Math.abs(Number(a.qtyKg) || 0),
             outwardQtyKg: 0,
             adjQtyKg: 0,
-            ratePerKg: itemActualUnitPrice,
-            unitPrice: itemActualUnitPrice,
-            totalValue: Math.abs(Number(a.qtyKg) || 0) * itemActualUnitPrice,
+            ratePerKg: ledgerRowRate(a, itemActualUnitPrice),
+            unitPrice: ledgerRowRate(a, itemActualUnitPrice),
+            totalValue: Math.abs(Number(a.qtyKg) || 0) * ledgerRowRate(a, itemActualUnitPrice),
             barcode: a.barcode || '',
             batchNo: a.barcode || 'BULK',
             status: 'In Stock',
-            notes: weightNote
+            notes: weightNote,
+            legacy: itemLink(a).legacy
           };
           });
         const receiptBarcodes = new Set(bulkReceiptLines.map(line => String(line.barcode || '').trim().toLowerCase()).filter(Boolean));
-        const itemIds = new Set([item.id, item.itemCode, ...(item.subItems || []).flatMap(sub => [sub.id, sub.itemCode])].filter(Boolean).map(String));
-        const itemNames = new Set([item, ...(item.subItems || [])].map(entry => itemNameKey(entry.itemName)).filter(Boolean));
         const rollReceiptLines = (inventoryRolls || []).filter(roll => {
           const barcode = String(roll.barcodeId || roll.id || '').trim().toLowerCase();
           if (!barcode || receiptBarcodes.has(barcode)) return false;
           if (roll.grnNo || roll.grnId || roll.grn_no) return false;
           if (String(roll.status || 'In Stock') !== 'In Stock') return false;
-          const linked = itemIds.has(String(roll.itemId || '')) || itemNames.has(itemNameKey(roll.itemName));
-          return linked && (Number(roll.availableWeightKg ?? roll.netWeightKg) || 0) > 0;
+          if (findDeletedBarcode(deletedBarcodes, roll.barcodeId || roll.barcode || roll.id)) return false;
+          const link = rollBelongsOnItemLedger(roll, item);
+          return link.include && (Number(roll.availableWeightKg ?? roll.netWeightKg) || 0) > 0;
         }).map(roll => {
           const qty = Number(roll.availableWeightKg ?? roll.netWeightKg) || 0;
+          const link = rollBelongsOnItemLedger(roll, item);
+          const rate = ledgerRowRate(roll, itemActualUnitPrice);
           return {
             txId: `ROLL_${roll.barcodeId || roll.id}`,
             category: 'inward',
@@ -9316,13 +9495,14 @@ export default function InventoryManagement({
             inwardQtyKg: qty,
             outwardQtyKg: 0,
             adjQtyKg: 0,
-            ratePerKg: Number(roll.purchaseRatePerKg || roll.unitPrice || itemActualUnitPrice) || 0,
-            unitPrice: Number(roll.unitPrice || itemActualUnitPrice) || 0,
-            totalValue: qty * (Number(roll.unitPrice || itemActualUnitPrice) || 0),
+            ratePerKg: rate,
+            unitPrice: rate,
+            totalValue: qty * rate,
             barcode: roll.barcodeId || roll.id,
             batchNo: roll.batchNo || '',
             status: 'In Stock',
-            notes: 'Opening stock receipt per roll'
+            notes: 'Opening stock receipt per roll',
+            legacy: link.legacy
           };
         });
         const openingReceiptLines = [...bulkReceiptLines, ...rollReceiptLines];
@@ -9362,7 +9542,8 @@ export default function InventoryManagement({
           return new Date(dStr).getTime() || 0;
         };
 
-        const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines];
+        const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines]
+          .filter((tx) => !findDeletedBarcode(deletedBarcodes, tx.barcode));
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
         // 7. Calculate Chronological Running Balance (Pending QC and Rejected QC Hold do NOT add to usable stock!)
@@ -9697,6 +9878,11 @@ export default function InventoryManagement({
                             
                             {/* Category Badge */}
                             <td>
+                              {tx.legacy && (
+                                <span className="badge" style={{ fontSize: '0.68rem', background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontWeight: '700', marginBottom: '4px' }}>
+                                  Unlinked / legacy
+                                </span>
+                              )}
                               {tx.category === 'inward' && (
                                 <span 
                                   className="badge" 

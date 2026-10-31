@@ -908,17 +908,77 @@ export async function saveInventoryBatchToSupabase(inventoryList) {
 }
 
 
-export async function deleteInventoryItemFromSupabase(itemId) {
-  if (!isSupabaseConfigured() || !itemId) {
-    throw new Error("Cannot delete inventory item: Supabase database connection is not available.");
+function normalizeDeletedBarcode(row) {
+  if (!row || typeof row !== 'object') return null;
+  const barcode = String(row.barcode || '').trim();
+  if (!barcode) return null;
+  return {
+    barcode,
+    sourceModule: row.sourceModule || row.source_module || '',
+    description: row.description || '',
+    referenceNo: row.referenceNo || row.reference_no || '',
+    createdAt: row.createdAt || row.created_at || '',
+    status: 'Deleted',
+    location: row.location || '',
+    sourceTable: row.sourceTable || row.source_table || 'deleted_barcodes',
+    sourceColumn: row.sourceColumn || row.source_column || 'barcode',
+    deletedReason: row.deletedReason || row.deleted_reason || '',
+    deletedAt: row.deletedAt || row.deleted_at || '',
+    deletedBy: row.deletedBy || row.deleted_by || ''
+  };
+}
+
+export async function previewInventoryItemDelete(itemIds) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Cannot delete inventory item: Supabase database connection is not available.');
   }
   await ensureValidSession();
-  console.log('[inventory] Deleting item from Supabase:', itemId);
-  const { error } = await supabase.from('inventory').delete().eq('id', String(itemId));
-  if (error) {
-    console.error("Error deleting inventory from Supabase:", error);
-    handleSupabaseError(error, 'inventory');
+  const ids = [...new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!ids.length) throw new Error('Choose at least one stock item.');
+  const { data, error } = await supabase.rpc('preview_delete_inventory_items', { p_item_ids: ids });
+  if (error) handleSupabaseError(error, 'inventory');
+  return data;
+}
+
+export async function deleteInventoryItemsFromSupabase(itemIds, reason) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Cannot delete inventory item: Supabase database connection is not available.');
   }
+  const text = String(reason || '').trim();
+  if (!text) throw new Error('A reason is required to delete a stock item.');
+  await ensureValidSession();
+  const ids = [...new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map((id) => String(id || '').trim()).filter(Boolean))];
+  if (!ids.length) throw new Error('Choose at least one stock item.');
+  const { data, error } = await supabase.rpc('delete_inventory_items', {
+    p_item_ids: ids,
+    p_reason: text
+  });
+  if (error) handleSupabaseError(error, 'inventory');
+  return data;
+}
+
+export async function deleteInventoryItemFromSupabase(itemId, reason) {
+  return deleteInventoryItemsFromSupabase(Array.isArray(itemId) ? itemId : [itemId], reason);
+}
+
+export async function loadDeletedBarcodes() {
+  if (!isSupabaseConfigured()) return [];
+  const { data, error } = await supabase.rpc('list_deleted_barcodes');
+  if (!error && Array.isArray(data)) {
+    return data.map(normalizeDeletedBarcode).filter(Boolean);
+  }
+  const table = await supabase.from('deleted_barcodes').select('*');
+  if (table.error || !Array.isArray(table.data)) return [];
+  return table.data.map(normalizeDeletedBarcode).filter(Boolean);
+}
+
+export async function findDeletedBarcodeHits(codes) {
+  if (!isSupabaseConfigured()) return [];
+  const list = [...new Set((codes || []).map((code) => String(code || '').trim()).filter(Boolean))];
+  if (!list.length) return [];
+  const { data, error } = await supabase.rpc('deleted_barcode_hits', { p_codes: list });
+  if (error || !Array.isArray(data)) return [];
+  return data.map(normalizeDeletedBarcode).filter(Boolean);
 }
 
 // ============================================================================
@@ -4163,6 +4223,9 @@ function mapBarcodeRegistryRow(row) {
     location: row.location || '',
     sourceTable: row.source_table || '',
     sourceColumn: row.source_column || '',
+    deletedReason: row.deleted_reason || '',
+    deletedAt: row.deleted_at || '',
+    deletedBy: row.deleted_by || ''
   };
 }
 
@@ -4176,11 +4239,21 @@ export async function fetchBarcodeRegistry() {
   if (!isSupabaseConfigured()) return null;
   const pageSize = 1000;
   const rows = [];
+  const baseColumns = 'barcode, source_module, description, reference_no, created_at, status, location, source_table, source_column';
+  const columns = `${baseColumns}, deleted_reason, deleted_at, deleted_by`;
+  let selectColumns = columns;
   for (let from = 0; from < 20000; from += pageSize) {
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('barcode_registry')
-      .select('barcode, source_module, description, reference_no, created_at, status, location, source_table, source_column')
+      .select(selectColumns)
       .range(from, from + pageSize - 1);
+    if (error && selectColumns !== baseColumns) {
+      selectColumns = baseColumns;
+      ({ data, error } = await supabase
+        .from('barcode_registry')
+        .select(selectColumns)
+        .range(from, from + pageSize - 1));
+    }
     if (error) {
       console.warn('[barcode_registry]', error.message || error);
       return rows.length ? rows : null;

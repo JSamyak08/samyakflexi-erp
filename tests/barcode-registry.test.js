@@ -7,7 +7,10 @@ await register(new URL('../scripts/resolve-js-hook.mjs', import.meta.url));
 const {
   BARCODE_SOURCE,
   collectBarcodes,
+  deletedBarcodeMessage,
   filterBarcodeRows,
+  findDeletedBarcode,
+  isDeletedBarcode,
   mergeBarcodeRows,
   sourceModuleForCode,
 } = await import('../src/utils/barcodeRegistry.js');
@@ -145,6 +148,25 @@ test('search and module filter narrow the barcode column', () => {
   );
   assert.equal(merged.length, 2);
   assert.equal(merged.find((row) => row.barcode === 'RM-BC-1').description, 'From view');
+
+  const deleted = mergeBarcodeRows(
+    [{ barcode: 'RM-BC-PET-1', sourceModule: BARCODE_SOURCE.rm, description: 'Still listed', status: 'In Stock' }],
+    [{
+      barcode: 'RM-BC-PET-1',
+      sourceModule: BARCODE_SOURCE.rm,
+      description: 'PET-650-12',
+      status: 'Deleted',
+      deletedReason: 'Wrong film was stored under PET',
+      deletedBy: 'Store Manager',
+      deletedAt: '2026-10-31T08:20:00.000Z'
+    }]
+  );
+  assert.equal(deleted.length, 1);
+  assert.equal(isDeletedBarcode(deleted[0]), true);
+  const found = findDeletedBarcode(deleted, 'rm-bc-pet-1');
+  assert.equal(found.deletedReason, 'Wrong film was stored under PET');
+  assert.match(deletedBarcodeMessage(found), /Wrong film was stored under PET/);
+  assert.equal(filterBarcodeRows(deleted, { query: 'wrong film' }).length, 1);
 });
 
 test('barcodes permission follows inventory roles and leaves the other keys alone', () => {
