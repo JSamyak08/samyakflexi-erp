@@ -40,7 +40,7 @@ import {
   findInventoryRollByScan,
   textFrom
 } from '../utils/barcodeCode';
-import { deletedBarcodeMessage, findDeletedBarcode } from '../utils/barcodeRegistry';
+import { deletedBarcodeMessage, findRetiredBarcode } from '../utils/barcodeRegistry';
 import { loadDeletedBarcodes } from '../services/supabaseDataService';
 
 /**
@@ -302,12 +302,13 @@ export default function UniversalBarcodeScannerModal({
     const query = codeKey(activeBarcode);
     if (!query) return null;
 
-    const deletedHit = findDeletedBarcode(deletedBarcodes, activeBarcode);
+    const deletedHit = findRetiredBarcode(deletedBarcodes, activeBarcode);
     if (deletedHit) {
       return {
         deleted: true,
         query: activeBarcode,
         barcode: deletedHit.barcode,
+        status: deletedHit.status || 'Deleted',
         message: deletedBarcodeMessage(deletedHit),
         reason: deletedHit.deletedReason || 'No reason recorded',
         deletedBy: deletedHit.deletedBy || '',
@@ -1160,10 +1161,10 @@ export default function UniversalBarcodeScannerModal({
             >
               <AlertCircle size={40} style={{ color: '#dc2626', marginBottom: '12px' }} />
               <h3 style={{ fontSize: '1.05rem', fontWeight: '800', color: '#991b1b', margin: '0 0 8px 0' }}>
-                Deleted
+                {String(searchResults.status || '').toLowerCase() === 'written off' ? 'Written Off' : 'Deleted'}
               </h3>
               <p style={{ fontSize: '0.9rem', color: '#7f1d1d', maxWidth: '520px', margin: '0 auto 8px auto' }}>
-                Barcode <strong>{searchResults.barcode}</strong> was deleted and is not stock.
+                Barcode <strong>{searchResults.barcode}</strong> is not stock.
               </p>
               <p style={{ fontSize: '0.86rem', color: '#7f1d1d', maxWidth: '520px', margin: '0 auto 8px auto' }}>
                 Reason: {searchResults.reason}

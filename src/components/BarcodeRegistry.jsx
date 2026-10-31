@@ -185,10 +185,10 @@ export default function BarcodeRegistry({
                 <td>{row.referenceNo || '—'}</td>
                 <td>{formatWhen(row.createdAt)}</td>
                 <td>
-                  {String(row.status || '').trim().toLowerCase() === 'deleted' ? (
+                  {['deleted', 'written off'].includes(String(row.status || '').trim().toLowerCase()) ? (
                     <div>
                       <span style={{ display: 'inline-block', background: '#fee2e2', color: '#b91c1c', border: '1px solid #fecaca', borderRadius: '999px', padding: '2px 8px', fontSize: '0.75rem', fontWeight: '800' }}>
-                        Deleted
+                        {String(row.status || '').trim().toLowerCase() === 'written off' ? 'Written Off' : 'Deleted'}
                       </span>
                       <div style={{ marginTop: '4px', fontSize: '0.75rem', color: '#7f1d1d' }}>
                         {row.deletedReason || 'No reason recorded'}

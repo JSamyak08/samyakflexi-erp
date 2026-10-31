@@ -802,7 +802,12 @@ export function sanitizeInventoryItem(rawItem) {
     shade: cleanRaw.shade || extractedMeta.shade || '',
     dimensions: cleanRaw.dimensions || extractedMeta.dimensions || '',
     lastUpdated: cleanRaw.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString(),
-    preserveItemName: keepGivenName || undefined
+    preserveItemName: keepGivenName || undefined,
+    isActive: cleanRaw.isActive === false || cleanRaw.is_active === false || extractedMeta.isActive === false ? false : true,
+    is_active: cleanRaw.isActive === false || cleanRaw.is_active === false || extractedMeta.isActive === false ? false : true,
+    archivedAt: cleanRaw.archivedAt || cleanRaw.archived_at || extractedMeta.archivedAt || null,
+    archivedBy: cleanRaw.archivedBy || cleanRaw.archived_by || extractedMeta.archivedBy || null,
+    archiveReason: cleanRaw.archiveReason || cleanRaw.archive_reason || extractedMeta.archiveReason || null
   };
 }
 
@@ -838,7 +843,8 @@ export function mapInventoryItemToDbPayload(item) {
     lastVendor: clean.lastVendor,
     lastBatch: clean.lastBatch,
     lastUpdated: new Date().toISOString(),
-    preserveItemName: clean.preserveItemName === true ? true : undefined
+    preserveItemName: clean.preserveItemName === true ? true : undefined,
+    isActive: clean.isActive !== false
   };
 
   const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
@@ -851,6 +857,10 @@ export function mapInventoryItemToDbPayload(item) {
     metallocene_pct: clean.metallocenePct || null,
     stock_qty_kg: Number(clean.availableQtyKg ?? clean.stock_qty_kg ?? 0) || 0,
     unit_price: Number(clean.unitPrice ?? 0) || 0,
+    is_active: clean.isActive !== false,
+    archived_at: clean.archivedAt || null,
+    archived_by: clean.archivedBy || null,
+    archive_reason: clean.archiveReason || null,
     ...inventoryDbColumns(clean),
     last_updated: new Date().toISOString()
   };
@@ -918,7 +928,7 @@ function normalizeDeletedBarcode(row) {
     description: row.description || '',
     referenceNo: row.referenceNo || row.reference_no || '',
     createdAt: row.createdAt || row.created_at || '',
-    status: 'Deleted',
+    status: String(row.status || 'Deleted').trim().toLowerCase() === 'written off' ? 'Written Off' : (row.status || 'Deleted'),
     location: row.location || '',
     sourceTable: row.sourceTable || row.source_table || 'deleted_barcodes',
     sourceColumn: row.sourceColumn || row.source_column || 'barcode',
@@ -959,6 +969,38 @@ export async function deleteInventoryItemsFromSupabase(itemIds, reason) {
 
 export async function deleteInventoryItemFromSupabase(itemId, reason) {
   return deleteInventoryItemsFromSupabase(Array.isArray(itemId) ? itemId : [itemId], reason);
+}
+
+async function inventoryRpc(name, args) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Cannot update inventory item: Supabase database connection is not available.');
+  }
+  const reason = String(args.p_reason || '').trim();
+  if (!reason) throw new Error('A reason is required.');
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc(name, args);
+  if (error) handleSupabaseError(error, 'inventory');
+  return data;
+}
+
+export async function archiveInventoryItemsFromSupabase(itemIds, reason) {
+  const ids = [...new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map((id) => String(id || '').trim()).filter(Boolean))];
+  return inventoryRpc('archive_inventory_items', { p_item_ids: ids, p_reason: String(reason || '').trim() });
+}
+
+export async function reactivateInventoryItemsFromSupabase(itemIds, reason) {
+  const ids = [...new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map((id) => String(id || '').trim()).filter(Boolean))];
+  return inventoryRpc('reactivate_inventory_items', { p_item_ids: ids, p_reason: String(reason || '').trim() });
+}
+
+export async function writeOffInventoryItemsFromSupabase(itemIds, reason, barcodes = null, archive = false) {
+  const ids = [...new Set((Array.isArray(itemIds) ? itemIds : [itemIds]).map((id) => String(id || '').trim()).filter(Boolean))];
+  return inventoryRpc('write_off_inventory_items', {
+    p_item_ids: ids,
+    p_reason: String(reason || '').trim(),
+    p_barcodes: barcodes,
+    p_archive: Boolean(archive)
+  });
 }
 
 export async function loadDeletedBarcodes() {
