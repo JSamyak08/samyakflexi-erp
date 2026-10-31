@@ -124,6 +124,21 @@ test('film stock is linked only when category, type, micron, and width match', (
   assert.equal(filmStockIdForPoItem(inventory, filmPo.items[0]), 'INVT-10');
   assert.equal(filmStockIdForPoItem(inventory, { filmType: 'PET', micron: 15, widthMm: 1000 }), '');
   assert.equal(filmStockIdForPoItem(inventory, null), '');
+  const withId = {
+    itemId: 'INVT-41013',
+    filmType: 'PET',
+    micron: 12,
+    widthMm: 1000
+  };
+  const catalog = [
+    ...inventory,
+    { id: 'INVT-41013', category: 'Film Substrates', filmType: 'PET', itemName: 'PET-410-13', micron: 13, widthMm: 410 }
+  ];
+  assert.equal(filmStockIdForPoItem(catalog, withId), 'INVT-41013');
+  assert.equal(filmStockIdForPoItem([
+    { id: 'INVT-A', category: 'Film Substrates', filmType: 'PET', micron: 12, widthMm: 1000 },
+    { id: 'INVT-B', category: 'Film Substrates', filmType: 'PET', micron: 12, widthMm: 1000 }
+  ], { filmType: 'PET', micron: 12, widthMm: 1000 }), '');
 });
 
 test('the GRN popup suggests a PO at the top and does not auto-fill on vendor pick', () => {

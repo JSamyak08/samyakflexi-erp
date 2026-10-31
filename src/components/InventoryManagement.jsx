@@ -76,11 +76,13 @@ import {
   grnLineIdentityGaps,
   oneLineFromReceipt,
   pendingQcKgForItem,
+  planCapturedReceiptLink,
   prepareMultiLineReceipt,
   qcDraftFromLine,
+  receiptLinesLinkError,
   validateCapturedLines
 } from '../services/grnDocument';
-import { planManualStockSave, preferMasterItem, resolveReceiptItem } from '../services/inventoryIdentity';
+import { findInventoryItemById, planManualStockSave, planReceiptStockLink, preferMasterItem } from '../services/inventoryIdentity';
 import { canManageInwardGrn, cancelInwardGrn, grnChangeBlockReason, rollsForGrn } from '../services/grnLifecycle';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
@@ -1113,6 +1115,17 @@ export default function InventoryManagement({
     }));
   };
 
+  const relinkGrnStockItem = ({ category, filmType, micron, widthMm, itemName }) => {
+    const plan = planReceiptStockLink(inventory, {
+      itemName,
+      category,
+      filmType,
+      micron,
+      widthMm
+    });
+    setGrnSelectedStockItemId(plan.action === 'use' ? String(plan.item.id) : '');
+  };
+
   const handleFilmTypeChange = (newFilmType) => {
     setGrnFilmType(newFilmType);
     const newPct = isMetalloceneEligibleFilm(newFilmType) ? grnMetallocenePct : '';
@@ -1121,14 +1134,22 @@ export default function InventoryManagement({
     }
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(newFilmType, grnMicron, grnWidthMm);
-      setGrnItemName(formatFilmItemName(newFilmType, grnWidthMm, grnMicron, '', newPct));
+      const name = formatFilmItemName(newFilmType, grnWidthMm, grnMicron, '', newPct);
+      setGrnItemName(name);
+      setGrnItemSearchTerm(name);
+      relinkGrnStockItem({ category: grnCategory, filmType: newFilmType, micron: grnMicron, widthMm: grnWidthMm, itemName: name });
+    } else {
+      setGrnSelectedStockItemId('');
     }
   };
 
   const handleMetallocenePctChange = (newPct) => {
     setGrnMetallocenePct(newPct);
     if (grnCategory === 'Film Substrates') {
-      setGrnItemName(formatFilmItemName(grnFilmType, grnWidthMm, grnMicron, '', newPct));
+      const name = formatFilmItemName(grnFilmType, grnWidthMm, grnMicron, '', newPct);
+      setGrnItemName(name);
+      setGrnItemSearchTerm(name);
+      relinkGrnStockItem({ category: grnCategory, filmType: grnFilmType, micron: grnMicron, widthMm: grnWidthMm, itemName: name });
     }
   };
 
@@ -1136,7 +1157,10 @@ export default function InventoryManagement({
     setGrnMicron(newMicron);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(grnFilmType, newMicron, grnWidthMm);
-      setGrnItemName(formatFilmItemName(grnFilmType, grnWidthMm, newMicron, '', grnMetallocenePct));
+      const name = formatFilmItemName(grnFilmType, grnWidthMm, newMicron, '', grnMetallocenePct);
+      setGrnItemName(name);
+      setGrnItemSearchTerm(name);
+      relinkGrnStockItem({ category: grnCategory, filmType: grnFilmType, micron: newMicron, widthMm: grnWidthMm, itemName: name });
     }
   };
 
@@ -1144,7 +1168,10 @@ export default function InventoryManagement({
     setGrnWidthMm(newWidth);
     if (grnCategory === 'Film Substrates') {
       recalculateAllRollLengths(grnFilmType, grnMicron, newWidth);
-      setGrnItemName(formatFilmItemName(grnFilmType, newWidth, grnMicron, '', grnMetallocenePct));
+      const name = formatFilmItemName(grnFilmType, newWidth, grnMicron, '', grnMetallocenePct);
+      setGrnItemName(name);
+      setGrnItemSearchTerm(name);
+      relinkGrnStockItem({ category: grnCategory, filmType: grnFilmType, micron: grnMicron, widthMm: newWidth, itemName: name });
     }
   };
 
@@ -1311,13 +1338,13 @@ export default function InventoryManagement({
     if (!selectedInvItem) return [];
     
     // Find all GRNs matching this item
-    const matchingGRNs = (safeGrns || []).filter(g => {
-      if (g.itemId && (g.itemId === selectedInvItem.id || g.itemId === selectedInvItem.itemCode)) return true;
-      const gName = (g.itemName || g.filmType || '').toLowerCase().trim();
-      const iName = (selectedInvItem.itemName || selectedInvItem.filmType || '').toLowerCase().trim();
-      if (gName && iName && (gName === iName || gName.includes(iName) || iName.includes(gName))) return true;
-      return false;
-    });
+    const matchingGRNs = (safeGrns || []).filter((g) => ledgerRowLink({
+      itemId: g.itemId,
+      stockItemId: g.stockItemId,
+      masterItemId: g.masterItemId,
+      itemCode: g.itemCode,
+      itemName: g.itemName
+    }, selectedInvItem).include);
 
     const batches = [];
     const seenBatchKeys = new Set();
@@ -1979,10 +2006,16 @@ export default function InventoryManagement({
     if (!po) return;
     const firstItem = (po.items || [])[0] || {};
     const poQty = po.pendingInwardQty > 0 ? po.pendingInwardQty : (firstItem.qtyKg || 1000);
-    const filmTypeVal = firstItem.filmType || 'PET';
-    const micronVal = firstItem.micron || 12;
-    const widthVal = firstItem.widthMm || 1000;
-    const categoryVal = po.category || 'Film Substrates';
+    const linked = findInventoryItemById(inventory, firstItem.itemId || firstItem.stockItemId || '');
+    const linkedActive = linked && isInventoryItemActive(linked) ? linked : null;
+    const filmTypeVal = linkedActive?.filmType || firstItem.filmType || 'PET';
+    const micronVal = linkedActive && linkedActive.micron !== undefined && linkedActive.micron !== '-'
+      ? linkedActive.micron
+      : (firstItem.micron || 12);
+    const widthVal = linkedActive && linkedActive.widthMm !== undefined && linkedActive.widthMm !== '-'
+      ? linkedActive.widthMm
+      : (firstItem.widthMm || 1000);
+    const categoryVal = linkedActive?.category || po.category || 'Film Substrates';
     
     setGrnPoNo(po.poNumber || '');
     setGrnVendor(po.vendor?.companyName || po.vendorName || po.vendor?.name || '');
@@ -1995,10 +2028,10 @@ export default function InventoryManagement({
     
     const generatedTitle = categoryVal === 'Film Substrates'
       ? formatFilmItemName(filmTypeVal, widthVal, micronVal)
-      : (firstItem.itemDesc || firstItem.description || `${categoryVal} Inward Item`).replace(/µ/g, 'Micron');
+      : (linkedActive?.itemName || firstItem.itemDesc || firstItem.description || `${categoryVal} Inward Item`).replace(/µ/g, 'Micron');
     setGrnItemName(generatedTitle);
     setGrnItemSearchTerm(generatedTitle);
-    setGrnSelectedStockItemId('');
+    setGrnSelectedStockItemId(linkedActive ? String(linkedActive.id) : filmStockIdForPoItem(inventory, firstItem));
     setGrnRolls('1');
     setIsManualPoEntry(false);
     setPoSuggestionDismissed(false);
@@ -2749,6 +2782,14 @@ export default function InventoryManagement({
         alert(`🚫 DUPLICATE INWARD PREVENTED:\n\nA GRN (GRN #${duplicate.grnNo || duplicate.id}) already exists for supplier "${grnVendor}" with invoice #${grnInvoiceNo}.`);
         return;
       }
+      const linkError = receiptLinesLinkError(inventory, capturedLines, {
+        formatFilmItemName,
+        isMetalloceneEligibleFilm
+      });
+      if (linkError) {
+        alert(linkError);
+        return;
+      }
       let grnDocNo;
       try {
         grnDocNo = await reserveGrnNumber();
@@ -2790,6 +2831,10 @@ export default function InventoryManagement({
         isMetalloceneEligibleFilm,
         idSources: [safeGrns, inventoryRolls]
       });
+      if (prepared.linkError) {
+        alert(prepared.linkError);
+        return;
+      }
       if (editing) {
         prepared.newGRN.id = editing.id || grnDocNo;
         prepared.newGRN.grnNo = grnDocNo;
@@ -2832,6 +2877,19 @@ export default function InventoryManagement({
     const itemName = isFilm 
       ? formatFilmItemName(grnFilmType, grnWidthMm, grnMicron, '', mPct) 
       : (grnItemName.trim().replace(/µ/g, 'Micron') || `${grnCategory} Inward Item`);
+    const lineLink = planCapturedReceiptLink(inventory, {
+      category: grnCategory,
+      itemName: grnItemName,
+      filmType: grnFilmType,
+      micron: grnMicron,
+      widthMm: grnWidthMm,
+      metallocenePct: mPct,
+      stockItemId: grnSelectedStockItemId
+    }, { formatFilmItemName, isMetalloceneEligibleFilm });
+    if (lineLink.action === 'block') {
+      alert(lineLink.message);
+      return;
+    }
 
     // Ensure we have valid items in grnItemsList
     const itemsToSave = (grnItemsList && grnItemsList.length > 0) ? grnItemsList : [
@@ -2917,15 +2975,7 @@ export default function InventoryManagement({
     const barcodeSummaryStr = allBarcodes.join(', ');
     const grnOverallRemark = (grnItemRemarks || '').trim();
 
-    const existingStock = resolveReceiptItem(inventory, {
-      stockItemId: grnSelectedStockItemId,
-      itemName,
-      category: grnCategory || 'Film Substrates',
-      filmType: isFilm ? grnFilmType : grnCategory,
-      micron: isFilm ? (parseFloat(grnMicron) || 0) : '-',
-      widthMm: isFilm ? (parseFloat(grnWidthMm) || 0) : '-',
-      metallocenePct: mPct
-    });
+    const existingStock = lineLink.action === 'use' ? lineLink.item : null;
     const newInvId = existingStock ? String(existingStock.id) : nextInventoryId(inventory);
     const targetStockItemId = newInvId;
     const masterId = newInvId;
@@ -6884,7 +6934,10 @@ export default function InventoryManagement({
                       placeholder="Select item category"
                       searchPlaceholder="Search inward categories (e.g. Film, Inks, Cylinders, Solvents)..."
                       value={grnCategory} 
-                      onChange={e => setGrnCategory(e.target.value)}
+                      onChange={e => {
+                        setGrnCategory(e.target.value);
+                        setGrnSelectedStockItemId('');
+                      }}
                       triggerStyle={grnCategory ? {
                         fontWeight: '600',
                         color: '#0284c7',
