@@ -1045,7 +1045,42 @@ export default function App() {
       storeIssues: [],
       storeIssuesChecked: true,
     };
-    const previewOrders = [overdueOrder, dueSoonOrder];
+    const extraOverdue = Array.from({ length: 9 }, (_, index) => ({
+      id: `ORD-2026-${312 + index}`,
+      jobName: `Overdue job ${index + 2}`,
+      clientName: 'Sharma Traders',
+      orderQtyKg: 40 + index,
+      status: 'Scheduled',
+      targetDeliveryDate: shift(-(index + 3)),
+      deliveryDate: shift(-(index + 3)),
+      materialRequirements: [{
+        id: `REQ-${312 + index}`,
+        filmType: 'PET',
+        micron: 12,
+        widthMm: 900,
+        qtyKg: 40,
+        poIssued: false,
+      }],
+    }));
+    const extraDueSoon = Array.from({ length: 5 }, (_, index) => ({
+      id: `ORD-2026-${330 + index}`,
+      jobName: `Due soon job ${index + 2}`,
+      clientName: 'Sharma Traders',
+      orderQtyKg: 50,
+      status: 'Scheduled',
+      targetDeliveryDate: shift(index % 4),
+      deliveryDate: shift(index % 4),
+      materialRequirements: [{
+        id: `REQ-D-${330 + index}`,
+        filmType: 'PET',
+        micron: 12,
+        widthMm: 800,
+        qtyKg: 50,
+        poIssued: true,
+        poNumber: 'PO-E2E-311',
+      }],
+    }));
+    const previewOrders = [overdueOrder, dueSoonOrder, ...extraOverdue, ...extraDueSoon];
     setOrders(previewOrders);
     setJobMasters(jobMastersPreview);
     setCylinders(cylindersPreview);
@@ -5209,6 +5244,7 @@ export default function App() {
               <DeadlineReminderBanner
                 reminders={printingDeadlineReminders}
                 leadDays={printingLeadDays}
+                userKey={currentUser?.id || currentUser?.email || ''}
                 canPlanPrinting={isTabAllowed('printing_scheduler')}
                 onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
                 onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
@@ -5218,6 +5254,8 @@ export default function App() {
             {canManageOrderDeadline(currentUser) && (
               <PrintingDeadlineSummaryCard
                 summary={deadlineSummary}
+                leadDays={printingLeadDays}
+                userKey={currentUser?.id || currentUser?.email || ''}
                 onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
               />
             )}

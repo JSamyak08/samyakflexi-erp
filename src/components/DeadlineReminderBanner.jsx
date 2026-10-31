@@ -1,6 +1,7 @@
 import React from 'react';
 import { AlertTriangle, ArrowRight, Printer, X } from 'lucide-react';
 import { buildHref } from '../utils/slugRouter.js';
+import { ListPager, SectionChevron, useCollapsedSection, usePagedItems } from './printingDeadlineSection.jsx';
 
 function orderHref(order) {
   return buildHref('orders', { id: order.id });
@@ -86,6 +87,22 @@ function Row({ item, canPlanPrinting, onOpenOrder, onPlanPrinting }) {
   );
 }
 
+function CountBadge({ children, background, color, border }) {
+  return (
+    <span style={{
+      background,
+      color,
+      border: `1px solid ${border}`,
+      fontSize: '0.72rem',
+      fontWeight: '800',
+      padding: '2px 8px',
+      borderRadius: '9999px',
+    }}>
+      {children}
+    </span>
+  );
+}
+
 export default function DeadlineReminderBanner({
   reminders = [],
   leadDays = 3,
@@ -93,7 +110,10 @@ export default function DeadlineReminderBanner({
   onPlanPrinting,
   canPlanPrinting = false,
   onDismiss,
+  userKey = '',
 }) {
+  const { collapsed, toggle } = useCollapsedSection('list', userKey);
+  const { view, setPage } = usePagedItems(reminders);
   if (!reminders.length) return null;
   const overdueCount = reminders.filter((item) => item.assessment.stage === 'overdue').length;
   const dueSoonCount = reminders.length - overdueCount;
@@ -104,6 +124,8 @@ export default function DeadlineReminderBanner({
     <div
       role="status"
       data-testid="printing-deadline-list"
+      data-collapsed={collapsed ? 'true' : 'false'}
+      data-page={view.page}
       style={{
         background: '#ffffff',
         border: `1px solid ${high ? '#fecaca' : '#fde68a'}`,
@@ -112,11 +134,30 @@ export default function DeadlineReminderBanner({
         padding: '18px 20px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '14px',
+        gap: collapsed ? '0' : '14px',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <button
+          type="button"
+          data-testid="printing-deadline-toggle"
+          aria-expanded={!collapsed}
+          aria-controls="printing-deadline-list-body"
+          onClick={toggle}
+          style={{
+            flex: '1 1 280px',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '12px',
+            background: 'transparent',
+            border: 0,
+            padding: 0,
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: 'inherit',
+          }}
+        >
+          <SectionChevron collapsed={collapsed} />
           <div style={{
             width: '38px',
             height: '38px',
@@ -135,52 +176,28 @@ export default function DeadlineReminderBanner({
               <h3 style={{ fontSize: '0.98rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                 Due before printing starts
               </h3>
-              <span style={{
-                background: high ? '#fee2e2' : '#fef3c7',
-                color: high ? '#b91c1c' : '#b45309',
-                border: `1px solid ${high ? '#fecaca' : '#fde68a'}`,
-                fontSize: '0.72rem',
-                fontWeight: '800',
-                padding: '2px 8px',
-                borderRadius: '9999px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}>
-                {countLabel}
-              </span>
+              <CountBadge background={high ? '#fee2e2' : '#fef3c7'} color={high ? '#b91c1c' : '#b45309'} border={high ? '#fecaca' : '#fde68a'}>
+                <span style={{ textTransform: 'uppercase', letterSpacing: '0.04em' }}>{countLabel}</span>
+              </CountBadge>
               {overdueCount > 0 && (
-                <span style={{
-                  background: '#fee2e2',
-                  color: '#991b1b',
-                  border: '1px solid #fecaca',
-                  fontSize: '0.72rem',
-                  fontWeight: '800',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                }}>
+                <CountBadge background="#fee2e2" color="#991b1b" border="#fecaca">
                   {overdueCount} overdue
-                </span>
+                </CountBadge>
               )}
               {dueSoonCount > 0 && (
-                <span style={{
-                  background: '#fef3c7',
-                  color: '#92400e',
-                  border: '1px solid #fde68a',
-                  fontSize: '0.72rem',
-                  fontWeight: '800',
-                  padding: '2px 8px',
-                  borderRadius: '9999px',
-                }}>
+                <CountBadge background="#fef3c7" color="#92400e" border="#fde68a">
                   {dueSoonCount} due within {leadDays} days
-                </span>
+                </CountBadge>
               )}
             </div>
-            <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '3px 0 0', lineHeight: '1.4' }}>
-              Shown {leadDays} days before the deadline, and after it, until a print run starts or the order is closed or cancelled.
-              Overdue rows stay at the top. The list is for Admin and Sales Manager.
-            </p>
+            {!collapsed && (
+              <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '3px 0 0', lineHeight: '1.4', textTransform: 'none' }}>
+                Shown {leadDays} days before the deadline, and after it, until a print run starts or the order is closed or cancelled.
+                Overdue rows stay at the top. The list is for Admin and Sales Manager.
+              </p>
+            )}
           </div>
-        </div>
+        </button>
         {onDismiss && (
           <button
             type="button"
@@ -192,17 +209,20 @@ export default function DeadlineReminderBanner({
           </button>
         )}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {reminders.map((item) => (
-          <Row
-            key={item.order.id}
-            item={item}
-            canPlanPrinting={canPlanPrinting}
-            onOpenOrder={onOpenOrder}
-            onPlanPrinting={onPlanPrinting}
-          />
-        ))}
-      </div>
+      {!collapsed && (
+        <div id="printing-deadline-list-body" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {view.items.map((item) => (
+            <Row
+              key={item.order.id}
+              item={item}
+              canPlanPrinting={canPlanPrinting}
+              onOpenOrder={onOpenOrder}
+              onPlanPrinting={onPlanPrinting}
+            />
+          ))}
+          <ListPager view={view} onPage={setPage} testId="printing-deadline-list" />
+        </div>
+      )}
     </div>
   );
 }
