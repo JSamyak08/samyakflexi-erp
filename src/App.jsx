@@ -963,6 +963,61 @@ export default function App() {
     setProductionRecords(e2eScrapPreview.productionRecords);
   }, [e2eScrapPreview]);
 
+  const [e2eConsumablesStock] = useState(() => {
+    if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
+    try {
+      return new URLSearchParams(window.location.search).get('e2e') === 'consumables-stock';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!e2eConsumablesStock) return undefined;
+    setConsumables([
+      {
+        id: 'CS-1',
+        itemCode: 'CON-SOL-014',
+        name: 'Ethyl Acetate Solvent',
+        category: 'Chemicals & Solvents',
+        unit: 'Litres',
+        currentStock: 18,
+        minReserve: 80,
+        unitCost: 92,
+        assignedMachine: 'Printing Press 1 (8-Color Rotogravure)',
+        location: 'Solvent Cage B',
+        lastRestocked: '2026-10-24',
+      },
+      {
+        id: 'CS-2',
+        itemCode: 'CON-SPR-221',
+        name: 'Doctor Blade 40mm',
+        category: 'Printing Spares',
+        unit: 'Nos',
+        currentStock: 24,
+        minReserve: 6,
+        unitCost: 450,
+        assignedMachine: 'Printing Press 2 (6-Color Rotogravure)',
+        location: 'Rack A-3',
+        lastRestocked: '2026-10-28',
+      },
+      {
+        id: 'CS-3',
+        itemCode: 'CON-ADH-008',
+        name: 'Solventless Adhesive',
+        category: 'Adhesives',
+        unit: 'Kg',
+        currentStock: 140,
+        minReserve: 40,
+        unitCost: 270,
+        assignedMachine: 'Solventless Laminator (Nordmeccanica)',
+        location: 'Cold Room 1',
+        lastRestocked: '2026-10-30',
+      },
+    ]);
+    return undefined;
+  }, [e2eConsumablesStock]);
+
   const [e2eActiveUserPreview] = useState(() => {
     if (import.meta.env.VITE_E2E_STUB_AUTH !== '1' || typeof window === 'undefined') return false;
     try {
