@@ -1395,7 +1395,7 @@ export default function App() {
               saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
             }
           });
-          supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id).catch(console.warn));
+          supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id, 'Removed dummy inventory row').catch(console.warn));
         }
 
         // Hydrate Cylinders
@@ -3238,12 +3238,20 @@ export default function App() {
     logAudit('UPDATE', 'Inventory', `Saved stock item ${cleanItem.itemCode || cleanItem.id} - "${cleanItem.itemName}" (${cleanItem.availableQtyKg} ${cleanItem.unit || 'Kg'})`, cleanItem.id);
   };
 
-  const handleDeleteInventoryItem = async (itemId) => {
-    if (!itemId) return;
+  const handleDeleteInventoryItem = async (itemId, reason) => {
+    const ids = [...new Set((Array.isArray(itemId) ? itemId : [itemId]).map((id) => String(id || '').trim()).filter(Boolean))];
+    if (!ids.length) return null;
     requireDatabaseConnection('delete inventory item');
-    await deleteInventoryItemFromSupabase(itemId);
-    setInventory(prev => prev.filter(i => String(i.id) !== String(itemId)));
-    logAudit('DELETE', 'Inventory', `Deleted inventory item ${itemId}`, itemId);
+    const result = await deleteInventoryItemFromSupabase(ids, reason);
+    const idSet = new Set(ids);
+    (result?.items || []).forEach((item) => {
+      if (item?.itemId) idSet.add(String(item.itemId));
+      if (item?.itemCode) idSet.add(String(item.itemCode));
+    });
+    setInventory(prev => prev.filter(i => !idSet.has(String(i.id)) && !idSet.has(String(i.itemCode || ''))));
+    setInventoryRolls(prev => prev.filter(roll => !idSet.has(String(roll.itemId || roll.item_id || ''))));
+    setStoreIssueTransactions(prev => prev.filter(tx => !idSet.has(String(tx.itemId || tx.stockItemId || ''))));
+    return result;
   };
 
   const handleAddUser = async (newUser) => {
@@ -4141,7 +4149,11 @@ export default function App() {
   const handleDeleteInk = async (inkId) => {
     requireDatabaseConnection('delete ink');
     await deleteInkFromSupabase(inkId);
-    await deleteInventoryItemFromSupabase(inkId);
+    try {
+      await deleteInventoryItemFromSupabase(inkId, `Deleted with ink product ${inkId}`);
+    } catch (error) {
+      if (!/not found/i.test(String(error?.message || error))) throw error;
+    }
     setInks(prev => prev.filter(i => i.id !== inkId));
     setInventory(prev => prev.filter(i => i.id !== inkId && i.itemCode !== inkId));
     logAudit('DELETE', 'Ink Management', `Deleted ink product code ${inkId}`, inkId);
