@@ -45,7 +45,8 @@ import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
 import DeadlineReminderBanner from './DeadlineReminderBanner';
-import { assessPrintingDeadlineReminder, canManageOrderDeadline } from '../utils/orderDeadlineReminder';
+import PrintingDeadlineSummaryCard from './PrintingDeadlineSummaryCard';
+import { canManageOrderDeadline, printingDeadlineReminderRows } from '../utils/orderDeadlineReminder';
 import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients, getCachedOrderConfirmations, saveOrderConfirmationAmendment } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
@@ -75,7 +76,10 @@ export default function OrderManagement({
   onManualReopenOrder,
   canPlanPrinting = false,
   onPlanPrinting,
-  onOrderDeadlineSaved
+  onOrderDeadlineSaved,
+  printingLeadDays = 3,
+  reminderContext = {},
+  printingDeadlineSummary = null,
 }) {
   // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
@@ -666,13 +670,12 @@ export default function OrderManagement({
   const [deadlineBannerHidden, setDeadlineBannerHidden] = useState(false);
   const printingDeadlineReminders = useMemo(() => {
     if (!canManageOrderDeadline(currentUser)) return [];
-    return (orders || []).flatMap((order) => {
-      if (!order) return [];
-      const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
-      const assessment = assessPrintingDeadlineReminder(order, stageInfo);
-      return assessment.active ? [{ order, stageInfo, assessment }] : [];
+    return printingDeadlineReminderRows(orders, {
+      ...reminderContext,
+      leadDays: printingLeadDays,
+      getStageInfo: (order) => getOrderStageInfo(order, sfgGoods, productionRecords),
     });
-  }, [orders, sfgGoods, productionRecords, currentUser]);
+  }, [orders, sfgGoods, productionRecords, currentUser, printingLeadDays, reminderContext]);
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
   useEffect(() => {
     if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);
@@ -1763,13 +1766,25 @@ export default function OrderManagement({
             {!deadlineBannerHidden && activeSubTab === 'orders' && (
               <DeadlineReminderBanner
                 reminders={printingDeadlineReminders}
+                leadDays={printingLeadDays}
                 canPlanPrinting={canPlanPrinting}
                 onOpenOrder={(order) => {
                   setSearchTerm(order.id);
                   setExpandedOrders((prev) => ({ ...prev, [order.id]: true }));
+                  pushSlugState('orders', { id: order.id });
                 }}
                 onPlanPrinting={onPlanPrinting}
                 onDismiss={() => setDeadlineBannerHidden(true)}
+              />
+            )}
+            {canManageOrderDeadline(currentUser) && activeSubTab === 'orders' && (
+              <PrintingDeadlineSummaryCard
+                summary={printingDeadlineSummary}
+                onOpenOrder={(order) => {
+                  setSearchTerm(order.id);
+                  setExpandedOrders((prev) => ({ ...prev, [order.id]: true }));
+                  pushSlugState('orders', { id: order.id });
+                }}
               />
             )}
 
@@ -2115,6 +2130,7 @@ export default function OrderManagement({
                         onPlanPrinting={onPlanPrinting}
                         onSaved={onOrderDeadlineSaved}
                         variant="inline"
+                        reminderContext={{ ...reminderContext, leadDays: printingLeadDays }}
                       />
                     )}
 
@@ -2129,6 +2145,7 @@ export default function OrderManagement({
                           onPlanPrinting={onPlanPrinting}
                           onSaved={onOrderDeadlineSaved}
                           variant="detail"
+                          reminderContext={{ ...reminderContext, leadDays: printingLeadDays }}
                         />
                         {order.isCylinderOrder || order.orderType === 'Rotogravure Cylinder' || order.materialFormat === 'Rotogravure Cylinder' ? (
                           <div>

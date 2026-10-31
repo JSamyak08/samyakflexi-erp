@@ -85,15 +85,45 @@ import {
 } from '../services/settingsService';
 import { SEED_COMPANY_PROFILE, readStoredCompanyProfile, REQUIRED_COMPANY_FIELDS } from '../services/companyProfile';
 import { sendERPEmailNotification, buildEmailTemplate } from '../services/emailService';
-import { fetchSystemSetting } from '../services/supabaseDataService';
+import { fetchSystemSetting, saveSystemSetting } from '../services/supabaseDataService';
 import SearchableSelect from './SearchableSelect';
 import { pushSlugState } from '../utils/slugRouter';
 import { canSeePackingGainLoss } from '../utils/dispatchPacking';
 import { DispatchGainLossSettings } from './PackingGainLossReport';
+import { isAdminRole } from '../utils/orderAutoClose';
+import {
+  DEFAULT_PRINTING_LEAD_DAYS,
+  PRINTING_LEAD_DAYS_SETTING,
+  normalizePrintingLeadDays,
+} from '../utils/orderDeadlineReminder';
 
-export default function DocumentSettings({ machines = [], onSaveMachine, onUpdateMachine, onDeleteMachine, urlParams = {}, currentUser = null }) {
+export default function DocumentSettings({
+  machines = [],
+  onSaveMachine,
+  onUpdateMachine,
+  onDeleteMachine,
+  urlParams = {},
+  currentUser = null,
+  printingLeadDays = DEFAULT_PRINTING_LEAD_DAYS,
+  onSavePrintingLeadDays,
+}) {
   // Navigation Sub-tab State
   const [activeTab, setActiveTab] = useState(urlParams?.tab || 'general');
+  const [leadDaysInput, setLeadDaysInput] = useState(() => normalizePrintingLeadDays(printingLeadDays));
+  useEffect(() => {
+    setLeadDaysInput(normalizePrintingLeadDays(printingLeadDays));
+  }, [printingLeadDays]);
+  useEffect(() => {
+    let active = true;
+    fetchSystemSetting(PRINTING_LEAD_DAYS_SETTING)
+      .then((value) => {
+        if (active && value !== null && value !== undefined && value !== '') {
+          setLeadDaysInput(normalizePrintingLeadDays(value));
+        }
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (urlParams?.tab) setActiveTab(urlParams.tab);
   }, [urlParams?.tab]);
@@ -953,6 +983,48 @@ export default function DocumentSettings({ machines = [], onSaveMachine, onUpdat
               <button type="submit" className="btn-primary">Save company profile</button>
             </div>
           </form>
+          {isAdminRole(currentUser) && (
+            <form
+              className="glass-panel"
+              data-testid="printing-deadline-lead-setting"
+              style={{ padding: '24px', marginBottom: '24px' }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const next = normalizePrintingLeadDays(leadDaysInput);
+                setLeadDaysInput(next);
+                persistSetting(async () => {
+                  if (onSavePrintingLeadDays) return onSavePrintingLeadDays(next);
+                  await saveSystemSetting(PRINTING_LEAD_DAYS_SETTING, next);
+                  return next;
+                });
+              }}
+            >
+              <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Printing deadline reminder</h3>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
+                  Admin and Sales Manager are reminded this many days before an order deadline when printing has not started.
+                  The default is {DEFAULT_PRINTING_LEAD_DAYS}. Overdue orders stay on the list until a print run starts or the order is closed or cancelled.
+                </p>
+              </div>
+              <label htmlFor="printing-deadline-lead-days" style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.78rem', fontWeight: 700, maxWidth: '280px' }}>
+                Lead time (days)
+                <input
+                  id="printing-deadline-lead-days"
+                  className="form-control"
+                  type="number"
+                  min="1"
+                  max="30"
+                  step="1"
+                  value={leadDaysInput}
+                  onChange={(event) => setLeadDaysInput(event.target.value)}
+                  required
+                />
+              </label>
+              <div style={{ marginTop: '16px' }}>
+                <button type="submit" className="btn-primary">Save lead time</button>
+              </div>
+            </form>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             
             {/* SECTION 1: COMPANY LOGO UPLOAD */}
