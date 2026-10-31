@@ -202,7 +202,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
             </div>
             {r.grossWeightKg ? (
               <div style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '600', marginTop: '1px', lineHeight: '1.15' }}>
-                Gross: {r.grossWeightKg} kg {(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Tare: ${r.tareWeightKg ?? r.coreWeightKg} kg` : ''}
+                Gross: {r.grossWeightKg} kg {(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Tare: ${r.tareWeightKg ?? r.coreWeightKg} kg` : ''}{(r.coreWeightKg !== undefined && r.coreWeightKg !== null && Number(r.coreWeightKg) !== Number(r.tareWeightKg ?? r.coreWeightKg)) ? ` | Core: ${r.coreWeightKg} kg` : ''}
               </div>
             ) : null}
             {r.lengthMeters ? (

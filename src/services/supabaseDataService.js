@@ -1977,6 +1977,9 @@ export async function fetchInventoryRolls() {
       itemRemarks: r.remarks || '',
       notes: r.remarks || '',
       coreDia: r.core_dia || '',
+      coreWeightKg: r.core_weight_kg === null || r.core_weight_kg === undefined
+        ? (meta.coreWeightKg === undefined || meta.coreWeightKg === null ? undefined : (Number(meta.coreWeightKg) || 0))
+        : (Number(r.core_weight_kg) || 0),
       purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unit: r.unit || (r.category === 'Film Substrates' ? 'Kg' : 'Pcs'),
@@ -2020,6 +2023,7 @@ export async function saveInventoryRollToSupabase(roll) {
     batch_no: roll.batchNo || roll.lotNo || roll.grnNo || roll.grn_no || '',
     gross_weight_kg: Number(roll.grossWeightKg ?? (netWeight > 0 ? netWeight + 0.5 : 0)) || 0,
     tare_weight_kg: Number(roll.tareWeightKg ?? 0.5) || 0,
+    ...(roll.coreWeightKg !== undefined && roll.coreWeightKg !== null ? { core_weight_kg: Number(roll.coreWeightKg) || 0 } : {}),
     net_weight_kg: netWeight,
     available_weight_kg: availableWeight,
     length_meters: Number(roll.lengthMeters ?? 0) || 0,
@@ -2052,6 +2056,7 @@ export async function saveInventoryRollToSupabase(roll) {
       purchaseRatePerKg: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
       unitPrice: Number(roll.purchaseRatePerKg ?? roll.unitPrice ?? roll.purchaseRate ?? 0) || 0,
       unit: roll.unit || 'Kg',
+      ...(roll.coreWeightKg !== undefined && roll.coreWeightKg !== null ? { coreWeightKg: Number(roll.coreWeightKg) || 0 } : {}),
       ...(roll.filmType && roll.filmType !== '-' ? { filmType: roll.filmType } : {}),
       ...(roll.bulkUploadFingerprint ? { bulkUploadFingerprint: roll.bulkUploadFingerprint } : {}),
       ...(roll.parentSfgBatchCode ? { parentSfgBatchCode: roll.parentSfgBatchCode } : {})
