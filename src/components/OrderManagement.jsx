@@ -22,7 +22,8 @@ import {
   Square,
   Box,
   ArrowUpRight,
-  Pencil
+  Pencil,
+  Download
 } from 'lucide-react';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
@@ -47,7 +48,8 @@ import OrderDeadlineReminder from './OrderDeadlineReminder';
 import DeadlineReminderBanner from './DeadlineReminderBanner';
 import PrintingDeadlineSummaryCard from './PrintingDeadlineSummaryCard';
 import { canManageOrderDeadline, printingDeadlineReminderRows } from '../utils/orderDeadlineReminder';
-import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients, getCachedOrderConfirmations, saveOrderConfirmationAmendment } from '../services/supabaseDataService';
+import { downloadOrderCsvReport, filterOrdersLikeManagement } from '../utils/orderCsvReport';
+import { saveOrderToSupabase, savePurchaseOrderToSupabase, fetchClients, getCachedOrderConfirmations, saveOrderConfirmationAmendment, loadDeletedBarcodes } from '../services/supabaseDataService';
 import { getNextDocRefNumber } from '../services/settingsService';
 
 export default function OrderManagement({ 
@@ -80,6 +82,8 @@ export default function OrderManagement({
   printingLeadDays = 3,
   reminderContext = {},
   printingDeadlineSummary = null,
+  inventoryRolls = [],
+  storeIssueTransactions = [],
 }) {
   // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
@@ -689,6 +693,7 @@ export default function OrderManagement({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [vendorFilter, setVendorFilter] = useState('ALL');
+  const [csvMenuOpen, setCsvMenuOpen] = useState(false);
 
   // Search and Filter states for Consolidated Requirements View
   const [reqSearchTerm, setReqSearchTerm] = useState('');
@@ -1398,27 +1403,38 @@ export default function OrderManagement({
     if (onManualReopenOrder) onManualReopenOrder(order, reason.trim());
   };
 
-  // Filter orders
-  const filteredOrders = orders.filter(o => {
-    if (!o) return false;
-    const q = String(searchTerm || '').trim().toLowerCase();
-    if (o.status === 'Completed' && statusFilter !== 'COMPLETED') return false;
-    if (statusFilter === 'COMPLETED' && o.status !== 'Completed') return false;
-    const matchesSearch = !q ||
-      String(o.jobName || '').toLowerCase().includes(q) ||
-      String(o.id || '').toLowerCase().includes(q) ||
-      String(o.clientName || '').toLowerCase().includes(q) ||
-      String(getSubstrateStructure(o) || '').toLowerCase().includes(q);
-    
-    const statusInfo = getOrderStatusInfo(o);
-    
-    if (statusFilter === 'DELAYED' && !statusInfo.isOverdue) return false;
-    if (statusFilter === 'NEARING_DEADLINE' && !statusInfo.isNearingDeadline) return false;
-    if (statusFilter === 'ON_HOLD' && o.status !== 'On Hold') return false;
-    if (statusFilter === 'PENDING_PO' && o.poIssued) return false;
-    
-    return matchesSearch;
+  // Filter orders. The CSV uses this full list, not the page on screen.
+  const filteredOrders = filterOrdersLikeManagement(orders, {
+    searchTerm,
+    statusFilter,
+    structureOf: getSubstrateStructure,
   });
+
+  const handleDownloadCsvReport = async (kind) => {
+    setCsvMenuOpen(false);
+    let retiredBarcodes = [];
+    try {
+      retiredBarcodes = await loadDeletedBarcodes();
+    } catch {
+      retiredBarcodes = [];
+    }
+    downloadOrderCsvReport({
+      kind,
+      today: new Date(),
+      orders,
+      includeOrders: filteredOrders,
+      jobMasters,
+      inventory,
+      inventoryRolls,
+      retiredBarcodes,
+      productionRecords,
+      sfgGoods,
+      storeIssues: storeIssueTransactions,
+      allocationChoices: allocationDrafts,
+      structureOf: getSubstrateStructure,
+      blockerContext: reminderContext,
+    });
+  };
 
   const ordersPagination = usePagination(filteredOrders, 50);
 
@@ -1760,6 +1776,63 @@ export default function OrderManagement({
                     <option key={v.id} value={v.companyName}>{v.companyName}</option>
                   ))}
                 </SearchableSelect>
+              </div>
+
+              <div style={{ position: 'relative', zIndex: csvMenuOpen ? 40 : undefined }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  data-testid="download-order-csv"
+                  aria-expanded={csvMenuOpen}
+                  aria-haspopup="menu"
+                  title="Download every order matching the current search and status filter, not only this page"
+                  onClick={() => setCsvMenuOpen((open) => !open)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                >
+                  <Download size={16} /> Download CSV Report
+                </button>
+                {csvMenuOpen && (
+                  <div
+                    role="menu"
+                    data-testid="download-order-csv-menu"
+                    style={{
+                      position: 'absolute',
+                      top: 'calc(100% + 6px)',
+                      right: 0,
+                      zIndex: 30,
+                      minWidth: '240px',
+                      background: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '8px',
+                      boxShadow: '0 8px 24px rgba(15, 23, 42, 0.12)',
+                      padding: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px'
+                    }}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="btn-secondary"
+                      data-testid="download-pending-orders-csv"
+                      onClick={() => handleDownloadCsvReport('pending')}
+                      style={{ justifyContent: 'flex-start', textAlign: 'left' }}
+                    >
+                      Pending Orders
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="btn-secondary"
+                      data-testid="download-overdue-orders-csv"
+                      onClick={() => handleDownloadCsvReport('overdue')}
+                      style={{ justifyContent: 'flex-start', textAlign: 'left' }}
+                    >
+                      Overdue Orders (Delayed)
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
