@@ -1616,8 +1616,14 @@ export const generateFullRolePermissions = (allowAll = false) => {
   SYSTEM_ROLES.forEach(r => {
     perm[r] = {};
     ALL_MODULES.forEach(m => {
-      if (r === "Printing Operator") {
-        perm[r][m.key] = (m.key === "printing_scheduler" || m.key === "dashboard");
+      // Printing Operator and Shop Floor Operator open only Inventory,
+      // Printing Scheduler, and SFG / FG Store. The first two stay full
+      // write. sfg_store is the string "view": the screen opens, and store
+      // mutations stay off. Every other module remains a boolean.
+      if (r === "Printing Operator" || r === "Shop Floor Operator") {
+        if (m.key === "inventory" || m.key === "printing_scheduler") perm[r][m.key] = true;
+        else if (m.key === "sfg_store") perm[r][m.key] = "view";
+        else perm[r][m.key] = false;
       } else if (r === "Admin" || r === "Plant Manager" || r === "HR & Payroll Manager") {
         perm[r][m.key] = true;
       } else if (r === "Production Manager") {
@@ -1630,16 +1636,14 @@ export const generateFullRolePermissions = (allowAll = false) => {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "vendors" || m.key === "purchase_orders" || m.key === "inventory" || m.key === "material_indents" || m.key === "ink_management");
       } else if (r === "Sales Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "sales" || m.key === "job_punching" || m.key === "orders" || m.key === "clients" || m.key === "dispatch");
-      } else if (r === "Shop Floor Operator") {
-        perm[r][m.key] = (m.key === "dashboard" || m.key === "production_records" || m.key === "printing_scheduler");
       } else {
         perm[r][m.key] = allowAll;
       }
     });
     if (r === "HR & Payroll Manager") perm[r].purchase_orders = false;
     perm[r].audit_logs = r === "Admin";
-    // Pellet fuel is a real permission. Store, production, purchasing, QC,
-    // and the shop floor record or receive fuel. Other roles stay off.
+    // Pellet fuel is a real permission. Store, production, purchasing, and QC
+    // record or receive fuel. Printing and shop-floor operators do not.
     perm[r].pellet_fuel = [
       "Admin",
       "Plant Manager",
@@ -1647,8 +1651,7 @@ export const generateFullRolePermissions = (allowAll = false) => {
       "Production Manager",
       "Store Manager",
       "Purchase Manager",
-      "QC Chemist",
-      "Shop Floor Operator"
+      "QC Chemist"
     ].includes(r);
     // Barcodes follows the roles that already have inventory in this matrix.
     // Those roles inward GRNs, print roll tags, and look up stock. HR is

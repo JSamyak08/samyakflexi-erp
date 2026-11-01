@@ -3749,6 +3749,16 @@ export async function saveSFGGoodToSupabase(item) {
   payload.id = item.id && isUuid(item.id) ? item.id : crypto.randomUUID();
 
   console.log('[sfg_goods] Upserting item:', sfgBatchCode, 'Status:', computedStatus);
+  const printedLot = Boolean(item.isPrintedLot) || String(sfgBatchCode).startsWith('SFG-LOT-');
+  if (printedLot) {
+    // Ending a print run writes this lot. The function keeps consumed and
+    // dispatched kilograms when the caller only has view access to the store.
+    const { error: rpcError } = await supabase.rpc('save_printing_sfg_lot', { p_item: payload });
+    if (!rpcError) return;
+    const rpcMessage = String(rpcError.message || rpcError.details || '');
+    const missingFn = /save_printing_sfg_lot|schema cache|could not find the function|PGRST202/i.test(rpcMessage);
+    if (!missingFn) handleSupabaseError(rpcError, 'sfg_goods');
+  }
   const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
   if (error) {
     handleSupabaseError(error, 'sfg_goods');

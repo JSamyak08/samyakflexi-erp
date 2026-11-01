@@ -201,6 +201,7 @@ test('pellet helpers use real fields and do not invent stock or people', () => {
   assert.deepEqual(PELLET_FUEL_SHIFTS.map((shift) => shift.label), ['Shift A (Day)', 'Shift B (Night)', 'Full Day 24h']);
   assert.equal(PELLET_FUEL_ROLES.includes('Sales Manager'), false);
   assert.equal(PELLET_FUEL_ROLES.includes('Printing Operator'), false);
+  assert.equal(PELLET_FUEL_ROLES.includes('Shop Floor Operator'), false);
   assert.equal(PELLET_FUEL_ROLES.includes('Store Manager'), true);
 });
 

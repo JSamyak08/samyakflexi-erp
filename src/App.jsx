@@ -84,7 +84,7 @@ import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
-import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS, firstAllowedModule } from './bootAccess';
+import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS, firstAllowedModule, nextModuleForDeniedTab, roleCanEditSfgStore } from './bootAccess';
 import { assignedRolesOf, hasOnlyRole, rawRoleNames, userHasRole } from './assignedRoles';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
@@ -502,8 +502,8 @@ export default function App() {
     }
     const route = getRouteFromUrl();
     if (!route.unknown && !isTabAllowed(activeTab)) {
-      const home = firstAllowedModule(rolePermissions, assignedRolesOf(currentUser));
-      if (home && home !== activeTab && isTabAllowed(home)) {
+      const home = nextModuleForDeniedTab(rolePermissions, assignedRolesOf(currentUser), activeTab);
+      if (home !== activeTab) {
         handleTabChange(home);
         return;
       }
@@ -767,8 +767,8 @@ export default function App() {
     if (!isAuthReady || !isAuthenticated || !currentUser || typeof window === 'undefined') return;
     if (isAuthCallbackLocation(window.location) || routeInfo.unknown) return;
     if (isTabAllowed(activeTab)) return;
-    const home = firstAllowedModule(rolePermissions, currentUser);
-    if (home && home !== activeTab && isTabAllowed(home)) handleTabChange(home);
+    const home = nextModuleForDeniedTab(rolePermissions, currentUser, activeTab);
+    if (home !== activeTab) handleTabChange(home);
   }, [isAuthReady, isAuthenticated, currentUser, activeTab, rolePermissions, routeInfo.unknown]);
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
@@ -4318,7 +4318,14 @@ export default function App() {
   };
 
   // SFG Store & Consumed SFG Handlers
+  const assertSfgStoreEdit = () => {
+    if (!roleCanEditSfgStore(rolePermissions, assignedRolesOf(currentUser))) {
+      throw new Error('SFG / FG Store is view-only for this account.');
+    }
+  };
+
   const handleSaveSFGGood = async (item) => {
+    assertSfgStoreEdit();
     requireDatabaseConnection('save SFG item');
     await saveSFGGoodToSupabase(item);
     setSfgGoods(prev => {
@@ -4334,6 +4341,7 @@ export default function App() {
   };
 
   const handleConsumeSFG = async (updatedSfgItem, logEntry) => {
+    assertSfgStoreEdit();
     requireDatabaseConnection('consume SFG item');
     await writeWithRetry(() => saveSFGGoodToSupabase(updatedSfgItem));
     const followUpFailures = [];
@@ -4760,6 +4768,7 @@ export default function App() {
   };
 
   const handleDeleteSFGGood = async (sfgId) => {
+    assertSfgStoreEdit();
     requireDatabaseConnection('delete SFG item');
     await deleteSFGGoodFromSupabase(sfgId);
     setSfgGoods(prev => prev.filter(s => s.id !== sfgId && s.sfgBatchCode !== sfgId));
@@ -6411,6 +6420,7 @@ export default function App() {
             onSaveSFGGood={handleSaveSFGGood}
             onConsumeSFG={handleConsumeSFG}
             onDeleteSFGGood={handleDeleteSFGGood}
+            canEditStore={roleCanEditSfgStore(rolePermissions, assignedRolesOf(currentUser))}
           />
         )}
 

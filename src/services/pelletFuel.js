@@ -17,8 +17,7 @@ export const PELLET_FUEL_ROLES = [
   'Production Manager',
   'Store Manager',
   'Purchase Manager',
-  'QC Chemist',
-  'Shop Floor Operator'
+  'QC Chemist'
 ];
 
 export function fuelActorName(user) {

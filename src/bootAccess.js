@@ -16,12 +16,39 @@ function asRoleList(roleOrRoles) {
   return [];
 }
 
+function permissionOpensModule(permissions, moduleKey) {
+  const value = permissions?.[moduleKey];
+  if (value === true) return true;
+  // "view" is only defined for SFG / FG Store. Other modules stay boolean.
+  return moduleKey === 'sfg_store' && value === 'view';
+}
+
 export function roleHasModule(matrix, roleOrRoles, moduleKey) {
   const roles = asRoleList(roleOrRoles);
   if (!roles.length || !moduleKey) return false;
   if (roles.includes('Admin')) return true;
   if (moduleKey === 'user_management' || moduleKey === 'audit_logs') return false;
-  return roles.some((role) => matrix?.[role]?.[moduleKey] === true);
+  return roles.some((role) => permissionOpensModule(matrix?.[role], moduleKey));
+}
+
+/**
+ * SFG / FG Store edits. Boolean true on sfg_store grants edit. The string
+ * "view" does not, even when that same role can write Inventory or Printing.
+ * A different assigned role still grants edit when its own row would have
+ * granted it before this screen was view-only.
+ */
+const SFG_GOODS_WRITE_MODULES = ['production_records', 'inventory', 'printing_scheduler'];
+
+export function roleCanEditSfgStore(matrix, roleOrUser) {
+  const roles = namesOf(roleOrUser);
+  if (roles.includes('Admin')) return true;
+  return roles.some((role) => {
+    const permissions = matrix?.[role];
+    if (!permissions) return false;
+    if (permissions.sfg_store === true) return true;
+    if (permissions.sfg_store === 'view') return false;
+    return SFG_GOODS_WRITE_MODULES.some((key) => permissions[key] === true);
+  });
 }
 
 export function roleNeedsAny(matrix, roleOrRoles, moduleKeys) {
@@ -109,8 +136,8 @@ const LANDING_ORDER = [
 
 /**
  * First module this person can open. Dashboard is first only when the
- * matrix allows it. A Printing Operator whose dashboard flag is off lands
- * on Printing, and a Store Manager lands on Inventory.
+ * matrix allows it. Printing and shop-floor operators land on Printing,
+ * and a Store Manager lands on Inventory.
  */
 function namesOf(roleOrUser) {
   if (roleOrUser && typeof roleOrUser === 'object' && !Array.isArray(roleOrUser)) {
@@ -128,6 +155,19 @@ export function firstAllowedModule(matrix, roleOrUser) {
   if (roles.includes('Admin')) return 'dashboard';
   const allowed = LANDING_ORDER.find((key) => roleHasModule(matrix, roles, key));
   return allowed || 'dashboard';
+}
+
+/**
+ * Direct links to a module this person cannot open land on their first
+ * allowed module. An allowed tab is left as it is. A denied tab with no
+ * allowed home stays put so the caller does not navigate in a loop.
+ */
+export function nextModuleForDeniedTab(matrix, roleOrUser, tabKey) {
+  const roles = namesOf(roleOrUser);
+  if (roleHasModule(matrix, roles, tabKey)) return tabKey;
+  const home = firstAllowedModule(matrix, roleOrUser);
+  if (home && home !== tabKey && roleHasModule(matrix, roles, home)) return home;
+  return tabKey;
 }
 
 export function cachesToDrop(matrix, role) {

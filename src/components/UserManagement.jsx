@@ -20,6 +20,7 @@ import {
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary } from '../factoryStore';
+import { nextSfgStorePermission } from '../sfgStoreAccess';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
 import { assignedRolesOf, departmentForRole, primaryRole, userHasRole } from '../assignedRoles';
@@ -176,12 +177,15 @@ export default function UserManagement({
       alert("Only Admin role can configure role permissions!");
       return;
     }
-    const currentVal = rolePermissions[roleName]?.[moduleKey] === true;
+    const currentVal = rolePermissions[roleName]?.[moduleKey];
+    const nextVal = moduleKey === 'sfg_store'
+      ? nextSfgStorePermission(currentVal)
+      : currentVal !== true;
     const updated = {
       ...rolePermissions,
       [roleName]: {
         ...(rolePermissions[roleName] || {}),
-        [moduleKey]: !currentVal
+        [moduleKey]: nextVal
       }
     };
     persistPermissions(updated, 'RBAC permissions matrix saved.');
@@ -314,16 +318,20 @@ export default function UserManagement({
                       <span style={{ display: 'block', fontSize: '0.72rem', color: '#64748b', fontWeight: 'normal' }}>Category: {mod.category}</span>
                     </td>
                     {SYSTEM_ROLES.map(r => {
-                      const isAllowed = rolePermissions[r]?.[mod.key] === true;
+                      const cellValue = rolePermissions[r]?.[mod.key];
+                      const isView = mod.key === 'sfg_store' && cellValue === 'view';
+                      const isAllowed = cellValue === true;
+                      const label = isAllowed ? 'ALLOW' : isView ? 'VIEW' : 'BLOCK';
+                      const color = isAllowed ? '#047857' : isView ? '#b45309' : '#dc2626';
                       return (
-                        <td key={r} style={{ textAlign: 'center', verticalAlign: 'middle', background: isAllowed ? '#f0fdf4' : '#fef2f2' }}>
+                        <td key={r} style={{ textAlign: 'center', verticalAlign: 'middle', background: isAllowed ? '#f0fdf4' : isView ? '#fffbeb' : '#fef2f2' }}>
                           <button
                             type="button"
                             style={{
                               background: 'none',
                               border: 'none',
                               cursor: isAdmin ? 'pointer' : 'default',
-                              color: isAllowed ? '#047857' : '#dc2626',
+                              color,
                               fontWeight: '700',
                               fontSize: '0.8rem',
                               display: 'inline-flex',
@@ -331,10 +339,14 @@ export default function UserManagement({
                               gap: '4px'
                             }}
                             onClick={() => togglePermission(r, mod.key)}
-                            title={isAllowed ? `Allowed for ${r}. Click to Revoke` : `Restricted for ${r}. Click to Grant`}
+                            title={
+                              mod.key === 'sfg_store'
+                                ? (isAllowed ? `Full SFG access for ${r}. Click for view-only` : isView ? `View-only for ${r}. Click to block` : `No SFG access for ${r}. Click to grant full access`)
+                                : (isAllowed ? `Allowed for ${r}. Click to revoke` : `Restricted for ${r}. Click to grant`)
+                            }
                           >
-                            {isAllowed ? <CheckSquare size={18} /> : <Square size={18} style={{ color: '#cbd5e1' }} />}
-                            {isAllowed ? <span style={{ fontSize: '0.72rem' }}>ALLOW</span> : <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>BLOCK</span>}
+                            {isAllowed ? <CheckSquare size={18} /> : <Square size={18} style={{ color: isView ? '#f59e0b' : '#cbd5e1' }} />}
+                            <span style={{ fontSize: '0.72rem', color: isAllowed || isView ? color : '#94a3b8' }}>{label}</span>
                           </button>
                         </td>
                       );

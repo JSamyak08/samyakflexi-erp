@@ -40,13 +40,37 @@ expect('Printing Operator', 'purchase_orders', false);
 expect('Shop Floor Operator', 'purchase_orders', false);
 
 expect('Printing Operator', 'printing_scheduler', true);
-expect('Printing Operator', 'dashboard', true);
-expect('Shop Floor Operator', 'production_records', true);
+expect('Printing Operator', 'dashboard', false);
+expect('Printing Operator', 'inventory', true);
+expect('Shop Floor Operator', 'production_records', false);
+expect('Shop Floor Operator', 'printing_scheduler', true);
+expect('Shop Floor Operator', 'inventory', true);
+
+for (const role of ['Printing Operator', 'Shop Floor Operator']) {
+  expect(role, 'inventory', true);
+  expect(role, 'printing_scheduler', true);
+  expect(role, 'sfg_store', 'view');
+  expect(role, 'dispatch', false);
+  expect(role, 'pellet_fuel', false);
+  expect(role, 'dashboard', false);
+  expect(role, 'production_records', false);
+  expect(role, 'audit_logs', false);
+}
+
+expect('Admin', 'dispatch', true);
+expect('Admin', 'sfg_store', true);
+expect('Admin', 'pellet_fuel', true);
+expect('Store Manager', 'dispatch', true);
+expect('Store Manager', 'pellet_fuel', true);
+expect('Sales Manager', 'dispatch', true);
+expect('Sales Manager', 'pellet_fuel', false);
+expect('QC Chemist', 'dispatch', true);
+expect('QC Chemist', 'pellet_fuel', true);
+expect('Purchase Manager', 'dispatch', false);
+expect('Purchase Manager', 'pellet_fuel', true);
+expect('Production Manager', 'sfg_store', true);
 
 for (const role of roles) {
-  expect(role, 'dispatch', true);
-  expect(role, 'sfg_store', true);
-  expect(role, 'pellet_fuel', true);
   expect(role, 'audit_logs', role === 'Admin');
 }
 
