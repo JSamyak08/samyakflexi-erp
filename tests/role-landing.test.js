@@ -45,6 +45,8 @@ test('denied dashboard landings open the first module that role can use', () => 
   assert.equal(firstAllowedModule(productionLike, 'QC Chemist'), 'production_records');
   assert.equal(firstAllowedModule(productionLike, 'Admin'), 'dashboard');
   assert.equal(firstAllowedModule(DEFAULT_ROLE_PERMISSIONS, 'Admin'), 'dashboard');
+  assert.equal(firstAllowedModule(DEFAULT_ROLE_PERMISSIONS, 'Printing Operator'), 'printing_scheduler');
+  assert.equal(firstAllowedModule(DEFAULT_ROLE_PERMISSIONS, 'Shop Floor Operator'), 'printing_scheduler');
 });
 
 test('sign-in does not write an audit row and the restricted screen uses the lucide Lock', () => {

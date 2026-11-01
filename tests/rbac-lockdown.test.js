@@ -40,7 +40,11 @@ test('matrix keys are real and dispatch is not forced on for every role', () => 
 
   const defaults = generateFullRolePermissions(false);
   assert.equal(defaults['Printing Operator'].dispatch, false);
-  assert.equal(defaults['Printing Operator'].sfg_store, false);
+  assert.equal(defaults['Printing Operator'].sfg_store, 'view');
+  assert.equal(defaults['Shop Floor Operator'].sfg_store, 'view');
+  assert.equal(defaults['Printing Operator'].inventory, true);
+  assert.equal(defaults['Shop Floor Operator'].inventory, true);
+  assert.equal(defaults['Shop Floor Operator'].pellet_fuel, false);
   assert.equal(defaults['Printing Operator'].audit_logs, false);
   assert.equal(defaults['QC Chemist'].dispatch, true);
   assert.equal(defaults.Admin.audit_logs, true);

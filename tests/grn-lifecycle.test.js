@@ -100,7 +100,8 @@ test('edit and cancel follow the inventory role, not a new permission', () => {
   assert.equal(canManageInwardGrn('Purchase Manager'), true);
   assert.equal(canManageInwardGrn('Admin'), true);
   assert.equal(canManageInwardGrn('Sales Manager'), false);
-  assert.equal(canManageInwardGrn('Printing Operator'), false);
+  assert.equal(canManageInwardGrn('Printing Operator'), true);
+  assert.equal(canManageInwardGrn('Shop Floor Operator'), true);
   assert.match(grnChangeBlockReason(pending, 'Sales Manager'), /cannot edit or cancel/);
 });
 

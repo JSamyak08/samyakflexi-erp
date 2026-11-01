@@ -75,6 +75,7 @@ import {
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
+import { sfgStoreUi } from '../sfgStoreAccess';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { supabase } from '../services/supabaseClient';
@@ -100,8 +101,10 @@ export default function SFGStoreManagement({
   onSaveSFGGood,
   onConsumeSFG,
   onDeleteSFGGood,
+  canEditStore = true,
   previewScrapItems = null
 }) {
+  const storeUi = sfgStoreUi(canEditStore);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'In Stock (WIP)', 'Partially Consumed', 'Fully Consumed'
   const [typeFilter, setTypeFilter] = useState('all');
@@ -616,6 +619,7 @@ export default function SFGStoreManagement({
 
   // Handle Consume Modal Open
   const handleOpenConsumeModal = (item) => {
+    if (!storeUi.canConsume) return;
     setSelectedItemForConsume(item);
     setConsumedWeightKg('');
     setTargetProcess('Lamination (Pass 1)');
@@ -938,6 +942,7 @@ export default function SFGStoreManagement({
   // Submit Consume / QC Hold SFG
   const handleConfirmConsumeSFG = async (e) => {
     e.preventDefault();
+    if (!storeUi.canConsume) return;
     if (!selectedItemForConsume || isSubmittingConsume) return;
 
     const qtyVal = parseFloat(consumedWeightKg);
@@ -1364,6 +1369,7 @@ export default function SFGStoreManagement({
   // Submit Option 1: Approve & Move to Store
   const handleConfirmApproveMove = async (e) => {
     e.preventDefault();
+    if (!storeUi.canMove) return;
     if (!selectedQcItemForApprove) return;
 
     const approveVal = parseFloat(approveQtyKg);
@@ -1458,6 +1464,7 @@ export default function SFGStoreManagement({
   // Submit Option 2: Send to Scrap
   const handleConfirmSendToScrap = async (e) => {
     e.preventDefault();
+    if (!storeUi.canScrap) return;
     if (!selectedQcItemForScrap) return;
 
     const scrapVal = parseFloat(scrapQtyKg);
@@ -1585,8 +1592,10 @@ export default function SFGStoreManagement({
           </div>
         </div>
 
+        {storeUi.canAddBatch ? (
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
           <button
+            data-testid="sfg-add-batch"
             onClick={() => setNewGoodModalMode('SFG')}
             style={{
               display: 'inline-flex',
@@ -1629,6 +1638,11 @@ export default function SFGStoreManagement({
             + Add FG Batch
           </button>
         </div>
+        ) : (
+          <div data-testid="sfg-store-view-only" style={{ maxWidth: '360px', background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.45)', color: '#fde68a', borderRadius: '10px', padding: '10px 14px', fontSize: '0.82rem', fontWeight: '700', lineHeight: 1.45 }}>
+            View only. Search, filter, and look up stock. Creating, editing, moving, dispatching, adjusting, and deleting stock stays with roles that have full SFG access.
+          </div>
+        )}
       </div>
 
       {/* Sub-Tab Navigation Bar */}
@@ -1843,6 +1857,7 @@ export default function SFGStoreManagement({
           <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
           <input
             type="text"
+            data-testid="sfg-store-search"
             placeholder="Search by Job Name, Job Code, Order ID, Client, Batch Barcode, Substrate..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -2357,8 +2372,10 @@ export default function SFGStoreManagement({
                               {/* Actions */}
                               <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                                 <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                  {storeUi.canConsume && (
                                   <button
                                     type="button"
+                                    data-testid="sfg-consume"
                                     onClick={(e) => { e.stopPropagation(); handleOpenConsumeModal(item); }}
                                     disabled={available <= 0}
                                     style={{
@@ -2379,6 +2396,7 @@ export default function SFGStoreManagement({
                                   >
                                     <Zap size={13} /> Consume
                                   </button>
+                                  )}
 
                                   {Array.isArray(item.consumptionHistory) && item.consumptionHistory.length > 0 && (
                                     <button
@@ -2593,10 +2611,12 @@ export default function SFGStoreManagement({
 
                         {/* Action Options: Approve & Move to Store vs Send to Scrap */}
                         <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {storeUi.canMove ? (
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                             
                             {/* Option 1: Approve & Move to Store */}
                             <button
+                              data-testid="sfg-approve-move"
                               type="button"
                               onClick={() => {
                                 setSelectedQcItemForApprove(item);
@@ -2651,6 +2671,9 @@ export default function SFGStoreManagement({
                             </button>
 
                           </div>
+                          ) : (
+                            <span data-testid="sfg-hold-view-only" style={{ fontSize: '0.75rem', fontWeight: '800', color: '#92400e' }}>View only</span>
+                          )}
                         </td>
 
                       </tr>
@@ -2681,7 +2704,7 @@ export default function SFGStoreManagement({
       {/* ==================================================================== */}
       {/* MODAL: APPROVE & MOVE TO STORE                                       */}
       {/* ==================================================================== */}
-      {selectedQcItemForApprove && (
+      {storeUi.canMove && selectedQcItemForApprove && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -2834,7 +2857,7 @@ export default function SFGStoreManagement({
       {/* ==================================================================== */}
       {/* MODAL: SEND TO SCRAP                                                 */}
       {/* ==================================================================== */}
-      {selectedQcItemForScrap && (
+      {storeUi.canScrap && selectedQcItemForScrap && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -3007,7 +3030,7 @@ export default function SFGStoreManagement({
       {/* ==================================================================== */}
       {/* MODAL: CONSUME SFG FOR DOWNSTREAM PROCESSING                         */}
       {/* ==================================================================== */}
-      {selectedItemForConsume && (
+      {storeUi.canConsume && selectedItemForConsume && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -4405,7 +4428,7 @@ export default function SFGStoreManagement({
       {/* ==================================================================== */}
       {/* MODAL: CREATE NEW SFG OR FG BATCH                                     */}
       {/* ==================================================================== */}
-      {newGoodModalMode && (
+      {storeUi.canAddBatch && newGoodModalMode && (
         <SFGFGEntryModal
           mode={newGoodModalMode}
           orders={orders}
