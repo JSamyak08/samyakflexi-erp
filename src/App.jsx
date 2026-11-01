@@ -5,6 +5,7 @@ import {
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
   applyBarcodePermissionDefaults,
+  applyPrintRunAnalyticsDefaults,
   isOrderOverdue,
   isOrderNearingDeadline,
   getOrderStatusInfo,
@@ -117,6 +118,8 @@ import {
 } from './utils/orderAutoClose';
 import { alertOrderSaveError } from './utils/alertOnce';
 import { applyPrintRunResult, recordPrintRun } from './services/printRun';
+import { parseActivePrintRunConflict } from './utils/printRunConflict';
+import { canViewPrintRunAnalytics } from './utils/printRunAccess';
 import {
   applyDispatchPackingConsumption,
   consumptionFromLog,
@@ -560,7 +563,7 @@ export default function App() {
   const [rolePermissions, setRolePermissions] = useState(() => {
     const cached = safeLocalStorageGet('samyak_cache_role_permissions', null);
     if (cached && typeof cached === 'object' && !Array.isArray(cached) && Object.keys(cached).length > 0) {
-      return applyBarcodePermissionDefaults(cached);
+      return applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(cached));
     }
     return DEFAULT_ROLE_PERMISSIONS;
   });
@@ -1322,7 +1325,7 @@ export default function App() {
         if (loadedMatrix && typeof loadedMatrix === 'object' && !Array.isArray(loadedMatrix) && Object.keys(loadedMatrix).length > 0) {
           accessMatrix = loadedMatrix;
         }
-        accessMatrix = applyBarcodePermissionDefaults(accessMatrix);
+        accessMatrix = applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(accessMatrix));
         setRolePermissions(accessMatrix);
         safeLocalStorageSet('samyak_cache_role_permissions', accessMatrix);
         const allow = (moduleKey) => roleHasModule(accessMatrix, roleNames, moduleKey);
@@ -1694,8 +1697,9 @@ export default function App() {
         }
 
         if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
-          setRolePermissions(supaRolePerms);
-          safeLocalStorageSet('samyak_cache_role_permissions', supaRolePerms);
+          const nextPerms = applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(supaRolePerms));
+          setRolePermissions(nextPerms);
+          safeLocalStorageSet('samyak_cache_role_permissions', nextPerms);
         }
 
         if (accessAdmin && supaAuditLogs && Array.isArray(supaAuditLogs.logs)) {
@@ -2933,6 +2937,7 @@ export default function App() {
         jobMasterId: resolution.status === 'linked' ? resolution.jobMaster.id : (order.jobMasterId || null)
       }, saved);
     } catch (err) {
+      if (parseActivePrintRunConflict(err)) throw err;
       throw alertOrderSaveError(order.id, err);
     }
     setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
@@ -5557,6 +5562,7 @@ export default function App() {
               onMachineAssignmentChange={handleMachineAssignmentsChange}
               onSavePrintProgress={handleSavePrintProgress}
               onActiveRunningJobChange={handleActiveRunningJobChange}
+              canViewPrintAnalytics={canViewPrintRunAnalytics(currentUser, rolePermissions)}
             />
           </div>
         ) : moduleOpen && activeTab === 'dashboard' && (
@@ -6620,6 +6626,7 @@ export default function App() {
             onMachineAssignmentChange={handleMachineAssignmentsChange}
             onSavePrintProgress={handleSavePrintProgress}
             onActiveRunningJobChange={handleActiveRunningJobChange}
+            canViewPrintAnalytics={canViewPrintRunAnalytics(currentUser, rolePermissions)}
             urlParams={urlParams}
           />
         )}

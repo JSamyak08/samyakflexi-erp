@@ -96,6 +96,7 @@ import {
   PRINTING_LEAD_DAYS_SETTING,
   normalizePrintingLeadDays,
 } from '../utils/orderDeadlineReminder';
+import PrintingShiftSettings from './PrintingShiftSettings';
 
 export default function DocumentSettings({
   machines = [],
@@ -1025,6 +1026,7 @@ export default function DocumentSettings({
               </div>
             </form>
           )}
+          <PrintingShiftSettings currentUser={currentUser} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
             
             {/* SECTION 1: COMPANY LOGO UPLOAD */}

@@ -35,7 +35,8 @@ export async function ensureValidSession() {
 import { 
   FILM_DENSITIES,
   parseStandardDate,
-  applyAuditLogBoundary
+  applyAuditLogBoundary,
+  applyPrintRunAnalyticsBoundary
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, factoryCalendarDate, mapEmployeeAttendanceRow } from './employeeAttendance';
 import { toSalaryAdvanceRow } from './salaryAdvance';
@@ -3092,7 +3093,7 @@ export async function saveFilmSubstratesToSupabase(substratesList) {
 }
 
 function enforceRoleBoundaries(role, permissions) {
-  return applyAuditLogBoundary({ [role]: permissions })[role];
+  return applyPrintRunAnalyticsBoundary(applyAuditLogBoundary({ [role]: permissions }))[role];
 }
 
 export async function saveRolePermissionsToSupabase(rolePermissions) {

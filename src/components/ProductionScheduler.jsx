@@ -14,6 +14,13 @@ import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
 import { userHasAnyRole } from '../assignedRoles';
+import PrintRunAnalytics from './PrintRunAnalytics';
+import {
+  activePrintConflictMessage,
+  duplicateActiveGroups,
+  findActivePrintConflict,
+  parseActivePrintRunConflict
+} from '../utils/printRunConflict';
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { 
@@ -182,14 +189,16 @@ export default function ProductionScheduler({
   onAddRoll,
   onSaveInventoryItem,
   urlParams = {},
-  onSectionChange
+  onSectionChange,
+  canViewPrintAnalytics = false
 }) {
   // Navigation Tabs: 'queue' (Ready Queue - Default) | 'completed' (Completed Jobs) | 'machines' (Press Configuration)
   const [activeTab, setActiveTab] = useState(urlParams?.tab || 'queue');
   const [searchQuery, setSearchQuery] = useState('');
+  const [printRunBlock, setPrintRunBlock] = useState(null);
   const focusOrderId = urlParams?.orderId ? String(urlParams.orderId) : '';
   useEffect(() => {
-    if (urlParams?.tab === 'queue' || urlParams?.tab === 'completed' || urlParams?.tab === 'machines') {
+    if (urlParams?.tab === 'queue' || urlParams?.tab === 'completed' || urlParams?.tab === 'machines' || urlParams?.tab === 'run-idle') {
       setActiveTab(urlParams.tab);
     }
   }, [urlParams?.tab]);
@@ -760,11 +769,22 @@ export default function ProductionScheduler({
     });
   };
 
-  // Start Job Handler
-  const handleStartJobClick = (order) => {
-    const assignedMachineId = activeMachineSelection[order.id] || order.machineId || rotogravureMachines[0]?.id || 'MAC-ROTO-1';
-    const startTime = new Date().toISOString();
+  const showRunningJob = (order) => {
+    if (!order) return;
+    choosePressTab('queue');
+    setActiveRunningJob(order);
+    setPrintRunBlock(null);
+  };
 
+  // Start Job Handler. The press confirms the save before the job is pinned as running.
+  const handleStartJobClick = async (order) => {
+    const assignedMachineId = activeMachineSelection[order.id] || order.machineId || rotogravureMachines[0]?.id || 'MAC-ROTO-1';
+    const localConflict = findActivePrintConflict(orders, { orderId: order.id, machineId: assignedMachineId });
+    if (localConflict) {
+      setPrintRunBlock(localConflict);
+      return;
+    }
+    const startTime = new Date().toISOString();
     const startedOrder = {
       ...order,
       status: 'In Production',
@@ -774,22 +794,26 @@ export default function ProductionScheduler({
       printingEndTime: null
     };
 
-    // Pin started job to the front of queueOrderIds so it stays locked at #1
+    try {
+      if (onStartJob) {
+        await onStartJob(startedOrder, assignedMachineId, startTime);
+      } else if (onUpdateOrder) {
+        await onUpdateOrder(startedOrder);
+      }
+    } catch (err) {
+      const parsed = parseActivePrintRunConflict(err);
+      if (parsed) setPrintRunBlock(parsed);
+      return;
+    }
+
     setQueueOrderIds(prev => {
       const remaining = prev.filter(id => id !== order.id);
       const updated = [order.id, ...remaining];
       if (onReorderQueue) onReorderQueue(updated);
       return updated;
     });
-
-    if (onStartJob) {
-      onStartJob(startedOrder, assignedMachineId, startTime);
-    } else if (onUpdateOrder) {
-      onUpdateOrder(startedOrder);
-    }
-
-    // Automatically open active job details screen
     setActiveRunningJob(startedOrder);
+    setPrintRunBlock(null);
   };
 
   // Sync inputRollsList whenever activeRunningJob is opened or updated
@@ -1518,12 +1542,37 @@ export default function ProductionScheduler({
               {rotogravureMachines.length}
             </span>
           </button>
+
+          {canViewPrintAnalytics && (
+            <button
+              onClick={() => choosePressTab('run-idle')}
+              style={{
+                background: activeTab === 'run-idle' ? '#7c3aed' : 'transparent',
+                color: activeTab === 'run-idle' ? '#ffffff' : '#475569',
+                fontWeight: '800',
+                fontSize: '0.85rem',
+                padding: '8px 16px',
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <BarChart3 size={16} /> Run & Idle
+            </button>
+          )}
         </div>
       </div>
 
       {/* ========================================================================= */}
       {/* TAB 1: READY QUEUE (ACTIVE UNFINISHED JOBS)                                */}
       {/* ========================================================================= */}
+      {activeTab === 'run-idle' && (
+        <PrintRunAnalytics machines={rotogravureMachines.length ? rotogravureMachines : machines} allowed={canViewPrintAnalytics} />
+      )}
+
       {activeTab === 'queue' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {focusOrderId && (
@@ -1541,6 +1590,44 @@ export default function ProductionScheduler({
             </div>
           )}
           
+          {printRunBlock && (
+            <div role="alert" style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px', padding: '14px 16px', color: '#991b1b' }}>
+              <div style={{ fontWeight: 800, marginBottom: '6px' }}>One print run at a time</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 650 }}>{activePrintConflictMessage(printRunBlock, machines)}</div>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+                <button type="button" className="btn-primary" onClick={() => showRunningJob((allEnrichedOrders || []).find((item) => item.id === printRunBlock.orderId) || (orders || []).find((item) => item.id === printRunBlock.orderId))}>
+                  Open {printRunBlock.jobName}
+                </button>
+                <button type="button" className="btn-danger" onClick={() => {
+                  const running = (allEnrichedOrders || []).find((item) => item.id === printRunBlock.orderId) || (orders || []).find((item) => item.id === printRunBlock.orderId);
+                  setPrintRunBlock(null);
+                  if (running) handleInitiateEndJob(running);
+                }}>
+                  End that run
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => setPrintRunBlock(null)}>Dismiss</button>
+              </div>
+            </div>
+          )}
+          {duplicateActiveGroups(orders).map((group) => (
+            <div key={group.slot} style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 16px', color: '#92400e' }}>
+              <div style={{ fontWeight: 800, marginBottom: '4px' }}>More than one print run is already active</div>
+              <div style={{ fontSize: '0.84rem', marginBottom: '8px' }}>{group.reason} Nothing was closed automatically.</div>
+              {group.runs.map((run) => (
+                <div key={run.orderId} style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center', flexWrap: 'wrap', padding: '6px 0' }}>
+                  <span style={{ fontWeight: 700 }}>{run.jobName} ({run.orderId}){run.machineId ? ` · ${run.machineId}` : ' · no machine'}</span>
+                  <span style={{ display: 'flex', gap: '6px' }}>
+                    <button type="button" className="btn-secondary" onClick={() => showRunningJob((allEnrichedOrders || []).find((item) => item.id === run.orderId))}>Open</button>
+                    <button type="button" className="btn-danger" onClick={() => {
+                      const running = (allEnrichedOrders || []).find((item) => item.id === run.orderId);
+                      if (running) handleInitiateEndJob(running);
+                    }}>End</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ))}
+
           {/* Queue Filter Bar & Controls */}
           <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '14px', borderRadius: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', flex: 1 }}>
