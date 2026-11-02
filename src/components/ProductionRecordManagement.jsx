@@ -84,7 +84,8 @@ import {
   validateProductionEntry
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
-import { fetchSystemSetting } from '../services/supabaseDataService';
+import { fetchSystemSetting, fetchRollConsumptionExceptions, resolveRollConsumptionException } from '../services/supabaseDataService';
+import { openRollConsumptionWarnings } from '../utils/rollLedger';
 import { inputRollWeightsFromLog } from '../utils/consumeMassBalance';
 import { userHasAnyRole } from '../assignedRoles';
 
@@ -832,6 +833,7 @@ export default function ProductionRecordManagement({
 
   const [activeTab, setActiveTab] = useState('punched_jobs'); // 'punched_jobs', 'list', 'new_record', 'job_cards'
   const [selectedRecord, setSelectedRecord] = useState(null);
+  const [rollWarnings, setRollWarnings] = useState([]);
   const [activeJobCardData, setActiveJobCardData] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
 
@@ -1426,6 +1428,20 @@ export default function ProductionRecordManagement({
     setSelectedRecord(rec);
     pushSlugState('production_records', { id: rec.id, section: 'list' });
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedRecord?.id) {
+      setRollWarnings([]);
+      return undefined;
+    }
+    fetchRollConsumptionExceptions({ recordId: selectedRecord.id }).then((rows) => {
+      if (!cancelled) setRollWarnings(openRollConsumptionWarnings(rows));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRecord?.id]);
 
   const handleCloseRecord = () => {
     setSelectedRecord(null);
@@ -2146,8 +2162,17 @@ export default function ProductionRecordManagement({
       notes: recordNotes
     }), decision);
 
+    let balanceRollNote = '';
     try {
-      if (onSaveProductionRecord) await onSaveProductionRecord(newRecord);
+      const saved = onSaveProductionRecord ? await onSaveProductionRecord(newRecord) : null;
+      const balanceRolls = Array.isArray(saved?.balanceRolls) ? saved.balanceRolls : [];
+      if (balanceRolls.length > 0) {
+        balanceRollNote = `\n\nBalance rolls to label:\n${balanceRolls.map((roll) => `• ${roll.barcodeId} (${Number(roll.netWeightKg) || 0} kg)`).join('\n')}`;
+      }
+      const consumptionWarnings = openRollConsumptionWarnings(saved?.consumptionWarnings);
+      if (consumptionWarnings.length > 0) {
+        balanceRollNote += `\n\nNot posted to the item ledger:\n${consumptionWarnings.map((warning) => `• ${warning.barcode}: ${warning.reason}`).join('\n')}`;
+      }
     } catch (err) {
       alert(`The production record was not saved: ${err.message || err}`);
       return;
@@ -2166,7 +2191,7 @@ export default function ProductionRecordManagement({
     }
 
     setIsConfirmModalOpen(false);
-    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.`);
+    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.${balanceRollNote}`);
     setActiveTab('list');
   };
   const filteredRecords = productionRecords.filter(r => {
@@ -2818,6 +2843,33 @@ export default function ProductionRecordManagement({
               <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
                 Job Master ID: <b>{selectedRecord.jobMasterId || JM_UNRESOLVED_LABEL}</b> • Order ID: <b>{selectedRecord.orderId || '—'}</b> • Client: {selectedRecord.clientName}
               </p>
+              {rollWarnings.length > 0 && (
+                <div role="alert" style={{ marginTop: '12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px', padding: '12px 14px', color: '#9a3412', maxWidth: '640px' }}>
+                  <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>Roll consumption was not posted</div>
+                  <ul style={{ margin: '8px 0 0', paddingLeft: '18px', fontSize: '0.8rem' }}>
+                    {rollWarnings.map((warning) => (
+                      <li key={warning.id} style={{ marginBottom: '8px' }}>
+                        <b>{warning.barcode}</b>: {warning.reason}
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ marginLeft: '8px', padding: '2px 8px', fontSize: '0.72rem' }}
+                          onClick={async () => {
+                            try {
+                              await resolveRollConsumptionException(warning.id);
+                              setRollWarnings((current) => current.filter((row) => row.id !== warning.id));
+                            } catch (err) {
+                              alert(err?.message || 'Could not mark this warning resolved.');
+                            }
+                          }}
+                        >
+                          Mark resolved
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
 
             {/* Approval Status Banner & Action */}

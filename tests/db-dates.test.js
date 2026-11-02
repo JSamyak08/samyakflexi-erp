@@ -48,15 +48,14 @@ test('display formatting is applied to ISO values and leaves stored display text
   assert.equal(formatPlantDateTime('2026-10-26'), '26 Oct 2026');
 });
 
-test('the End Job balance roll is built with an ISO timestamp', () => {
-  const source = fs.readFileSync(new URL('../src/components/ProductionScheduler.jsx', import.meta.url), 'utf8');
-  const start = source.lastIndexOf('if (balW > 0)');
-  const end = source.indexOf('createdBalanceRolls.push');
-  assert.ok(start > 0 && end > start);
-  const block = source.slice(start, end);
-  assert.match(block, /toISOString\(\)/);
-  assert.doesNotMatch(block, /toLocaleString|toLocaleDateString/);
-  assert.match(block, /\$\{inRoll\.barcodeId\}-BAL/);
+test('the ended print run balance roll is stored with a database timestamp', () => {
+  const source = fs.readFileSync(new URL('../supabase/migrations/20261102120000_roll_consumption_ledger.sql', import.meta.url), 'utf8');
+  assert.match(source, /parent_barcode \|\| '-BAL'/);
+  assert.match(source, /inward_datetime/);
+  assert.match(source, /pg_catalog\.now\(\)/);
+  assert.doesNotMatch(source, /toLocaleString|toLocaleDateString/);
+  const scheduler = fs.readFileSync(new URL('../src/components/ProductionScheduler.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(scheduler, /createdBalanceRolls\.push/);
 });
 
 test('retrying End Job upserts the same barcodes and does not create a second roll', async () => {

@@ -56,6 +56,7 @@ import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/ema
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete } from '../services/supabaseDataService';
 import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
+import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
 import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
 import {
@@ -530,6 +531,27 @@ export default function InventoryManagement({
   const [qcInspectingGRN, setQcInspectingGRN] = useState(null);
   const [qcNotesInput, setQcNotesInput] = useState('');
   const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
+  const [rollLedgerEntries, setRollLedgerEntries] = useState([]);
+
+  useEffect(() => {
+    const item = selectedItemForPurchaseHistory;
+    const itemId = item?.id;
+    if (!itemId) {
+      setRollLedgerEntries([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const ids = [...new Set([itemId, item.itemCode].filter(Boolean))];
+    supabase.from('inventory_ledger_entries').select('*').in('stock_item_id', ids)
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+        setRollLedgerEntries((data || []).map(mapRollLedgerRow).filter(Boolean));
+      })
+      .catch(() => {
+        if (!cancelled) setRollLedgerEntries([]);
+      });
+    return () => { cancelled = true; };
+  }, [selectedItemForPurchaseHistory]);
 
   // QC Inward Inspection Editable Parameters state
   const [qcEditFilmType, setQcEditFilmType] = useState('');
@@ -9479,8 +9501,13 @@ export default function InventoryManagement({
 
         // 2. Gather Job Material Consumptions from Production Records
         const jobUsageLines = [];
+        // posted roll issues are appended after the material loop below
+        const postedRollLines = rollLedgerTransactions(rollLedgerEntries);
+        const postedIssues = postedRollLines.filter((line) => line.category === 'usage');
+        const postedReturns = postedRollLines.filter((line) => line.category === 'inward');
         (productionRecords || []).forEach(rec => {
           (rec.materialsList || []).forEach((mat, idx) => {
+            if (materialCoveredByRollLedger(mat, rec, rollLedgerEntries)) return;
             if (isItemMatch(mat, item)) {
               const txId = `JOB_${rec.id}_${mat.id || idx}`;
               const qty = mat.netConsumedQtyKg || mat.issueQtyKg || 0;
@@ -9507,6 +9534,22 @@ export default function InventoryManagement({
                 legacy: itemLink(mat).legacy
               });
             }
+          });
+        });
+        postedIssues.forEach((line) => {
+          jobUsageLines.push({
+            ...line,
+            ratePerKg: fallbackRate,
+            unitPrice: fallbackRate,
+            totalValue: line.outwardQtyKg * fallbackRate
+          });
+        });
+        postedReturns.forEach((line) => {
+          inwardTxLines.push({
+            ...line,
+            ratePerKg: itemActualUnitPrice,
+            unitPrice: itemActualUnitPrice,
+            totalValue: line.inwardQtyKg * itemActualUnitPrice
           });
         });
 
@@ -9747,7 +9790,10 @@ export default function InventoryManagement({
               (tx.partyName && tx.partyName.toLowerCase().includes(q)) ||
               (tx.barcode && String(tx.barcode).toLowerCase().includes(q)) ||
               (tx.type && tx.type.toLowerCase().includes(q)) ||
-              (tx.notes && tx.notes.toLowerCase().includes(q))
+              (tx.notes && tx.notes.toLowerCase().includes(q)) ||
+              (tx.orderId && String(tx.orderId).toLowerCase().includes(q)) ||
+              (tx.stage && String(tx.stage).toLowerCase().includes(q)) ||
+              (tx.jobLink?.label && tx.jobLink.label.toLowerCase().includes(q))
             );
           }
           return true;
@@ -10102,7 +10148,25 @@ export default function InventoryManagement({
                               <div style={{ fontWeight: '700', color: tx.category === 'reservation' ? '#15803d' : (tx.category === 'usage' ? '#991b1b' : '#2563eb') }}>
                                 {tx.refNo}
                               </div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tx.subRef}</div>
+                              {tx.jobLink?.label && (
+                                tx.jobLink.href ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (tx.jobLink.orderId) pushSlugState('orders', { section: 'order', orderId: tx.jobLink.orderId });
+                                      else if (tx.jobLink.recordId) pushSlugState('production_records', { section: 'record', recordId: tx.jobLink.recordId });
+                                    }}
+                                    style={{ display: 'block', marginTop: '2px', padding: 0, border: 'none', background: 'none', color: '#1d4ed8', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', textAlign: 'left' }}
+                                  >
+                                    {tx.jobLink.label}
+                                  </button>
+                                ) : (
+                                  <div style={{ fontSize: '0.75rem', color: '#1d4ed8', fontWeight: '700' }}>{tx.jobLink.label}</div>
+                                )
+                              )}
+                              {tx.subRef && tx.subRef !== tx.jobLink?.label && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{tx.subRef}</div>
+                              )}
                             </td>
 
                             {/* Party */}

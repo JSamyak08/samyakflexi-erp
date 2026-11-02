@@ -2103,6 +2103,82 @@ export async function fetchInventoryRolls() {
   }
 }
 
+export async function fetchRollConsumptionExceptions({ recordId, orderId } = {}) {
+  if (!isSupabaseConfigured() || (!recordId && !orderId)) return [];
+  try {
+    let query = supabase
+      .from('roll_consumption_exceptions')
+      .select('id, production_record_id, order_id, barcode, line_key, status, reason, detail, updated_at')
+      .eq('status', 'open')
+      .order('barcode');
+    if (recordId) query = query.eq('production_record_id', recordId);
+    else query = query.eq('order_id', orderId);
+    const { data, error } = await query;
+    if (error || !Array.isArray(data)) return [];
+    return data.map((row) => ({
+      id: row.id,
+      productionRecordId: row.production_record_id || '',
+      orderId: row.order_id || '',
+      barcode: row.barcode || '',
+      lineKey: row.line_key || '',
+      status: row.status || 'open',
+      reason: row.reason || '',
+      detail: row.detail || {},
+      updatedAt: row.updated_at || null
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function resolveRollConsumptionException(id) {
+  if (!isSupabaseConfigured() || !id) return;
+  await ensureValidSession();
+  const { error } = await supabase
+    .from('roll_consumption_exceptions')
+    .update({
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', id);
+  if (error) handleSupabaseError(error, 'roll_consumption_exceptions');
+}
+
+export async function fetchRecordBalanceRolls(recordId) {
+  if (!isSupabaseConfigured() || !recordId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('inventory_ledger_entries')
+      .select('barcode, qty_kg, stage, order_id, job_name, film_type, micron, width_mm, item_name, stock_item_id, parent_barcode')
+      .eq('production_record_id', recordId)
+      .eq('entry_kind', 'balance_receipt');
+    if (error || !Array.isArray(data)) return [];
+    return data.map((row) => ({
+      id: row.barcode,
+      barcodeId: row.barcode,
+      parentBarcodeId: row.parent_barcode || '',
+      netWeightKg: Number(row.qty_kg) || 0,
+      availableWeightKg: Number(row.qty_kg) || 0,
+      grossWeightKg: Number(row.qty_kg) || 0,
+      filmType: row.film_type || '',
+      micron: row.micron,
+      widthMm: row.width_mm,
+      itemName: row.item_name || '',
+      itemId: row.stock_item_id || '',
+      orderId: row.order_id || '',
+      jobName: row.job_name || '',
+      stage: row.stage || '',
+      status: 'In Stock (RM)',
+      rollType: 'RAW_MATERIAL',
+      category: 'Raw Material (RM)',
+      unit: 'Kg'
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function saveInventoryRollToSupabase(roll) {
   if (!isSupabaseConfigured() || !roll) {
     throw new Error("Cannot save inventory roll: Supabase database connection is not available.");
