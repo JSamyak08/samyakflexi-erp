@@ -142,7 +142,7 @@ import {
   fetchProductionRecords, saveProductionRecordToSupabase, deleteProductionRecordFromSupabase,
   fetchUsers,
   fetchJobDataSheets, saveJobDataSheetToSupabase, deleteJobDataSheetFromSupabase,
-  fetchInventoryRolls, saveInventoryRollToSupabase, setInventoryRollAvailability, fetchRecordBalanceRolls,
+  fetchInventoryRolls, saveInventoryRollToSupabase, setInventoryRollAvailability, fetchRecordBalanceRolls, fetchRollConsumptionExceptions,
   fetchDispatchShipments, saveDispatchShipmentToSupabase, deleteDispatchShipmentFromSupabase,
   fetchPrintingMachines, savePrintingMachineToSupabase, deletePrintingMachineFromSupabase,
   fetchProductionSchedules, saveProductionScheduleToSupabase, deleteProductionScheduleFromSupabase,
@@ -2545,7 +2545,11 @@ export default function App() {
       });
     }
     await refreshFilmStock();
-    return { balanceRolls: await fetchRecordBalanceRolls(newRecord.id) };
+    const [balanceRolls, consumptionWarnings] = await Promise.all([
+      fetchRecordBalanceRolls(newRecord.id),
+      fetchRollConsumptionExceptions({ recordId: newRecord.id })
+    ]);
+    return { balanceRolls, consumptionWarnings };
   };
 
   const handleApproveProductionRecord = async (recordId, adminName) => {
@@ -3230,7 +3234,8 @@ export default function App() {
     }
 
     logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
-    return { balanceRolls };
+    const consumptionWarnings = await fetchRollConsumptionExceptions({ orderId: order.id });
+    return { balanceRolls, consumptionWarnings };
   };
 
   const handleDeleteOrder = async (orderId) => {

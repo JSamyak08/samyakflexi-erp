@@ -1,3 +1,7 @@
+export function openRollConsumptionWarnings(rows) {
+  return (rows || []).filter((row) => String(row?.status || 'open') === 'open' && String(row?.reason || '').trim());
+}
+
 export function rollLedgerJobLink(entry) {
   const orderId = String(entry?.orderId || entry?.order_id || '').trim();
   const recordId = String(entry?.productionRecordId || entry?.production_record_id || '').trim();

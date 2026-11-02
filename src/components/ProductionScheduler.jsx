@@ -1320,6 +1320,10 @@ export default function ProductionScheduler({
         await onUpdateOrder(completedOrder);
       }
       const balanceRolls = Array.isArray(endResult?.balanceRolls) ? endResult.balanceRolls : [];
+      const consumptionWarnings = Array.isArray(endResult?.consumptionWarnings) ? endResult.consumptionWarnings : [];
+      if (consumptionWarnings.length > 0) {
+        alert(`Some film rolls were not posted to the item ledger:\n${consumptionWarnings.map((warning) => `• ${warning.barcode}: ${warning.reason}`).join('\n')}\n\nLink each barcode to one inventory item, or set an item id, then save again. Nothing was deducted for these rolls.`);
+      }
 
       setIsEndJobModalOpen(false);
       setActiveRunningJob(null);

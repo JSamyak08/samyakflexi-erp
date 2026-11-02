@@ -2,9 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   materialCoveredByRollLedger,
+  openRollConsumptionWarnings,
   rollLedgerJobLink,
   rollLedgerTransactions
 } from '../src/utils/rollLedger.js';
+
+test('open roll warnings are the rows a user still has to resolve', () => {
+  const open = openRollConsumptionWarnings([
+    { status: 'open', reason: 'Barcode RM-9 did not match exactly one inventory item.', barcode: 'RM-9' },
+    { status: 'resolved', reason: 'Already linked.', barcode: 'RM-1' },
+    { status: 'open', reason: '   ', barcode: 'RM-2' }
+  ]);
+  assert.equal(open.length, 1);
+  assert.equal(open[0].barcode, 'RM-9');
+});
 
 test('a roll issue links to the order and names the stage', () => {
   const link = rollLedgerJobLink({

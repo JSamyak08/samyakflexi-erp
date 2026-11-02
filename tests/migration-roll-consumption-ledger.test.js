@@ -15,6 +15,10 @@ const migrationSql = fs.readFileSync(
   new URL('../supabase/migrations/20261102120000_roll_consumption_ledger.sql', import.meta.url),
   'utf8'
 );
+const exactPostSql = fs.readFileSync(
+  new URL('../supabase/migrations/20261102153000_roll_consumption_exact_post.sql', import.meta.url),
+  'utf8'
+);
 
 const OPERATOR = '11111111-1111-4111-8111-111111111111';
 const SHOP = '33333333-3333-4333-8333-333333333333';
@@ -187,6 +191,7 @@ async function database() {
   await db.exec(closeSql);
   await db.exec(printRunSql);
   await db.exec(migrationSql);
+  await db.exec(exactPostSql);
   return db;
 }
 
@@ -214,9 +219,16 @@ function rolls(consumed, initial, barcode = 'RM-100') {
 
 test('migration timestamp is after the latest production migration', () => {
   assert.ok('20261102120000' > '20261101193000');
+  assert.ok('20261102153000' > '20261102120000');
   assert.match(migrationSql, /inventory_ledger_entries/);
   assert.match(migrationSql, /balanceRolls/);
   assert.match(migrationSql, /does not rewrite historical stock/);
+  assert.match(exactPostSql, /roll_consumption_exceptions/);
+  assert.doesNotMatch(exactPostSql, /ORDER BY COALESCE\(item\.stock_qty_kg/);
+  assert.match(exactPostSql, /\$2 IS NOT NULL/);
+  assert.match(exactPostSql, /\$3 IS NOT NULL/);
+  assert.match(exactPostSql, /column_name = 'is_active'/);
+  assert.match(exactPostSql, /p_prior_lines/);
 });
 
 test('progress stores rolls and does not post stock or a ledger line', async () => {
@@ -465,5 +477,201 @@ test('an active print run is not consumed by saving the production record', asyn
   const stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
   assert.equal(lines.rows[0].n, 0);
   assert.equal(Number(stock.rows[0].stock_qty_kg), 500);
+  await db.close();
+});
+
+function materialLine(barcode, consumed, extra = {}) {
+  return {
+    barcode,
+    filmType: 'PET',
+    micron: 12,
+    widthMm: 500,
+    issueQtyKg: consumed,
+    returnQtyKg: 0,
+    netConsumedQtyKg: consumed,
+    stage: 'Lamination (Pass 1)',
+    ...extra
+  };
+}
+
+test('insert posts once, a resave posts nothing, and adding or deleting a roll touches only that roll', async () => {
+  const db = await database();
+  await db.exec('RESET ROLE');
+  await db.query(`
+    INSERT INTO public.inventory_rolls (
+      barcode_id, item_id, item_name, category, film_type, micron, width_mm,
+      net_weight_kg, available_weight_kg, status
+    ) VALUES ('RM-200', 'INVT-15', 'PET 12µ', 'Film Substrates', 'PET', 12, 500, 40, 40, 'In Stock')
+  `);
+  await db.query(`
+    INSERT INTO public.production_records (id, order_id, job_name, materials_list)
+    VALUES ('REC-ADD', 'ORD-NEXT', 'Rice Pouch', $1::jsonb)
+  `, [JSON.stringify([materialLine('RM-100', 30)])]);
+  let stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  let lines = await db.query(`SELECT barcode, consumed_kg FROM public.inventory_ledger_entries WHERE entry_kind = 'issue' ORDER BY barcode`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 470);
+  assert.deepEqual(lines.rows.map((row) => [row.barcode, Number(row.consumed_kg)]), [['RM-100', 30]]);
+
+  await db.query(`
+    UPDATE public.production_records
+    SET job_name = 'Rice Pouch revised', materials_list = $1::jsonb
+    WHERE id = 'REC-ADD'
+  `, [JSON.stringify([materialLine('RM-100', 30)])]);
+  stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  const count = await db.query(`SELECT count(*)::int AS n FROM public.inventory_ledger_entries WHERE entry_kind = 'issue'`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 470);
+  assert.equal(count.rows[0].n, 1);
+
+  await db.query(`
+    UPDATE public.production_records SET materials_list = $1::jsonb WHERE id = 'REC-ADD'
+  `, [JSON.stringify([materialLine('RM-100', 30), materialLine('RM-200', 20)])]);
+  stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  lines = await db.query(`SELECT barcode, consumed_kg FROM public.inventory_ledger_entries WHERE entry_kind = 'issue' ORDER BY barcode`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 450);
+  assert.deepEqual(lines.rows.map((row) => [row.barcode, Number(row.consumed_kg)]), [['RM-100', 30], ['RM-200', 20]]);
+
+  await db.query(`
+    UPDATE public.production_records SET materials_list = $1::jsonb WHERE id = 'REC-ADD'
+  `, [JSON.stringify([materialLine('RM-100', 30)])]);
+  stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  lines = await db.query(`SELECT barcode, consumed_kg FROM public.inventory_ledger_entries WHERE entry_kind = 'issue' ORDER BY barcode`);
+  const roll = await db.query(`SELECT available_weight_kg, status FROM public.inventory_rolls WHERE barcode_id = 'RM-200'`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 470);
+  assert.deepEqual(lines.rows.map((row) => [row.barcode, Number(row.consumed_kg)]), [['RM-100', 30]]);
+  assert.equal(Number(roll.rows[0].available_weight_kg), 40);
+  assert.equal(roll.rows[0].status, 'In Stock');
+  await db.close();
+});
+
+test('editing a historical record does not post its old lines', async () => {
+  const db = await database();
+  await db.exec('RESET ROLE');
+  await db.exec('ALTER TABLE public.production_records DISABLE TRIGGER production_record_roll_ledger');
+  await db.query(`
+    INSERT INTO public.production_records (id, order_id, job_name, materials_list)
+    VALUES ('REC-OLD', 'ORD-NEXT', 'Rice Pouch', $1::jsonb)
+  `, [JSON.stringify([materialLine('RM-100', 65, { returnQtyKg: 15, issueQtyKg: 80 })])]);
+  await db.exec('ALTER TABLE public.production_records ENABLE TRIGGER production_record_roll_ledger');
+
+  await db.query(`
+    UPDATE public.production_records
+    SET job_name = 'Rice Pouch edited',
+        materials_list = $1::jsonb
+    WHERE id = 'REC-OLD'
+  `, [JSON.stringify([materialLine('RM-100', 50, { returnQtyKg: 30, issueQtyKg: 80 })])]);
+  let stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  let lines = await db.query(`SELECT count(*)::int AS n FROM public.inventory_ledger_entries`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 500);
+  assert.equal(lines.rows[0].n, 0);
+
+  await db.query(`
+    INSERT INTO public.inventory_rolls (
+      barcode_id, item_id, item_name, category, film_type, micron, width_mm,
+      net_weight_kg, available_weight_kg, status
+    ) VALUES ('RM-200', 'INVT-15', 'PET 12µ', 'Film Substrates', 'PET', 12, 500, 25, 25, 'In Stock')
+  `);
+  await db.query(`
+    UPDATE public.production_records SET materials_list = $1::jsonb WHERE id = 'REC-OLD'
+  `, [JSON.stringify([
+    materialLine('RM-100', 50, { returnQtyKg: 30, issueQtyKg: 80 }),
+    materialLine('RM-200', 25)
+  ])]);
+  stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  const posted = await db.query(`SELECT barcode, consumed_kg, production_record_id FROM public.inventory_ledger_entries WHERE entry_kind = 'issue'`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 475);
+  assert.equal(posted.rows.length, 1);
+  assert.equal(posted.rows[0].barcode, 'RM-200');
+  assert.equal(Number(posted.rows[0].consumed_kg), 25);
+  assert.equal(posted.rows[0].production_record_id, 'REC-OLD');
+
+  await db.query(`
+    UPDATE public.production_records SET materials_list = $1::jsonb WHERE id = 'REC-OLD'
+  `, [JSON.stringify([materialLine('RM-100', 50, { returnQtyKg: 30, issueQtyKg: 80 })])]);
+  stock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-15'`);
+  lines = await db.query(`SELECT count(*)::int AS n FROM public.inventory_ledger_entries`);
+  assert.equal(Number(stock.rows[0].stock_qty_kg), 500);
+  assert.equal(lines.rows[0].n, 0);
+  await db.close();
+});
+
+test('an unmatched barcode posts nothing and keeps one open warning', async () => {
+  const db = await database();
+  await db.exec('RESET ROLE');
+  await db.query(`
+    INSERT INTO public.inventory (id, item_code, item_name, stock_qty_kg, category, film_type, micron, width_mm)
+    VALUES ('INVT-WILD', 'INVT-WILD', 'PET loose', 9000, 'Film Substrates', 'PET', NULL, NULL)
+  `);
+  await db.query(`
+    INSERT INTO public.production_records (id, order_id, job_name, materials_list)
+    VALUES ('REC-MISS', 'ORD-NEXT', 'Rice Pouch', $1::jsonb)
+  `, [JSON.stringify([materialLine('RM-NOPE', 40, { micron: null, widthMm: null, itemId: 'RM-PET-1' })])]);
+  const stock = await db.query(`SELECT id, stock_qty_kg FROM public.inventory ORDER BY id`);
+  const lines = await db.query(`SELECT count(*)::int AS n FROM public.inventory_ledger_entries`);
+  const warnings = await db.query(`SELECT barcode, status, reason FROM public.roll_consumption_exceptions`);
+  assert.deepEqual(stock.rows.map((row) => [row.id, Number(row.stock_qty_kg)]), [['INVT-15', 500], ['INVT-WILD', 9000]]);
+  assert.equal(lines.rows[0].n, 0);
+  assert.equal(warnings.rows.length, 1);
+  assert.equal(warnings.rows[0].barcode, 'RM-NOPE');
+  assert.equal(warnings.rows[0].status, 'open');
+  assert.match(warnings.rows[0].reason, /did not match exactly one inventory item/);
+
+  await db.query(`
+    UPDATE public.production_records
+    SET materials_list = $1::jsonb
+    WHERE id = 'REC-MISS'
+  `, [JSON.stringify([materialLine('RM-NOPE', 40, { micron: null, widthMm: null, itemId: 'RM-PET-1', itemName: 'retry' })])]);
+  const again = await db.query(`SELECT count(*)::int AS n FROM public.roll_consumption_exceptions WHERE status = 'open'`);
+  const stockAgain = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id = 'INVT-WILD'`);
+  assert.equal(again.rows[0].n, 1);
+  assert.equal(Number(stockAgain.rows[0].stock_qty_kg), 9000);
+  await db.close();
+});
+
+test('blank micron and width do not match an item, and an explicit item id does', async () => {
+  const db = await database();
+  await db.exec('RESET ROLE');
+  await db.query(`
+    INSERT INTO public.inventory (id, item_code, item_name, stock_qty_kg, category, film_type, micron, width_mm)
+    VALUES
+      ('INVT-WILD', 'INVT-WILD', 'PET loose', 9000, 'Film Substrates', 'PET', NULL, NULL),
+      ('INVT-OTHER', 'INVT-OTHER', 'PET other', 100, 'Film Substrates', 'PET', 12, 500)
+  `);
+  const blank = await db.query(`SELECT private.film_item_match('PET', NULL, NULL) AS id`);
+  const half = await db.query(`SELECT private.film_item_match('PET', NULL, 500) AS id`);
+  const many = await db.query(`SELECT private.film_item_match('PET', 12, 500) AS id`);
+  const guessed = await db.query(`SELECT private.resolve_roll_stock_item('RM-NOPE', NULL, 'PET', NULL, NULL, NULL) AS id`);
+  const exactSpecIgnored = await db.query(`SELECT private.resolve_roll_stock_item('RM-NOPE', NULL, 'PET', 12, 500, NULL) AS id`);
+  assert.equal(blank.rows[0].id, null);
+  assert.equal(half.rows[0].id, null);
+  assert.equal(many.rows[0].id, null);
+  assert.equal(guessed.rows[0].id, null);
+  assert.equal(exactSpecIgnored.rows[0].id, null);
+
+  await db.query(`
+    INSERT INTO public.production_records (id, order_id, job_name, materials_list)
+    VALUES ('REC-EXPLICIT', 'ORD-NEXT', 'Rice Pouch', $1::jsonb)
+  `, [JSON.stringify([materialLine('RM-GHOST', 12, { micron: null, widthMm: null, itemId: 'INVT-15' })])]);
+  const stock = await db.query(`SELECT id, stock_qty_kg FROM public.inventory ORDER BY id`);
+  const issue = await db.query(`SELECT stock_item_id, barcode, consumed_kg FROM public.inventory_ledger_entries WHERE entry_kind = 'issue'`);
+  assert.equal(issue.rows.length, 1);
+  assert.equal(issue.rows[0].stock_item_id, 'INVT-15');
+  assert.equal(issue.rows[0].barcode, 'RM-GHOST');
+  assert.equal(Number(issue.rows[0].consumed_kg), 12);
+  assert.deepEqual(stock.rows.map((row) => [row.id, Number(row.stock_qty_kg)]), [
+    ['INVT-15', 488],
+    ['INVT-OTHER', 100],
+    ['INVT-WILD', 9000]
+  ]);
+
+  await db.query(`
+    INSERT INTO public.production_records (id, order_id, job_name, materials_list)
+    VALUES ('REC-CONFLICT', NULL, 'Loose job', $1::jsonb)
+  `, [JSON.stringify([materialLine('RM-100', 10, { itemId: 'INVT-OTHER' })])]);
+  const conflictStock = await db.query(`SELECT stock_qty_kg FROM public.inventory WHERE id IN ('INVT-15', 'INVT-OTHER') ORDER BY id`);
+  const conflictWarning = await db.query(`SELECT status, barcode FROM public.roll_consumption_exceptions WHERE production_record_id = 'REC-CONFLICT'`);
+  assert.deepEqual(conflictStock.rows.map((row) => Number(row.stock_qty_kg)), [488, 100]);
+  assert.equal(conflictWarning.rows.length, 1);
+  assert.equal(conflictWarning.rows[0].status, 'open');
+  assert.equal(conflictWarning.rows[0].barcode, 'RM-100');
   await db.close();
 });

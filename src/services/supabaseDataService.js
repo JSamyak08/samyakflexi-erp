@@ -2103,6 +2103,48 @@ export async function fetchInventoryRolls() {
   }
 }
 
+export async function fetchRollConsumptionExceptions({ recordId, orderId } = {}) {
+  if (!isSupabaseConfigured() || (!recordId && !orderId)) return [];
+  try {
+    let query = supabase
+      .from('roll_consumption_exceptions')
+      .select('id, production_record_id, order_id, barcode, line_key, status, reason, detail, updated_at')
+      .eq('status', 'open')
+      .order('barcode');
+    if (recordId) query = query.eq('production_record_id', recordId);
+    else query = query.eq('order_id', orderId);
+    const { data, error } = await query;
+    if (error || !Array.isArray(data)) return [];
+    return data.map((row) => ({
+      id: row.id,
+      productionRecordId: row.production_record_id || '',
+      orderId: row.order_id || '',
+      barcode: row.barcode || '',
+      lineKey: row.line_key || '',
+      status: row.status || 'open',
+      reason: row.reason || '',
+      detail: row.detail || {},
+      updatedAt: row.updated_at || null
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function resolveRollConsumptionException(id) {
+  if (!isSupabaseConfigured() || !id) return;
+  await ensureValidSession();
+  const { error } = await supabase
+    .from('roll_consumption_exceptions')
+    .update({
+      status: 'resolved',
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', id);
+  if (error) handleSupabaseError(error, 'roll_consumption_exceptions');
+}
+
 export async function fetchRecordBalanceRolls(recordId) {
   if (!isSupabaseConfigured() || !recordId) return [];
   try {

@@ -8,6 +8,10 @@
 -- The SELECT at the top is a dry run. It only lists missing issue rows.
 -- The APPLY block is commented out. Uncomment it only after the dry run looks
 -- right, and keep the ROLLBACK until a second dry run comes back empty.
+--
+-- Saving or editing a production record does not post lines that were already
+-- on that record. This apply block is the explicit full post. Do not run it
+-- until the dry-run list has been reviewed.
 
 -- ---------------------------------------------------------------------------
 -- DRY RUN. Lists what a backfill would post. Does not insert or update stock.
