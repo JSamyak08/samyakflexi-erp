@@ -128,6 +128,7 @@ export const MODULES = [
       { section: 'job', segs: ['jobs', ':orderId'], idParam: 'orderId', legacy: { tab: 'queue' } },
       { section: 'completed', segs: ['completed'], legacy: { tab: 'completed' } },
       { section: 'presses', segs: ['presses'], legacy: { tab: 'machines' } },
+      { section: 'run-idle', segs: ['run-idle'], legacy: { tab: 'run-idle' } },
     ],
   },
   {

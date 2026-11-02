@@ -1608,8 +1608,11 @@ export const ALL_MODULES = [
   { key: "supabase", label: "Supabase DB Connection", category: "Administration" },
   { key: "doc_settings", label: "Letterhead & Signatures", category: "Administration" },
   { key: "scrap_analytics", label: "Scrap & Wastage Analysis", category: "Core Operations" },
-  { key: "audit_logs", label: "Audit Logs", category: "Administration" }
+  { key: "audit_logs", label: "Audit Logs", category: "Administration" },
+  { key: "print_run_analytics", label: "Printing Run & Idle Time", category: "Shop Floor & Planning" }
 ];
+
+export const PRINT_RUN_ANALYTICS_ROLES = ['Admin', 'Plant Manager', 'Production Manager'];
 
 export const generateFullRolePermissions = (allowAll = false) => {
   const perm = {};
@@ -1658,6 +1661,7 @@ export const generateFullRolePermissions = (allowAll = false) => {
     // included because the same matrix already opens Inventory, GRN & QC
     // for that role. Sales, printing, and shop-floor roles stay off.
     perm[r].barcodes = BARCODE_REGISTRY_ROLES.includes(r);
+    perm[r].print_run_analytics = PRINT_RUN_ANALYTICS_ROLES.includes(r);
   });
   return perm;
 };
@@ -1703,6 +1707,32 @@ export function applyAuditLogBoundary(rolePermissions) {
   const next = {};
   Object.entries(rolePermissions || {}).forEach(([role, permissions]) => {
     next[role] = { ...(permissions || {}), audit_logs: role === 'Admin' };
+  });
+  return next;
+}
+
+/** Missing print_run_analytics keeps the role default. An explicit true or false stays. */
+export function applyPrintRunAnalyticsDefaults(matrix) {
+  if (!matrix || typeof matrix !== 'object' || Array.isArray(matrix)) return matrix;
+  const next = {};
+  Object.entries(matrix).forEach(([role, permissions]) => {
+    const row = { ...(permissions || {}) };
+    if (row.print_run_analytics !== true && row.print_run_analytics !== false) {
+      row.print_run_analytics = PRINT_RUN_ANALYTICS_ROLES.includes(role);
+    }
+    next[role] = row;
+  });
+  return next;
+}
+
+/** The report cannot be granted to any other role. */
+export function applyPrintRunAnalyticsBoundary(rolePermissions) {
+  const next = {};
+  Object.entries(rolePermissions || {}).forEach(([role, permissions]) => {
+    next[role] = {
+      ...(permissions || {}),
+      print_run_analytics: PRINT_RUN_ANALYTICS_ROLES.includes(role)
+    };
   });
   return next;
 }

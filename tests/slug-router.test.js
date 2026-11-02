@@ -60,6 +60,7 @@ const CANONICAL = [
   ['/printing/jobs/ORD-1', 'printing_scheduler', 'job'],
   ['/printing/completed', 'printing_scheduler', 'completed'],
   ['/printing/presses', 'printing_scheduler', 'presses'],
+  ['/printing/run-idle', 'printing_scheduler', 'run-idle'],
   ['/production', 'production_records', 'punched-jobs'],
   ['/production/records', 'production_records', 'records'],
   ['/production/records/new', 'production_records', 'record-new'],

@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
-import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary } from '../factoryStore';
+import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary, applyPrintRunAnalyticsBoundary } from '../factoryStore';
 import { nextSfgStorePermission } from '../sfgStoreAccess';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
@@ -157,7 +157,7 @@ export default function UserManagement({
   };
 
   const persistPermissions = async (permsToSave, successMessage) => {
-    const bounded = applyAuditLogBoundary(permsToSave);
+    const bounded = applyPrintRunAnalyticsBoundary(applyAuditLogBoundary(permsToSave));
     if (onUpdateRolePermissions) onUpdateRolePermissions(bounded);
     try {
       await saveRolePermissionsToSupabase(bounded);
@@ -175,6 +175,10 @@ export default function UserManagement({
   const togglePermission = (roleName, moduleKey) => {
     if (!isAdmin) {
       alert("Only Admin role can configure role permissions!");
+      return;
+    }
+    if (moduleKey === 'print_run_analytics') {
+      alert('Run and idle analytics stays with Admin, Plant Manager, and Production Manager.');
       return;
     }
     const currentVal = rolePermissions[roleName]?.[moduleKey];
@@ -340,7 +344,9 @@ export default function UserManagement({
                             }}
                             onClick={() => togglePermission(r, mod.key)}
                             title={
-                              mod.key === 'sfg_store'
+                              mod.key === 'print_run_analytics'
+                                ? 'Fixed by role: Admin, Plant Manager, and Production Manager'
+                                : mod.key === 'sfg_store'
                                 ? (isAllowed ? `Full SFG access for ${r}. Click for view-only` : isView ? `View-only for ${r}. Click to block` : `No SFG access for ${r}. Click to grant full access`)
                                 : (isAllowed ? `Allowed for ${r}. Click to revoke` : `Restricted for ${r}. Click to grant`)
                             }
