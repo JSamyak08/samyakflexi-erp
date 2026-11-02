@@ -69,6 +69,7 @@ export function applyPrintRunResult(order, result) {
     printingNotes: saved.printingNotes ?? current.printingNotes,
     inputRollsList,
     nextProcess,
+    balanceRolls: Array.isArray(saved.balanceRolls) ? saved.balanceRolls : (current.balanceRolls || []),
     jobDetails: {
       ...(current.jobDetails || {}),
       printingStatus,

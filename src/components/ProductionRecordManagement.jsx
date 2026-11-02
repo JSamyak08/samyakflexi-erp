@@ -2146,8 +2146,13 @@ export default function ProductionRecordManagement({
       notes: recordNotes
     }), decision);
 
+    let balanceRollNote = '';
     try {
-      if (onSaveProductionRecord) await onSaveProductionRecord(newRecord);
+      const saved = onSaveProductionRecord ? await onSaveProductionRecord(newRecord) : null;
+      const balanceRolls = Array.isArray(saved?.balanceRolls) ? saved.balanceRolls : [];
+      if (balanceRolls.length > 0) {
+        balanceRollNote = `\n\nBalance rolls to label:\n${balanceRolls.map((roll) => `• ${roll.barcodeId} (${Number(roll.netWeightKg) || 0} kg)`).join('\n')}`;
+      }
     } catch (err) {
       alert(`The production record was not saved: ${err.message || err}`);
       return;
@@ -2166,7 +2171,7 @@ export default function ProductionRecordManagement({
     }
 
     setIsConfirmModalOpen(false);
-    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.`);
+    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.${balanceRollNote}`);
     setActiveTab('list');
   };
   const filteredRecords = productionRecords.filter(r => {

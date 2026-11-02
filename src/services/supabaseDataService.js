@@ -2103,6 +2103,40 @@ export async function fetchInventoryRolls() {
   }
 }
 
+export async function fetchRecordBalanceRolls(recordId) {
+  if (!isSupabaseConfigured() || !recordId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('inventory_ledger_entries')
+      .select('barcode, qty_kg, stage, order_id, job_name, film_type, micron, width_mm, item_name, stock_item_id, parent_barcode')
+      .eq('production_record_id', recordId)
+      .eq('entry_kind', 'balance_receipt');
+    if (error || !Array.isArray(data)) return [];
+    return data.map((row) => ({
+      id: row.barcode,
+      barcodeId: row.barcode,
+      parentBarcodeId: row.parent_barcode || '',
+      netWeightKg: Number(row.qty_kg) || 0,
+      availableWeightKg: Number(row.qty_kg) || 0,
+      grossWeightKg: Number(row.qty_kg) || 0,
+      filmType: row.film_type || '',
+      micron: row.micron,
+      widthMm: row.width_mm,
+      itemName: row.item_name || '',
+      itemId: row.stock_item_id || '',
+      orderId: row.order_id || '',
+      jobName: row.job_name || '',
+      stage: row.stage || '',
+      status: 'In Stock (RM)',
+      rollType: 'RAW_MATERIAL',
+      category: 'Raw Material (RM)',
+      unit: 'Kg'
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function saveInventoryRollToSupabase(roll) {
   if (!isSupabaseConfigured() || !roll) {
     throw new Error("Cannot save inventory roll: Supabase database connection is not available.");

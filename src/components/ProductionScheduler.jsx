@@ -1230,58 +1230,7 @@ export default function ProductionScheduler({
         }
       }
 
-      // Process Input Film Rolls & Save Remaining Balance Barcode Rolls to Database
-      const createdBalanceRolls = [];
       const totalInputConsumedKg = inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
-
-      for (let idx = 0; idx < inputRollsList.length; idx++) {
-        const inRoll = inputRollsList[idx];
-        const initW = parseFloat(inRoll.initialWeightKg) || 0;
-        const consW = parseFloat(inRoll.consumedWeightKg) || 0;
-        const balW = Math.max(0, initW - consW);
-
-        if (balW > 0) {
-          const balBarcodeId = inRoll.barcodeId ? `${inRoll.barcodeId}-BAL` : `RM-BAL-${grnCode}-${idx + 1}`;
-          const inwardDatetime = new Date().toISOString();
-          const remainingRollObj = {
-            id: balBarcodeId,
-            barcodeId: balBarcodeId,
-            parentBarcodeId: inRoll.barcodeId || `RM-BC-${grnCode}-${idx + 1}`,
-            grnNo: `RM-RETURN-${grnCode}`,
-            rollType: 'RAW_MATERIAL',
-            category: 'Raw Material (RM)',
-            itemName: `${inRoll.filmType || NOT_RECORDED} ${finiteNumber(inRoll.micron) ?? NOT_RECORDED}µ (${finiteNumber(inRoll.widthMm) ?? NOT_RECORDED} mm) - Remaining Balance Roll`,
-            jobName: endJobTargetOrder.jobName,
-            jobCode: endJobTargetOrder.jobCode || endJobTargetOrder.id,
-            orderId: endJobTargetOrder.id,
-            customerName: endJobTargetOrder.clientName || endJobTargetOrder.customerName || '',
-            filmType: inRoll.filmType || endJobTargetOrder.printFilmType || '',
-            micron: finiteNumber(inRoll.micron) ?? finiteNumber(endJobTargetOrder.micron),
-            widthMm: finiteNumber(inRoll.widthMm) ?? finiteNumber(endJobTargetOrder.widthMm),
-            unit: 'Kg',
-            netWeightKg: Number(balW.toFixed(2)),
-            grossWeightKg: Number(balW.toFixed(2)),
-            tareWeightKg: null,
-            availableWeightKg: Number(balW.toFixed(2)),
-            stationId: 'PRINTING_PRESS_UNWINDER',
-            machineName: pressName,
-            operatorName: pressOperator,
-            status: 'In Stock (RM)',
-            qcStatus: 'Approved',
-            inwardDatetime,
-            productionDate: factoryCalendarDate(),
-            locationBay: 'RM Store - Substrate Rolls'
-          };
-
-          try {
-            await writeWithRetry(() => saveInventoryRollToSupabase(remainingRollObj));
-            createdBalanceRolls.push(remainingRollObj);
-            if (onAddRoll) await onAddRoll(remainingRollObj);
-          } catch (dbErr) {
-            unsavedRolls.push({ label: `remaining film roll ${balBarcodeId}`, error: dbErr });
-          }
-        }
-      }
 
       if (unsavedRolls.length > 0) {
         throw new PartialSaveError(unsavedItemsMessage({
@@ -1320,7 +1269,7 @@ export default function ProductionScheduler({
         printedOutputKg: outputKgNum,
         rollsBreakdown: createdSfgRolls,
         inputRollsList: inputRollsList,
-        createdBalanceRolls: createdBalanceRolls,
+        createdBalanceRolls: [],
         totalInputConsumedKg: totalInputConsumedKg,
         printWidthMm: printWidthMm,
         inputRollWidthMm: maxInputWidth,
@@ -1364,22 +1313,24 @@ export default function ProductionScheduler({
         printingNotes: inputOperatorNotes
       };
 
+      let endResult = null;
       if (onEndJob) {
-        await onEndJob(completedOrder, endData);
+        endResult = await onEndJob(completedOrder, endData);
       } else if (onUpdateOrder) {
         await onUpdateOrder(completedOrder);
       }
+      const balanceRolls = Array.isArray(endResult?.balanceRolls) ? endResult.balanceRolls : [];
 
       setIsEndJobModalOpen(false);
       setActiveRunningJob(null);
       setEndJobTargetOrder(null);
 
-      // Trigger automatic barcode printing pop-up for generated SFG rolls & remaining RM balance rolls
-      const allRollsToPrint = [...createdSfgRolls, ...createdBalanceRolls];
+      // The database creates balance rolls when the run ends. Show them so the operator can label them.
+      const allRollsToPrint = [...createdSfgRolls, ...balanceRolls];
       if (allRollsToPrint.length > 0) {
         setSelectedRollsForAutoPrint(allRollsToPrint);
       } else {
-        alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${(actualMetersNum || 0).toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg (${outputRollsList.length} SFG Rolls)\n• Next Process: ${nextProcessName}\n\nSFG rolls & remaining RM balance barcodes saved to database.`);
+        alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${(actualMetersNum || 0).toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg (${outputRollsList.length} SFG Rolls)\n• Next Process: ${nextProcessName}\n\nSFG rolls saved to database.`);
       }
     } catch (err) {
       console.error("Error ending printing job:", err);
