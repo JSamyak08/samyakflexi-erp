@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle2, QrCode, X } from 'lucide-react';
 import { labelRoll } from '../utils/printRunCompletion';
+import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
 function kg(value) {
   const number = Number(value);
@@ -58,10 +59,10 @@ export default function PrintRunCompletionSummary({
   onClose
 }) {
   const context = { jobName, jobCode, orderId, clientName, filmType };
-  const printable = [
+  const printable = rollsEligibleForBarcodeLabel([
     ...printedRolls.map((roll) => labelRoll(roll, context)),
     ...balanceRolls.map((roll) => labelRoll({ ...roll, rollType: 'RAW_MATERIAL' }, context))
-  ].filter((roll) => roll.barcodeId);
+  ]).filter((roll) => roll.barcodeId);
 
   return (
     <div

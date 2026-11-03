@@ -5,6 +5,7 @@
  */
 
 import { toDatabaseTimestamp } from '../utils/dbDates.js';
+import { preserveLegacyScrapFields } from '../utils/scrapIdentity.js';
 import {
   applyScrapFilters,
   applyScrapServerPlan,
@@ -772,7 +773,16 @@ export async function savePrintingScrapEntries(supabase, plan) {
     const { error } = await supabase.from('sfg_scrap_items').delete().in('id', deleteIds);
     if (error) throw error;
   }
-  return upsertPayloadRecords(supabase, 'sfg_scrap_items', plan?.upserts || []);
+  const upserts = plan?.upserts || [];
+  const ids = upserts.map((row) => String(row?.id || '')).filter(Boolean);
+  let existing = new Map();
+  if (ids.length) {
+    const { data, error } = await supabase.from('sfg_scrap_items').select('id, payload').in('id', ids);
+    if (error) throw error;
+    existing = new Map((data || []).map((row) => [String(row.id), row.payload || {}]));
+  }
+  const merged = upserts.map((row) => preserveLegacyScrapFields(row, existing.get(String(row.id))));
+  return upsertPayloadRecords(supabase, 'sfg_scrap_items', merged);
 }
 
 function isMissingRelation(error) {

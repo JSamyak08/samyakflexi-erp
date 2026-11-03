@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { printablePersonName } from '../utils/recordedPerson';
 import { pdfLinesFromGrn, taxableAmountFromLines } from '../services/grnDocument';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
@@ -56,8 +57,8 @@ export default function GRNPDF({ grnData, onClose }) {
     batchNo = "BATCH-PET-991",
     status = "Approved",
     qcNotes = "Passed corona dyne level & gauge tolerance inspection.",
-    inspectedBy = "Quality Manager",
-    storeManager = "Store Manager",
+    inspectedBy = "",
+    storeManager = "",
     freightAmount = 0,
     transporterName = "Direct Dispatch / Self",
     packagingType = "Roll",
@@ -238,9 +239,9 @@ export default function GRNPDF({ grnData, onClose }) {
                 </tr>
                 <tr>
                   <td className="label-col">Received By</td>
-                  <td className="value-col">{storeManager}</td>
+                  <td className="value-col">{printablePersonName(storeManager)}</td>
                   <td className="label-col">QC Inspector</td>
-                  <td className="value-col">{inspectedBy}</td>
+                  <td className="value-col">{printablePersonName(inspectedBy)}</td>
                 </tr>
               </tbody>
             </table>

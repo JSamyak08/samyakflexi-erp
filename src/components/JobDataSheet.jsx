@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { rawRoleNames, userHasAnyRole } from '../assignedRoles';
+import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
 import { pushSlugState } from '../utils/slugRouter';
 import { 
   FileSpreadsheet, 
@@ -94,7 +95,7 @@ export default function JobDataSheet({
       actualAdhesiveConsumedKg: parseFloat(actualAdhesiveKg) || 0,
       actualScrapWastageKg: parseFloat(actualScrapKg) || 0,
       operatorNotes,
-      createdBy: currentUser?.name || 'Plant Manager'
+      createdBy: loggedInActorLabel(currentUser)
     };
 
     if (onSaveJobDataSheet) {
@@ -415,7 +416,7 @@ export default function JobDataSheet({
                             {sheet.profitMarginPct}%
                           </span>
                         </td>
-                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{sheet.createdBy || 'Plant Manager'}</td>
+                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{printablePersonName(sheet.createdBy) || '—'}</td>
                         <td>
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             <button

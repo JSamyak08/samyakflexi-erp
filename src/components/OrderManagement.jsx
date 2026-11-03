@@ -28,6 +28,7 @@ import {
 import PurchaseOrderPDF from './PurchaseOrderPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
+import { loggedInActorLabel } from '../utils/recordedPerson';
 import { 
   calculateJobRawMaterials, 
   parseStructureLayers,
@@ -1176,8 +1177,8 @@ export default function OrderManagement({
       batchNo: `GRN-CYL-${grnNo}`,
       status: 'Approved (Stock Added)',
       qcNotes: 'Cylinder physical inspection, chrome plating thickness, and proof print approved.',
-      inspectedBy: currentUser?.name || 'QA Inspector',
-      storeManager: 'Store Mgr Dilip Joshi'
+      inspectedBy: loggedInActorLabel(currentUser),
+      storeManager: loggedInActorLabel(currentUser)
     };
 
     if (onAddGRN) {

@@ -262,6 +262,7 @@ DECLARE
   order_id text;
   kind text;
   payload jsonb;
+  previous jsonb;
   registry jsonb;
   reg_id text;
 BEGIN
@@ -317,14 +318,44 @@ BEGIN
       ELSIF entry_id = '' THEN
         CONTINUE;
       END IF;
-      -- Operators do not mint a scrap barcode. Store editors keep the payload
-      -- the production screen already built; a separate change owns scrap barcodes.
-      payload := entry;
+      -- Printing scrap is a weight. It does not receive a barcode. A barcode-shaped
+      -- hold tag already on the row is kept as the source roll, not copied onto a new code.
+      payload := entry
+        - 'barcode' - 'barcodeId' - 'barcode_id'
+        - 'sfgBatchCode' - 'sfg_batch_code'
+        - 'fgBatchCode' - 'fg_batch_code';
       IF access = 'printer' THEN
-        payload := (entry - 'barcode' - 'barcodeId' - 'sfgBatchCode')
-          || jsonb_build_object('source', 'printing');
+        payload := payload || jsonb_build_object('source', 'printing');
+      END IF;
+      IF btrim(coalesce(payload ->> 'holdTagId', '')) ~* '^(SFG|FG|RM|CON|QCHOLD|QC-HOLD|SCRAP|ADJ|BAR|CYL|SKU-CYL|FG-DISP)-'
+         OR btrim(coalesce(payload ->> 'holdTagId', '')) ~* '-BAL$' THEN
+        IF btrim(coalesce(payload ->> 'sourceRollBarcode', '')) = '' THEN
+          payload := payload || jsonb_build_object('sourceRollBarcode', btrim(payload ->> 'holdTagId'));
+        END IF;
+        payload := payload - 'holdTagId';
       END IF;
       payload := payload || jsonb_build_object('id', entry_id);
+      previous := NULL;
+      SELECT existing.payload INTO previous
+      FROM public.sfg_scrap_items AS existing
+      WHERE existing.id = entry_id;
+      IF previous IS NOT NULL THEN
+        IF btrim(coalesce(previous ->> 'barcode', '')) <> '' THEN
+          payload := payload || jsonb_build_object('barcode', previous ->> 'barcode');
+        END IF;
+        IF btrim(coalesce(previous ->> 'barcodeId', '')) <> '' THEN
+          payload := payload || jsonb_build_object('barcodeId', previous ->> 'barcodeId');
+        END IF;
+        IF btrim(coalesce(previous ->> 'barcode_id', '')) <> '' THEN
+          payload := payload || jsonb_build_object('barcode_id', previous ->> 'barcode_id');
+        END IF;
+        IF btrim(coalesce(previous ->> 'sfgBatchCode', '')) <> '' THEN
+          payload := payload || jsonb_build_object('sfgBatchCode', previous ->> 'sfgBatchCode');
+        END IF;
+        IF btrim(coalesce(previous ->> 'holdTagId', '')) <> '' THEN
+          payload := payload || jsonb_build_object('holdTagId', previous ->> 'holdTagId');
+        END IF;
+      END IF;
       INSERT INTO public.sfg_scrap_items (id, payload, updated_at)
       VALUES (entry_id, payload, pg_catalog.now())
       ON CONFLICT (id) DO UPDATE
@@ -363,10 +394,14 @@ BEGIN
     IF entry_id IS DISTINCT FROM 'high-scrap:' || order_id OR entry_id !~ '^high-scrap:.+' THEN
       RETURN;
     END IF;
-    entry := (entry - 'barcode' - 'barcodeId' - 'sfgBatchCode');
   ELSIF entry_id = '' THEN
     RETURN;
   END IF;
+  entry := entry
+    - 'barcode' - 'barcodeId' - 'barcode_id'
+    - 'sfgBatchCode' - 'sfg_batch_code'
+    - 'fgBatchCode' - 'fg_batch_code'
+    - 'holdTagId';
   entry := entry || jsonb_build_object('id', entry_id);
   INSERT INTO public.high_scrap_registry (id, payload, updated_at)
   VALUES (entry_id, entry, pg_catalog.now())

@@ -80,6 +80,7 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import PrintRunCompletionSummary from './PrintRunCompletionSummary';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
 import { completionForOrder, printedRollBarcode } from '../utils/printRunCompletion';
+import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
   const barcode = String(roll?.barcodeId || roll?.barcode || '').trim().toLowerCase();
@@ -1364,8 +1365,8 @@ export default function ProductionScheduler({
         clientName: completedOrder.clientName || completedOrder.customerName || '',
         filmType: endData.printFilmType || createdSfgRolls[0]?.filmType || '',
         meters: actualMetersNum,
-        printedRolls,
-        balanceRolls,
+        printedRolls: rollsEligibleForBarcodeLabel(printedRolls),
+        balanceRolls: rollsEligibleForBarcodeLabel(balanceRolls),
         consumedRolls,
         outputRecorded: endResult?.outputRecorded !== false
       });
@@ -3613,7 +3614,10 @@ export default function ProductionScheduler({
       {completionSummary && (
         <PrintRunCompletionSummary
           {...completionSummary}
-          onPrint={(rolls) => setSelectedRollsForAutoPrint(rolls)}
+          onPrint={(rolls) => {
+            const allowed = rollsEligibleForBarcodeLabel(rolls);
+            if (allowed.length) setSelectedRollsForAutoPrint(allowed);
+          }}
           onClose={() => setCompletionSummary(null)}
         />
       )}

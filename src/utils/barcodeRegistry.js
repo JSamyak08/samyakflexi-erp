@@ -5,7 +5,8 @@
  * Pellet fuel has no barcode column, so those receipts are not listed.
  */
 
-import { codeKey, codeText } from './barcodeCode';
+import { codeKey, codeText } from './barcodeCode.js';
+import { legacyScrapBarcode } from './scrapIdentity.js';
 
 export const BARCODE_SOURCE = {
   rm: 'Raw material / GRN',
@@ -407,11 +408,13 @@ export function collectBarcodes(sources = {}) {
   });
 
   (sources.scrapItems || []).forEach((item) => {
+    const barcode = legacyScrapBarcode(item);
+    if (!barcode) return;
     remember(map, {
-      barcode: item?.holdTagId || item?.barcodeId || item?.sfgBatchCode,
+      barcode,
       sourceModule: BARCODE_SOURCE.scrap,
       description: plain(item?.itemName, item?.jobName, 'Scrap'),
-      referenceNo: plain(item?.orderId, item?.id),
+      referenceNo: plain(item?.orderId, item?.sourceRecordId, item?.id),
       createdAt: plain(item?.createdAt, item?.date),
       status: plain(item?.status, 'Scrap'),
       location: plain(item?.storageBay),

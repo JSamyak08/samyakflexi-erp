@@ -259,7 +259,7 @@ export default function ScrapStorePanel({
                 data-testid="scrap-filter-search"
                 value={searchDraft}
                 onChange={(event) => setSearchDraft(event.target.value)}
-                placeholder="Order no., job name, barcode, notes"
+                placeholder="Order no., job name, internal ref, notes"
                 style={{ border: 'none', outline: 'none', width: '100%', font: 'inherit', background: 'transparent' }}
               />
             </span>
@@ -269,6 +269,9 @@ export default function ScrapStorePanel({
 
       <div data-testid="scrap-store-summary" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', marginBottom: '14px' }}>
         <SummaryCard testId="scrap-summary-kg" label="Total kg" value={`${Number(summary?.totalKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg`} tone="#dc2626" />
+        {summary?.totalValueRs != null ? (
+          <SummaryCard testId="scrap-summary-value" label="Value" value={`₹ ${Number(summary.totalValueRs).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} />
+        ) : null}
         <SummaryCard testId="scrap-summary-rows" label="Rows" value={String(summary?.rowCount || 0)} />
         <SummaryCard testId="scrap-summary-jobs" label="Jobs" value={String(summary?.jobCount || 0)} />
         <div style={{ gridColumn: '1 / -1', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '10px 12px' }}>
@@ -298,7 +301,7 @@ export default function ScrapStorePanel({
             <table data-testid="scrap-store-log" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  <th style={thStyle}>Original Tag Ref</th>
+                  <th style={thStyle}>Internal Ref</th>
                   <th style={thStyle}>Job Name & Order</th>
                   <th style={thStyle}>Stage</th>
                   <th style={thStyle}>Type</th>
@@ -307,14 +310,15 @@ export default function ScrapStorePanel({
                   <th style={{ ...thStyle, textAlign: 'right' }}>Scrap Weight (kg)</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Machine</th>
-                  <th style={thStyle}>Scrap Reason & Remarks</th>
+                  <th style={thStyle}>Defect Category / Remarks</th>
+                  <th style={thStyle}>Record Source & ID</th>
                   <th style={thStyle}>Recorded By & Date</th>
                 </tr>
               </thead>
               <tbody>
                 {paged.rows.map((item) => (
                   <tr key={item.id} data-testid="scrap-store-row" style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: '700', color: '#dc2626' }}>{item.barcode || item.holdTagId || '—'}</td>
+                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontWeight: '700', color: '#0f172a' }}>{item.internalRef || item.id || '—'}</td>
                     <td style={tdStyle}>
                       <div style={{ fontWeight: '700', color: '#0f172a' }}>{item.jobName}</div>
                       <div style={{ fontSize: '0.74rem', color: '#64748b' }}>{item.orderNo || '—'} | Client: {displayPartyName(item.customer)}</div>
@@ -332,7 +336,17 @@ export default function ScrapStorePanel({
                     <td style={{ ...tdStyle, textAlign: 'right', fontWeight: '900', color: '#dc2626' }}>{Number(item.scrapQtyKg || 0).toFixed(2)} kg</td>
                     <td style={tdStyle}>{item.statusLabel}</td>
                     <td style={tdStyle}>{item.machineLabel || '—'}</td>
-                    <td style={{ ...tdStyle, color: '#475569', fontSize: '0.8rem' }}>{item.notes}</td>
+                    <td style={{ ...tdStyle, color: '#475569', fontSize: '0.8rem' }}>
+                      <div style={{ fontWeight: '700', color: '#334155' }}>{item.typeLabel || item.defectCategory || '—'}</div>
+                      <div>{item.notes}</div>
+                      {item.ratePerKg != null ? (
+                        <div style={{ marginTop: '2px' }}>₹ {item.ratePerKg} / kg{item.valueRs != null ? ` · ₹ ${item.valueRs}` : ''}</div>
+                      ) : null}
+                    </td>
+                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: '0.78rem', color: '#0f172a' }}>
+                      <div style={{ fontWeight: '800' }}>{item.sourceLabel || 'Scrap'}</div>
+                      <div>{item.sourceRecordId || '—'}</div>
+                    </td>
                     <td style={{ ...tdStyle, color: '#64748b', fontSize: '0.76rem' }}>
                       <div>{item.operatorLabel || '—'}</div>
                       <div>{item.entryDate ? formatIsoDate(item.entryDate) : '—'}</div>

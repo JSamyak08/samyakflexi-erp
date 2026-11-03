@@ -30,6 +30,7 @@ import {
   HIGH_SCRAP_THRESHOLD_PCT,
   ORDER_QTY_UNIT
 } from '../utils/jobWastage';
+import { scrapInternalRef, scrapSourceRecordId } from '../utils/scrapIdentity';
 
 const MONTHS = [
   'All Months',
@@ -193,7 +194,8 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       const type = item.type || item.defectCategory || 'Scrap';
 
       list.push({
-        id: item.id || item.holdTagId || `SCRAP-${item.orderId || 'item'}`,
+        id: item.id || scrapInternalRef(item) || `scrapref:${item.orderId || 'item'}`,
+        sourceRecordId: scrapSourceRecordId(item),
         sourceType: 'SCRAP_STORE',
         sourceLabel: item.stage ? `${stage} scrap` : 'Scrap Store (QC Hold)',
         rawDate: dateStr,
@@ -712,8 +714,13 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                             {r.sourceLabel}
                           </span>
                           <span style={{ fontFamily: 'monospace', fontWeight: '800', color: isHigh ? '#dc2626' : '#0f172a', fontSize: '0.82rem' }}>
-                            {r.id}
+                            {scrapInternalRef(r) || r.id}
                           </span>
+                          {r.sourceRecordId ? (
+                            <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#475569' }}>
+                              Source {r.sourceRecordId}
+                            </span>
+                          ) : null}
                         </div>
                       </td>
 

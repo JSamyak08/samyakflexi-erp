@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
 import { codeKey, codeStartsWith, textFrom } from './barcodeCode.js';
 import { generateSyncQrSvg } from './qrCodeSvg.js';
+import { rollsEligibleForBarcodeLabel } from './scrapIdentity.js';
 
 /**
  * Escapes HTML characters to prevent XSS and malformed markup
@@ -736,7 +737,7 @@ export function generateThermalLabelsHtml(rollList = [], company = {}, { invento
  * modals, and tables, ensuring zero text overlapping, crisp QR codes, and exact 4x4 inch bounds.
  */
 export function printThermalBarcodeLabels({ rolls = [], company = {}, inventory = [], inks = [], onComplete } = {}) {
-  const rollList = Array.isArray(rolls) ? rolls : (rolls ? [rolls] : []);
+  const rollList = rollsEligibleForBarcodeLabel(rolls);
   if (rollList.length === 0) return;
 
   const html = generateThermalLabelsHtml(rollList, company, { inventory, inks });

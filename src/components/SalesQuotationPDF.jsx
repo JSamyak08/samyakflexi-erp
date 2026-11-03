@@ -5,6 +5,7 @@ import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 import { quotationLineDescription } from '../utils/quotationLineDescription';
+import { printablePersonName } from '../utils/recordedPerson';
 import './salesQuotationPrint.css';
 
 function money(amount) {
@@ -41,11 +42,11 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
     amendmentNo = "Rev 00",
     enquiryDate = new Date().toISOString().split('T')[0],
     estimatedDeliveryDate = "2026-08-25",
-    salesManager = "Samyak Jain",
+    salesManager = "",
     clientName = "Britannia Industries Ltd",
     clientAddress = "Britannia Executive Centre, Pithampur Sector 3, MP",
     clientGstin = "23AABCB1234F1Z1",
-    contactPerson = "Rajesh Sharma",
+    contactPerson = "",
     contactPhone = "+91 98260 11223",
     contactEmail,
     paymentTerms = "30 Days Net from date of Invoice",
@@ -144,7 +145,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
             </div>
             <div className="quote-party">
               <div className="quote-label">Contact person details</div>
-              <p>Contact person: <b>{contactPerson}</b></p>
+              <p>Contact person: <b>{printablePersonName(contactPerson)}</b></p>
               <p>Phone: <b>{contactPhone}</b></p>
               <p>Email: <b>{printedContactEmail(contactEmail)}</b></p>
             </div>
@@ -247,7 +248,7 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
 
           <div className="quote-sign pdf-signature-block">
             <div className="quote-prepared">
-              <div><b>Prepared by:</b> {salesManager}</div>
+              <div><b>Prepared by:</b> {printablePersonName(salesManager)}</div>
               <div><b>Issued on:</b> {enquiryDate}</div>
             </div>
 

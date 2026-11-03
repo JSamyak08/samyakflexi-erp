@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
 import SearchableSelect from './SearchableSelect';
 import { 
   Truck, 
@@ -881,7 +882,7 @@ export default function DispatchManagement({
       returnVehicleNo,
       returnLrNo,
       returnCondition,
-      returnedBy: returnedBy || currentUser?.name || 'Store Receiver',
+      returnedBy: printablePersonName(returnedBy) || loggedInActorLabel(currentUser),
       returnNotes
     };
 
@@ -1033,8 +1034,8 @@ export default function DispatchManagement({
     setCoaThicknessMicron(details.thicknessMicron);
 
     setCoaOverallStatus('PASSED & APPROVED');
-    setCoaQcInspector(currentUser ? `${currentUser.name || currentUser.fullName} (QC Inspector)` : 'Quality Store Executive');
-    setCoaApprovedByHead('Plant Quality Head');
+    setCoaQcInspector(loggedInActorLabel(currentUser));
+    setCoaApprovedByHead('');
     setCoaRemarks(`Quality CoA generated for Delivery Challan #${dc.challanNo} (Invoice #${dc.invoiceNo || 'N/A'}). Material inspected and passed standard QC parameters.`);
 
     // Load active or default material structure template parameters
@@ -1082,8 +1083,8 @@ export default function DispatchManagement({
     setCoaThicknessMicron(details.thicknessMicron || '74µ');
 
     setCoaOverallStatus('PASSED & APPROVED');
-    setCoaQcInspector(currentUser ? `${currentUser.name || currentUser.fullName} (QC Inspector)` : 'Quality Store Executive');
-    setCoaApprovedByHead('Plant Quality Head');
+    setCoaQcInspector(loggedInActorLabel(currentUser));
+    setCoaApprovedByHead('');
     setCoaRemarks('Material inspected and passed standard QC parameters.');
 
     const activeTemplate = (coaTemplates || []).find(t => t.id === selectedCoaTemplateId) || (coaTemplates || [])[0];
@@ -1119,8 +1120,8 @@ export default function DispatchManagement({
     setCoaThicknessMicron(coa.thicknessMicron || '');
     setCoaParameters(Array.isArray(coa.parameters) ? coa.parameters : DEFAULT_COA_PARAMETERS);
     setCoaOverallStatus(coa.overallStatus || 'PASSED & APPROVED');
-    setCoaQcInspector(coa.qcInspector || (currentUser ? `${currentUser.name || currentUser.fullName} (QC Inspector)` : 'Quality Store Executive'));
-    setCoaApprovedByHead(coa.approvedByHead || 'Plant Quality Head');
+    setCoaQcInspector(printablePersonName(coa.qcInspector) || loggedInActorLabel(currentUser));
+    setCoaApprovedByHead(printablePersonName(coa.approvedByHead));
     setCoaRemarks(coa.remarks || '');
     setActiveTab('coas');
     setIsCoaModalOpen(true);
@@ -1313,7 +1314,7 @@ export default function DispatchManagement({
     setDcFreightCharges(0);
     setDcGstRatePct(18);
     setDcTaxType('auto');
-    setDcDispatchedBy(currentUser?.fullName || currentUser?.name || 'Dispatch Executive');
+    setDcDispatchedBy(loggedInActorLabel(currentUser));
     
     setDcRemarks(`Linked with Packing List(s): ${strIds.join(', ')}`);
     setDcTerms(getDocumentTerms('dc'));

@@ -312,7 +312,8 @@ test('the completion migration is newer than the approval gates and does not gra
   assert.match(migrationSql, /SECURITY DEFINER/);
   assert.match(migrationSql, /printing_scheduler/);
   assert.doesNotMatch(migrationSql, /UPDATE public\.role_permissions/);
-  assert.match(migrationSql, /barcode' - 'barcodeId'/);
+  assert.match(migrationSql, /'barcode' - 'barcodeId' - 'barcode_id'/);
+  assert.ok('20261103143000' > '20261103140000');
 });
 
 test('an operator end saves the printed lot, balance barcode, and printing scrap, and a retry updates the same rows', async () => {
@@ -348,6 +349,8 @@ test('an operator end saves the printed lot, balance barcode, and printing scrap
   assert.equal(scrap.rows[0].id, 'print-scrap:ORD-1:plain-setting');
   assert.equal(scrap.rows[0].payload.barcode, undefined);
   assert.equal(scrap.rows[0].payload.barcodeId, undefined);
+  assert.equal(scrap.rows[0].payload.holdTagId, undefined);
+  assert.equal(scrap.rows[0].payload.sfgBatchCode, undefined);
   assert.equal(Number(scrap.rows[0].payload.scrapQtyKg), 6.5);
 
   const tags = await db.query(`SELECT id FROM public.custom_barcodes ORDER BY id`);
@@ -478,4 +481,32 @@ test('a store editor can record a non-printing scrap row, and an operator cannot
   const kept = await db.query(`SELECT payload FROM public.sfg_scrap_items WHERE id = 'print-scrap:ORD-1:laminate-wastage'`);
   assert.equal(kept.rows[0].payload.source, 'lamination');
   assert.equal(Number(kept.rows[0].payload.scrapQtyKg), 2);
+});
+
+test('printing scrap does not store a new barcode', async () => {
+  const db = await database();
+  await asUser(db, OPERATOR);
+  await db.query(`SELECT public.record_printing_wastage($1::jsonb)`, [JSON.stringify({
+    scrap: {
+      upserts: [{
+        id: 'print-scrap:ORD-1:printing-wastage',
+        orderId: 'ORD-1',
+        source: 'printing',
+        type: 'Printing Wastage',
+        scrapQtyKg: 1.25,
+        barcode: 'SFG-BC-NEW',
+        barcodeId: 'SFG-BC-NEW',
+        sfgBatchCode: 'SFG-LOT-ORD-1',
+        holdTagId: 'SFG-LOT-ORD-1'
+      }]
+    }
+  })]);
+  const row = await db.query(`SELECT payload FROM public.sfg_scrap_items WHERE id = 'print-scrap:ORD-1:printing-wastage'`);
+  const payload = row.rows[0].payload;
+  assert.equal(payload.barcode, undefined);
+  assert.equal(payload.barcodeId, undefined);
+  assert.equal(payload.sfgBatchCode, undefined);
+  assert.equal(payload.holdTagId, undefined);
+  assert.equal(payload.sourceRollBarcode, 'SFG-LOT-ORD-1');
+  assert.equal(Number(payload.scrapQtyKg), 1.25);
 });
