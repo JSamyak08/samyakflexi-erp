@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Lock, 
+  Lock as LockIcon,
   Mail, 
   Eye, 
   EyeOff, 
@@ -283,7 +283,7 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                     </button>
                   </div>
                   <div className="input-with-icon">
-                    <Lock size={18} className="input-icon" />
+                    <LockIcon size={18} className="input-icon" />
                     <input 
                       type={showPassword ? "text" : "password"} 
                       className="form-control"
@@ -399,7 +399,7 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                   <div className="form-group">
                     <label>New password</label>
                     <div className="input-with-icon">
-                      <Lock size={18} className="input-icon" />
+                      <LockIcon size={18} className="input-icon" />
                       <input
                         type={showPassword ? 'text' : 'password'}
                         className="form-control"

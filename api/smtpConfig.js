@@ -15,7 +15,8 @@ export function readSmtpConfig(env = process.env) {
   const portRaw = String(source.SMTP_PORT ?? '').trim();
   const secureRaw = String(source.SMTP_SECURE ?? '').trim();
   const user = String(source.SMTP_USER || '').trim();
-  const pass = source.SMTP_PASS == null ? '' : String(source.SMTP_PASS);
+  // A pasted newline is not part of the mailbox password.
+  const pass = source.SMTP_PASS == null ? '' : String(source.SMTP_PASS).trim();
   const port = Number(portRaw);
   const missing = [];
   if (!host) missing.push('SMTP_HOST');

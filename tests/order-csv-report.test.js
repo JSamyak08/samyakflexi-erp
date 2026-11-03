@@ -364,8 +364,8 @@ test('a store issue is used when the production record has no material line', ()
 
 test('search and status filters select the same orders as the order list, with no page cut', () => {
   const orders = [
-    order({ id: 'OPEN', clientName: 'Sharma Traders', structure: 'PET / METPET' }),
-    order({ id: 'OTHER', clientName: 'Other Mills', jobName: 'Rice bag', structure: 'BOPP' }),
+    order({ id: 'OPEN', clientName: 'Sharma Traders', structure: 'PET / METPET', targetDeliveryDate: '2099-01-01', deliveryDate: '2099-01-01' }),
+    order({ id: 'OTHER', clientName: 'Other Mills', jobName: 'Rice bag', structure: 'BOPP', targetDeliveryDate: '2099-01-01', deliveryDate: '2099-01-01' }),
     order({ id: 'DONE', status: 'Completed', clientName: 'Sharma Traders' }),
     order({ id: 'LATE', clientName: 'Sharma Traders', targetDeliveryDate: '2020-01-01', deliveryDate: '2020-01-01' }),
     order({ id: 'HOLD', status: 'On Hold', clientName: 'Sharma Traders', targetDeliveryDate: '2020-01-01' }),
@@ -397,8 +397,9 @@ test('the order screen downloads the filtered list and stays behind the orders p
   assert.doesNotMatch(screen, /includeOrders: ordersPagination/);
   assert.match(app, /activeTab === 'orders'/);
   assert.match(app, /isTabAllowed\('orders'\)/);
-  assert.match(app, /<Lock /);
-  assert.match(app, /\n  Lock,\n/);
+  assert.match(app, /<LockIcon /);
+  assert.match(app, /\n  Lock as LockIcon,\n/);
+  assert.doesNotMatch(app, /<Lock[\s/>]/);
   assert.equal(DEFAULT_ROLE_PERMISSIONS.Admin.orders, true);
   assert.equal(DEFAULT_ROLE_PERMISSIONS['Sales Manager'].orders, true);
   assert.equal(DEFAULT_ROLE_PERMISSIONS['Plant Manager'].orders, true);

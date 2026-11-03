@@ -48,7 +48,7 @@ import {
   Maximize2,
   Check,
   X,
-  Lock,
+  Lock as LockIcon,
   Sparkles,
   StopCircle,
   Eye,
@@ -1654,7 +1654,7 @@ export default function ProductionScheduler({
                 </span>
               ) : (
                 <span className="badge badge-neutral" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '6px 12px', background: '#f1f5f9', color: '#64748b', fontWeight: '700' }}>
-                  <Lock size={13} /> Queue Priority Fixed by Plant Management
+                  <LockIcon size={13} /> Queue Priority Fixed by Plant Management
                 </span>
               )}
             </div>
@@ -1756,7 +1756,7 @@ export default function ProductionScheduler({
                             }}
                             title="Job is actively running on press - locked in execution at #1 until ended."
                           >
-                            <Lock size={13} style={{ color: '#2563eb' }} />
+                            <LockIcon size={13} style={{ color: '#2563eb' }} />
                             <span style={{ fontSize: '0.62rem', fontWeight: '900', color: '#1d4ed8', letterSpacing: '0.3px', lineHeight: 1 }}>RUNNING</span>
                             <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#3b82f6', marginTop: '1px' }}>#{idx + 1}</span>
                           </div>
