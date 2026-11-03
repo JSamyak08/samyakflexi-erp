@@ -45,8 +45,9 @@ function sameFilmSpec(left, right) {
 }
 
 /**
- * The roll's own item, when that item is this film.
- * Otherwise the only film item with the same type, micron and width.
+ * The roll's own film item, by item id. The id wins even when the copied
+ * film name does not match, so a name blob cannot post a different lot.
+ * Without an id, the only film item with the same type, micron and width.
  * Several lots of the same film are left alone so a different roll is not consumed.
  */
 export function resolveFilmStockItem(roll, inventoryItems) {
@@ -54,7 +55,9 @@ export function resolveFilmStockItem(roll, inventoryItems) {
   const itemId = roll?.itemId || roll?.stockItemId || '';
   if (itemId) {
     const linked = items.find((item) => item && (item.id === itemId || item.itemCode === itemId));
-    if (linked && isFilmStock(linked) && sameFilmSpec(linked, roll)) return linked;
+    // The roll's item id is the stock row the barcode was received against.
+    // A messy film name must not send the consumption to a different item.
+    if (linked && isFilmStock(linked)) return linked;
   }
   const matches = items.filter((item) => item && isFilmStock(item) && sameFilmSpec(item, roll));
   return matches.length === 1 ? matches[0] : null;

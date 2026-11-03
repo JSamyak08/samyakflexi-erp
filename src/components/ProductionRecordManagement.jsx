@@ -38,7 +38,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import SFGFGEntryModal from './SFGFGEntryModal';
-import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting } from '../factoryStore';
+import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap } from '../factoryStore';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 import {
@@ -1968,6 +1968,8 @@ export default function ProductionRecordManagement({
       jobMasters,
       limits: guardrailLimits,
       role: currentUser,
+      inventory,
+      densities: getFilmSubstrateMap(),
       entry: {
         orderId: selectedOrder?.id,
         machineName: machine?.name || '',
@@ -1984,6 +1986,8 @@ export default function ProductionRecordManagement({
           filmType: row.filmType,
           micron: row.micron,
           widthMm: row.widthMm,
+          density: row.density,
+          itemId: row.stockItemId || row.itemId,
           consumedWeightKg: row.netConsumedQtyKg,
           barcode: row.barcode
         })),
