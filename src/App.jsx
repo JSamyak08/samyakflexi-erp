@@ -6473,6 +6473,7 @@ export default function App() {
         {moduleOpen && activeTab === 'pellet_fuel' && (
           <PelletFuelManagement 
             urlParams={urlParams}
+            currentUser={currentUser}
             userRole={currentUser?.role || ""}
             userName={fuelActorName(currentUser)}
             vendors={vendors}

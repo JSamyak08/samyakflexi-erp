@@ -3,6 +3,7 @@ import { formatPlantDateTime } from '../utils/dbDates';
 import { purchaseLineHsn } from '../utils/inkHsn';
 import { pushSlugState } from '../utils/slugRouter';
 import { anyAssignedRole, rawRoleNames } from '../assignedRoles';
+import { canApproveMaterialIndent } from '../approvalAccess';
 import SearchableSelect from './SearchableSelect';
 import { 
   ClipboardList, 
@@ -127,6 +128,8 @@ export default function ConsumablesAndIndents({
     if (!actor) return false;
     return anyAssignedRole(actor, (_role, lower) => lower === 'admin' || lower.includes('admin') || lower.includes('super'));
   }, [actor]);
+
+  const canApproveIndent = useMemo(() => canApproveMaterialIndent(actor), [actor]);
 
   // Vendors List Fallback
   const availableVendors = useMemo(() => {
@@ -636,7 +639,7 @@ export default function ConsumablesAndIndents({
     }
     notifyPurchaseIndentCreated(newIndent).catch(err => console.error("Indent email error:", err));
     setIsIndentModalOpen(false);
-    alert(`Material Indent Requisition ${indentId} raised successfully! Pending Plant/Store Manager approval.`);
+    alert(`Material Indent Requisition ${indentId} raised successfully! Pending Admin approval.`);
   };
 
   // Indent Line Item Handlers
@@ -683,6 +686,11 @@ export default function ConsumablesAndIndents({
 
   // Approve / Reject Indent
   const handleUpdateIndentStatus = (indentId, newStatus) => {
+    const decision = String(newStatus || '').toLowerCase();
+    if ((decision.includes('approved') || decision.includes('reject')) && !canApproveIndent) {
+      alert(`Access Restricted!\n\nOnly an Admin can approve or reject a material indent.\n\nYour current logged-in role is: "${actorLabel}".`);
+      return;
+    }
     setIndents(prev => prev.map(ind => {
       if (ind.id === indentId) {
         return { ...ind, status: newStatus };
@@ -942,6 +950,7 @@ export default function ConsumablesAndIndents({
       {activeSubTab === 'pellet_fuel' && (
         <PelletFuelManagement 
           urlParams={urlParams}
+          currentUser={currentUser}
           userRole={userRole}
           userName={pelletUserName}
           vendors={vendors}
@@ -1389,17 +1398,40 @@ export default function ConsumablesAndIndents({
                               <>
                                 <button 
                                   className="btn-primary" 
-                                  style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#047857' }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '0.75rem',
+                                    background: canApproveIndent ? '#047857' : '#94a3b8',
+                                    opacity: canApproveIndent ? 1 : 0.7,
+                                    cursor: canApproveIndent ? 'pointer' : 'not-allowed',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  disabled={!canApproveIndent}
                                   onClick={() => handleUpdateIndentStatus(indent.id, 'Approved')}
+                                  title={canApproveIndent ? 'Approve material indent' : 'Only an Admin can approve a material indent'}
                                 >
-                                  Approve
+                                  {!canApproveIndent && <LockIcon size={12} />} Approve
                                 </button>
                                 <button 
                                   className="btn-secondary" 
-                                  style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fca5a5' }}
+                                  style={{
+                                    padding: '4px 8px',
+                                    fontSize: '0.75rem',
+                                    color: canApproveIndent ? '#dc2626' : '#94a3b8',
+                                    borderColor: canApproveIndent ? '#fca5a5' : '#cbd5e1',
+                                    opacity: canApproveIndent ? 1 : 0.7,
+                                    cursor: canApproveIndent ? 'pointer' : 'not-allowed',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                  }}
+                                  disabled={!canApproveIndent}
                                   onClick={() => handleUpdateIndentStatus(indent.id, 'Rejected')}
+                                  title={canApproveIndent ? 'Reject material indent' : 'Only an Admin can reject a material indent'}
                                 >
-                                  Reject
+                                  {!canApproveIndent && <LockIcon size={12} />} Reject
                                 </button>
                               </>
                             )}
