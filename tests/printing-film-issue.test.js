@@ -44,6 +44,34 @@ test('Nyra input roll writes one consumed ledger line and does not deduct an amb
   assert.equal(plan.materialsList[0].id, 'ink-1');
 });
 
+test('a CCPET roll posts to its item id even when the copied name is the json blob', () => {
+  const plan = planPrintingFilmIssue({
+    orderId: 'ORD-2026-210',
+    jobName: 'Masti Atta 5 Kg',
+    inputRolls: [{
+      barcodeId: 'RM-BC-20261029-19450G7V',
+      filmType: 'CCPET-680-12 ||| {"filmType":"CCPET","density":1.4}',
+      micron: '12',
+      widthMm: '680',
+      itemId: 'INVT-0027',
+      initialWeightKg: 279.08,
+      consumedWeightKg: 279.08
+    }],
+    inventoryItems: [{
+      id: 'INVT-0027',
+      category: 'Film Substrates',
+      filmType: 'CCPET',
+      micron: 12,
+      widthMm: 680,
+      density: 1.4,
+      itemName: 'CCPET-680-12 ||| {"density":1.4}'
+    }]
+  });
+  assert.equal(plan.inventoryAdjustments.length, 1);
+  assert.equal(plan.inventoryAdjustments[0].stockItemId, 'INVT-0027');
+  assert.equal(plan.inventoryAdjustments[0].deltaKg, 279.08);
+});
+
 test('a second printing issue of the same roll does not deduct again', () => {
   const first = planPrintingFilmIssue({
     orderId: 'ORD-1',

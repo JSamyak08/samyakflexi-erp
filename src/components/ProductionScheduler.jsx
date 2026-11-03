@@ -72,13 +72,60 @@ import SearchableSelect from './SearchableSelect';
 import { 
   calculatePrintingScheduleMetrics,
   isOrderOverdue,
-  FILM_DENSITIES
+  FILM_DENSITIES,
+  getFilmSubstrateMap
 } from '../factoryStore';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { saveInventoryRollToSupabase } from '../services/supabaseDataService';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
 import { PartialSaveError, writeWithRetry, unsavedItemsMessage } from '../services/guardedWrite';
+
+function linkInputRoll(roll, inventoryRolls, inventory) {
+  const barcode = String(roll?.barcodeId || roll?.barcode || '').trim().toLowerCase();
+  const matched = barcode
+    ? (inventoryRolls || []).find((row) => String(row?.barcodeId || row?.id || '').trim().toLowerCase() === barcode)
+    : null;
+  const itemId = String(roll?.itemId || matched?.itemId || '').trim();
+  const stock = itemId
+    ? (inventory || []).find((item) => String(item?.id || '') === itemId || String(item?.itemCode || '') === itemId)
+    : null;
+  const density = finiteNumber(roll?.density) ?? finiteNumber(stock?.density);
+  return {
+    ...roll,
+    itemId,
+    density: density === null ? (roll?.density || '') : String(density)
+  };
+}
+
+function scannedInputRoll(current, matched, typedId, inventory) {
+  const stockId = String(matched?.itemId || '').trim();
+  const stock = stockId
+    ? (inventory || []).find((item) => String(item?.id || '') === stockId || String(item?.itemCode || '') === stockId)
+    : null;
+  const measure = (rollValue, stockValue) => {
+    const fromRoll = finiteNumber(rollValue);
+    if (fromRoll !== null && fromRoll > 0) return String(fromRoll);
+    const fromStock = finiteNumber(stockValue);
+    if (fromStock !== null && fromStock > 0) return String(fromStock);
+    return '';
+  };
+  return {
+    ...current,
+    barcodeId: matched.barcodeId || matched.id || typedId,
+    itemId: stockId || stock?.id || current?.itemId || '',
+    filmType: String(matched?.filmType || stock?.filmType || '').trim(),
+    micron: measure(matched?.micron, stock?.micron),
+    widthMm: measure(matched?.widthMm, stock?.widthMm),
+    density: measure(matched?.density, stock?.density),
+    initialWeightKg: (matched.netWeightKg || matched.availableWeightKg)
+      ? String(matched.netWeightKg || matched.availableWeightKg)
+      : (current?.initialWeightKg || ''),
+    consumedWeightKg: (matched.netWeightKg || matched.availableWeightKg)
+      ? String(matched.netWeightKg || matched.availableWeightKg)
+      : (current?.consumedWeightKg || '')
+  };
+}
 
 // Helper: Resolve Film Density for flexible packaging substrates
 const getFilmDensity = (filmType = '') => {
@@ -902,15 +949,7 @@ export default function ProductionScheduler({
       );
 
       if (matched) {
-        updatedList = inputRollsList.map((r, i) => i === index ? {
-          ...r,
-          barcodeId: matched.barcodeId || matched.id || bId,
-          filmType: matched.filmType || matched.itemName || '',
-          micron: matched.micron ? String(matched.micron) : '',
-          widthMm: matched.widthMm ? String(matched.widthMm) : '',
-          initialWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : '',
-          consumedWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : ''
-        } : r);
+        updatedList = inputRollsList.map((r, i) => i === index ? scannedInputRoll(r, matched, bId, inventory) : r);
       } else {
         updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
       }
@@ -958,15 +997,7 @@ export default function ProductionScheduler({
     );
 
     if (matched) {
-      setInputRollsList(prev => prev.map((r, i) => i === index ? {
-        ...r,
-        barcodeId: matched.barcodeId || matched.id || bId,
-        filmType: matched.filmType || matched.itemName || '',
-        micron: matched.micron ? String(matched.micron) : '',
-        widthMm: matched.widthMm ? String(matched.widthMm) : '',
-        initialWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : '',
-        consumedWeightKg: (matched.netWeightKg || matched.availableWeightKg) ? String(matched.netWeightKg || matched.availableWeightKg) : ''
-      } : r));
+      setInputRollsList(prev => prev.map((r, i) => i === index ? scannedInputRoll(r, matched, bId, inventory) : r));
     } else {
       setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, barcodeId: bId } : r));
     }
@@ -1086,6 +1117,9 @@ export default function ProductionScheduler({
       jobMasters,
       limits: guardrailLimits,
       role: currentUser,
+      inventory,
+      inventoryRolls,
+      densities: getFilmSubstrateMap(),
       entry: {
         orderId: endJobTargetOrder?.id,
         machineName: press?.name || '',
@@ -1231,7 +1265,8 @@ export default function ProductionScheduler({
         }
       }
 
-      const totalInputConsumedKg = inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
+      const rollsForSave = inputRollsList.map((roll) => linkInputRoll(roll, inventoryRolls, inventory));
+      const totalInputConsumedKg = rollsForSave.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
 
       if (unsavedRolls.length > 0) {
         throw new PartialSaveError(unsavedItemsMessage({
@@ -1269,7 +1304,7 @@ export default function ProductionScheduler({
         inkGsmInSpeed: inkGsmNum,
         printedOutputKg: outputKgNum,
         rollsBreakdown: createdSfgRolls,
-        inputRollsList: inputRollsList,
+        inputRollsList: rollsForSave,
         createdBalanceRolls: [],
         totalInputConsumedKg: totalInputConsumedKg,
         printWidthMm: printWidthMm,
@@ -1301,7 +1336,7 @@ export default function ProductionScheduler({
         inkGsmInSpeed: inkGsmNum,
         printedOutputKg: outputKgNum,
         rollsBreakdown: createdSfgRolls,
-        inputRollsList: inputRollsList,
+        inputRollsList: rollsForSave,
         totalInputConsumedKg: totalInputConsumedKg,
         printWidthMm: printWidthMm,
         inputRollWidthMm: maxInputWidth,
@@ -2890,6 +2925,14 @@ export default function ProductionScheduler({
                     ))}
                   </div>
                 )}
+                {endJobGuardrail && endJobGuardrail.warnings.some((item) => item.nonBlocking) && (
+                  <div data-testid="end-job-guardrail-note" style={{ background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '12px 14px', color: '#92400e' }}>
+                    <div style={{ fontWeight: '900', marginBottom: '6px' }}>Meters check skipped</div>
+                    {endJobGuardrail.warnings.filter((item) => item.nonBlocking).map((item, index) => (
+                      <div key={`${item.rule}-note-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ fontSize: '0.78rem', fontWeight: '800', color: '#0f172a', display: 'block', marginBottom: '4px' }}>Press *</label>
@@ -3229,7 +3272,7 @@ export default function ProductionScheduler({
                     {[...endJobGuardrail.blocks, ...endJobGuardrail.filmTypeBlocks, ...endJobGuardrail.warnings].map((item, index) => (
                       <div key={`${item.rule}-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
                     ))}
-                    {endJobGuardrail.warnings.length > 0 && (
+                    {endJobGuardrail.warnings.some((item) => !item.nonBlocking) && (
                       <label style={{ display: 'block', marginTop: '10px', fontSize: '0.78rem', fontWeight: '800' }}>
                         Reason for the warning *
                         <textarea className="form-control" value={endJobWarningReason} onChange={(event) => setEndJobWarningReason(event.target.value)} rows={2} placeholder="Why this run is outside the Job Master limit" />
