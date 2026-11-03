@@ -6,7 +6,7 @@ import {
   DollarSign, 
   TrendingUp, 
   TrendingDown, 
-  Lock, 
+  Lock as LockIcon,
   CheckCircle2, 
   AlertCircle, 
   Printer, 
@@ -218,7 +218,7 @@ export default function JobDataSheet({
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: isAuthorizedToViewProfit ? '#ecfdf5' : '#fffbeb', border: `1px solid ${isAuthorizedToViewProfit ? '#a7f3d0' : '#fde68a'}`, padding: '6px 12px', borderRadius: '6px', fontSize: '0.8rem', fontWeight: '600', color: isAuthorizedToViewProfit ? '#047857' : '#b45309' }}>
-              {isAuthorizedToViewProfit ? <ShieldCheck size={16} /> : <Lock size={16} />}
+              {isAuthorizedToViewProfit ? <ShieldCheck size={16} /> : <LockIcon size={16} />}
               Role: <b>{rawRoleNames(currentUser).join(', ') || 'Guest'}</b> ({isAdmin ? 'Full Admin Access' : isAuthorizedToViewProfit ? 'Profit Access' : 'View Only'})
             </div>
           </div>
@@ -626,7 +626,7 @@ export default function JobDataSheet({
                 </div>
               ) : (
                 <div style={{ background: '#fffbeb', padding: '16px', borderRadius: '8px', border: '1px solid #fde68a', textAlign: 'center', color: '#b45309', fontSize: '0.85rem' }}>
-                  <Lock size={18} style={{ marginBottom: '4px' }} />
+                  <LockIcon size={18} style={{ marginBottom: '4px' }} />
                   <div>Profit Margin analytics restricted to Admin & Plant Manager roles.</div>
                 </div>
               )}

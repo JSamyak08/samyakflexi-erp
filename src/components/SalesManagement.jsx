@@ -22,7 +22,6 @@ import {
   Mail, 
   Calendar, 
   RotateCcw, 
-  Lock, 
   Layers, 
   SlidersHorizontal,
   X,

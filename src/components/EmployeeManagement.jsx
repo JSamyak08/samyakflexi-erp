@@ -32,7 +32,7 @@ import {
   Briefcase,
   Layers,
   FileSpreadsheet,
-  Lock,
+  Lock as LockIcon,
   CreditCard,
   RotateCcw,
   ChevronDown,
@@ -2099,7 +2099,7 @@ export default function EmployeeManagement({
                               }}
                               title="Edit, Offboard, and Delete permissions are restricted to Admin role."
                             >
-                              <Lock size={12} style={{ color: '#64748b' }} /> Admin Only
+                              <LockIcon size={12} style={{ color: '#64748b' }} /> Admin Only
                             </span>
                           )}
                         </td>
@@ -2281,7 +2281,7 @@ export default function EmployeeManagement({
                               }}
                               title="Attendance already recorded. Locked for non-admin roles."
                             >
-                              <Lock size={12} style={{ color: '#64748b' }} /> Locked (Admin Only)
+                              <LockIcon size={12} style={{ color: '#64748b' }} /> Locked (Admin Only)
                             </span>
                           )
                         ) : (

@@ -17,7 +17,7 @@ import {
   CameraOff, 
   X, 
   ShieldCheck, 
-  Lock, 
+  Lock as LockIcon,
   Tag, 
   Calendar, 
   User, 
@@ -955,7 +955,7 @@ export default function UniversalBarcodeScannerModal({
                     gap: '4px'
                   }}
                 >
-                  <Lock size={10} /> READ-ONLY CHECK
+                  <LockIcon size={10} /> READ-ONLY CHECK
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>

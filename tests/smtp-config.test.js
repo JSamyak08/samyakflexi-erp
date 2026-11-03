@@ -20,6 +20,9 @@ test('SMTP config requires every setting and does not infer TLS from port 465', 
   assert.equal(smtp.secure, false);
   assert.equal(Object.hasOwn(smtp, 'tls'), false);
   assert.equal(smtp.auth.user, 'mailer@example.test');
+  assert.equal(smtp.auth.pass, 'secret');
+  assert.equal(readSmtpConfig({ ...complete, SMTP_PASS: ' secret \n' }).auth.pass, 'secret');
+  assert.throws(() => readSmtpConfig({ ...complete, SMTP_PASS: ' \n' }), /SMTP_PASS/);
 
   assert.throws(() => readSmtpConfig({ ...complete, SMTP_HOST: '' }), /SMTP_HOST/);
   assert.throws(() => readSmtpConfig({ ...complete, SMTP_SECURE: '' }), /SMTP_SECURE/);

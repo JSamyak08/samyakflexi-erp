@@ -35,7 +35,7 @@ import {
   Wrench,
   Droplets,
   Container,
-  Lock,
+  Lock as LockIcon,
   DollarSign,
   ShoppingBag,
   Settings,
@@ -1193,7 +1193,7 @@ export default function ConsumablesAndIndents({
                               onClick={() => handleOpenEditStoreItemModal(item)}
                               title={isAdminOnly ? "Edit Store Item Details (Admin Only)" : "Permission Denied: Edit option restricted to Admin Role"}
                             >
-                              {!isAdminOnly ? <Lock size={12} /> : <Edit size={13} />} Edit
+                              {!isAdminOnly ? <LockIcon size={12} /> : <Edit size={13} />} Edit
                             </button>
                             <button 
                               className="btn-primary" 
@@ -1354,7 +1354,7 @@ export default function ConsumablesAndIndents({
                               onClick={() => handleOpenEditIndentModal(indent)}
                               title={isAdminOnly ? "Edit Requisition Indent Details (Admin Only)" : "Permission Denied: Edit option restricted to Admin Role"}
                             >
-                              {!isAdminOnly ? <Lock size={12} /> : <Edit size={13} />} Edit
+                              {!isAdminOnly ? <LockIcon size={12} /> : <Edit size={13} />} Edit
                             </button>
 
                             <button 
@@ -1381,7 +1381,7 @@ export default function ConsumablesAndIndents({
                               onClick={() => handleOpenRaisePO(indent)}
                               title={isAdminRole ? (indent.poNumber ? `View/Re-issue PO ${indent.poNumber}` : "Issue Official Purchase Order (Admin Only)") : "Permission Denied: PO Issuance restricted to Admin Role"}
                             >
-                              {!isAdminRole && <Lock size={12} />}
+                              {!isAdminRole && <LockIcon size={12} />}
                               <FileText size={13} /> {indent.poNumber ? `PO: ${indent.poNumber}` : 'Raise PO'}
                             </button>
 
@@ -2090,7 +2090,7 @@ export default function ConsumablesAndIndents({
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Lock size={12} /> Admin Role Authorized
+                    <LockIcon size={12} /> Admin Role Authorized
                   </span>
                   <div style={{ fontSize: '0.75rem', color: '#0284c7', marginTop: '4px' }}>Priority: <b>{targetIndentForPO.priority}</b></div>
                 </div>

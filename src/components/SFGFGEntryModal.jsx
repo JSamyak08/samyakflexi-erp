@@ -20,7 +20,7 @@ import {
   RefreshCw,
   Sliders,
   Ruler,
-  Lock,
+  Lock as LockIcon,
   ShieldAlert
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
@@ -1053,7 +1053,7 @@ export default function SFGFGEntryModal({
             {existingLockedRolls.length > 0 && (
               <div style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 12px', borderRadius: '6px', marginBottom: '8px', fontSize: '0.75rem', color: '#334155', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Lock size={14} style={{ color: '#64748b' }} />
+                  <LockIcon size={14} style={{ color: '#64748b' }} />
                   <span>
                     <strong>{existingLockedRolls.length} previous master roll(s)</strong> already have barcodes generated and are locked against accidental modification.
                   </span>
@@ -1116,7 +1116,7 @@ export default function SFGFGEntryModal({
                             />
                             {isLocked && (
                               <span title="Barcode already generated - Locked" style={{ display: 'inline-flex', color: '#64748b' }}>
-                                <Lock size={13} />
+                                <LockIcon size={13} />
                               </span>
                             )}
                           </div>
@@ -1206,7 +1206,7 @@ export default function SFGFGEntryModal({
                               style={{ fontSize: '0.68rem', padding: '2px 5px', background: '#e2e8f0', color: '#475569', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
                               title="Generated barcode locked. Only Admin can modify/delete from Inventory."
                             >
-                              <Lock size={10} /> Saved
+                              <LockIcon size={10} /> Saved
                             </span>
                           ) : (
                             <button 
