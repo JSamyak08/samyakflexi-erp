@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { ensureValidSession, handleSupabaseError } from './supabaseDataService';
+import { ensureValidSession } from './supabaseDataService';
 import { applyPrintRunResult, buildPrintRunPatch } from '../utils/printRun';
 
 export { applyPrintRunResult, buildPrintRunPatch };
@@ -17,7 +17,13 @@ export async function recordPrintRun(orderId, action, fields) {
     p_action: action,
     p_patch: patch
   });
-  if (error) handleSupabaseError(error, 'print run');
+  if (error) {
+    const failure = new Error(error.message || 'The print run was not saved.');
+    failure.code = error.code || '';
+    failure.details = error.details || '';
+    failure.hint = error.hint || '';
+    throw failure;
+  }
   return data || {};
 }
 
@@ -32,6 +38,12 @@ export async function fetchPrintMachineRunIdle({ rangeStart, rangeEnd, asOf }) {
     p_range_end: rangeEnd,
     p_as_of: asOf || new Date().toISOString()
   });
-  if (error) handleSupabaseError(error, 'print machine run and idle');
+  if (error) {
+    const failure = new Error(error.message || 'The run and idle report could not be loaded.');
+    failure.code = error.code || '';
+    failure.details = error.details || '';
+    failure.hint = error.hint || '';
+    throw failure;
+  }
   return data || { runs: [], shifts: [], asOf };
 }

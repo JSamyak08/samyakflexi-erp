@@ -10,6 +10,7 @@ import {
   PRINT_UTILIZATION_HEADERS
 } from '../src/utils/printUtilizationExport.js';
 import {
+  activePrintConflictMessage,
   duplicateActiveGroups,
   findActivePrintConflict,
   parseActivePrintRunConflict
@@ -258,6 +259,7 @@ test('conflicts name the running job and duplicates are grouped without being cl
   assert.equal(parsed.orderId, 'ORD-1');
   assert.equal(parsed.jobName, 'Peas Pouch');
   assert.match(parsed.message, /End that run/);
+  assert.match(activePrintConflictMessage({ orderId: 'ORD-1', machineId: 'MAC-PRINT-30', jobName: 'Peas Pouch', scope: 'machine' }, [{ id: 'MAC-PRINT-30', name: 'Press 30' }]), /End the current run first/);
 
   const loose = [
     { id: 'ORD-A', jobName: 'Loose', printingStatus: 'In Production', printingStartTime: '2026-11-01T02:30:00.000Z', printingEndTime: null },

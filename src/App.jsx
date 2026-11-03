@@ -573,7 +573,30 @@ export default function App() {
   const [storeIssueTransactions, setStoreIssueTransactions] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditLogTotal, setAuditLogTotal] = useState(0);
+  const [auditLogError, setAuditLogError] = useState('');
   const auditFetchedCountRef = useRef(0);
+
+  // Boot can miss this read (the failure used to be swallowed and the page stayed at zero).
+  // Opening the ledger loads it again for the signed-in Admin.
+  useEffect(() => {
+    if (!isSupaActive || !isAuthenticated || activeTab !== 'audit_logs') return undefined;
+    if (!assignedRolesOf(currentUser).includes('Admin')) return undefined;
+    let cancelled = false;
+    fetchAuditLogsPage({ limit: 100, offset: 0 })
+      .then((page) => {
+        if (cancelled) return;
+        const pruned = pruneOldAuditLogs(page.logs || []);
+        auditFetchedCountRef.current = (page.logs || []).length;
+        setAuditLogTotal(Number(page.total) || pruned.length);
+        setAuditLogs(pruned);
+        setAuditLogError('');
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAuditLogError(err?.message || 'Audit logs could not be loaded.');
+      });
+    return () => { cancelled = true; };
+  }, [isSupaActive, isAuthenticated, activeTab, currentUser]);
   const [employees, setEmployees] = useState([]);
   const [employeeAttendance, setEmployeeAttendance] = useState([]);
   const [salaryAdvances, setSalaryAdvances] = useState([]);
@@ -1707,13 +1730,15 @@ export default function App() {
           auditFetchedCountRef.current = supaAuditLogs.logs.length;
           setAuditLogTotal(Number(supaAuditLogs.total) || pruned.length);
           setAuditLogs(pruned);
-          safeLocalStorageSet('samyak_cache_audit_logs', pruned);
+          setAuditLogError('');
         } else if (accessAdmin && Array.isArray(supaAuditLogs)) {
           const pruned = pruneOldAuditLogs(supaAuditLogs);
           auditFetchedCountRef.current = pruned.length;
           setAuditLogTotal(pruned.length);
           setAuditLogs(pruned);
-          safeLocalStorageSet('samyak_cache_audit_logs', pruned);
+          setAuditLogError('');
+        } else if (accessAdmin && supaAuditLogs == null) {
+          setAuditLogError('Audit logs could not be loaded.');
         } else if (!accessAdmin) {
           try {
             localStorage.removeItem('samyak_cache_audit_logs');
@@ -2036,7 +2061,7 @@ export default function App() {
         if (status === 'SUBSCRIBED') {
           console.log('🟢 [Supabase Realtime] Connected to live replication channel (public:erp_unified_sync)');
         } else if (status === 'CHANNEL_ERROR') {
-          console.error('🔴 [Supabase Realtime] Channel subscription error:', err);
+          console.warn('[Supabase Realtime] Channel subscription error:', err?.message || err);
         } else if (status === 'TIMED_OUT') {
           console.warn('🟡 [Supabase Realtime] Subscription timed out, attempting reconnection...');
         } else if (status === 'CLOSED') {
@@ -2856,7 +2881,6 @@ export default function App() {
       setPressActiveRunningJob(prev => prev && prev.id === updatedOrder.id ? { ...prev, ...updatedOrder } : prev);
       await logAudit('UPDATE', 'Orders', `Updated order details/status for ${updatedOrder.id} - "${updatedOrder.jobName}" (${updatedOrder.status})`, updatedOrder.id);
     } catch (err) {
-      console.error('[ORDERS][UPDATE] Failed to update order in Supabase:', err);
       throw alertOrderSaveError(updatedOrder?.id, err);
     }
   };
@@ -6641,12 +6665,15 @@ export default function App() {
             auditLogTotal={auditLogTotal}
             users={users}
             currentUser={currentUser}
+            auditLogError={auditLogError}
             onRefreshLogs={() => fetchAuditLogsPage({ limit: 100, offset: 0 }).then(page => {
               const pruned = pruneOldAuditLogs(page.logs || []);
               auditFetchedCountRef.current = (page.logs || []).length;
               setAuditLogTotal(Number(page.total) || pruned.length);
               setAuditLogs(pruned);
-              safeLocalStorageSet('samyak_cache_audit_logs', pruned);
+              setAuditLogError('');
+            }).catch((err) => {
+              setAuditLogError(err?.message || 'Audit logs could not be loaded.');
             })}
             onLoadMoreLogs={() => fetchAuditLogsPage({ limit: 100, offset: auditFetchedCountRef.current }).then(page => {
               const next = pruneOldAuditLogs(page.logs || []);
@@ -6657,12 +6684,14 @@ export default function App() {
                 [...(prev || []), ...next].forEach(log => { if (log && log.id) map.set(log.id, log); });
                 return Array.from(map.values()).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
               });
+              setAuditLogError('');
+            }).catch((err) => {
+              setAuditLogError(err?.message || 'Audit logs could not be loaded.');
             })}
             onPurgeOldLogs={() => {
               if (window.confirm("Are you sure you want to manually purge audit log entries older than 6 months (180 days)?")) {
                 const pruned = pruneOldAuditLogs(auditLogs);
                 setAuditLogs(pruned);
-                safeLocalStorageSet('samyak_erp_audit_logs', pruned);
               }
             }}
           />

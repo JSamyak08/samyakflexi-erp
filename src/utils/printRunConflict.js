@@ -60,7 +60,7 @@ export function duplicateActiveGroups(orders) {
   if (global.length > 0) {
     return [{
       slot: '__GLOBAL__',
-      reason: 'A print run has no printing machine, so the plant can have only one active run. These were already open and were left running.',
+      reason: 'End the current run first. A print run has no printing machine, so another run cannot start until that one ends. These were already open and were left running.',
       runs: active.map(describeRun)
     }];
   }
@@ -69,7 +69,7 @@ export function duplicateActiveGroups(orders) {
     if (runs.length < 2) return;
     groups.push({
       slot,
-      reason: `More than one print run is active on ${slot}. They were left running. End one before starting another job on this press.`,
+      reason: `End the current run first. More than one print run is already active on ${slot}. They were left running.`,
       runs: runs.map(describeRun)
     });
   });
@@ -126,7 +126,7 @@ export function activePrintConflictMessage(conflict, machines = []) {
   const machine = (machines || []).find((item) => item.id === conflict.machineId);
   const machineLabel = machine?.name || conflict.machineId;
   if (conflict.scope === 'global' || !conflict.machineId) {
-    return `Another print run is still active with no printing machine on the run: ${conflict.jobName} (${conflict.orderId}). End that run before starting another job.`;
+    return `End the current run first. A print run with no machine is still running ${conflict.jobName} (${conflict.orderId}).`;
   }
-  return `Another print run is still active on ${machineLabel}: ${conflict.jobName} (${conflict.orderId}). End that run before starting another job.`;
+  return `End the current run first. ${machineLabel} is still running ${conflict.jobName} (${conflict.orderId}).`;
 }
