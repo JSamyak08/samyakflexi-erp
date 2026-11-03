@@ -56,7 +56,8 @@ export default function AuditLogsManagement({
   currentUser, 
   onRefreshLogs, 
   onLoadMoreLogs,
-  onPurgeOldLogs 
+  onPurgeOldLogs,
+  auditLogError = ''
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedModule, setSelectedModule] = useState('All');
@@ -359,11 +360,17 @@ export default function AuditLogsManagement({
           )}
         </div>
 
+        {auditLogError && (
+          <div role="alert" style={{ marginBottom: '16px', padding: '12px 14px', background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: '10px' }}>
+            {auditLogError}
+          </div>
+        )}
+
         {filteredLogs.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
             <AlertCircle size={40} style={{ color: 'var(--text-muted)', marginBottom: '12px' }} />
-            <p style={{ fontSize: '1rem', fontWeight: '600' }}>No Audit Logs Found</p>
-            <p style={{ fontSize: '0.85rem' }}>No system events match the current filter or search criteria.</p>
+            <p style={{ fontSize: '1rem', fontWeight: '600' }}>{auditLogError ? 'Audit logs could not be loaded' : 'No Audit Logs Found'}</p>
+            <p style={{ fontSize: '0.85rem' }}>{auditLogError ? 'The ledger is still in the database. Refresh after the connection returns.' : 'No system events match the current filter or search criteria.'}</p>
           </div>
         ) : (
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.88rem' }}>

@@ -142,10 +142,14 @@ export const supabase = new Proxy({}, {
  */
 export function withTimeout(promise, ms, label = 'operation') {
   let timer;
+  const guarded = Promise.resolve(promise);
+  // Promise.race settles on the first result. A later rejection of the loser
+  // must already have a handler or the printing page reports it as uncaught.
+  guarded.catch(() => {});
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
   });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  return Promise.race([guarded, timeout]).finally(() => clearTimeout(timer));
 }
 
 /**

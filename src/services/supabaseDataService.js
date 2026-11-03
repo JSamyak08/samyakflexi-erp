@@ -348,10 +348,7 @@ export async function saveOrderToSupabase(order) {
   if (fullErr && /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|job_master_id|schema cache/i.test(fullErr.message || '')) {
     ({ error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' }));
   }
-  if (fullErr) {
-    console.error(`[ORDERS][DB WRITE Error] orderId=${order.id}:`, fullErr);
-    handleSupabaseError(fullErr, 'orders');
-  }
+  if (fullErr) handleSupabaseError(fullErr, 'orders');
   console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id}.`);
 }
 

@@ -19,6 +19,7 @@ import {
   activePrintConflictMessage,
   duplicateActiveGroups,
   findActivePrintConflict,
+  isActivePrintRun,
   parseActivePrintRunConflict
 } from '../utils/printRunConflict';
 import StorageImage from './StorageImage';
@@ -252,15 +253,21 @@ export default function ProductionScheduler({
   const [activeRunningJob, setActiveRunningJobState] = useState(initialPressActiveRunningJob);
   const [activeMachineSelection, setActiveMachineSelectionState] = useState(initialPressMachineAssignments);
 
+  const settlePressSave = (result) => {
+    Promise.resolve(result).catch(() => {
+      // The save handler alerts. A rejection here used to escape as an unhandled database error.
+    });
+  };
+
   const setActiveRunningJob = (job) => {
     setActiveRunningJobState(job);
-    if (onActiveRunningJobChange) onActiveRunningJobChange(job);
+    if (onActiveRunningJobChange) settlePressSave(onActiveRunningJobChange(job));
   };
 
   const setActiveMachineSelection = (valOrFn) => {
     setActiveMachineSelectionState(prev => {
       const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
-      if (onMachineAssignmentChange) onMachineAssignmentChange(next);
+      if (onMachineAssignmentChange) settlePressSave(onMachineAssignmentChange(next));
       return next;
     });
   };
@@ -554,12 +561,8 @@ export default function ProductionScheduler({
       const inkGsmInSpeed = order.inkGsmInSpeed || matchingProdRecord?.inkGsmInSpeed || inkGsm;
       const printedOutputKg = order.printedOutputKg || matchingProdRecord?.qtyFirstPassL1 || printLayerNetKg || printQtyKg;
 
-      // STRICT CHECK: Only a job with an active press run (started and not yet ended) is 'In Production'
-      const isCurrentlyInProduction = Boolean(
-        order.printingStatus === 'In Production' || 
-        matchingProdRecord?.printingStatus === 'In Production' || 
-        (printingStartTime && !printingEndTime)
-      );
+      // A press run is the order's own open print, not a sibling production record that shares a job code.
+      const isCurrentlyInProduction = isActivePrintRun(order);
 
       const isPrintingCompleted = Boolean(
         printingEndTime || 
@@ -762,9 +765,7 @@ export default function ProductionScheduler({
       updated[idxA] = targetOrder.id;
       updated[idxB] = orderId;
 
-      if (onReorderQueue) {
-        onReorderQueue(updated);
-      }
+      if (onReorderQueue) settlePressSave(onReorderQueue(updated));
       return updated;
     });
   };
@@ -809,7 +810,7 @@ export default function ProductionScheduler({
     setQueueOrderIds(prev => {
       const remaining = prev.filter(id => id !== order.id);
       const updated = [order.id, ...remaining];
-      if (onReorderQueue) onReorderQueue(updated);
+      if (onReorderQueue) settlePressSave(onReorderQueue(updated));
       return updated;
     });
     setActiveRunningJob(startedOrder);
@@ -1712,6 +1713,9 @@ export default function ProductionScheduler({
                 const assignedMachine = rotogravureMachines.find(m => m.id === assignedMachineId) || rotogravureMachines[0];
 
                 const isSelfRunning = Boolean(order.isCurrentlyInProduction);
+                const machineConflict = isSelfRunning
+                  ? null
+                  : findActivePrintConflict(allEnrichedOrders, { orderId: order.id, machineId: assignedMachineId });
                 const prevOrder = idx > 0 ? filteredQueue[idx - 1] : null;
                 const nextOrder = idx < filteredQueue.length - 1 ? filteredQueue[idx + 1] : null;
 
@@ -1979,7 +1983,7 @@ export default function ProductionScheduler({
                             padding: '9px 16px',
                             fontSize: '0.88rem',
                             fontWeight: '900',
-                            background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                            background: machineConflict ? '#b45309' : 'linear-gradient(135deg, #059669 0%, #047857 100%)',
                             color: '#ffffff',
                             borderRadius: '8px',
                             display: 'flex',
@@ -1988,9 +1992,10 @@ export default function ProductionScheduler({
                             gap: '8px',
                             boxShadow: '0 2px 8px rgba(5, 150, 105, 0.25)'
                           }}
+                          title={machineConflict ? activePrintConflictMessage(machineConflict, machines) : 'Start this job on the selected press'}
                           onClick={() => handleStartJobClick(order)}
                         >
-                          <PlayCircle size={16} /> Start Job
+                          <PlayCircle size={16} /> {machineConflict ? 'End the current run first' : 'Start Job'}
                         </button>
                       )}
                     </div>
