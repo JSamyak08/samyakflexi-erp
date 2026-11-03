@@ -2382,7 +2382,7 @@ export default function DocumentSettings({
                 🎞️ Film Substrates & Physical Density Master
               </h3>
               <p style={{ margin: '4px 0 0 0', fontSize: '0.83rem', color: '#64748b' }}>
-                System-wide controlled list of film substrate types and physical densities (g/cm³). Controlled from settings and used across Inward GRN, Job Master, Cylinder Cards, and Production Meterage calculations.
+                System-wide controlled list of film substrate types and physical densities (g/cm³). The press-run meters check uses a roll or stock-item density first, then this list. Add CCPET or Nylon here to override the built-in 1.40 and 1.14.
               </p>
             </div>
 

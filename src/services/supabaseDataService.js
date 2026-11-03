@@ -7,7 +7,8 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl } from './supabaseStorageService';
 import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 import { assertPersistableMeasures } from '../utils/productionRecordQuality';
-import { measureColumnsForSave, netUsableForSave } from '../utils/jobMasterGuardrails';
+import { finiteNumber, measureColumnsForSave, netUsableForSave } from '../utils/jobMasterGuardrails';
+import { displayItemName } from './inventoryIdentity';
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
@@ -549,21 +550,22 @@ export async function deleteClientFromSupabase(clientId) {
 // ============================================================================
 
 export function formatFilmItemName(filmType, widthMm, micron, rawName = '', metallocenePct = '') {
+  const safeRawName = displayItemName(rawName);
   let fType = String(filmType || '').trim();
   let width = String(widthMm || '').replace(/[^0-9.]/g, '');
   let mic = String(micron || '').replace(/[^0-9.]/g, '');
   let mPct = String(metallocenePct || '').trim();
 
   // If mPct was not explicitly passed, attempt to extract from rawName if film is eligible
-  if (!mPct && rawName && isMetalloceneEligibleFilm(filmType || rawName)) {
-    const pctMatch = String(rawName).match(/(\d{1,2}%)/);
+  if (!mPct && safeRawName && isMetalloceneEligibleFilm(filmType || safeRawName)) {
+    const pctMatch = String(safeRawName).match(/(\d{1,2}%)/);
     if (pctMatch) {
       mPct = pctMatch[1];
     }
   }
 
-  if ((!fType || !width || !mic) && rawName) {
-    const cleanRaw = String(rawName).replace(/µ/g, 'Micron');
+  if ((!fType || !width || !mic) && safeRawName) {
+    const cleanRaw = String(safeRawName).replace(/µ/g, 'Micron');
     if (!fType) {
       const matchType = cleanRaw.match(/^(PET|BOPP|METPET|CPP|LDPE|LLDPE|POLY|BON|PVC|ALU|MATTA|NMET|MMET|MGP|NGP)/i);
       fType = matchType ? matchType[1].toUpperCase() : cleanRaw.split(/[\s-]/)[0].toUpperCase();
@@ -679,6 +681,16 @@ export function sanitizeInventoryItem(rawItem) {
 
   let rawName = String(cleanRaw.itemName || cleanRaw.item_name || '').trim();
   let extractedMeta = {};
+  if (cleanRaw.metadata && typeof cleanRaw.metadata === 'object' && !Array.isArray(cleanRaw.metadata)) {
+    extractedMeta = { ...cleanRaw.metadata };
+  } else if (typeof cleanRaw.metadata === 'string' && cleanRaw.metadata.trim().startsWith('{')) {
+    try {
+      const parsedMeta = JSON.parse(cleanRaw.metadata);
+      if (parsedMeta && typeof parsedMeta === 'object') extractedMeta = parsedMeta;
+    } catch (e) {
+      extractedMeta = {};
+    }
+  }
 
   // Thoroughly unpack any ||| envelopes (single or nested)
   while (rawName.includes('|||')) {
@@ -746,12 +758,17 @@ export function sanitizeInventoryItem(rawItem) {
 
   const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
 
-  const filmType = isFilm ? (extractedMeta.filmType || cleanRaw.filmType || (rawName ? rawName.split(/[\s-]/)[0] : 'PET')) : '';
-  const micron = isFilm 
-    ? ((extractedMeta.micron !== undefined && extractedMeta.micron !== null && extractedMeta.micron !== '-') ? extractedMeta.micron : (cleanRaw.micron && cleanRaw.micron !== '-' ? cleanRaw.micron : 12)) 
+  const columnFilm = String(cleanRaw.film_type || cleanRaw.filmType || '').trim();
+  const columnMicron = finiteNumber(cleanRaw.micron);
+  const columnWidth = finiteNumber(cleanRaw.width_mm ?? cleanRaw.widthMm);
+  const metaMicron = finiteNumber(extractedMeta.micron);
+  const metaWidth = finiteNumber(extractedMeta.widthMm ?? extractedMeta.width_mm);
+  const filmType = isFilm ? (columnFilm || extractedMeta.filmType || (rawName ? rawName.split(/[\s-]/)[0] : 'PET')) : '';
+  const micron = isFilm
+    ? (columnMicron !== null ? columnMicron : (metaMicron !== null ? metaMicron : 12))
     : '-';
-  const widthMm = isFilm 
-    ? ((extractedMeta.widthMm !== undefined && extractedMeta.widthMm !== null && extractedMeta.widthMm !== '-') ? extractedMeta.widthMm : (cleanRaw.widthMm && cleanRaw.widthMm !== '-' ? cleanRaw.widthMm : 1000)) 
+  const widthMm = isFilm
+    ? (columnWidth !== null ? columnWidth : (metaWidth !== null ? metaWidth : 1000))
     : '-';
   const metallocenePct = isFilm 
     ? (extractedMeta.metallocenePct || cleanRaw.metallocene_pct || cleanRaw.metallocenePct || (rawName && isMetalloceneEligibleFilm(filmType) ? (rawName.match(/(\d{1,2}%)/)?.[1] || '') : ''))
@@ -779,7 +796,8 @@ export function sanitizeInventoryItem(rawItem) {
     ...cleanRaw,
     id: String(cleanRaw.id || cleanRaw.item_code || 'INVT-0001'),
     itemCode: cleanRaw.itemCode || cleanRaw.item_code || String(cleanRaw.id),
-    itemName: cleanItemName,
+    itemName: displayItemName(cleanItemName) || cleanItemName,
+    item_name: displayItemName(cleanItemName) || cleanItemName,
     category: category,
     filmType: isFilm ? filmType : '',
     micron: micron,
@@ -794,7 +812,7 @@ export function sanitizeInventoryItem(rawItem) {
     location: cleanRaw.location || extractedMeta.location || 'Store Bay',
     lastVendor: cleanRaw.lastVendor || extractedMeta.lastVendor || '',
     lastBatch: cleanRaw.lastBatch || extractedMeta.lastBatch || '',
-    density: cleanRaw.density !== undefined ? cleanRaw.density : (extractedMeta.density !== undefined ? extractedMeta.density : (isFilm ? 1.4 : 1.0)),
+    density: finiteNumber(cleanRaw.density) ?? finiteNumber(extractedMeta.density) ?? (isFilm ? 1.4 : 1.0),
     substrateOrGrade: cleanRaw.substrateOrGrade || cleanRaw.substrate_grade || extractedMeta.substrateOrGrade || (isFilm ? filmType : (cleanRaw.grade || cleanRaw.subType || '')),
     grade: cleanRaw.grade || extractedMeta.grade || (isFilm ? filmType : ''),
     subType: cleanRaw.subType || extractedMeta.subType || '',
@@ -817,9 +835,9 @@ export function mapInventoryItemToDbPayload(item) {
   const isFilm = category === 'Film Substrates' || category === 'Film' || category === 'Lamination Films';
   const filmTypeStr = isFilm ? (clean.filmType || (clean.itemName ? clean.itemName.split(' ')[0] : 'PET')) : '';
   const itemCodeStr = clean.itemCode || clean.id || 'INVT-0001';
-  const itemNameStr = clean.itemName;
+  const itemNameStr = displayItemName(clean.itemName) || clean.itemName;
 
-  // Pack clean metadata properties into serializable object
+  // Specs live on real columns. Extra fields go in metadata, not after the name.
   const meta = {
     category: category,
     filmType: filmTypeStr,
@@ -846,13 +864,12 @@ export function mapInventoryItemToDbPayload(item) {
     isActive: clean.isActive !== false
   };
 
-  const combinedItemName = `${itemNameStr} ||| ${JSON.stringify(meta)}`;
-
   // Live inventory has stock_qty_kg, not available_qty_kg. Available quantity is stored there.
   return {
     id: String(clean.id),
     item_code: itemCodeStr,
-    item_name: combinedItemName,
+    item_name: itemNameStr,
+    metadata: meta,
     metallocene_pct: clean.metallocenePct || null,
     stock_qty_kg: Number(clean.availableQtyKg ?? clean.stock_qty_kg ?? 0) || 0,
     unit_price: Number(clean.unitPrice ?? 0) || 0,
