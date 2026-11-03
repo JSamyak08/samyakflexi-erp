@@ -21,7 +21,7 @@ import {
   FileCode,
   X,
   Building2,
-  Lock,
+  Lock as LockIcon,
   Unlock,
   Clock,
   FileSpreadsheet,
@@ -1087,7 +1087,7 @@ export default function CylinderManagement({
               </button>
             ) : (
               <span className="badge badge-warning" style={{ fontSize: '0.8rem', padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Lock size={14} /> View-Only Access ({userRole})
+                <LockIcon size={14} /> View-Only Access ({userRole})
               </span>
             )}
           </div>
@@ -1174,7 +1174,7 @@ export default function CylinderManagement({
                           <div>
                             <div style={{ fontWeight: '700', color: 'var(--primary-brand)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
                               {c.sku}
-                              {isLocked && <Lock size={12} style={{ color: '#d97706' }} title={`Locked by ${c.lockedBy || 'Admin'}`} />}
+                              {isLocked && <LockIcon size={12} style={{ color: '#d97706' }} title={`Locked by ${c.lockedBy || 'Admin'}`} />}
                             </div>
                             {c.artworkUrl ? (
                               <button 
@@ -1319,7 +1319,7 @@ export default function CylinderManagement({
                               onClick={() => handleToggleLock(c)} 
                               title={isLocked ? "Unlock Cylinder Specifications" : "Lock Cylinder Specifications"}
                             >
-                              {isLocked ? <Lock size={14} style={{ color: '#d97706' }} /> : <Unlock size={14} />}
+                              {isLocked ? <LockIcon size={14} style={{ color: '#d97706' }} /> : <Unlock size={14} />}
                             </button>
                           )}
 

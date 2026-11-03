@@ -3,7 +3,7 @@ import { pushSlugState } from '../utils/slugRouter';
 import { 
   Users, 
   UserPlus, 
-  Lock, 
+  Lock as LockIcon,
   CheckCircle2, 
   Search,
   Edit3,
@@ -263,7 +263,7 @@ export default function UserManagement({
       {!isAuthorized ? (
         /* Permission Locked Notice */
         <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a' }}>
-          <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
+          <LockIcon size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
           <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
             User Management Access Restricted to Admin Role Only
           </h3>

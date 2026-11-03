@@ -23,7 +23,7 @@ import {
   Printer,
   Play,
   Scan,
-  Lock,
+  Lock as LockIcon,
   X,
   QrCode,
   Zap,
@@ -3493,7 +3493,7 @@ export default function ProductionRecordManagement({
                   </p>
                 </div>
                 <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <Lock size={12} /> Visible Only to Admin Role
+                  <LockIcon size={12} /> Visible Only to Admin Role
                 </span>
               </div>
 
@@ -3715,7 +3715,7 @@ export default function ProductionRecordManagement({
               </div>
             ) : (
             <div style={{ marginTop: '20px', padding: '14px 18px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Lock size={16} /> <span>Financial Profitability, Revenue Margins & Cost Variance reports are restricted to the <b>Admin Role</b>.</span>
+              <LockIcon size={16} /> <span>Financial Profitability, Revenue Margins & Cost Variance reports are restricted to the <b>Admin Role</b>.</span>
             </div>
           )}
         </div>

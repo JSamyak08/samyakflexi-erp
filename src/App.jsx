@@ -35,7 +35,7 @@ import {
   Users,
   Bell,
   LogOut,
-  Lock,
+  Lock as LockIcon,
   ClipboardList,
   Database,
   UserCheck,
@@ -5499,8 +5499,8 @@ export default function App() {
 
         {!routeInfo.unknown && !isTabAllowed(activeTab) && (
           <div className="glass-panel" data-screen="forbidden" style={{ padding: '40px', textAlign: 'center', background: '#fffbeb', border: '1px solid #fde68a', margin: '20px 0' }}>
-            {/* lucide Lock, not window.Lock. Chrome's Web Locks API throws Illegal constructor when called as a component. */}
-            <Lock size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
+            {/* LockIcon, not window.Lock. The Web Locks API throws Illegal constructor when rendered as a component. */}
+            <LockIcon size={48} style={{ color: '#d97706', marginBottom: '12px' }} />
             <h3 style={{ fontSize: '1.2rem', fontWeight: '700', color: '#b45309' }}>
               Module Access Restricted for Role ({rawRoleNames(currentUser).join(', ') || 'Guest'})
             </h3>
