@@ -1,35 +1,15 @@
 /**
- * One QC-overdue digest per plant day.
- * Inventory page loads must not call this. App boot may call it once;
- * a scheduled server job is the intended follow-up (see the PR).
+ * QC approvals that have waited more than 12 hours.
+ * Opening Inventory, or any other page, must not email.
+ * sendQcOverdueAlert runs only when a person clicks the button on that page.
+ * Recipients are limited to @samyakinternational.in inside notifyQcOverdueDigest.
  */
 import { notifyQcOverdueDigest } from './emailService';
-import { getEmailTemplates } from './settingsService';
-import { claimGrnEscalations, hasQcEscalationSince } from './supabaseDataService';
 
-const PLANT_TIME_ZONE = 'Asia/Kolkata';
-const SESSION_KEY = 'samyak_qc_escalation_digest_day';
 const SLA_HOURS = 12;
 
-let generation = 0;
-let running = null;
-let queued = null;
-
 export function cancelQcOverdueEscalationDigest() {
-  generation += 1;
-}
-
-function plantDayKey(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: PLANT_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(date);
-}
-
-function plantDayStartIso(date = new Date()) {
-  return new Date(`${plantDayKey(date)}T00:00:00+05:30`).toISOString();
+  // Kept so older callers can cancel a pass. Nothing is in flight from a page load.
 }
 
 function parseGrnTime(dateStr) {
@@ -50,10 +30,11 @@ function isPendingQc(grn) {
     || qcStatus === 'Pending QC Approval' || qcStatus === 'Pending QC';
 }
 
-export function selectOverdueGrns(grns, now = Date.now()) {
+export function selectOverdueGrns(grns, now = Date.now(), { includeAlreadySent = false } = {}) {
   const overdue = [];
   for (const grn of grns || []) {
-    if (!grn || grn.escalated_at || grn.escalatedAt || grn.qcEscalationSent) continue;
+    if (!grn) continue;
+    if (!includeAlreadySent && (grn.escalated_at || grn.escalatedAt || grn.qcEscalationSent)) continue;
     if (!isPendingQc(grn)) continue;
     const grnTime = parseGrnTime(grn.receivedDate || grn.created_at || grn.inwardDatetime);
     if (Number.isNaN(grnTime)) continue;
@@ -65,97 +46,28 @@ export function selectOverdueGrns(grns, now = Date.now()) {
   return overdue;
 }
 
-function sessionAlreadyRanToday() {
-  try {
-    return sessionStorage.getItem(SESSION_KEY) === plantDayKey();
-  } catch (err) {
-    return false;
-  }
-}
-
-function markSessionRanToday() {
-  try {
-    sessionStorage.setItem(SESSION_KEY, plantDayKey());
-  } catch (err) {
-    // Private mode can block sessionStorage. The database claim still stops a second send.
-  }
-}
-
-async function runOnce({ grns, users, isCancelled, token }) {
-  const cancelled = () => token !== generation || (typeof isCancelled === 'function' && isCancelled());
-  if (cancelled() || sessionAlreadyRanToday()) return { claimed: [] };
-
-  const overdue = selectOverdueGrns(grns);
-  if (overdue.length === 0) {
-    markSessionRanToday();
-    return { claimed: [] };
-  }
-
-  // Enabled is checked inside the mailer, but do it first so a disabled
-  // template never stamps escalated_at.
-  const template = getEmailTemplates().grn_qc_escalation_12h;
-  if (!template || template.enabled === false) {
-    markSessionRanToday();
-    return { claimed: [], skipped: 'disabled' };
-  }
-
-  if (cancelled()) return { claimed: [] };
-
-  const alreadyToday = await hasQcEscalationSince(plantDayStartIso());
-  if (alreadyToday === null) {
-    console.warn('[QC digest] escalated_at is not available. No escalation email was sent.');
-    markSessionRanToday();
-    return { claimed: [], skipped: 'column-missing' };
-  }
-  if (alreadyToday) {
-    markSessionRanToday();
-    return { claimed: [], skipped: 'already-sent-today' };
-  }
-  if (cancelled()) return { claimed: [] };
-
-  const claimedAt = new Date().toISOString();
-  const claimed = await claimGrnEscalations(overdue.map(grn => grn.id), claimedAt);
-  if (claimed === null) {
-    console.warn('[QC digest] Could not claim GRNs. No escalation email was sent.');
-    markSessionRanToday();
-    return { claimed: [], skipped: 'claim-failed' };
-  }
-  markSessionRanToday();
-  if (cancelled() || claimed.length === 0) return { claimed };
-
-  const claimedIds = new Set(claimed.map(row => String(row.id)));
-  const digestRows = overdue.filter(grn => claimedIds.has(String(grn.id)));
-  if (digestRows.length === 0 || cancelled()) return { claimed };
-
-  await notifyQcOverdueDigest({ grns: digestRows, users }).catch(err => {
-    console.warn('[QC digest] Email failed after GRNs were claimed. They will not be retried today.', err);
-  });
-  return { claimed };
+/**
+ * Page loads used to call this after GRNs arrived. It must not email.
+ */
+export function runQcOverdueEscalationDigest() {
+  return Promise.resolve({ claimed: [], sent: false, skipped: 'not-sent-on-load' });
 }
 
 /**
- * At most one attempt per browser session per plant day.
- * A newer call replaces a cancelled in-flight pass instead of stacking sends.
+ * Send the QC-overdue list. Call this only from the Inventory button.
+ * @param {{ grns?: array, users?: array, now?: number, notify?: function }} input
  */
-export function runQcOverdueEscalationDigest(options) {
-  if (sessionAlreadyRanToday()) return Promise.resolve({ claimed: [] });
-  queued = options;
-  if (running) return running;
-  running = (async () => {
-    let last = { claimed: [] };
-    while (queued) {
-      const next = queued;
-      queued = null;
-      last = await runOnce({ ...next, token: generation });
-    }
-    return last;
-  })().finally(() => {
-    running = null;
-    if (queued) {
-      const next = queued;
-      queued = null;
-      runQcOverdueEscalationDigest(next);
-    }
-  });
-  return running;
+export async function sendQcOverdueAlert({ grns, users, now = Date.now(), notify = notifyQcOverdueDigest } = {}) {
+  const overdue = selectOverdueGrns(grns, now, { includeAlreadySent: true });
+  if (overdue.length === 0) {
+    return { sent: false, overdue, message: 'No QC approvals are overdue.' };
+  }
+  const result = await notify({ grns: overdue, users });
+  const sent = Boolean(result && result.success !== false);
+  return {
+    sent,
+    overdue,
+    result,
+    message: result?.message || (sent ? 'QC overdue alert sent.' : 'The QC overdue email was not sent.')
+  };
 }

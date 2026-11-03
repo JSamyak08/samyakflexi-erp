@@ -131,7 +131,7 @@ import {
 } from './utils/dispatchPacking';
 import { recordDispatchPackingConsumption } from './services/dispatchPacking';
 import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './services/supabaseClient';
-import { cancelQcOverdueEscalationDigest, runQcOverdueEscalationDigest } from './services/qcEscalationDigest';
+import { cancelQcOverdueEscalationDigest } from './services/qcEscalationDigest';
 import { publishPrintingDeadlineDigest } from './services/printingDeadlineDigest';
 import { 
   fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
@@ -1514,21 +1514,8 @@ export default function App() {
           setGrns(cleanGRNs);
           remember('inventory', 'samyak_cache_grns', cleanGRNs);
           supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
-          // One digest for the whole plant day, not one email per Inventory visit.
-          // Do not await: a slow SMTP call must not hold the loader.
-          const digestUsers = Array.isArray(supaUsers) ? supaUsers : [];
-          void runQcOverdueEscalationDigest({
-            grns: cleanGRNs,
-            users: digestUsers,
-            isCancelled: () => !isMounted
-          }).then(result => {
-            if (!isMounted || !result?.claimed?.length) return;
-            const stamped = new Map(result.claimed.map(row => [String(row.id), row.escalated_at]));
-            setGrns(prev => prev.map(grn => {
-              const stamp = stamped.get(String(grn.id));
-              return stamp ? { ...grn, escalated_at: stamp, escalatedAt: stamp } : grn;
-            }));
-          }).catch(err => console.warn('[QC digest] Skipped:', err));
+          // GRNs loading, including when Inventory opens, must not send mail.
+          // The QC-overdue list is shown on that page and emailed only from its button.
         }
 
         if (Array.isArray(supaProd)) {
@@ -2372,6 +2359,7 @@ export default function App() {
       reminders: printingDeadlineReminders,
       users,
       plantDay,
+      sendEmail: false,
     }).then((result) => {
       if (cancelled || !result) return;
       deadlineDigestKeyRef.current = signature;

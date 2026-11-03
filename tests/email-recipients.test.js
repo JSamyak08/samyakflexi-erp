@@ -10,6 +10,7 @@ import {
   EXTERNAL_MANUAL_EMAIL_ENV,
   companyRecipients,
   externalManualDeliveryEnabled,
+  internalNotificationRecipients,
   isCompanyAddress,
   legacyFilterInternalRecipients,
   normalizeKind,
@@ -187,6 +188,19 @@ test('a company address stays internal even when the local part says customer', 
   assert.equal(automated.cc, '');
 });
 
+test('internal notifications keep only the company domain and do not fall through to a vendor', () => {
+  assert.equal(
+    internalNotificationRecipients('orders@vendor.com, QA@samyakinternational.in, buyer@client.com'),
+    'QA@samyakinternational.in',
+  );
+  assert.equal(
+    internalNotificationRecipients('orders@vendor.com, buyer@client.com', 'admin@samyakinternational.in'),
+    'admin@samyakinternational.in',
+  );
+  assert.equal(internalNotificationRecipients('buyer@client.com', ''), '');
+  assert.equal(internalNotificationRecipients('boss@plant.com', 'vendor@gmail.com'), '');
+});
+
 test('the legacy helper only keeps the company domain', () => {
   assert.equal(legacyFilterInternalRecipients('boss@plant.com, a@samyak.com, b@samyakflexi.com'), ADMIN_REROUTE);
   assert.equal(
@@ -269,6 +283,9 @@ test('notification callers are automated and the test-send button is manual', ()
     const body = emailService.slice(start, next === -1 ? emailService.length : next);
     assert.match(body, /kind:\s*'automated'/, name);
     assert.doesNotMatch(body, /kind:\s*'manual'/, name);
+    if (name === 'notifyQcOverdueDigest') {
+      assert.match(body, /internalNotificationRecipients/);
+    }
   }
 
   const sender = emailService.slice(
@@ -289,9 +306,15 @@ test('notification callers are automated and the test-send button is manual', ()
 
   const digest = readSource('src/services/qcEscalationDigest.js');
   assert.match(digest, /notifyQcOverdueDigest/);
+  assert.match(digest, /sendQcOverdueAlert/);
+  assert.match(digest, /not-sent-on-load/);
   const app = readSource('src/App.jsx');
-  assert.match(app, /runQcOverdueEscalationDigest/);
+  assert.doesNotMatch(app, /runQcOverdueEscalationDigest/);
+  assert.match(app, /sendEmail:\s*false/);
   assert.doesNotMatch(app, /dispatchOverdueQcAlerts/);
+  assert.match(inventory, /sendQcOverdueAlert/);
+  assert.match(inventory, /data-testid="send-qc-overdue-email"/);
+  assert.doesNotMatch(inventory, /runQcOverdueEscalationDigest/);
 
   const indents = readSource('src/components/ConsumablesAndIndents.jsx');
   assert.match(indents, /notifyPurchaseIndentCreated\(/);
