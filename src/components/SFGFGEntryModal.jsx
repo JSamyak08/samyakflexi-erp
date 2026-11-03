@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import SearchableSelect from './SearchableSelect';
-import { FILM_DENSITIES, getFilmSubstrateDensity, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
+import { FILM_DENSITIES, getFilmSubstrateDensity, getFilmSubstrateMap, calculateFilmRollLength, COMPANY_DETAILS } from '../factoryStore';
 import { getStorageBays } from '../services/settingsService';
 import { codeText } from '../utils/barcodeCode';
 import {
@@ -615,6 +615,7 @@ export default function SFGFGEntryModal({
       order,
       jobMasters,
       role: currentUser,
+      densities: getFilmSubstrateMap(),
       entry: {
         orderId: currentJob.orderId,
         machineName,

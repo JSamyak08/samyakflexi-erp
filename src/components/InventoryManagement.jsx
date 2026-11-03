@@ -85,7 +85,7 @@ import {
   receiptLinesLinkError,
   validateCapturedLines
 } from '../services/grnDocument';
-import { findInventoryItemById, planManualStockSave, planReceiptStockLink, preferMasterItem } from '../services/inventoryIdentity';
+import { displayItemName, findInventoryItemById, planManualStockSave, planReceiptStockLink, preferMasterItem } from '../services/inventoryIdentity';
 import { canManageInwardGrn, cancelInwardGrn, grnChangeBlockReason, rollsForGrn } from '../services/grnLifecycle';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
@@ -5683,8 +5683,8 @@ export default function InventoryManagement({
                   const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
                   const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
                   const title = (isFilm && !item.preserveItemName)
-                    ? formatFilmItemName(item.filmType, item.widthMm, item.micron, item.itemName)
-                    : (item.itemName ? item.itemName.replace(/µ/g, 'Micron') : (item.category || item.filmType || 'Stock Item'));
+                    ? formatFilmItemName(item.filmType, item.widthMm, item.micron, displayItemName(item.itemName))
+                    : (item.itemName ? displayItemName(item.itemName) : (item.category || item.filmType || 'Stock Item'));
                   const unitStr = item.unit || 'kg';
                   const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
                   const availQty = parseFloat(item.availableQtyKg) || 0;
@@ -6633,7 +6633,7 @@ export default function InventoryManagement({
                       return (
                         <tr key={item.id} style={{ background: diff < 0 ? '#fff5f5' : (diff > 0 ? '#f0fdf4' : 'transparent') }}>
                           <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>{item.id}</td>
-                          <td style={{ fontWeight: '600' }}>{item.itemName || (isFilm ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))}</td>
+                          <td style={{ fontWeight: '600' }}>{displayItemName(item.itemName) || (isFilm ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))}</td>
                           <td>{isFilm && item.micron && item.micron !== '-' ? `${item.micron}µ / ${item.widthMm}mm` : '—'}</td>
                           <td style={{ fontWeight: '700' }}>{(item.availableQtyKg ?? 0).toLocaleString()} {item.unit || 'kg'}</td>
                           <td style={{ width: '170px' }}>

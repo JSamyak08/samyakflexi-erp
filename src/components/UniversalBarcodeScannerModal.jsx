@@ -41,6 +41,7 @@ import {
   textFrom
 } from '../utils/barcodeCode';
 import { deletedBarcodeMessage, findRetiredBarcode } from '../utils/barcodeRegistry';
+import { displayItemName } from '../services/inventoryIdentity';
 import { loadDeletedBarcodes } from '../services/supabaseDataService';
 
 /**
@@ -397,7 +398,7 @@ export default function UniversalBarcodeScannerModal({
       });
 
       const resolvedCategory = textFrom(matchedRoll.category, linkedGrn?.category, linkedItem?.category) || (codeStartsWith(matchedRoll.barcodeId, 'CON-BC') ? 'Chemicals & Solvents' : '');
-      const resolvedItemName = matchedRoll.itemName || linkedGrn?.itemName || linkedItem?.item_name || linkedItem?.itemName || (resolvedCategory ? `${resolvedCategory} Material` : 'Inward Stock Material');
+      const resolvedItemName = displayItemName(matchedRoll.itemName || linkedGrn?.itemName || linkedItem?.item_name || linkedItem?.itemName) || (resolvedCategory ? `${resolvedCategory} Material` : 'Inward Stock Material');
       const resolvedVendor = matchedRoll.vendorName || matchedRoll.vendor || linkedGrn?.vendor_name || linkedGrn?.vendorName || linkedGrn?.supplier || linkedItem?.vendor || linkedItem?.vendor_name || 'N/A';
       const resolvedBatch = matchedRoll.batchNo || matchedRoll.lotNo || linkedGrn?.batch_no || linkedGrn?.batchNo || 'N/A';
       const resolvedInvoice = matchedRoll.invoiceNo || matchedRoll.invoice_no || linkedGrn?.invoice_number || linkedGrn?.invoiceNumber || linkedGrn?.invoiceNo || 'N/A';
@@ -728,12 +729,12 @@ export default function UniversalBarcodeScannerModal({
         entityCategory: 'Raw Material Inventory Master Item',
         badgeColor: '#0284c7',
         badgeBg: '#f0f9ff',
-        title: matchedItem.item_name || matchedItem.itemName,
+        title: displayItemName(matchedItem.item_name || matchedItem.itemName),
         code: matchedItem.item_code || matchedItem.itemCode || matchedItem.id,
         raw: matchedItem,
         properties: [
           { label: 'Item Code', value: matchedItem.item_code || matchedItem.itemCode || matchedItem.id, isCode: true },
-          { label: 'Item Name', value: matchedItem.item_name || matchedItem.itemName || 'N/A' },
+          { label: 'Item Name', value: displayItemName(matchedItem.item_name || matchedItem.itemName) || 'N/A' },
           { label: 'Category', value: matchedItem.category || 'N/A' },
           { label: 'Film Type', value: matchedItem.film_type || matchedItem.filmType || 'N/A' }
         ]
