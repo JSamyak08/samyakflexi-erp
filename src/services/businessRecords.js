@@ -796,7 +796,15 @@ function isMissingRelation(error) {
  * A missing high_scrap_registry table (migration not applied yet) does not
  * block the scrap-store write. QC scrap rows are not in the delete list.
  */
+function missingWastageRpc(error) {
+  const message = String(error?.message || error?.details || '');
+  return /record_printing_wastage|schema cache|could not find the function|PGRST202/i.test(message);
+}
+
 export async function saveJobWastagePlan(supabase, plan) {
+  const recorded = await supabase.rpc('record_printing_wastage', { p_plan: plan || {} });
+  if (!recorded.error) return plan?.scrap?.upserts || [];
+  if (!missingWastageRpc(recorded.error)) throw recorded.error;
   const scrap = await savePrintingScrapEntries(supabase, plan?.scrap || plan);
   const deleteId = plan?.registry?.deleteId;
   const upsert = plan?.registry?.upsert;

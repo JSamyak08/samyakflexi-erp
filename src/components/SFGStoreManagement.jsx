@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
+import { labelRoll } from '../utils/printRunCompletion';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { OutputExtraRolls, Substrate2ExtraRolls } from './ConsumeExtraRolls';
 import {
@@ -2158,19 +2159,68 @@ export default function SFGStoreManagement({
                             <tr key={item.id || item.sfgBatchCode} data-testid="sfg-order-roll" style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
                               
                               {/* Barcode / Batch Code */}
-                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '12px 16px' }}>
                                 <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', fontSize: '0.84rem', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', display: 'inline-block' }}>
                                   {item.sfgBatchCode}
                                 </div>
                                 {Array.isArray(item.childRolls) && item.childRolls.length > 0 && (
-                                  <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#475569', whiteSpace: 'normal', maxWidth: '280px', lineHeight: 1.35 }}>
-                                    Rolls: {item.childRolls.map((roll) => roll.barcodeId).filter(Boolean).join(', ')}
-                                    {Number(item.totalMeters) > 0 ? ` · ${Number(item.totalMeters).toLocaleString()} m` : ''}
+                                  <div data-testid="sfg-run-output" style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {item.childRolls.map((roll) => (
+                                      <div key={roll.barcodeId || roll.rollNo} style={{ fontSize: '0.72rem', color: '#334155', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                                        <span style={{ fontFamily: 'monospace', fontWeight: '800' }}>{roll.barcodeId}</span>
+                                        <span>{Number(roll.netWeightKg) > 0 ? `${Number(roll.netWeightKg).toFixed(2)} kg` : ''}</span>
+                                        <span>{Number(roll.lengthMeters) > 0 ? `${Number(roll.lengthMeters).toLocaleString()} m` : ''}</span>
+                                        <button
+                                          type="button"
+                                          data-testid="sfg-child-print-tag"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            setSelectedRollForBarcodeModal(labelRoll(roll, {
+                                              jobName: item.jobName,
+                                              jobCode: item.jobCode,
+                                              orderId: item.orderId,
+                                              clientName: item.clientName,
+                                              filmType: item.filmType,
+                                              micron: item.micron,
+                                              widthMm: item.widthMm
+                                            }));
+                                          }}
+                                          style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', padding: 0 }}
+                                        >
+                                          Print Tag
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                {Array.isArray(item.runBalanceRolls) && item.runBalanceRolls.length > 0 && (
+                                  <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#475569' }}>
+                                    Balance: {item.runBalanceRolls.map((roll) => `${roll.barcodeId}${Number(roll.netWeightKg) > 0 ? ` ${Number(roll.netWeightKg).toFixed(2)} kg` : ''}`).join(', ')}
+                                    {item.runBalanceRolls.map((roll) => (
+                                      <button
+                                        key={roll.barcodeId}
+                                        type="button"
+                                        data-testid="sfg-balance-print-tag"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setSelectedRollForBarcodeModal(labelRoll({ ...roll, rollType: 'RAW_MATERIAL' }, {
+                                            jobName: item.jobName,
+                                            jobCode: item.jobCode,
+                                            orderId: item.orderId,
+                                            filmType: roll.filmType || item.filmType
+                                          }));
+                                        }}
+                                        style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', marginLeft: '6px', padding: 0 }}
+                                      >
+                                        Print Tag
+                                      </button>
+                                    ))}
                                   </div>
                                 )}
                                 <div style={{ marginTop: '4px' }}>
                                   <button
                                     type="button"
+                                    data-testid="sfg-print-tag"
                                     onClick={(e) => { e.stopPropagation(); setSelectedRollForBarcodeModal(item); }}
                                     style={{
                                       background: 'none',

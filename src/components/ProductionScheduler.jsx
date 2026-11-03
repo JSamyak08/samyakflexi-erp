@@ -77,10 +77,10 @@ import {
 } from '../factoryStore';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
-import { saveInventoryRollToSupabase } from '../services/supabaseDataService';
+import PrintRunCompletionSummary from './PrintRunCompletionSummary';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
+import { completionForOrder, printedRollBarcode } from '../utils/printRunCompletion';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
-import { PartialSaveError, writeWithRetry, unsavedItemsMessage } from '../services/guardedWrite';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
   const barcode = String(roll?.barcodeId || roll?.barcode || '').trim().toLowerCase();
@@ -219,6 +219,7 @@ export default function ProductionScheduler({
   jobMasters = [],
   cylinders = [],
   productionRecords = [],
+  sfgGoods = [],
   currentUser,
   initialPressQueueOrder = [],
   initialPressMachineAssignments = {},
@@ -235,7 +236,6 @@ export default function ProductionScheduler({
   onReorderQueue,
   onMachineAssignmentChange,
   onActiveRunningJobChange,
-  onAddRoll,
   onSaveInventoryItem,
   urlParams = {},
   onSectionChange,
@@ -366,6 +366,7 @@ export default function ProductionScheduler({
     { id: 'in-roll-1', barcodeId: '', filmType: '', micron: '', widthMm: '', initialWeightKg: '', consumedWeightKg: '' }
   ]);
   const [selectedRollsForAutoPrint, setSelectedRollsForAutoPrint] = useState(null);
+  const [completionSummary, setCompletionSummary] = useState(null);
   const [isSubmittingEndJob, setIsSubmittingEndJob] = useState(false);
   const [isAutosavingRolls, setIsAutosavingRolls] = useState(false);
   const [lastAutosavedTime, setLastAutosavedTime] = useState(null);
@@ -1195,7 +1196,6 @@ export default function ProductionScheduler({
 
       // Create SFG Barcode Rolls for Database Storage & Automatic Printing
       const createdSfgRolls = [];
-      const unsavedRolls = [];
 
       for (let idx = 0; idx < outputRollsList.length; idx++) {
         const rItem = outputRollsList[idx];
@@ -1203,7 +1203,7 @@ export default function ProductionScheduler({
         const rollWeight = parseFloat(rItem.netWeightKg) || 0;
         if (rollWeight <= 0) continue;
 
-        const barcodeId = `SFG-BC-${grnCode}-${rollSeqNo}`;
+        const barcodeId = printedRollBarcode(endJobTargetOrder.jobCode, endJobTargetOrder.id, rollSeqNo);
 
         const sfgRollObj = {
           id: barcodeId,
@@ -1254,27 +1254,11 @@ export default function ProductionScheduler({
           inputRollsTraceability: inputRollsList
         };
 
-        try {
-          await writeWithRetry(() => saveInventoryRollToSupabase(sfgRollObj));
-          createdSfgRolls.push(sfgRollObj);
-          if (onAddRoll) await onAddRoll(sfgRollObj);
-        } catch (dbErr) {
-          unsavedRolls.push({
-            label: `printed roll ${barcodeId}`,
-            error: dbErr
-          });
-        }
+        createdSfgRolls.push(sfgRollObj);
       }
 
       const rollsForSave = inputRollsList.map((roll) => linkInputRoll(roll, inventoryRolls, inventory));
       const totalInputConsumedKg = rollsForSave.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
-
-      if (unsavedRolls.length > 0) {
-        throw new PartialSaveError(unsavedItemsMessage({
-          completed: `The printing job for "${endJobTargetOrder.jobName}" was NOT marked complete. Rolls that failed are not on the board. Retry End Job — saving the same roll again is safe.`,
-          failed: unsavedRolls
-        }));
-      }
 
       const printWidthMm = finiteNumber(guardrailDecision.fields.printWidthMm ?? recordedPrintWidthMm(matchingJM) ?? endJobTargetOrder.widthMm);
       const inputWidths = inputRollsList.map((roll) => finiteNumber(roll.widthMm)).filter((value) => value !== null);
@@ -1357,22 +1341,35 @@ export default function ProductionScheduler({
         await onUpdateOrder(completedOrder);
       }
       const balanceRolls = Array.isArray(endResult?.balanceRolls) ? endResult.balanceRolls : [];
+      const printedRolls = Array.isArray(endResult?.printedRolls) && endResult.printedRolls.length
+        ? endResult.printedRolls
+        : createdSfgRolls;
+      const consumedRolls = Array.isArray(endResult?.consumedRolls) && endResult.consumedRolls.length
+        ? endResult.consumedRolls
+        : rollsForSave;
       const consumptionWarnings = Array.isArray(endResult?.consumptionWarnings) ? endResult.consumptionWarnings : [];
       if (consumptionWarnings.length > 0) {
         alert(`Some film rolls were not posted to the item ledger:\n${consumptionWarnings.map((warning) => `• ${warning.barcode}: ${warning.reason}`).join('\n')}\n\nLink each barcode to one inventory item, or set an item id, then save again. Nothing was deducted for these rolls.`);
+      }
+      if (endResult?.followUpError && !endResult.followUpError.alreadyAlerted) {
+        alert(endResult.followUpError.message || 'The press run was saved. A follow-up step still needs a retry.');
       }
 
       setIsEndJobModalOpen(false);
       setActiveRunningJob(null);
       setEndJobTargetOrder(null);
-
-      // The database creates balance rolls when the run ends. Show them so the operator can label them.
-      const allRollsToPrint = rollsEligibleForBarcodeLabel([...createdSfgRolls, ...balanceRolls]);
-      if (allRollsToPrint.length > 0) {
-        setSelectedRollsForAutoPrint(allRollsToPrint);
-      } else {
-        alert(`🎉 Printing Run for "${completedOrder.jobName}" Completed & Saved!\n\n• Actual Meters: ${(actualMetersNum || 0).toLocaleString()} m\n• Ink GSM: ${inkGsmNum} g/m²\n• Printed Output: ${outputKgNum} kg (${outputRollsList.length} SFG Rolls)\n• Next Process: ${nextProcessName}\n\nSFG rolls saved to database.`);
-      }
+      setCompletionSummary({
+        jobName: completedOrder.jobName,
+        jobCode: completedOrder.jobCode || completedOrder.id,
+        orderId: completedOrder.id,
+        clientName: completedOrder.clientName || completedOrder.customerName || '',
+        filmType: endData.printFilmType || createdSfgRolls[0]?.filmType || '',
+        meters: actualMetersNum,
+        printedRolls: rollsEligibleForBarcodeLabel(printedRolls),
+        balanceRolls: rollsEligibleForBarcodeLabel(balanceRolls),
+        consumedRolls,
+        outputRecorded: endResult?.outputRecorded !== false
+      });
     } catch (err) {
       console.error("Error ending printing job:", err);
       if (!err?.alreadyAlerted) {
@@ -2259,6 +2256,15 @@ export default function ProductionScheduler({
                         onClick={() => setActiveRunningJob(order)}
                       >
                         <Eye size={14} /> View Details & Artwork
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="print-run-history-output"
+                        className="btn-secondary"
+                        style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}
+                        onClick={() => setCompletionSummary(completionForOrder({ order, sfgGoods, inventoryRolls }))}
+                      >
+                        <Tag size={14} /> Rolls & labels
                       </button>
                     </div>
                   </div>
@@ -3605,6 +3611,17 @@ export default function ProductionScheduler({
       )}
 
       {/* Automatic Barcode Printing Modal for Generated SFG Rolls */}
+      {completionSummary && (
+        <PrintRunCompletionSummary
+          {...completionSummary}
+          onPrint={(rolls) => {
+            const allowed = rollsEligibleForBarcodeLabel(rolls);
+            if (allowed.length) setSelectedRollsForAutoPrint(allowed);
+          }}
+          onClose={() => setCompletionSummary(null)}
+        />
+      )}
+
       {selectedRollsForAutoPrint && (
         <BarcodePrinterModal 
           rolls={selectedRollsForAutoPrint} 

@@ -3056,7 +3056,11 @@ export default function App() {
     const printedOutputKg = parseFloat(endData.printedOutputKg) || parseFloat(order.printLayerNetKg || order.quantityKg || order.quantity || order.orderQtyKg || 0);
 
     let balanceRolls = [];
+    let printedRolls = [];
+    let consumedRolls = [];
+    let serverSavedOutput = false;
     let updatedOrder;
+    const plannedRolls = Array.isArray(endData.rollsBreakdown) ? endData.rollsBreakdown : [];
     try {
       const saved = await recordPrintRun(order.id, 'end', {
         machineId: order.machineId || null,
@@ -3069,9 +3073,27 @@ export default function App() {
         printedOutputKg,
         printingNotes: endData.notes || '',
         inputRollsList: endData.inputRollsList || order.inputRollsList || [],
-        nextProcess: order.nextProcess || null
+        outputRolls: plannedRolls,
+        nextProcess: order.nextProcess || null,
+        jobCode: endData.jobCode || order.jobCode || '',
+        clientName: order.clientName || order.customerName || '',
+        operatorName: endData.operatorName || '',
+        shift: endData.shift || '',
+        machineName: endData.machineName || '',
+        filmType: endData.printFilmType || order.printFilmType || order.filmType || plannedRolls[0]?.filmType || '',
+        micron: endData.printMicron ?? order.micron ?? plannedRolls[0]?.micron ?? null,
+        widthMm: endData.printWidthMm ?? order.printWidthMm ?? order.widthMm ?? plannedRolls[0]?.widthMm ?? null,
+        orderQtyKg: Number(order.quantityKg || order.quantity || order.orderQtyKg || 0),
+        printingPlainSettingWastageKg: parseOptionalKg(endData.printingPlainSettingWastageKg) || 0,
+        printingWastageKg: parseOptionalKg(endData.printingWastageKg) || 0,
+        excessFilmWastageKg: Number(endData.excessFilmWastageKg) || 0,
+        storageBay: plannedRolls[0]?.storageBay || plannedRolls[0]?.locationBay || ''
       });
+      serverSavedOutput = Object.prototype.hasOwnProperty.call(saved || {}, 'printedRolls');
+      printedRolls = Array.isArray(saved?.printedRolls) ? saved.printedRolls : [];
       balanceRolls = Array.isArray(saved?.balanceRolls) ? saved.balanceRolls : [];
+      consumedRolls = Array.isArray(saved?.consumedRolls) ? saved.consumedRolls : [];
+      if (printedRolls.length) endData.rollsBreakdown = printedRolls;
       updatedOrder = applyPrintRunResult({
         ...order,
         printingStatus: 'Completed',
@@ -3189,8 +3211,14 @@ export default function App() {
     });
     updatedRecord.materialsList = filmPlan.materialsList;
     updatedRecord.createdBalanceRolls = balanceRolls;
-    await handleSaveProductionRecord(updatedRecord);
-    await handleSaveSchedule({
+    let followUpError = null;
+    try {
+      await handleSaveProductionRecord(updatedRecord);
+    } catch (error) {
+      followUpError = error;
+    }
+    try {
+      await handleSaveSchedule({
       id: `SCHED-${order.id}`,
       orderId: order.id,
       jobName: order.jobName || '',
@@ -3207,10 +3235,14 @@ export default function App() {
       priority: order.priority || 'Normal',
       totalDurationMins: computedDurationMinutes || 0
     });
+    } catch (error) {
+      followUpError = followUpError || error;
+    }
 
     const filmFollowUps = [];
-
-    const outputRolls = Array.isArray(endData.rollsBreakdown) ? endData.rollsBreakdown : [];
+    const outputRolls = printedRolls.length
+      ? printedRolls
+      : (Array.isArray(endData.rollsBreakdown) ? endData.rollsBreakdown : []);
     if (outputRolls.length > 0) {
       const existingLot = (sfgGoods || []).find(item => item?.sfgBatchCode === printingSfgLotCode(order.id));
       const lot = planPrintingSfgLot({
@@ -3227,28 +3259,61 @@ export default function App() {
         meters: actualMetersPrinted,
         existingLot
       });
+      lot.runBalanceRolls = balanceRolls;
+      lot.runConsumedRolls = consumedRolls;
       lot.storageBay = outputRolls[0]?.storageBay || outputRolls[0]?.locationBay || 'SFG Store (Pre-Lamination)';
       lot.location = lot.storageBay;
       lot.productionDate = new Date().toISOString().split('T')[0];
-      try {
-        await writeWithRetry(() => saveSFGGoodToSupabase(lot));
+      if (!serverSavedOutput) {
+        try {
+          for (const roll of plannedRolls) {
+            await writeWithRetry(() => saveInventoryRollToSupabase(roll));
+          }
+          await writeWithRetry(() => saveSFGGoodToSupabase(lot));
+          printedRolls = plannedRolls;
+        } catch (sfgErr) {
+          filmFollowUps.push({ label: `printed lot ${lot.sfgBatchCode}`, error: sfgErr });
+        }
+      }
+      if (serverSavedOutput || filmFollowUps.length === 0) {
         setSfgGoods(prev => [lot, ...prev.filter(item => item.sfgBatchCode !== lot.sfgBatchCode)]);
-      } catch (sfgErr) {
-        filmFollowUps.push({ label: `printed lot ${lot.sfgBatchCode}`, error: sfgErr });
+        if (printedRolls.length) {
+          setInventoryRolls(prev => [
+            ...printedRolls.map((roll) => ({ ...roll, id: roll.barcodeId, rollType: 'SEMI_FINISHED_GOODS', status: 'In Stock (SFG)' })),
+            ...prev.filter((roll) => !printedRolls.some((printed) => (printed.barcodeId || printed.id) === (roll.barcodeId || roll.id)))
+          ]);
+        }
       }
     }
-    await refreshFilmStock();
+    if (!serverSavedOutput) {
+      try {
+        await refreshFilmStock();
+      } catch (error) {
+        followUpError = followUpError || error;
+      }
+    }
     if (filmFollowUps.length > 0) {
-      const balanceNote = balanceRolls.map((roll) => roll.barcodeId).filter(Boolean).join(', ');
-      throw new PartialSaveError(unsavedItemsMessage({
-        completed: `Printing job "${order.jobName}" (${order.id}) was marked complete. Retry End Job to finish the printed SFG lot. Saving the same rolls again is safe.${balanceNote ? ` Balance rolls to label: ${balanceNote}.` : ''}`,
+      followUpError = followUpError || new PartialSaveError(unsavedItemsMessage({
+        completed: `Printing job "${order.jobName}" (${order.id}) was marked complete. Retry End Job to finish the printed SFG lot. Saving the same rolls again is safe.`,
         failed: filmFollowUps
       }));
     }
 
     logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
-    const consumptionWarnings = await fetchRollConsumptionExceptions({ orderId: order.id });
-    return { balanceRolls, consumptionWarnings };
+    let consumptionWarnings = [];
+    try {
+      consumptionWarnings = await fetchRollConsumptionExceptions({ orderId: order.id });
+    } catch {
+      consumptionWarnings = [];
+    }
+    return {
+      balanceRolls,
+      printedRolls,
+      consumedRolls,
+      consumptionWarnings,
+      followUpError,
+      outputRecorded: serverSavedOutput || (printedRolls.length > 0 && filmFollowUps.length === 0)
+    };
   };
 
   const handleDeleteOrder = async (orderId) => {
@@ -5534,6 +5599,7 @@ export default function App() {
               jobMasters={jobMasters}
               cylinders={cylinders}
               productionRecords={productionRecords}
+              sfgGoods={sfgGoods}
               currentUser={currentUser}
               initialPressQueueOrder={pressQueueOrder}
               initialPressMachineAssignments={pressMachineAssignments}
@@ -6601,6 +6667,7 @@ export default function App() {
             jobMasters={jobMasters}
             cylinders={cylinders}
             productionRecords={productionRecords}
+            sfgGoods={sfgGoods}
             currentUser={currentUser}
             initialPressQueueOrder={pressQueueOrder}
             initialPressMachineAssignments={pressMachineAssignments}
