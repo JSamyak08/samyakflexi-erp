@@ -80,9 +80,27 @@ test('prefix checks do not throw on numeric barcodes and stay case-sensitive', (
   assert.equal(codeStartsWith('RM-BC-1', 'RM-BC'), true);
 });
 
-test('scanner source uses the shared lookup instead of raw trim on barcode identity', () => {
-  const src = fs.readFileSync(new URL('../src/components/UniversalBarcodeScannerModal.jsx', import.meta.url), 'utf8');
-  assert.doesNotMatch(src, /\.barcodeId\s*\|\|\s*[^;\n]*\.id[^;\n]*\)\.trim/);
-  assert.match(src, /findInventoryRollByScan/);
-  assert.match(src, /findDispatchRollByScan/);
+function unsafeBarcodeTrims(source) {
+  const re = /\(\s*(?:[A-Za-z_$][\w$]*\.)?barcodeId\s*\|\|[^()\n]*\)\s*\.trim\s*\(/g;
+  const hits = [];
+  let match;
+  while ((match = re.exec(source))) {
+    const before = source.slice(Math.max(0, match.index - 8), match.index);
+    if (/String\s*$/.test(before)) continue;
+    hits.push(match[0]);
+  }
+  return hits;
+}
+
+test('scanner and inventory do not call trim on a raw barcodeId', () => {
+  for (const relativePath of [
+    'src/components/UniversalBarcodeScannerModal.jsx',
+    'src/components/InventoryManagement.jsx',
+  ]) {
+    const src = fs.readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
+    assert.deepEqual(unsafeBarcodeTrims(src), [], relativePath);
+  }
+  const scanner = fs.readFileSync(new URL('../src/components/UniversalBarcodeScannerModal.jsx', import.meta.url), 'utf8');
+  assert.match(scanner, /findInventoryRollByScan/);
+  assert.match(scanner, /findDispatchRollByScan/);
 });

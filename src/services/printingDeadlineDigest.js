@@ -4,13 +4,14 @@
  * There is no Supabase cron, edge schedule, or Vercel cron in this app.
  * The first load of a plant day by Admin or Sales Manager writes the
  * summary and the per-order stage notices into erp_notifications.
- * A stable id makes a second load the same day a no-op. The summary email
- * uses the existing /api/send-email path and is skipped when that insert
- * did not create a new row.
+ * A stable id makes a second load the same day a no-op.
+ * That load does not send mail. Pass sendEmail: true only from an explicit
+ * user action. Recipients stay on @samyakinternational.in.
  */
 
 import { supabase } from './supabaseClient.js';
 import { buildEmailTemplate, getEmailsForRoles, sendERPEmailNotification } from './emailService.js';
+import { ADMIN_REROUTE, internalNotificationRecipients } from './emailPolicy.js';
 import {
   planPrintingDeadlineNotices,
   plantCalendarDate,
@@ -69,7 +70,11 @@ function summaryHtml(summary) {
 }
 
 async function emailSummary(summary, users) {
-  const to = getEmailsForRoles(users, ['Admin', 'Sales Manager'], 'admin@samyakinternational.in');
+  const to = internalNotificationRecipients(
+    getEmailsForRoles(users, ['Admin', 'Sales Manager'], ADMIN_REROUTE),
+    ADMIN_REROUTE
+  );
+  if (!to) return { success: false, message: 'No @samyakinternational.in recipient for this summary.' };
   const html = buildEmailTemplate({
     title: summary.title,
     badgeText: 'Deadline summary',
@@ -95,7 +100,7 @@ export async function publishPrintingDeadlineDigest({
   plantDay,
   today = new Date(),
   client = supabase,
-  sendEmail = true,
+  sendEmail = false,
 } = {}) {
   const day = plantDay || plantCalendarDate(today);
   const existing = await fetchExistingNotices(client);
