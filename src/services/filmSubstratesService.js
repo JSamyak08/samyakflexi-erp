@@ -8,6 +8,8 @@ export const FILM_SUBSTRATES_STORAGE_KEY = 'samyak_film_substrates_master';
 export const DEFAULT_FILM_SUBSTRATES = [
   { id: 'sub-1', name: "PET", density: 1.40, category: "Polyester", description: "Standard Biaxially-oriented PET film" },
   { id: 'sub-2', name: "METPET", density: 1.40, category: "Metallized Film", description: "Metallized Polyester film for high barrier" },
+  { id: 'sub-19', name: "CCPET", density: 1.40, category: "Polyester", description: "Chemically coated or corona-treated PET. Same density as PET." },
+  { id: 'sub-20', name: "Nylon", density: 1.14, category: "Polyamide", description: "Nylon / polyamide film" },
   { id: 'sub-3', name: "BOPP", density: 0.91, category: "Polypropylene", description: "Biaxially Oriented Polypropylene Film" },
   { id: 'sub-4', name: "Metalised BOPP", density: 0.91, category: "Metallized Film", description: "Metallized BOPP film for barrier packaging" },
   { id: 'sub-5', name: "Pearlised BOPP", density: 0.70, category: "Polypropylene", description: "Cavitated / Pearlised BOPP film for ice creams & confectionery" },

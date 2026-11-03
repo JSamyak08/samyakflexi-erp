@@ -19,7 +19,9 @@ import {
   rollSfgScrapIntoRecord,
   canOverrideFilmType,
   substrateMatchSummary,
-  mergeGuardrailLimits
+  mergeGuardrailLimits,
+  resolveFilmFacts,
+  mergeDensityTable
 } from '../src/utils/jobMasterGuardrails.js';
 
 const petJob = {
@@ -62,7 +64,10 @@ function run(entry, extra = {}) {
     order: extra.order || { id: 'ORD-1', jobName: 'Sugar 1kg', orderQtyKg: 100 },
     jobMasters: extra.jobMasters || [petJob],
     entry,
-    role: extra.role || 'Printing Operator'
+    role: extra.role || 'Printing Operator',
+    inventory: extra.inventory,
+    inventoryRolls: extra.inventoryRolls,
+    densities: extra.densities
   });
 }
 
@@ -82,6 +87,10 @@ test('film type normalisation treats PET Film as PET and leaves an unknown film 
   assert.equal(densityForFilm('BOPP'), 0.91);
   assert.equal(densityForFilm('LDPE'), 0.93);
   assert.equal(densityForFilm('PE'), 0.93);
+  assert.equal(densityForFilm('CCPET'), 1.40);
+  assert.equal(normalizeFilmType('CCPET-680-12'), 'CCPET');
+  assert.equal(normalizeFilmType('CCPET-680-12 ||| {"density":1.4}'), 'CCPET');
+  assert.equal(densityForFilm('Nylon'), 1.14);
   assert.equal(densityForFilm('Mystery Film'), null);
   assert.equal(densityForFilm(''), null);
 });
@@ -482,6 +491,159 @@ test('limit overrides replace defaults without dropping the rest', () => {
   assert.equal(limits.micronBlock, 3);
   assert.equal(limits.defaultRatedSpeedMpm, 180);
   assert.equal(limits.metersKgWarnPct, 8);
+});
+
+const attaJob = {
+  id: 'JM-ATTA',
+  skuCode: 'SKU-ATTA',
+  jobName: 'Masti Atta 5 Kg',
+  printWidthMm: 680,
+  printWidthRecorded: true,
+  layers: [{ filmType: 'CCPET', micron: 12 }]
+};
+
+const ccpetStock = {
+  id: 'INVT-0027',
+  itemCode: 'INVT-0027',
+  category: 'Film Substrates',
+  filmType: 'CCPET',
+  micron: 12,
+  widthMm: 680,
+  density: 1.4,
+  itemName: 'CCPET-680-12 ||| {"category":"Film Substrates","filmType":"CCPET","density":1.4}'
+};
+
+test('CCPET press run uses the stock item density and the roll width, not the job width', () => {
+  const facts = resolveFilmFacts({
+    roll: { filmType: 'CCPET', micron: '12', widthMm: '680', barcodeId: 'RM-BC-20261029-19450G7V' },
+    stockItem: { ...ccpetStock, density: 1.25, widthMm: 680 },
+    jobSpec: { filmType: 'CCPET', micron: 12, printWidthMm: 770, density: 1.40 }
+  });
+  assert.equal(facts.density, 1.25);
+  assert.equal(facts.widthMm, 680);
+  assert.equal(facts.micron, 12);
+  assert.deepEqual(facts.missing, []);
+
+  const fromBarcode = resolveFilmFacts({
+    roll: { barcodeId: 'RM-BC-20261029-19450G7V', filmType: 'CCPET-680-12 ||| {"filmType":"CCPET"}', micron: '12', widthMm: '680' },
+    sourceRoll: { barcodeId: 'RM-BC-20261029-19450G7V', itemId: 'INVT-0027', filmType: 'CCPET', micron: 12, widthMm: 680 },
+    stockItem: ccpetStock,
+    jobSpec: { filmType: 'CCPET', micron: 12, printWidthMm: 770, density: 1.40 }
+  });
+  assert.equal(fromBarcode.density, 1.4);
+  assert.equal(fromBarcode.widthMm, 680);
+
+  const jobWidthOnly = resolveFilmFacts({
+    roll: { filmType: 'CCPET', micron: 12 },
+    jobSpec: { filmType: 'CCPET', micron: 12, printWidthMm: 770, density: 1.40 }
+  });
+  assert.equal(jobWidthOnly.widthMm, 770);
+
+  const result = run(baseEntry({
+    orderId: 'ORD-2026-210',
+    jobMasterId: 'JM-ATTA',
+    machineName: 'Expert 1000 Rotogravure',
+    operatorName: 'nafees',
+    shift: 'Day Shift (8 AM - 8 PM)',
+    meters: 23750,
+    targetMeters: 21313,
+    durationMinutes: 120,
+    printInputKg: 279.08,
+    printedOutputKg: 280,
+    printingScrapKg: 0.2,
+    quantityKg: 280,
+    goodKg: 280,
+    scrapKg: 0.2,
+    orderQtyKg: 500,
+    inputRolls: [{
+      barcodeId: 'RM-BC-20261029-19450G7V',
+      filmType: 'CCPET',
+      micron: '12',
+      widthMm: '680',
+      consumedKg: 279.08
+    }]
+  }), {
+    order: { id: 'ORD-2026-210', jobName: 'Masti Atta 5 Kg', jobMasterId: 'JM-ATTA', orderQtyKg: 500 },
+    jobMasters: [attaJob],
+    inventoryRolls: [{ barcodeId: 'RM-BC-20261029-19450G7V', itemId: 'INVT-0027', filmType: 'CCPET', micron: 12, widthMm: 680 }],
+    inventory: [ccpetStock]
+  });
+  assert.equal(rules(result, 'block').includes('meters-kg'), false);
+  assert.equal(rules(result, 'warn').includes('meters-kg'), false);
+  assert.equal(rules(result, 'warn').includes('meters-target'), false);
+  const decision = decideGuardrailSave(result, { role: 'Printing Operator' });
+  assert.equal(decision.ok, true);
+});
+
+test('an 11 percent meter overrun is not a hard block', () => {
+  const result = run(baseEntry({
+    meters: 23750,
+    targetMeters: 21313,
+    durationMinutes: 120,
+    printInputKg: 263.34,
+    printedOutputKg: 264,
+    printingScrapKg: 0.2,
+    quantityKg: 264,
+    goodKg: 264,
+    scrapKg: 0.2,
+    orderQtyKg: 1000,
+    inputRolls: [{ filmType: 'PET', micron: 12, widthMm: 660, consumedKg: 263.34 }]
+  }));
+  assert.equal(rules(result, 'block').includes('meters-kg'), false);
+  assert.equal(rules(result, 'block').includes('meters-target'), false);
+  assert.equal(rules(result, 'warn').includes('meters-target'), false);
+  assert.equal(decideGuardrailSave(result, { role: 'Printing Operator' }).ok, true);
+});
+
+test('unknown density skips the meters check and does not stop the save', () => {
+  const bare = {
+    id: 'JM-BARE',
+    skuCode: 'SKU-BARE',
+    jobName: 'Bare',
+    printWidthRecorded: false,
+    layers: [{ filmType: '', micron: null }]
+  };
+  const result = run(baseEntry({
+    jobMasterId: 'JM-BARE',
+    inputRolls: [{ filmType: 'Mystery Film', micron: 12, widthMm: 660, consumedKg: 11.09 }]
+  }), {
+    order: { id: 'ORD-1', jobName: 'Bare' },
+    jobMasters: [bare]
+  });
+  assert.equal(rules(result, 'block').includes('meters-kg'), false);
+  const notice = result.warnings.find((item) => item.rule === 'meters-kg');
+  assert.equal(notice.nonBlocking, true);
+  assert.match(notice.message, /density/);
+  assert.doesNotMatch(notice.message, /micron|width/);
+  const onlyNotice = {
+    blocks: [],
+    filmTypeBlocks: [],
+    warnings: [notice],
+    spec: result.spec,
+    resolution: result.resolution
+  };
+  assert.equal(decideGuardrailSave(onlyNotice, { role: 'Printing Operator' }).ok, true);
+
+  const blank = run(baseEntry({
+    jobMasterId: 'JM-BARE',
+    inputRolls: [{ filmType: '', micron: '', widthMm: '', consumedKg: 11.09 }]
+  }), {
+    order: { id: 'ORD-1', jobName: 'Bare' },
+    jobMasters: [bare]
+  });
+  const skipped = blank.warnings.find((item) => item.rule === 'meters-kg');
+  assert.equal(skipped.nonBlocking, true);
+  assert.match(skipped.message, /density, micron, width/);
+});
+
+test('film substrate settings override the built-in CCPET density', () => {
+  const table = mergeDensityTable({ CCPET: 1.5, 'Metalised BOPP': 0.91 });
+  assert.equal(table.CCPET, 1.5);
+  assert.equal(table.METBOPP, 0.91);
+  assert.equal(table.PET, 1.40);
+  const kg = expectedFilmKg({ meters: 1000, widthMm: 1000, micron: 12, filmType: 'CCPET', densities: table });
+  assert.equal(kg.density, 1.5);
+  assert.equal(kg.kg, 18);
 });
 
 function roundAway(expected, percent) {
