@@ -7,7 +7,7 @@
 import { getEmailTemplates, interpolateTemplate } from './settingsService';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { supabase } from './supabaseClient';
-import { legacyFilterInternalRecipients, normalizeKind } from './emailPolicy';
+import { internalNotificationRecipients, legacyFilterInternalRecipients, normalizeKind } from './emailPolicy';
 import { rawRoleNames } from '../assignedRoles';
 
 const recentSends = new Map();
@@ -483,7 +483,7 @@ export const getEmailsForRoles = (users = [], targetRoles = [], defaultEmail = '
     if (!u || u.status === 'Inactive') return;
     const userRoles = rawRoleNames(u).map((role) => role.toLowerCase());
     const userDept = String(u.department || '').trim().toLowerCase();
-    const email = u.email?.trim();
+    const email = typeof u.email === 'string' ? u.email.trim() : '';
 
     if (!email) return;
 
@@ -705,11 +705,11 @@ export const notifyQcOverdueDigest = async ({ grns = [], users = [], customTo } 
   const tmpl = getActiveTemplate('grn_qc_escalation_12h', vars);
   if (!tmpl) return { success: false, message: 'Notification disabled.' };
 
-  const escalationEmails = getEmailsForRoles(
+  const escalationEmails = internalNotificationRecipients(getEmailsForRoles(
     users,
     ['Admin', 'Plant Manager', 'Production Manager', 'Quality Manager', 'QC Chemist', 'Quality', 'QC'],
     'admin@samyakinternational.in, quality@samyakinternational.in'
-  );
+  ), 'admin@samyakinternational.in');
 
   const rows = list.map(grn => {
     const qty = Number(grn.netWeightKg || grn.receivedQtyKg || 0).toLocaleString('en-IN');
@@ -746,14 +746,28 @@ export const notifyQcOverdueDigest = async ({ grns = [], users = [], customTo } 
     ? tmpl.subject
     : `QC overdue digest: ${list.length} GRNs pending more than 12 hours`;
 
-  return await sendERPEmailNotification({
+  const to = internalNotificationRecipients(customTo || escalationEmails, 'admin@samyakinternational.in');
+  const cc = internalNotificationRecipients(tmpl.ccEmail || 'admin@samyakinternational.in', '');
+  if (!to) {
+    return { success: false, message: 'No @samyakinternational.in recipient for this alert.' };
+  }
+
+  const result = await sendERPEmailNotification({
     kind: 'automated',
-    to: customTo || escalationEmails,
-    cc: tmpl.ccEmail || 'admin@samyakinternational.in',
+    to,
+    cc,
     subject,
     html,
     text: `QC overdue digest (${list.length}): ${list.map(grn => `${grn.grnNo || grn.id} (${grn.hoursPending}h)`).join(', ')}`
   });
+  if (result && result.success === false) return result;
+  return {
+    ...(result || {}),
+    success: true,
+    to,
+    cc,
+    message: `QC overdue alert sent to ${to}.`
+  };
 };
 
 /**
