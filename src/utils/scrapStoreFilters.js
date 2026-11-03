@@ -1,4 +1,5 @@
 import { JOB_WASTAGE_FIELDS, listHighScrapJobs } from './jobWastage.js';
+import { finiteRate, scrapInternalRef, scrapSourceRecordId, scrapValueRs } from './scrapIdentity.js';
 
 /** Scrap entry dates are plant calendar days in Asia/Kolkata. */
 export const SCRAP_TIME_ZONE = 'Asia/Kolkata';
@@ -427,6 +428,12 @@ export function describeScrapRow(item, context) {
     operatorLabel: firstText(item?.scrappedBy, item?.operatorName, item?.filledBy),
     materialLabel: firstText(item?.filmType, item?.substrate, item?.itemName, item?.category, item?.itemCategory),
     statusLabel: scrapStatus(item),
+    internalRef: scrapInternalRef(item),
+    sourceRecordId: scrapSourceRecordId(item),
+    ratePerKg: finiteRate(item?.ratePerKg),
+    valueRs: item?.valueRs == null || item?.valueRs === ''
+      ? scrapValueRs(item?.scrapQtyKg, finiteRate(item?.ratePerKg))
+      : finiteRate(item?.valueRs),
     barcode: firstText(item?.holdTagId, item?.barcodeId, item?.barcode),
     notes: firstText(item?.scrapReason, item?.notes, item?.remarks),
     orderNo: firstText(item?.orderId, item?.jobNo, item?.jobCode),
@@ -478,7 +485,7 @@ function rowMatches(row, filters, context) {
   if (filters.status && row.statusLabel !== filters.status) return false;
   if (filters.q) {
     const needle = filters.q.toLowerCase();
-    const hay = [row.orderId, row.jobNo, row.jobCode, row.jobName, row.barcode, row.holdTagId, row.barcodeId, row.notes, row.scrapReason]
+    const hay = [row.orderId, row.jobNo, row.jobCode, row.jobName, row.internalRef, row.sourceRecordId, row.barcode, row.holdTagId, row.barcodeId, row.notes, row.scrapReason]
       .map((value) => cleanText(value).toLowerCase())
       .join(' ');
     if (!hay.includes(needle)) return false;
@@ -498,10 +505,19 @@ export function summarizeScrapRows(rows) {
   const jobs = new Set();
   const stages = new Map();
   let totalKg = 0;
+  let totalValue = 0;
+  let valuedRows = 0;
   (rows || []).forEach((row) => {
     const kg = Number(row.scrapQtyKg);
     const weight = Number.isFinite(kg) ? kg : 0;
     totalKg += weight;
+    if (row.valueRs !== null && row.valueRs !== undefined && row.valueRs !== '') {
+      const value = Number(row.valueRs);
+      if (Number.isFinite(value)) {
+        totalValue += value;
+        valuedRows += 1;
+      }
+    }
     const jobKey = cleanText(row.orderId || row.jobNo || row.jobCode);
     if (jobKey) jobs.add(jobKey);
     const stage = row.stageLabel || scrapStageLabel(row);
@@ -512,6 +528,7 @@ export function summarizeScrapRows(rows) {
   });
   return {
     totalKg: Math.round((totalKg + Number.EPSILON) * 100) / 100,
+    totalValueRs: valuedRows > 0 ? Math.round((totalValue + Number.EPSILON) * 100) / 100 : null,
     rowCount: (rows || []).length,
     jobCount: jobs.size,
     byStage: [...stages.values()]
@@ -677,7 +694,7 @@ export function planScrapServerQuery(filters, context = buildScrapFilterContext(
   }
   const queryToken = searchToken(filters.q);
   if (queryToken) {
-    orGroups.push(['payload->>orderId', 'payload->>jobName', 'payload->>jobNo', 'payload->>holdTagId', 'payload->>barcodeId', 'payload->>scrapReason', 'payload->>notes']
+    orGroups.push(['payload->>orderId', 'payload->>jobName', 'payload->>jobNo', 'payload->>internalRef', 'payload->>sourceRecordId', 'payload->>holdTagId', 'payload->>barcodeId', 'payload->>scrapReason', 'payload->>notes']
       .map((column) => ilikeClause(column, queryToken)));
   }
   if (filters.customer) {
@@ -750,7 +767,10 @@ export function scrapStoreCsv(rows) {
     'Machine',
     'Recorded By',
     'Status',
-    'Barcode',
+    'Internal Ref',
+    'Source Record',
+    'Rate (Rs/kg)',
+    'Value (Rs)',
     'Notes',
     'High Scrap'
   ];
@@ -774,7 +794,10 @@ export function scrapStoreCsv(rows) {
       row.machineLabel || '',
       row.operatorLabel || row.scrappedBy || '',
       row.statusLabel || '',
-      row.barcode || row.holdTagId || '',
+      row.internalRef || row.id || '',
+      row.sourceRecordId || '',
+      row.ratePerKg == null ? '' : row.ratePerKg,
+      row.valueRs == null ? '' : row.valueRs,
       row.notes || row.scrapReason || '',
       row.highScrap ? 'Yes' : 'No'
     ].map(csvCell).join(','));

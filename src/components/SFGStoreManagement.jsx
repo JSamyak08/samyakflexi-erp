@@ -73,6 +73,7 @@ import {
   stageScrapKg
 } from '../utils/consumeMassBalance';
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
+import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIdentity';
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
@@ -1498,10 +1499,29 @@ export default function SFGStoreManagement({
       scrappedBy: currentUser?.fullName || currentUser?.username || 'QC Inspector'
     };
 
-    // 1. Record entry in Scrap Store
-    const scrapStoreEntry = {
-      id: `SCRAP-ITEM-${Date.now()}`,
-      holdTagId: selectedQcItemForScrap.barcodeId,
+    // Scrap is stored with weight, rate, defect, and the source record.
+    // The QC hold tag keeps its own barcode. This row does not get one, and nothing is printed.
+    const parentId = selectedQcItemForScrap.parentSfgId || selectedQcItemForScrap.parentSfgBatchCode;
+    const parentItem = allSfgItems.find((item) => item.id === parentId || item.sfgBatchCode === parentId);
+    const sourceOrder = (orders || []).find((order) => String(order.id) === String(selectedQcItemForScrap.orderId));
+    const rate = finiteRate(
+      selectedQcItemForScrap.ratePerKg,
+      selectedQcItemForScrap.unitPrice,
+      selectedQcItemForScrap.purchaseRatePerKg,
+      parentItem?.ratePerKg,
+      parentItem?.unitPrice,
+      parentItem?.purchaseRatePerKg,
+      sourceOrder?.ratePerKg,
+      sourceOrder?.unitPrice,
+      sourceOrder?.rate
+    );
+    const scrapKg = parseFloat(scrapVal.toFixed(2));
+    const scrapStoreEntry = withoutScrapBarcode({
+      id: `scrapref:${Date.now()}`,
+      sourceRecordId: selectedQcItemForScrap.id,
+      sourceRollBarcode: selectedQcItemForScrap.barcodeId || selectedQcItemForScrap.sfgBatchCode || '',
+      parentSfgId: selectedQcItemForScrap.parentSfgId || '',
+      parentSfgBatchCode: selectedQcItemForScrap.parentSfgBatchCode || '',
       orderId: selectedQcItemForScrap.orderId,
       jobName: selectedQcItemForScrap.jobName,
       jobCode: selectedQcItemForScrap.jobCode,
@@ -1509,13 +1529,17 @@ export default function SFGStoreManagement({
       filmType: selectedQcItemForScrap.filmType,
       micron: selectedQcItemForScrap.micron,
       widthMm: selectedQcItemForScrap.widthMm,
-      scrapQtyKg: parseFloat(scrapVal.toFixed(2)),
+      scrapQtyKg: scrapKg,
       defectCategory,
+      type: defectCategory,
+      source: 'qc',
       scrapReason: scrapReason.trim(),
       scrappedBy: currentUser?.fullName || currentUser?.username || 'QC Inspector',
+      ratePerKg: rate,
+      valueRs: scrapValueRs(scrapKg, rate),
       date: new Date().toISOString().split('T')[0],
       timestamp: new Date().toISOString()
-    };
+    });
 
     const nextHold = newRemainingKg <= 0
       ? qcHoldItems.filter(item => item.id !== selectedQcItemForScrap.id)
