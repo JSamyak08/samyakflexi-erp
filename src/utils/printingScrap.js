@@ -1,4 +1,5 @@
 import { parseOptionalKg } from './productionRecordQuality.js';
+import { finiteRate, scrapValueRs, withoutScrapBarcode } from './scrapIdentity.js';
 
 export const PRINTING_SCRAP_SOURCE = 'printing';
 export const PLAIN_SETTING_TYPE = 'Plain Setting';
@@ -34,7 +35,8 @@ export function planPrintingScrap({
   printingWastageKg,
   scrappedBy,
   date,
-  timestamp
+  timestamp,
+  ratePerKg
 } = {}) {
   const quantities = [
     { type: PLAIN_SETTING_TYPE, qty: parseOptionalKg(plainSettingKg) },
@@ -48,6 +50,7 @@ export function planPrintingScrap({
   }
 
   const jobNo = jobCode || orderId || '';
+  const rate = finiteRate(ratePerKg);
   const upserts = [];
   const deleteIds = [];
   quantities.forEach((entry) => {
@@ -56,9 +59,8 @@ export function planPrintingScrap({
       deleteIds.push(id);
       return;
     }
-    upserts.push({
+    upserts.push(withoutScrapBarcode({
       id,
-      holdTagId: productionRecordId || id,
       orderId: orderId || '',
       jobNo,
       jobCode: jobNo,
@@ -72,11 +74,14 @@ export function planPrintingScrap({
       type: entry.type,
       source: PRINTING_SCRAP_SOURCE,
       productionRecordId: productionRecordId || '',
+      sourceRecordId: productionRecordId || id,
       scrapReason: `${entry.type} recorded at printing for ${jobNo}`,
       scrappedBy: scrappedBy || 'Operator',
+      ratePerKg: rate,
+      valueRs: scrapValueRs(entry.qty, rate),
       date: date || '',
       timestamp: timestamp || ''
-    });
+    }));
   });
   return { upserts, deleteIds };
 }

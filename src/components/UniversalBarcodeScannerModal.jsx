@@ -27,7 +27,8 @@ import {
   Info,
   Truck,
   Hash,
-  Database
+  Database,
+  Trash2
 } from 'lucide-react';
 import QRCode2D from './QRCode2D';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
@@ -43,6 +44,9 @@ import {
 import { deletedBarcodeMessage, findRetiredBarcode } from '../utils/barcodeRegistry';
 import { displayItemName } from '../services/inventoryIdentity';
 import { loadDeletedBarcodes } from '../services/supabaseDataService';
+import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
+import { fetchPayloadRecords } from '../services/businessRecords';
+import { findScrapForScan, legacyScrapBarcode, scrapScanCard } from '../utils/scrapIdentity';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -73,8 +77,11 @@ export default function UniversalBarcodeScannerModal({
   deliveryChallans = [],
   productionRecords = [],
   vendors = [],
+  scrapItems: scrapItemsProp = null,
   onNavigateToProductionRecord
 }) {
+  const [loadedScrapItems, setLoadedScrapItems] = useState([]);
+  const scrapItems = Array.isArray(scrapItemsProp) ? scrapItemsProp : loadedScrapItems;
   const [barcodeInput, setBarcodeInput] = useState('');
   const [activeBarcode, setActiveBarcode] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
@@ -116,6 +123,15 @@ export default function UniversalBarcodeScannerModal({
     }).catch(() => {});
     return () => { active = false; };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || Array.isArray(scrapItemsProp) || !isSupabaseConfigured()) return undefined;
+    let active = true;
+    fetchPayloadRecords(supabase, 'sfg_scrap_items')
+      .then((rows) => { if (active) setLoadedScrapItems(rows || []); })
+      .catch(() => { if (active) setLoadedScrapItems([]); });
+    return () => { active = false; };
+  }, [isOpen, scrapItemsProp]);
 
   // Clean up camera stream on unmount
   useEffect(() => {
@@ -513,6 +529,12 @@ export default function UniversalBarcodeScannerModal({
       };
     }
 
+    const scrapHit = findScrapForScan(scrapItems, activeBarcode);
+    if (scrapHit) {
+      const matchedLegacy = codeKey(legacyScrapBarcode(scrapHit)) === query;
+      return scrapScanCard(scrapHit, { matchedLegacy });
+    }
+
     // 2. Orders / OCNs Search
     const matchedOrder = (orders || []).find(o => {
       const oId = codeKey(o.id);
@@ -856,7 +878,7 @@ export default function UniversalBarcodeScannerModal({
     }
 
     return { notFound: true, query: activeBarcode };
-  }, [activeBarcode, deletedBarcodes, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords]);
+  }, [activeBarcode, deletedBarcodes, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords, scrapItems]);
 
   const handleCopyDetails = () => {
     if (!searchResults || searchResults.notFound || searchResults.deleted) return;
@@ -1246,6 +1268,7 @@ export default function UniversalBarcodeScannerModal({
                     {searchResults.type === 'INK' && <Tag size={24} />}
                     {searchResults.type === 'DISPATCH' && <Truck size={24} />}
                     {searchResults.type === 'INVENTORY_ITEM' && <Database size={24} />}
+                    {searchResults.type === 'SCRAP' && <Trash2 size={24} />}
                   </div>
 
                   <div>
@@ -1268,6 +1291,9 @@ export default function UniversalBarcodeScannerModal({
                     <h3 style={{ fontSize: '1.2rem', fontWeight: '800', margin: 0, color: '#0f172a' }}>
                       {searchResults.title}
                     </h3>
+                    {searchResults.message ? (
+                      <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: '#7f1d1d', maxWidth: '460px' }}>{searchResults.message}</p>
+                    ) : null}
                     <div style={{ fontSize: '0.85rem', color: '#475569', fontFamily: 'monospace', fontWeight: '700', marginTop: '2px' }}>
                       ID: {searchResults.code}
                     </div>
@@ -1275,9 +1301,11 @@ export default function UniversalBarcodeScannerModal({
                 </div>
 
                 {/* 2D QR Code Visual Badge */}
+                {searchResults.type === 'SCRAP' ? null : (
                 <div style={{ background: '#ffffff', padding: '6px', borderRadius: '8px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)' }}>
                   <QRCode2D value={searchResults.code} size={64} showLabel={false} />
                 </div>
+                )}
               </div>
 
               {/* Comprehensive Properties Grid */}

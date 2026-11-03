@@ -10,17 +10,17 @@ import {
   getStickerCategoryInfo,
   getStickerDisplayDate
 } from '../utils/thermalBarcodePrinter';
+import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
 export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose }) {
-  const rollList = Array.isArray(rolls) 
-    ? rolls 
-    : (Array.isArray(roll) ? roll : (roll ? [roll] : []));
+  const rollList = rollsEligibleForBarcodeLabel(Array.isArray(rolls)
+    ? rolls
+    : (Array.isArray(roll) ? roll : (roll ? [roll] : [])));
 
   const [activeIndex, setActiveIndex] = useState(0);
 
   const letterhead = loadLetterhead();
   if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
-  if (rollList.length === 0) return null;
   const COMPANY_DETAILS = letterhead.company;
 
   const activeRoll = rollList[activeIndex] || rollList[0];
@@ -265,6 +265,8 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
       </div>
     );
   };
+
+  if (rollList.length === 0) return null;
 
   return (
     <div className="modal-overlay barcode-printer-modal-root" style={{ zIndex: 3000 }} onClick={onClose}>

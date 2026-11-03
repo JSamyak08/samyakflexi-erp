@@ -1,5 +1,6 @@
 import { parseOptionalKg } from './productionRecordQuality.js';
 import { printingScrapId, PRINTING_SCRAP_SOURCE } from './printingScrap.js';
+import { finiteRate, scrapValueRs, withoutScrapBarcode } from './scrapIdentity.js';
 
 /** Order quantity is stored in kilograms on orders.order_qty_kg. Wastage is kilograms. No unit conversion. */
 export const ORDER_QTY_UNIT = 'kg';
@@ -215,6 +216,15 @@ export function planJobWastage({
   const jobNo = normalized.jobCode || orderId;
   const recordedDate = date || normalized.dateFilled || '';
   const recordedAt = timestamp || normalized.recordedAt || '';
+  const rate = finiteRate(
+    record?.ratePerKg,
+    record?.unitPrice,
+    record?.purchaseRatePerKg,
+    order?.ratePerKg,
+    order?.unitPrice,
+    order?.rate,
+    order?.sellingPricePerKg
+  );
   const upserts = [];
   const deleteIds = [];
 
@@ -224,9 +234,8 @@ export function planJobWastage({
       deleteIds.push(id);
       return;
     }
-    upserts.push({
+    upserts.push(withoutScrapBarcode({
       id,
-      holdTagId: normalized.id || id,
       orderId,
       jobNo,
       jobCode: jobNo,
@@ -241,11 +250,14 @@ export function planJobWastage({
       stage: field.stage,
       source: field.source,
       productionRecordId: normalized.id || '',
+      sourceRecordId: normalized.id || orderId,
       scrapReason: `${field.stage} / ${field.type} recorded for ${jobNo}`,
       scrappedBy: scrappedBy || normalized.filledBy || 'Operator',
+      ratePerKg: rate,
+      valueRs: scrapValueRs(qty, rate),
       date: recordedDate,
       timestamp: recordedAt
-    });
+    }));
   });
 
   const totalWastageKg = roundKg(lines.reduce((sum, line) => sum + line.qty, 0));

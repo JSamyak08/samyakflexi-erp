@@ -79,6 +79,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { saveInventoryRollToSupabase } from '../services/supabaseDataService';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
+import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 import { PartialSaveError, writeWithRetry, unsavedItemsMessage } from '../services/guardedWrite';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
@@ -1366,7 +1367,7 @@ export default function ProductionScheduler({
       setEndJobTargetOrder(null);
 
       // The database creates balance rolls when the run ends. Show them so the operator can label them.
-      const allRollsToPrint = [...createdSfgRolls, ...balanceRolls];
+      const allRollsToPrint = rollsEligibleForBarcodeLabel([...createdSfgRolls, ...balanceRolls]);
       if (allRollsToPrint.length > 0) {
         setSelectedRollsForAutoPrint(allRollsToPrint);
       } else {
