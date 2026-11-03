@@ -38,6 +38,7 @@ import {
   Package,
   Database
 } from 'lucide-react';
+import { emailSampleActors } from '../utils/recordedPerson';
 import { 
   getCompanyLogo,
   saveCompanyLogo,
@@ -680,6 +681,8 @@ export default function DocumentSettings({
     persistSetting(() => resetEmailTemplates(), (saved) => setEmailTemplates(saved || { ...DEFAULT_EMAIL_TEMPLATES }));
   };
 
+  const actorPreview = emailSampleActors(currentUser);
+
   // Send Test Email Dispatcher
   const handleSendTestEmail = async () => {
     if (!testEmailRecipient.trim()) {
@@ -704,8 +707,8 @@ export default function DocumentSettings({
       totalMaterialCostRs: '3,85,000',
       finalProductionCostRs: '4,12,000',
       totalScrapQtyKg: '35.5',
-      filledBy: 'Plant Manager (Ramesh Kumar)',
-      approvedBy: 'Samyak Jain (Admin)',
+      filledBy: actorPreview.filledBy,
+      approvedBy: actorPreview.approvedBy,
       approvalDate: '2026-08-11',
       indentNo: 'SIL/IND/26-27/105',
       department: 'Rotogravure Printing',
@@ -723,10 +726,10 @@ export default function DocumentSettings({
       stockQty: '450',
       reorderLevel: '1,000',
       location: 'Extrusion Store Bay 2',
-      userName: 'Rajesh Sharma',
+      userName: actorPreview.userName,
       userEmail: testEmailRecipient.trim(),
-      userRole: 'Plant Manager',
-      userDepartment: 'Production Operations',
+      userRole: actorPreview.userRole,
+      userDepartment: actorPreview.userDepartment,
       recoveryCode: ''
     };
 
@@ -785,8 +788,8 @@ export default function DocumentSettings({
     totalMaterialCostRs: '3,85,000',
     finalProductionCostRs: '4,12,000',
     totalScrapQtyKg: '35.5',
-    filledBy: 'Plant Manager (Ramesh Kumar)',
-    approvedBy: 'Samyak Jain (Admin)',
+    filledBy: actorPreview.filledBy,
+    approvedBy: actorPreview.approvedBy,
     approvalDate: '2026-08-11',
     indentNo: 'SIL/IND/26-27/105',
     department: 'Rotogravure Printing',
@@ -804,10 +807,10 @@ export default function DocumentSettings({
     stockQty: '450',
     reorderLevel: '1,000',
     location: 'Extrusion Store Bay 2',
-    userName: 'Rajesh Sharma',
-    userEmail: 'rsharma@samyakinternational.in',
-    userRole: 'Plant Manager',
-    userDepartment: 'Production Operations',
+    userName: actorPreview.userName,
+    userEmail: actorPreview.userEmail,
+    userRole: actorPreview.userRole,
+    userDepartment: actorPreview.userDepartment,
     recoveryCode: '',
     productionDateTime: '11/08/2026, 09:30:15 PM',
     allowedWastagePct: '5.0',
