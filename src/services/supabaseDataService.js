@@ -3690,6 +3690,8 @@ export async function fetchSFGGoodsFromSupabase() {
         } : {}),
         isPrintedLot: Boolean(extra.isPrintedLot) || String(item.sfg_batch_code || '').startsWith('SFG-LOT-'),
         childRolls: Array.isArray(extra.childRolls) ? extra.childRolls : [],
+        runBalanceRolls: Array.isArray(extra.runBalanceRolls) ? extra.runBalanceRolls : [],
+        runConsumedRolls: Array.isArray(extra.runConsumedRolls) ? extra.runConsumedRolls : [],
         inputBarcodeIds: Array.isArray(extra.inputBarcodeIds) ? extra.inputBarcodeIds : [],
         printedAllocations: Array.isArray(extra.printedAllocations) ? extra.printedAllocations : [],
         jobMasterId: extra.jobMasterId || ''
@@ -3763,7 +3765,9 @@ export function buildSfgNotesEnvelope(item, overrides = {}) {
     childRolls: Array.isArray(item?.childRolls) ? item.childRolls : [],
     inputBarcodeIds: Array.isArray(item?.inputBarcodeIds) ? item.inputBarcodeIds : [],
     printedAllocations: Array.isArray(item?.printedAllocations) ? item.printedAllocations : [],
-    jobMasterId: item?.jobMasterId || item?.jobId || ''
+    jobMasterId: item?.jobMasterId || item?.jobId || '',
+    ...(Array.isArray(item?.runBalanceRolls) ? { runBalanceRolls: item.runBalanceRolls } : {}),
+    ...(Array.isArray(item?.runConsumedRolls) ? { runConsumedRolls: item.runConsumedRolls } : {})
   };
   if (item?.parentSfgBatchCode) {
     notesBody.parentSfgBatchCode = item.parentSfgBatchCode;

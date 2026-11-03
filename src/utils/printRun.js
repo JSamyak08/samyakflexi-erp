@@ -14,8 +14,22 @@ const PATCH_KEYS = [
   'inkGsmInSpeed',
   'printingNotes',
   'inputRollsList',
+  'outputRolls',
   'nextProcess',
-  'jobMasterId'
+  'jobMasterId',
+  'jobCode',
+  'clientName',
+  'operatorName',
+  'shift',
+  'machineName',
+  'filmType',
+  'micron',
+  'widthMm',
+  'orderQtyKg',
+  'printingPlainSettingWastageKg',
+  'printingWastageKg',
+  'excessFilmWastageKg',
+  'storageBay'
 ];
 
 export function buildPrintRunPatch(fields) {
@@ -70,6 +84,12 @@ export function applyPrintRunResult(order, result) {
     inputRollsList,
     nextProcess,
     balanceRolls: Array.isArray(saved.balanceRolls) ? saved.balanceRolls : (current.balanceRolls || []),
+    printedRolls: Object.prototype.hasOwnProperty.call(saved, 'printedRolls')
+      ? (Array.isArray(saved.printedRolls) ? saved.printedRolls : [])
+      : (current.printedRolls || []),
+    consumedRolls: Object.prototype.hasOwnProperty.call(saved, 'consumedRolls')
+      ? (Array.isArray(saved.consumedRolls) ? saved.consumedRolls : [])
+      : (current.consumedRolls || []),
     jobDetails: {
       ...(current.jobDetails || {}),
       printingStatus,
