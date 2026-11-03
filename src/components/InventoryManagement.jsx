@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { anyAssignedRole } from '../assignedRoles';
+import { canDecideGrnQc } from '../approvalAccess';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { 
   Package, 
@@ -3509,7 +3510,12 @@ export default function InventoryManagement({
     setQcActiveLineId(lineId);
   };
 
+  const canDecideQc = canDecideGrnQc(currentUser);
   const handleQCAction = async (status) => {
+    if (!canDecideQc) {
+      alert('Only a QC Chemist, Plant Manager, Production Manager, or Admin can approve, reject, or hold a GRN.');
+      return;
+    }
     if (!qcInspectingGRN) return;
     const qcLines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
     if (qcLines.length > 1) {
@@ -6317,13 +6323,19 @@ export default function InventoryManagement({
                       )}
                     </div>
 
-                    <button 
-                      className="btn-primary" 
-                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 16px', fontWeight: '700' }} 
-                      onClick={() => setQcInspectingGRN(g)}
-                    >
-                      <FileCheck size={16} /> Inspect Material & Approve / Reject
-                    </button>
+                    {canDecideQc ? (
+                      <button 
+                        className="btn-primary" 
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 16px', fontWeight: '700' }} 
+                        onClick={() => setQcInspectingGRN(g)}
+                      >
+                        <FileCheck size={16} /> Inspect Material & Approve / Reject
+                      </button>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: '#92400e', fontWeight: '700' }}>
+                        QC approval is limited to QC Chemist, Plant Manager, Production Manager, and Admin.
+                      </p>
+                    )}
                   </div>
                 );
               })}
@@ -8503,6 +8515,7 @@ export default function InventoryManagement({
 
             {/* Sticky Executive Footer */}
             <div className="modal-footer-bar">
+              {canDecideQc && (
               <button 
                 type="button"
                 className="btn-secondary" 
@@ -8511,6 +8524,7 @@ export default function InventoryManagement({
               >
                 <XCircle size={16} /> Reject Material (Transfer to QC Hold)
               </button>
+              )}
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <button 
@@ -8520,6 +8534,7 @@ export default function InventoryManagement({
                 >
                   Cancel
                 </button>
+                {canDecideQc && (
                 <button 
                   type="button"
                   className="btn-primary" 
@@ -8536,6 +8551,7 @@ export default function InventoryManagement({
                 >
                   <CheckCircle2 size={18} /> Approve & Add Verified Stock to Inventory
                 </button>
+                )}
               </div>
             </div>
 
