@@ -53,6 +53,7 @@ import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, getDocumentPrefixes } from '../services/settingsService';
 import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
+import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete } from '../services/supabaseDataService';
 import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
@@ -349,9 +350,28 @@ export default function InventoryManagement({
 
   const nextInventoryId = (items = inventory) => generateInventoryId(items, safeGrns, inventoryRolls);
 
-  // QC-overdue mail is not sent from this page. A single daily digest runs
-  // after GRNs load (see runQcOverdueEscalationDigest). Opening Inventory
-  // must not email anyone.
+  // Overdue QC is listed on this page. Mail goes out only from the button below.
+  const qcOverdueGrns = useMemo(
+    () => selectOverdueGrns(safeGrns, Date.now(), { includeAlreadySent: true }),
+    [safeGrns]
+  );
+  const [qcOverdueSending, setQcOverdueSending] = useState(false);
+  const [qcOverdueMailNote, setQcOverdueMailNote] = useState('');
+
+  const handleSendQcOverdueEmail = async () => {
+    if (qcOverdueSending || qcOverdueGrns.length === 0) return;
+    setQcOverdueSending(true);
+    setQcOverdueMailNote('');
+    try {
+      const result = await sendQcOverdueAlert({ grns: qcOverdueGrns, users });
+      setQcOverdueMailNote(result.message || (result.sent ? 'QC overdue alert sent.' : 'The QC overdue email was not sent.'));
+    } catch (err) {
+      console.warn('[QC overdue] Email was not sent.');
+      setQcOverdueMailNote('The QC overdue email was not sent.');
+    } finally {
+      setQcOverdueSending(false);
+    }
+  };
 
   // Group inventory items by Item Name / Specs so films of same 'Item Name' but different Inventory Code/ID are consolidated into the same Item row
   const groupedInventory = useMemo(() => {
@@ -4965,6 +4985,66 @@ export default function InventoryManagement({
       )}
 
       <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+      {qcOverdueGrns.length > 0 && (
+        <div
+          data-testid="qc-overdue-alert"
+          style={{
+            background: '#fff1f2',
+            border: '1px solid #fecaca',
+            borderLeft: '4px solid #dc2626',
+            borderRadius: '10px',
+            padding: '14px 18px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '14px'
+          }}
+        >
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', minWidth: '240px', flex: '1 1 320px' }}>
+            <AlertTriangle size={22} style={{ color: '#dc2626', flexShrink: 0, marginTop: '2px' }} />
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: '800', color: '#991b1b' }}>
+                {qcOverdueGrns.length} QC approval{qcOverdueGrns.length === 1 ? '' : 's'} overdue by more than 12 hours
+              </h3>
+              <p style={{ margin: '4px 0 8px', fontSize: '0.84rem', color: '#7f1d1d' }}>
+                Opening this page does not send email. The button sends one alert to @samyakinternational.in only. Customers and vendors are not included.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#7f1d1d' }}>
+                {qcOverdueGrns.slice(0, 8).map((grn) => (
+                  <li key={grn.id || grn.grnNo}>
+                    <strong>{grn.grnNo || grn.id}</strong>
+                    {' · '}{grn.hoursPending}h
+                    {grn.itemName ? ` · ${grn.itemName}` : ''}
+                    {grn.vendorName ? ` · ${grn.vendorName}` : ''}
+                  </li>
+                ))}
+              </ul>
+              {qcOverdueGrns.length > 8 && (
+                <p style={{ margin: '6px 0 0', fontSize: '0.78rem', color: '#7f1d1d' }}>
+                  And {qcOverdueGrns.length - 8} more on the QC Approval Lab tab.
+                </p>
+              )}
+              {qcOverdueMailNote && (
+                <p data-testid="qc-overdue-email-result" style={{ margin: '8px 0 0', fontSize: '0.82rem', fontWeight: '700', color: '#7f1d1d' }}>
+                  {qcOverdueMailNote}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn-primary"
+            data-testid="send-qc-overdue-email"
+            disabled={qcOverdueSending}
+            onClick={handleSendQcOverdueEmail}
+            style={{ background: '#dc2626', borderColor: '#dc2626', color: '#ffffff', fontWeight: '800' }}
+          >
+            <Bell size={16} /> {qcOverdueSending ? 'Sending QC overdue alert…' : 'Email QC overdue alert'}
+          </button>
+        </div>
+      )}
+
       {/* Stock Reconciliation Monthly Notification Banner */}
       {isRecDue && (
         <div className="reconciliation-alert-banner">

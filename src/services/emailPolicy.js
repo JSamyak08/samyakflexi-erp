@@ -142,6 +142,19 @@ export function companyRecipients(input) {
 }
 
 /**
+ * Addresses an internal notification may use.
+ * Only parsed mailboxes on samyakinternational.in are kept.
+ * When none remain, fallback is used if it is itself on that domain.
+ * An empty fallback means "send to nobody" rather than a customer or vendor.
+ */
+export function internalNotificationRecipients(input, fallback = ADMIN_REROUTE) {
+  const { kept } = companyRecipients(input);
+  if (kept.length > 0) return kept.join(', ');
+  const fb = companyRecipients(fallback);
+  return fb.kept.join(', ');
+}
+
+/**
  * Keep parsed mailboxes on samyakinternational.in. Anything else, including
  * plant.com, samyak.com, and samyakflexi.com, is removed. An empty result is
  * replaced with defaultInternal (admin@ for To, empty for Cc and Bcc).
