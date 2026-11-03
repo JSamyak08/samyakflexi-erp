@@ -51,6 +51,7 @@ import {
   revisionNumber,
 } from '../utils/poAmendment';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { loggedInActorLabel } from '../utils/recordedPerson';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
 import { planReceiptStockLink } from '../services/inventoryIdentity';
 import { calculateOrderStockReservations, generateInventoryId, linkedRequirementMatches, presentRequirementStock, requirementStockKey } from '../factoryStore';
@@ -524,7 +525,7 @@ export default function PurchaseOrderManagement({
       linkedOrderId: poForm.linkedOrderId || null,
       linkedOrderName: poForm.linkedOrderName || null,
       linkedRequirements: poForm.linkedRequirements || [],
-      createdBy: currentUser?.name || 'Procurement Desk',
+      createdBy: loggedInActorLabel(currentUser),
       createdAt: new Date().toISOString()
     };
 
@@ -1215,7 +1216,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
             vendorId,
             invoiceNo: grnFormData.invoiceNo.trim(),
             transporterName: grnFormData.transporter.trim() || 'Direct Dispatch / Self',
-            storeManager: currentUser?.name || 'Store Manager',
+            storeManager: loggedInActorLabel(currentUser),
             receivedTime: receivedTimeStr,
             remarks: grnFormData.variationNotes.trim() || `Inward GRN issued directly from PO #${po.poNumber}`
           },
@@ -1359,7 +1360,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         status: 'Pending QC Approval',
         qcStatus: 'Pending QC Approval',
         qcNotes: '',
-        storeManager: currentUser?.name || 'Store Manager'
+        storeManager: loggedInActorLabel(currentUser)
       };
       const grnToSave = { ...newGRN, lineItems: [oneLineFromReceipt(newGRN)] };
 

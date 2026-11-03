@@ -49,6 +49,16 @@ import { notifyPurchaseIndentCreated, notifyPurchaseOrderIssued, notifyLowStockA
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import TablePagination, { usePagination } from './TablePagination';
 import { downloadConsumablesStockWorkbook } from '../utils/consumablesStockExport';
+import IndentSlipSignatures from './IndentSlipSignatures';
+import {
+  applyIndentStatusChange,
+  bindEditedPerson,
+  buildDirectoryIndex,
+  indentSlipSignatories,
+  formatPersonLabel,
+  loggedInActor,
+  loggedInActorLabel,
+} from '../utils/recordedPerson';
 
 // Default Plant Machine List for flexible packaging operations
 export const PLANT_MACHINES = [
@@ -75,8 +85,10 @@ export default function ConsumablesAndIndents({
   urlParams = {},
   onNavigateTab,
   currentUser = null,
+  users = [],
+  employees = [],
   userRole = "",
-  userName = "Samyak Jain",
+  userName = "",
   vendors = [],
   orders = [],
   onAddPO,
@@ -160,6 +172,12 @@ export default function ConsumablesAndIndents({
       'General Factory & Store'
     ];
   }, [machines]);
+
+  const personDirectory = useMemo(
+    () => buildDirectoryIndex(users, employees),
+    [users, employees]
+  );
+  const slipFor = (indent) => indentSlipSignatories(indent, { directory: personDirectory });
 
   // ─── Lifted State Setters (Write-through to DB) ───────────────────────────────
   const setConsumables = (val) => {
@@ -520,7 +538,7 @@ export default function ConsumablesAndIndents({
       qtyIssued: qty,
       unit: selectedItemForIssue.unit,
       targetMachine: issueMachine,
-      issuedBy: `${userName} (${userRole})`,
+      issuedBy: loggedInActorLabel(currentUser) || formatPersonLabel(userName, userRole),
       machineOperator: issueOperator || "Shift Operator",
       shift: issueShift,
       remarks: issueRemarks || "Direct Store Machine Issue"
@@ -615,14 +633,18 @@ export default function ConsumablesAndIndents({
     }
 
     const indentId = `IND-2026-${String((indents || []).length + 1).padStart(3, '0')}`;
+    const actor = loggedInActor(currentUser);
+    const raisedBy = actor.label || formatPersonLabel(userName, actor.role || userRole);
     const newIndent = {
       id: indentId,
       indentNo: indentId,
       date: new Date().toISOString().split('T')[0],
       priority: indentPriority,
       department: indentDept,
-      raisedBy: `${userName} (${userRole})`,
-      userRole,
+      raisedBy,
+      raisedByUserId: actor.userId,
+      raisedByEmail: actor.email,
+      userRole: actor.role || userRole,
       status: "Pending Approval",
       remarks: indentRemarks || "Store / Plant Material Requisition",
       items: indentLineItems.map(item => ({
@@ -691,9 +713,10 @@ export default function ConsumablesAndIndents({
       alert(`Access Restricted!\n\nOnly an Admin can approve or reject a material indent.\n\nYour current logged-in role is: "${actorLabel}".`);
       return;
     }
+    const at = new Date().toISOString();
     setIndents(prev => prev.map(ind => {
       if (ind.id === indentId) {
-        return { ...ind, status: newStatus };
+        return applyIndentStatusChange(ind, { ...ind, status: newStatus }, currentUser, at);
       }
       return ind;
     }));
@@ -752,7 +775,7 @@ export default function ConsumablesAndIndents({
     setEditingIndent(indent);
     setEditIndentPriority(indent.priority || 'Normal');
     setEditIndentDepartment(indent.department || 'Production & Printing');
-    setEditIndentRaisedBy(indent.raisedBy || userName || 'Store Manager');
+    setEditIndentRaisedBy(slipFor(indent).raisedBy.label || '');
     setEditIndentStatus(indent.status || 'Pending Approval');
     setEditIndentRemarks(indent.remarks || '');
     setEditIndentLineItems(indent.items ? JSON.parse(JSON.stringify(indent.items)) : []);
@@ -807,18 +830,22 @@ export default function ConsumablesAndIndents({
       alert("Indent must have at least one line item!");
       return;
     }
-    const updatedIndent = {
+    const boundRaiser = bindEditedPerson(editIndentRaisedBy, editingIndent, personDirectory);
+    const updatedIndent = applyIndentStatusChange(editingIndent, {
       ...editingIndent,
       priority: editIndentPriority,
       department: editIndentDepartment,
-      raisedBy: editIndentRaisedBy,
+      raisedBy: boundRaiser.label,
+      raisedByUserId: boundRaiser.id,
+      raisedByEmail: boundRaiser.email,
+      userRole: boundRaiser.role || editingIndent.userRole,
       status: editIndentStatus,
       remarks: editIndentRemarks,
       items: editIndentLineItems.map(item => ({
         ...item,
         reqQty: parseFloat(item.reqQty) || 1
       }))
-    };
+    }, currentUser);
     setIndents(prev => prev.map(ind => ind.id === editingIndent.id ? updatedIndent : ind));
     setIsEditIndentModalOpen(false);
     setEditingIndent(null);
@@ -1318,7 +1345,7 @@ export default function ConsumablesAndIndents({
                           </span>
                         </td>
                         <td>
-                          <div style={{ fontSize: '0.85rem', fontWeight: '700' }}>{indent.raisedBy}</div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: '700' }}>{slipFor(indent).raisedBy.label || '—'}</div>
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{indent.department}</div>
                         </td>
                         <td>
@@ -2029,7 +2056,7 @@ export default function ConsumablesAndIndents({
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: '#f8fafc', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '0.85rem' }}>
                 <div><strong>Requisition Department:</strong> {selectedIndentForPrint.department}</div>
                 <div><strong>Priority Level:</strong> <span style={{ fontWeight: '800', color: selectedIndentForPrint.priority === 'Urgent' ? '#dc2626' : '#0284c7' }}>{selectedIndentForPrint.priority}</span></div>
-                <div><strong>Raised By:</strong> {selectedIndentForPrint.raisedBy}</div>
+                <div><strong>Raised By:</strong> {slipFor(selectedIndentForPrint).raisedBy.label}</div>
                 <div><strong>Current Status:</strong> <span style={{ fontWeight: '800' }}>{selectedIndentForPrint.status}</span></div>
               </div>
 
@@ -2060,22 +2087,7 @@ export default function ConsumablesAndIndents({
                 <strong>Remarks / Justification:</strong> {selectedIndentForPrint.remarks}
               </div>
 
-              <div className="pdf-signature-block" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', paddingTop: '8px', borderTop: '1px dashed #cbd5e1', textAlign: 'center', fontSize: '8pt' }}>
-                <div>
-                  <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '4px', fontWeight: '700' }}>{selectedIndentForPrint.raisedBy}</div>
-                  <div style={{ color: '#64748b', marginTop: '4px' }}>Requisition Raised By</div>
-                </div>
-
-                <div>
-                  <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '4px', fontWeight: '700' }}>Virendra Singh (Store Manager)</div>
-                  <div style={{ color: '#64748b', marginTop: '4px' }}>Store Manager Verification</div>
-                </div>
-
-                <div>
-                  <div style={{ borderBottom: '1px solid #0f172a', paddingBottom: '4px', fontWeight: '700' }}>Rajesh Sharma (Plant Manager)</div>
-                  <div style={{ color: '#64748b', marginTop: '4px' }}>Plant Manager Approval Signature</div>
-                </div>
-              </div>
+              <IndentSlipSignatures slip={slipFor(selectedIndentForPrint)} />
             </div>
           </div>
         </div>

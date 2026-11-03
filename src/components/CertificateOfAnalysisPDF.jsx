@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2, CheckCircle2 } from 'lucide-re
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getCoaSignatories } from '../services/settingsService';
+import { printablePersonName } from '../utils/recordedPerson';
 
 export const DEFAULT_COA_PARAMETERS = [
   { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "50 ( ± 5 % )", observation: "45 TO 55" },
@@ -64,6 +65,8 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
     approvedByHead = "",
     remarks = "Material tested in Quality Control Laboratory and meets all agreed technical specifications."
   } = coaData;
+  const printedInspector = printablePersonName(qcInspector);
+  const printedApprover = printablePersonName(approvedByHead);
 
   const handleUpdateRow = (index, field, value) => {
     const updated = [...testRows];
@@ -293,7 +296,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
                 ✓ QC Verified & Logged
               </div>
               <div style={{ borderTop: '1px dashed #94a3b8', paddingTop: '3px', fontSize: '9.5px', fontWeight: 'bold', color: '#1e293b' }}>
-                {qcInspector}
+                {printedInspector}
               </div>
               <div style={{ fontSize: '8.5px', color: '#64748b' }}>Samyak QC Testing Laboratory</div>
             </div>
@@ -313,7 +316,7 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
                     </div>
                   )}
                   <div style={{ borderTop: '1px dashed #94a3b8', width: '150px', paddingTop: '3px', fontSize: '9.5px', fontWeight: 'bold', color: '#1e293b' }}>
-                    {approvedByHead}
+                    {printedApprover}
                   </div>
                   <div style={{ fontSize: '8.5px', color: '#64748b' }}>Head of Quality Assurance & Standards</div>
                 </div>

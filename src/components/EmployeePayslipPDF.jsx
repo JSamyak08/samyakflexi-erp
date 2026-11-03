@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Download } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
+import { printablePersonName } from '../utils/recordedPerson';
 
 // Helper to convert number to Indian currency words
 function numberToWords(num) {
@@ -254,7 +255,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                 )}
               </div>
               <div style={{ textAlign: 'right', fontSize: '0.74rem', color: '#166534' }}>
-                Disbursed By: <b>{payment.disbursedBy || 'Finance Dept'}</b>
+                Disbursed By: <b>{printablePersonName(payment.disbursedBy) || '—'}</b>
               </div>
             </div>
           )}
@@ -274,7 +275,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
                 {signatureImage ? (
                   <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '140px', objectFit: 'contain' }} />
                 ) : (
-                  <span style={{ fontFamily: 'cursive', fontSize: '1.1rem', color: '#0f172a' }}>Samyak Jain</span>
+                  <span style={{ display: 'block', height: '38px' }} />
                 )}
               </div>
               <div className="pdf-sign-role">(Authorised Signatory)</div>
