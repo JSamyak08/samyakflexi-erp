@@ -5,8 +5,11 @@
  * layer 1 is always the printed substrate. Change only printingLayer() if a
  * job is printed on a different layer.
  *
- * Hard-coded film, micron and width defaults are not used. A missing spec is
- * "unknown" and fails the check.
+ * Meters versus kg uses the roll, then its stock item, then the job's print
+ * layer, then the film density table. Film Substrates in System Settings
+ * override the built-in densities. If density, micron, or width is still
+ * unknown, the meters check is skipped. That skip does not stop the save.
+ * A calculated mismatch still warns above 8% and blocks above 25%.
  */
 
 import { rawRoleNames } from '../assignedRoles.js';
@@ -18,9 +21,15 @@ export const FILM_OVERRIDE_ROLES = ['Admin', 'Plant Manager', 'Production Manage
 
 export const GUARDRAIL_SETTING_KEY = 'job_master_guardrails';
 
-/** Densities in g/cm³. Same values as the film substrate master. Unknown films have no density. */
+/**
+ * Densities in g/cm³. Same values as the film substrate master, plus coated
+ * PET (CCPET, 1.40) and nylon (1.14). System Settings → Film Substrates
+ * overrides any of these. CPP stays 0.91 and LDPE/PE stay 0.93, matching the
+ * film master; change them there if the plant uses a different number.
+ */
 export const FILM_DENSITY_BY_TYPE = {
   PET: 1.40,
+  CCPET: 1.40,
   METPET: 1.40,
   BOPP: 0.91,
   METBOPP: 0.91,
@@ -36,10 +45,27 @@ export const FILM_DENSITY_BY_TYPE = {
   MATTA: 0.94,
   NMET: 0.935,
   MMET: 0.935,
+  NYLON: 1.14,
   PVC: 1.38,
   FOIL: 2.70,
   PAPER: 0.80
 };
+
+const SIZED_FILM_CODES = [
+  'CCPET',
+  'METPET',
+  'PEARLBOPP',
+  'MATTEBOPP',
+  'METBOPP',
+  'METCPP',
+  'LLDPE',
+  'LDPE',
+  'NYLON',
+  'BOPP',
+  'CPP',
+  'PET',
+  'PE'
+];
 
 export const DEFAULT_GUARDRAIL_LIMITS = {
   micronWarn: 0.5,
@@ -123,10 +149,20 @@ function sameText(left, right) {
   return Boolean(a) && a === b;
 }
 
+function sizedFilmCode(token) {
+  for (const code of SIZED_FILM_CODES) {
+    if (token === code) return code;
+    const rest = token.slice(code.length);
+    if (token.startsWith(code) && /^\d+$/.test(rest)) return code;
+  }
+  return token;
+}
+
 export function normalizeFilmType(value) {
   const raw = text(value);
-  if (!raw || raw === '—' || raw === '-' || raw.toLowerCase() === UNKNOWN) return '';
-  let token = raw.toUpperCase().replace(/\bFILM\b/g, '').replace(/[^A-Z0-9]/g, '');
+  const cut = raw.includes('|||') ? raw.slice(0, raw.indexOf('|||')).trim() : raw;
+  if (!cut || cut === '—' || cut === '-' || cut.toLowerCase() === UNKNOWN) return '';
+  let token = cut.toUpperCase().replace(/\bFILM\b/g, '').replace(/[^A-Z0-9]/g, '');
   if (!token) return '';
   if (token.includes('PEARL') && token.includes('BOPP')) return 'PEARLBOPP';
   if (token.includes('MATTE') && token.includes('BOPP')) return 'MATTEBOPP';
@@ -147,14 +183,134 @@ export function normalizeFilmType(value) {
   if (token.includes('PVC')) return 'PVC';
   if (token.includes('FOIL') || token.includes('ALU')) return 'FOIL';
   if (token.includes('PAPER')) return 'PAPER';
-  return token;
+  if (token.includes('NYLON') || token.includes('POLYAMIDE')) return 'NYLON';
+  if (token.includes('CCPET') || (token.includes('COATED') && token.includes('PET'))) return 'CCPET';
+  return sizedFilmCode(token);
 }
 
 export function densityForFilm(filmType, densities = FILM_DENSITY_BY_TYPE) {
   const token = normalizeFilmType(filmType);
   if (!token) return null;
-  if (Object.prototype.hasOwnProperty.call(densities, token)) return densities[token];
+  const table = densities && typeof densities === 'object' ? densities : FILM_DENSITY_BY_TYPE;
+  if (Object.prototype.hasOwnProperty.call(table, token)) return table[token];
   return null;
+}
+
+/** Built-in densities, then System Settings names such as "Metalised BOPP" or "CCPET". */
+export function mergeDensityTable(source) {
+  const table = { ...FILM_DENSITY_BY_TYPE };
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return table;
+  Object.entries(source).forEach(([key, value]) => {
+    const token = normalizeFilmType(key);
+    const number = finiteNumber(value);
+    if (token && number !== null && number > 0) table[token] = number;
+  });
+  return table;
+}
+
+function positiveMeasure(value) {
+  const number = finiteNumber(value);
+  if (number === null || number <= 0) return null;
+  return number;
+}
+
+function firstPositive(values) {
+  for (const value of values) {
+    const number = positiveMeasure(value);
+    if (number !== null) return number;
+  }
+  return null;
+}
+
+function filmLabel(value) {
+  const raw = text(value);
+  if (!raw) return '';
+  const cut = raw.includes('|||') ? raw.slice(0, raw.indexOf('|||')).trim() : raw;
+  if (!cut || cut === '-' || cut === '—' || cut.toLowerCase() === UNKNOWN) return '';
+  return cut;
+}
+
+function firstFilm(values) {
+  for (const value of values) {
+    const label = filmLabel(value);
+    if (label) return label;
+  }
+  return '';
+}
+
+function matchInventoryRoll(roll, inventoryRolls) {
+  const barcode = text(roll?.barcodeId || roll?.barcode).toLowerCase();
+  if (!barcode) return null;
+  return (inventoryRolls || []).find((row) => {
+    const id = text(row?.barcodeId || row?.barcode || row?.id).toLowerCase();
+    return Boolean(id) && id === barcode;
+  }) || null;
+}
+
+function matchStockItem(roll, sourceRoll, inventory) {
+  const id = text(
+    roll?.itemId ||
+    roll?.stockItemId ||
+    roll?.item_id ||
+    sourceRoll?.itemId ||
+    sourceRoll?.stockItemId ||
+    sourceRoll?.item_id
+  );
+  if (!id) return null;
+  return (inventory || []).find((item) => (
+    text(item?.id) === id || text(item?.itemCode || item?.item_code) === id
+  )) || null;
+}
+
+/**
+ * Density, micron and width for the meters-versus-kg check.
+ * Order: the press roll, the inventory roll with the same barcode, the stock
+ * item (by item id, never by the name blob), the job print layer, then the
+ * density table for density only.
+ */
+export function resolveFilmFacts({ roll, sourceRoll, stockItem, jobSpec, densities } = {}) {
+  const filmType = firstFilm([
+    roll?.filmType,
+    sourceRoll?.filmType,
+    stockItem?.filmType,
+    stockItem?.substrateOrGrade,
+    jobSpec?.filmType
+  ]);
+  const micron = firstPositive([
+    roll?.micron,
+    sourceRoll?.micron,
+    stockItem?.micron,
+    jobSpec?.micron
+  ]);
+  const widthMm = firstPositive([
+    roll?.widthMm,
+    roll?.width_mm,
+    sourceRoll?.widthMm,
+    sourceRoll?.width_mm,
+    stockItem?.widthMm,
+    stockItem?.width_mm,
+    jobSpec?.printWidthMm
+  ]);
+  const recordedDensity = firstPositive([
+    roll?.density,
+    sourceRoll?.density,
+    stockItem?.density,
+    jobSpec?.recordedDensity
+  ]);
+  const tableDensity = densityForFilm(filmType, densities);
+  const density = recordedDensity !== null ? recordedDensity : tableDensity;
+  const missing = [];
+  if (density === null) missing.push('density');
+  if (micron === null) missing.push('micron');
+  if (widthMm === null) missing.push('width');
+  return {
+    filmType,
+    micron,
+    widthMm,
+    density,
+    missing,
+    densitySource: recordedDensity !== null ? 'recorded' : (tableDensity !== null ? 'film-type' : 'unknown')
+  };
 }
 
 /**
@@ -195,7 +351,8 @@ export function printLayerSpec(jobMaster) {
     micron,
     printWidthMm,
     wastagePct,
-    density: densityForFilm(filmType),
+    density: finiteNumber(layer?.density) ?? densityForFilm(filmType),
+    recordedDensity: finiteNumber(layer?.density),
     laminateLayers: (Array.isArray(jobMaster.layers) ? jobMaster.layers : []).slice(1)
   };
 }
@@ -274,20 +431,21 @@ export function mergeGuardrailLimits(overrides) {
  * kg = meters × width(m) × micron × density / 1000.
  * Width is millimetres. Density is g/cm³. Micron × density is g/m².
  */
-export function expectedFilmKg({ meters, widthMm, micron, filmType, densities } = {}) {
+export function expectedFilmKg({ meters, widthMm, micron, filmType, density, densities } = {}) {
   const meterValue = finiteNumber(meters);
   const width = finiteNumber(widthMm);
   const gauge = finiteNumber(micron);
-  const density = densityForFilm(filmType, densities);
-  if (meterValue === null || width === null || gauge === null || density === null) {
-    return { kg: null, density, areaM2: null };
+  const recorded = finiteNumber(density);
+  const resolved = recorded !== null && recorded > 0 ? recorded : densityForFilm(filmType, densities);
+  if (meterValue === null || width === null || gauge === null || resolved === null) {
+    return { kg: null, density: resolved, areaM2: null };
   }
-  if (meterValue < 0 || width < 0 || gauge < 0) {
-    return { kg: null, density, areaM2: null };
+  if (meterValue < 0 || width < 0 || gauge < 0 || resolved < 0) {
+    return { kg: null, density: resolved, areaM2: null };
   }
   const areaM2 = meterValue * (width / 1000);
-  const kg = (areaM2 * gauge * density) / 1000;
-  return { kg: round2(kg), density, areaM2: round2(areaM2) };
+  const kg = (areaM2 * gauge * resolved) / 1000;
+  return { kg: round2(kg), density: resolved, areaM2: round2(areaM2) };
 }
 
 export function trimKgForWiderRoll({ inputKg, inputWidthMm, printWidthMm } = {}) {
@@ -307,7 +465,8 @@ function finding(rule, level, message, extra = {}) {
     actual: extra.actual ?? null,
     expected: extra.expected ?? null,
     overrideAllowed: Boolean(extra.overrideAllowed),
-    trimKg: extra.trimKg ?? null
+    trimKg: extra.trimKg ?? null,
+    nonBlocking: Boolean(extra.nonBlocking)
   };
 }
 
@@ -547,9 +706,13 @@ export function validateProductionEntry({
   jobMasters = [],
   entry = {},
   limits: limitOverrides = null,
-  role = ''
+  role = '',
+  inventory = [],
+  inventoryRolls = [],
+  densities = null
 } = {}) {
   const limits = mergeGuardrailLimits(limitOverrides);
+  const densityTable = mergeDensityTable(densities);
   const resolution = resolveJobMaster({ order, record: entry, jobMasters });
   const spec = printLayerSpec(resolution.jobMaster);
   const blocks = [];
@@ -614,16 +777,29 @@ export function validateProductionEntry({
     return kg >= best ? roll : heaviest;
   }, rolls[0] || null);
   if (meters !== null && meters > 0 && consumed !== null && consumed > 0 && primaryRoll) {
+    const sourceRoll = matchInventoryRoll(primaryRoll, inventoryRolls);
+    const stockItem = matchStockItem(primaryRoll, sourceRoll, inventory);
+    const facts = resolveFilmFacts({
+      roll: primaryRoll,
+      sourceRoll,
+      stockItem,
+      jobSpec: spec,
+      densities: densityTable
+    });
     const expected = expectedFilmKg({
       meters,
-      widthMm: primaryRoll.widthMm,
-      micron: primaryRoll.micron,
-      filmType: primaryRoll.filmType
+      widthMm: facts.widthMm,
+      micron: facts.micron,
+      filmType: facts.filmType,
+      density: facts.density,
+      densities: densityTable
     });
     if (expected.kg === null) {
-      blocks.push(finding('meters-kg', 'block', 'Meters cannot be checked against kg because film density, micron, or width is unknown.', {
+      const missing = facts.missing.length ? facts.missing.join(', ') : 'density, micron, or width';
+      warnings.push(finding('meters-kg', 'warn', `Meters were not checked against kg because ${missing} is unknown. The press run can still be saved.`, {
         actual: consumed,
-        expected: UNKNOWN
+        expected: UNKNOWN,
+        nonBlocking: true
       }));
     } else {
       const gap = percentGap(consumed, expected.kg);
@@ -819,9 +995,10 @@ export function decideGuardrailSave(result, { role = '', warningReason = '', fil
       };
     }
   }
-  if (warnings.length && !reason) {
+  const gatingWarnings = warnings.filter((item) => !item.nonBlocking);
+  if (gatingWarnings.length && !reason) {
     messages.push('A warning needs a typed reason before this record can be saved.');
-    warnings.forEach((item) => messages.push(item.message));
+    gatingWarnings.forEach((item) => messages.push(item.message));
   }
 
   const spec = result?.spec;

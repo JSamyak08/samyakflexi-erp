@@ -31,9 +31,11 @@ import {
   countActiveLoggingDays,
   findPelletInventoryItem
 } from '../services/pelletFuel';
+import { canRecordPelletFuel } from '../approvalAccess';
 
 export default function PelletFuelManagement({
   urlParams = {},
+  currentUser = null,
   userRole = "",
   userName = "",
   vendors = [],
@@ -55,6 +57,10 @@ export default function PelletFuelManagement({
   const choosePelletTab = (subTab) => {
     setActiveSubTab(subTab);
     pushSlugState('pellet_fuel', { section: subTab });
+  };
+  const canRecordPellet = canRecordPelletFuel(currentUser || userRole);
+  const denyPelletWrite = () => {
+    alert('Only Admin, Plant Manager, Production Manager, or Store Manager can record pellet fuel.');
   };
 
   // Filter Bar States
@@ -211,6 +217,10 @@ export default function PelletFuelManagement({
 
   // Open Add Consumption Modal
   const handleOpenNewConsumption = () => {
+    if (!canRecordPellet) {
+      denyPelletWrite();
+      return;
+    }
     setEditingConsumption(null);
     setCDate(new Date().toISOString().split('T')[0]);
     setCShift('');
@@ -226,6 +236,10 @@ export default function PelletFuelManagement({
 
   // Open Edit Consumption Modal
   const handleEditConsumption = (item) => {
+    if (!canRecordPellet) {
+      denyPelletWrite();
+      return;
+    }
     setEditingConsumption(item);
     setCDate(item.consumptionDate || new Date().toISOString().split('T')[0]);
     setCShift(item.shift || '');
@@ -242,6 +256,10 @@ export default function PelletFuelManagement({
   // Save Consumption Record
   const handleSaveConsumptionForm = async (e) => {
     e.preventDefault();
+    if (!canRecordPellet) {
+      denyPelletWrite();
+      return;
+    }
     if (!cQtyKg || Number(cQtyKg) <= 0) {
       alert("Please enter a valid consumed quantity in Kgs.");
       return;
@@ -308,6 +326,10 @@ export default function PelletFuelManagement({
 
   // Open Add Inward Modal
   const handleOpenNewInward = async () => {
+    if (!canRecordPellet) {
+      denyPelletWrite();
+      return;
+    }
     setEditingInward(null);
     setIGrnNo('');
     setIGrnError('');
@@ -342,6 +364,10 @@ export default function PelletFuelManagement({
 
   // Open Edit Inward Modal
   const handleEditInward = (item) => {
+    if (!canRecordPellet) {
+      denyPelletWrite();
+      return;
+    }
     const matchedVendor = vendorOptions.find(v => String(v.id) === String(item.vendorId) || v.name === item.vendorName || v.companyName === item.vendorName);
     setEditingInward(item);
     setIGrnNo(item.grnNo || '');
@@ -363,6 +389,10 @@ export default function PelletFuelManagement({
   // Save Inward Form
   const handleSaveInwardForm = async (e) => {
     e.preventDefault();
+    if (!canRecordPellet) {
+      denyPelletWrite();
+      return;
+    }
     if (!iQtyKg || Number(iQtyKg) <= 0) {
       alert("Please enter a valid inward quantity in Kgs.");
       return;
@@ -482,6 +512,8 @@ export default function PelletFuelManagement({
           >
             <Download size={16} /> Export CSV Report
           </button>
+          {canRecordPellet && (
+            <>
           <button 
             type="button" 
             className="btn-secondary" 
@@ -498,6 +530,8 @@ export default function PelletFuelManagement({
           >
             <Flame size={16} /> + Record Daily Consumption
           </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -781,7 +815,7 @@ export default function PelletFuelManagement({
                   <td colSpan={9} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
                     <Flame size={36} style={{ color: '#cbd5e1', marginBottom: '10px' }} />
                     <div style={{ fontWeight: '700', fontSize: '0.98rem', color: '#64748b' }}>{loadError ? 'Consumption records are unavailable' : 'No boiler pellet consumption records found'}</div>
-                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>{loadError ? 'The stock book did not load, so this is not a zero-consumption day.' : 'Click "+ Record Daily Consumption" to log day-wise boiler fuel usage.'}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>{loadError ? 'The stock book did not load, so this is not a zero-consumption day.' : (canRecordPellet ? 'Click "+ Record Daily Consumption" to log day-wise boiler fuel usage.' : 'Pellet consumption is view-only for this role.')}</div>
                   </td>
                 </tr>
               ) : (
@@ -840,6 +874,7 @@ export default function PelletFuelManagement({
                       </td>
                       <td style={{ textAlign: 'center', padding: '14px 16px' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          {canRecordPellet && (
                           <button 
                             type="button" 
                             className="btn-secondary" 
@@ -849,7 +884,8 @@ export default function PelletFuelManagement({
                           >
                             <Edit3 size={13} /> Edit
                           </button>
-                          {onDeletePelletConsumption && (
+                          )}
+                          {canRecordPellet && onDeletePelletConsumption && (
                             <button 
                               type="button" 
                               className="btn-secondary" 
@@ -898,7 +934,7 @@ export default function PelletFuelManagement({
                   <td colSpan={9} style={{ textAlign: 'center', padding: '48px 20px', color: '#94a3b8' }}>
                     <Package size={36} style={{ color: '#cbd5e1', marginBottom: '10px' }} />
                     <div style={{ fontWeight: '700', fontSize: '0.98rem', color: '#64748b' }}>{loadError ? 'Inward records are unavailable' : 'No pellet GRN inward records found'}</div>
-                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>{loadError ? 'The stock book did not load, so this is not a zero balance.' : 'Click "+ GRN Inward Stock" to record incoming pellet shipments.'}</div>
+                    <div style={{ fontSize: '0.82rem', color: '#94a3b8', marginTop: '4px' }}>{loadError ? 'The stock book did not load, so this is not a zero balance.' : (canRecordPellet ? 'Click "+ GRN Inward Stock" to record incoming pellet shipments.' : 'Pellet inwards are view-only for this role.')}</div>
                   </td>
                 </tr>
               ) : (
@@ -945,6 +981,7 @@ export default function PelletFuelManagement({
                     </td>
                     <td style={{ textAlign: 'center', padding: '14px 16px' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                        {canRecordPellet && (
                         <button 
                           type="button" 
                           className="btn-secondary" 
@@ -954,7 +991,8 @@ export default function PelletFuelManagement({
                         >
                           <Edit3 size={13} /> Edit
                         </button>
-                        {onDeletePelletInward && (
+                        )}
+                        {canRecordPellet && onDeletePelletInward && (
                           <button 
                             type="button" 
                             className="btn-secondary" 

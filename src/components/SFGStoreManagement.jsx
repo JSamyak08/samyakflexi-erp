@@ -88,6 +88,11 @@ import {
   scrapFiltersFromQuery,
   scrapFiltersToQuery
 } from '../utils/scrapStoreFilters';
+import {
+  SFG_STORE_GROUP_PAGE_SIZE,
+  filterSfgStoreItems,
+  groupSfgStoreItems
+} from '../utils/sfgStoreList';
 
 export default function SFGStoreManagement({
   sfgGoods = [],
@@ -448,29 +453,11 @@ export default function SFGStoreManagement({
   }, [sfgGoods, inventory, inventoryRolls, orders]);
 
 
-  // Filtered Items
-  const filteredItems = useMemo(() => {
-    return allSfgItems.filter(item => {
-      // Search term matching
-      const sTerm = searchTerm.trim().toLowerCase();
-      const matchSearch = !sTerm || 
-        (item.sfgBatchCode && item.sfgBatchCode.toLowerCase().includes(sTerm)) ||
-        (item.jobName && item.jobName.toLowerCase().includes(sTerm)) ||
-        (item.jobCode && item.jobCode.toLowerCase().includes(sTerm)) ||
-        (item.orderId && item.orderId.toLowerCase().includes(sTerm)) ||
-        (item.clientName && item.clientName.toLowerCase().includes(sTerm)) ||
-        (item.filmType && item.filmType.toLowerCase().includes(sTerm)) ||
-        (item.sfgType && item.sfgType.toLowerCase().includes(sTerm));
-
-      // Status filter
-      const matchStatus = statusFilter === 'all' || item.status === statusFilter;
-
-      // Type filter
-      const matchType = typeFilter === 'all' || item.sfgType === typeFilter;
-
-      return matchSearch && matchStatus && matchType;
-    });
-  }, [allSfgItems, searchTerm, statusFilter, typeFilter]);
+  // Search and filters run on the full assembled store, the same rows the summary cards count.
+  const filteredItems = useMemo(
+    () => filterSfgStoreItems(allSfgItems, { searchTerm, statusFilter, typeFilter }),
+    [allSfgItems, searchTerm, statusFilter, typeFilter]
+  );
 
   // KPI Calculations
   const metrics = useMemo(() => {
@@ -497,78 +484,11 @@ export default function SFGStoreManagement({
     };
   }, [allSfgItems]);
 
-  // Group filtered items by Job Order Ref (orderId or jobCode/jobName)
-  const groupedOrders = useMemo(() => {
-    const groups = [];
-    const map = new Map();
-
-    const orderMap = new Map((orders || []).map(o => [o.id, o]));
-    const cleanOrderMap = new Map((orders || []).map(o => [String(o.id || '').replace('#', '').trim(), o]));
-
-    filteredItems.forEach(item => {
-      let rawOrderKey = (item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A') 
-        ? item.orderId 
-        : (item.jobCode && item.jobCode !== 'N/A' ? item.jobCode : (item.jobName || 'Unassigned Order'));
-      
-      const orderKey = String(rawOrderKey).replace('#', '').trim();
-
-      if (!map.has(orderKey)) {
-        let directOrderMatch = orderMap.get(item.orderId) || cleanOrderMap.get(orderKey);
-        if (!directOrderMatch) {
-          directOrderMatch = (orders || []).find(o => {
-            const oId = String(o.id || '').replace('#', '').trim();
-            return oId === orderKey || oId.endsWith(orderKey) || orderKey.endsWith(oId);
-          });
-        }
-
-        const rawQty = item.orderQty || directOrderMatch?.totalOrderQty || directOrderMatch?.quantityKg || directOrderMatch?.orderQtyKg || directOrderMatch?.quantity || directOrderMatch?.orderQty || directOrderMatch?.targetQtyKg || directOrderMatch?.plannedQtyKg || null;
-
-        const rawUnit = item.orderQtyUnit || directOrderMatch?.quantityUnit || directOrderMatch?.orderQtyUnit || directOrderMatch?.unit || 'Kg';
-
-        const rawDate = item.orderDate || directOrderMatch?.orderDate || directOrderMatch?.date || directOrderMatch?.order_date || directOrderMatch?.created_at || null;
-
-        const groupObj = {
-          orderKey,
-          orderId: item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' ? item.orderId : '',
-          jobName: item.jobName || 'Untitled Job',
-          jobCode: item.jobCode || '',
-          clientName: item.clientName || '',
-          filmType: item.filmType,
-          micron: item.micron,
-          widthMm: item.widthMm,
-          orderQty: rawQty,
-          orderQtyUnit: rawUnit,
-          orderDate: rawDate ? String(rawDate).split('T')[0] : null,
-          totalNetKg: 0,
-          consumedKg: 0,
-          availableKg: 0,
-          items: []
-        };
-        map.set(orderKey, groupObj);
-        groups.push(groupObj);
-      }
-
-      const grp = map.get(orderKey);
-      const net = Number(item.totalNetKg) || 0;
-      const consumed = Number(item.consumedKg) || 0;
-      const available = item.availableKg !== undefined ? Number(item.availableKg) : Math.max(0, net - consumed);
-
-      if (!grp.orderQty && item.orderQty) {
-        grp.orderQty = item.orderQty;
-        grp.orderQtyUnit = item.orderQtyUnit || 'Kg';
-      }
-      if (!grp.orderDate && item.orderDate) {
-        grp.orderDate = String(item.orderDate).split('T')[0];
-      }
-
-      grp.totalNetKg += net;
-      grp.consumedKg += consumed;
-      grp.availableKg += available;
-      grp.items.push(item);
-    });
-
-    return groups;
-  }, [filteredItems, orders]);
+  // Group the filtered batches. Paging happens after this, so a group keeps every roll.
+  const groupedOrders = useMemo(
+    () => groupSfgStoreItems(filteredItems, orders),
+    [filteredItems, orders]
+  );
 
   // Collapsible state for order accordions ({ [orderKey]: boolean })
   const [expandedOrders, setExpandedOrders] = useState({});
@@ -601,8 +521,13 @@ export default function SFGStoreManagement({
     setExpandedOrders(newMap);
   };
 
-  // Pagination by Order Group
-  const { paginatedItems: paginatedGroups, totalPages, currentPage, setCurrentPage } = usePagination(groupedOrders, 10);
+  // Pagination by order group. The footer reads this same total and page size.
+  const groupPagination = usePagination(groupedOrders, SFG_STORE_GROUP_PAGE_SIZE);
+  const paginatedGroups = groupPagination.paginatedItems;
+  const setGroupPage = groupPagination.setCurrentPage;
+  useEffect(() => {
+    setGroupPage(1);
+  }, [searchTerm, statusFilter, typeFilter, setGroupPage]);
 
   // Available raw material substrate rolls from inventory for Lamination Pass 1 & 2
   const availableSubstrateRolls = useMemo(() => {
@@ -2017,6 +1942,7 @@ export default function SFGStoreManagement({
             return (
               <div
                 key={group.orderKey}
+                data-testid="sfg-order-group"
                 style={{
                   background: '#ffffff',
                   border: expanded ? '1px solid #93c5fd' : '1px solid #e2e8f0',
@@ -2228,7 +2154,7 @@ export default function SFGStoreManagement({
                           );
 
                           return (
-                            <tr key={item.id || item.sfgBatchCode} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
+                            <tr key={item.id || item.sfgBatchCode} data-testid="sfg-order-roll" style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
                               
                               {/* Barcode / Batch Code */}
                               <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
@@ -2456,22 +2382,19 @@ export default function SFGStoreManagement({
         )}
       </div>
 
-      {/* Pagination Footer */}
-      {groupedOrders.length > 0 && (
-        <div style={{
+      {/* Pagination Footer — counts the filtered order groups, including an empty search. */}
+      <div
+        data-testid="sfg-store-pagination"
+        style={{
           background: '#ffffff',
           border: '1px solid #e2e8f0',
           borderRadius: '14px',
           padding: '16px 20px',
           marginBottom: '24px'
-        }}>
-          <TablePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPageChange={setCurrentPage}
-          />
-        </div>
-      )}
+        }}
+      >
+        <TablePagination pagination={groupPagination} />
+      </div>
       </>
       )}
 

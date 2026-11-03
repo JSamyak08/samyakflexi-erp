@@ -78,7 +78,9 @@ export const BOOT_NEEDS = {
   sfg: ['production_records', 'inventory', 'printing_scheduler', 'sfg_store'],
   challans: ['dispatch', 'sales', 'inventory'],
   coas: ['inventory', 'production_records', 'dispatch'],
-  pellets: ['pellet_fuel', 'inventory'],
+  // Fuel rows are not part of Inventory or the printing scheduler.
+  // Operators keep those screens without reading the pellet book.
+  pellets: ['pellet_fuel'],
   purchaseOrders: ['purchase_orders', 'inventory'],
   indents: ['material_indents', 'inventory'],
   barcodes: ['barcodes'],
