@@ -775,7 +775,7 @@ export function parseBulkStockCsv(text, {
 export function buildBulkImportPayload(plan, {
   inventory = [],
   now = new Date(),
-  adjustedBy = 'Store Manager'
+  adjustedBy = ''
 } = {}) {
   const stamp = now instanceof Date ? now : new Date(now);
   const nowIso = stamp.toISOString();

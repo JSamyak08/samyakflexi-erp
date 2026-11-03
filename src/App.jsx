@@ -21,6 +21,7 @@ import {
   PRINTING_LEAD_DAYS_SETTING,
   DEFAULT_PRINTING_LEAD_DAYS,
 } from './utils/orderDeadlineReminder';
+import { loggedInActorLabel } from './utils/recordedPerson';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -3114,7 +3115,7 @@ export default function App() {
       clientName: order.clientName || order.customerName || '',
       dateFilled: endData.dateFilled || factoryCalendarDate(),
       status: 'Filled by Plant Manager',
-      filledBy: 'Operator',
+      filledBy: loggedInActorLabel(currentUser),
       materialsList: []
     };
 
@@ -6444,6 +6445,8 @@ export default function App() {
           <ConsumablesAndIndents 
             urlParams={urlParams}
             currentUser={currentUser}
+            users={users}
+            employees={employees}
             userRole={currentUser?.role || ""}
             userName={currentUser?.name || ""}
             vendors={vendors}

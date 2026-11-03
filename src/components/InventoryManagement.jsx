@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { anyAssignedRole } from '../assignedRoles';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
 import { 
   Package, 
   Plus, 
@@ -935,7 +936,7 @@ export default function InventoryManagement({
       qtyKg: qty,
       barcode: adjBarcode.trim() || generateBarcodeId('ADJ'),
       reason: adjReason.trim() || 'Physical Stock Audit Correction',
-      adjustedBy: 'Store Manager'
+      adjustedBy: loggedInActorLabel(currentUser)
     };
 
     const updated = [newAdj, ...stockLedgerAdjustments];
@@ -2857,7 +2858,7 @@ export default function InventoryManagement({
           invoiceNo: grnInvoiceNo,
           freightAmount: grnFreightAmount,
           transporterName: grnTransporterName.trim() || 'Direct Dispatch / Self',
-          storeManager: currentUser?.name || 'Store Manager',
+          storeManager: loggedInActorLabel(currentUser),
           receivedTime: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
           remarks: (grnItemRemarks || '').trim()
         },
@@ -3155,7 +3156,7 @@ export default function InventoryManagement({
       qcStatus: isCylinderCategory ? "Approved" : "Pending QC Approval",
       qcNotes: isCylinderCategory ? "Engraved cylinder set received and verified." : "",
       inspectedBy: isCylinderCategory ? "Cylinder QC Inspector" : "",
-      storeManager: currentUser?.name || "Store Manager"
+      storeManager: loggedInActorLabel(currentUser)
     };
     if (editing) {
       newGRN.editedBy = currentUser?.name || '';
@@ -3523,7 +3524,7 @@ export default function InventoryManagement({
         isMetalloceneEligibleFilm,
         calculateFilmRollLength
       });
-      const inspectorName = currentUser?.name || 'Quality QC Chemist';
+      const inspectorName = loggedInActorLabel(currentUser);
       updatedGRN.qcNotes = qcNotesInput || (isApproved
         ? 'Inspected and passed all laboratory parameters.'
         : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.');
@@ -3595,7 +3596,7 @@ export default function InventoryManagement({
     const verifiedFilmType = isFilm ? (qcEditFilmType || qcInspectingGRN.filmType || 'PET') : (qcInspectingGRN.filmType || qcInspectingGRN.category);
     const verifiedBatchNo = (qcEditBatchNo || qcInspectingGRN.batchNo || '').trim();
     const verifiedRollsCount = parseInt(qcEditRollsReceived, 10) || qcInspectingGRN.rollsReceived || 1;
-    const inspectorName = currentUser?.name || 'Quality QC Chemist';
+    const inspectorName = loggedInActorLabel(currentUser);
     const inspectionNowIso = new Date().toISOString();
 
     // Compute verified item name for films or keep item name
@@ -4204,7 +4205,7 @@ export default function InventoryManagement({
           issueType: issueType,
           qty: qty,
           jobName: chosenJobName,
-          user: currentUser?.name || 'Store Manager',
+          user: loggedInActorLabel(currentUser),
           unitPrice: finalRate,
           batchNo: finalBatchNo,
           vendorName: finalVendor,
@@ -4308,7 +4309,7 @@ export default function InventoryManagement({
             qtyKg: variance,
             barcode: `BAR-AUDIT-${item.id}-${Math.floor(100 + Math.random() * 900)}`,
             reason: 'Monthly Physical Stock Audit Reconciliation',
-            adjustedBy: 'Store Mgr Dilip Joshi'
+            adjustedBy: loggedInActorLabel(currentUser)
           });
         }
         return {
@@ -4449,7 +4450,7 @@ export default function InventoryManagement({
     const payload = buildBulkImportPayload(bulkPlan, {
       inventory: safeInventory,
       now: new Date(),
-      adjustedBy: currentUser?.name || 'Store Manager'
+      adjustedBy: loggedInActorLabel(currentUser)
     });
     if (payload.items.length === 0) {
       alert('There are no valid rows to import.');
@@ -8072,7 +8073,7 @@ export default function InventoryManagement({
                     Store Inward Officer
                   </span>
                   <div style={{ fontWeight: '700', color: '#0f172a', marginTop: '2px' }}>
-                    {qcInspectingGRN.storeManager || 'Store Inward Desk'}
+                    {printablePersonName(qcInspectingGRN.storeManager) || '—'}
                   </div>
                   <div style={{ fontSize: '0.72rem', color: '#059669', fontWeight: '600' }}>
                     Dock Location: {qcInspectingGRN.location || 'Bay A'}
@@ -9647,7 +9648,7 @@ export default function InventoryManagement({
               date: tx.date || tx.created_at || new Date().toISOString().split('T')[0],
               refNo: tx.jobName || (isIssue ? 'Store Issue' : 'Store Return'),
               subRef: `Req: ${tx.id}`,
-              partyName: tx.vendorName || tx.issuedBy || item.lastVendor || 'Store Manager',
+              partyName: printablePersonName(tx.vendorName) || printablePersonName(tx.issuedBy) || printablePersonName(item.lastVendor) || '—',
               subParty: isIssue ? 'Shopfloor Requisition' : 'Store Return',
               inwardQtyKg: isIssue ? 0 : qty,
               outwardQtyKg: isIssue ? qty : 0,
@@ -9677,7 +9678,7 @@ export default function InventoryManagement({
               date: a.date || a.created_at || new Date().toISOString().split('T')[0],
               refNo: `Audit Ref: ${a.id}`,
               subRef: a.type || 'Audit Variance',
-              partyName: a.adjustedBy || 'Store Manager',
+              partyName: printablePersonName(a.adjustedBy) || '—',
               subParty: 'Physical Inventory Audit',
               inwardQtyKg: qty > 0 ? qty : 0,
               outwardQtyKg: qty < 0 ? Math.abs(qty) : 0,
@@ -9740,7 +9741,7 @@ export default function InventoryManagement({
             date: a.date || new Date().toISOString(),
             refNo: a.barcode || a.id,
             subRef: 'Bulk upload',
-            partyName: a.adjustedBy || 'Store Manager',
+            partyName: printablePersonName(a.adjustedBy) || '—',
             subParty: 'Opening stock receipt',
             inwardQtyKg: Math.abs(Number(a.qtyKg) || 0),
             outwardQtyKg: 0,

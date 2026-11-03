@@ -3,6 +3,7 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { formatINR } from '../utils/pdfHelpers';
+import { printablePersonName } from '../utils/recordedPerson';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber } from '../services/settingsService';
 
 export default function JobDataSheetPDF({ sheetData, onClose }) {
@@ -98,7 +99,7 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
                   <td className="label-col">Client Name</td>
                   <td className="value-col">{clientName}</td>
                   <td className="label-col">Recorded By</td>
-                  <td className="value-col">{sheetData.createdBy || 'Plant Manager'}</td>
+                  <td className="value-col">{printablePersonName(sheetData.createdBy)}</td>
                 </tr>
               </tbody>
             </table>

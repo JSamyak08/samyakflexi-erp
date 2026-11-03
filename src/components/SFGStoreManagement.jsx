@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { displayPartyName } from '../utils/textHelpers';
+import { loggedInActorLabel } from '../utils/recordedPerson';
 import { isDispatchPacking } from '../utils/dispatchPacking';
 import {
   NO_MACHINE_FOR_PROCESS_HINT,
@@ -1399,7 +1400,7 @@ export default function SFGStoreManagement({
       approvedKg: approveVal,
       remainingHoldKg: newRemainingKg,
       reason: approveReason.trim(),
-      approvedBy: currentUser?.fullName || currentUser?.username || 'QC Manager'
+      approvedBy: loggedInActorLabel(currentUser)
     };
 
     // 1. Restore approved quantity back to parent SFG/FG store item
@@ -1426,7 +1427,7 @@ export default function SFGStoreManagement({
             consumedKg: -parseFloat(approveVal.toFixed(2)), // negative consumed = restored
             remainingBalanceKg: parseFloat(parentAvail.toFixed(2)),
             targetProcess: 'Restored from QC Hold Store',
-            operatorName: currentUser?.fullName || currentUser?.username || 'QC Manager',
+            operatorName: loggedInActorLabel(currentUser),
             shift: 'Day Shift',
             notes: `Approved from QC Hold Tag #${selectedQcItemForApprove.barcodeId}. Reason: ${approveReason.trim()}`
           },

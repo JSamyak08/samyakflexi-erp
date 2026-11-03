@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { anyAssignedRole } from '../assignedRoles';
+import { loggedInActorLabel } from '../utils/recordedPerson';
 import { 
   Users, 
   UserPlus, 
@@ -1049,7 +1050,7 @@ export default function EmployeeManagement({
       overtimeApprovedBy: '',
       overtimeApprovedDate: '',
       dinnerAllowanceEligible: Boolean(markingAttendanceEmp?.salaryStructure?.optDinner || Number(markingAttendanceEmp?.salaryStructure?.dinnerAllowancePerNight) > 0),
-      markedBy: currentUser?.name || 'Shift Supervisor'
+      markedBy: loggedInActorLabel(currentUser)
     };
 
     try {
@@ -1098,7 +1099,7 @@ export default function EmployeeManagement({
         overtimeReason: '',
         overtimeStatus: 'Approved',
         dinnerAllowanceEligible: Boolean(emp.salaryStructure?.optDinner || Number(emp.salaryStructure?.dinnerAllowancePerNight) > 0),
-        markedBy: currentUser?.name || 'Shift Supervisor'
+        markedBy: loggedInActorLabel(currentUser)
       };
       try {
         await persistAttendance(rec);
@@ -1136,7 +1137,7 @@ export default function EmployeeManagement({
     const updated = {
       ...attRecord,
       overtimeStatus: isApproved ? 'Approved' : 'Rejected',
-      overtimeApprovedBy: currentUser?.name || 'Plant Head',
+      overtimeApprovedBy: loggedInActorLabel(currentUser),
       overtimeApprovedDate: new Date().toISOString().split('T')[0],
       overtimeApprovalAmount: payout
     };
@@ -1170,7 +1171,7 @@ export default function EmployeeManagement({
       overtimeStatus: 'Pending Approval',
       overtimeApprovedBy: null,
       overtimeApprovedDate: null,
-      overtimeRevertedBy: currentUser?.name || 'Plant Head',
+      overtimeRevertedBy: loggedInActorLabel(currentUser),
       overtimeRevertedDate: new Date().toISOString().split('T')[0]
     };
     try {
@@ -1525,7 +1526,7 @@ export default function EmployeeManagement({
       bankName: paymentEmpData?.bankDetails?.bankName || '',
       accountNumber: paymentEmpData?.bankDetails?.accountNumber || '',
       status: 'Paid',
-      disbursedBy: currentUser?.name || 'Samyak Jain (Admin)',
+      disbursedBy: loggedInActorLabel(currentUser),
       notes: paymentNotes.trim() + (actualAdvanceDeduction > 0 ? ` (₹${actualAdvanceDeduction.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} advance recovered)` : (targetAdvance ? ' (Advance recovery skipped this month)' : '')),
       createdAt: new Date().toISOString()
     };
