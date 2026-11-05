@@ -57,7 +57,7 @@ import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInven
 import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
 import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete } from '../services/supabaseDataService';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
 import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
@@ -87,7 +87,7 @@ import {
   validateCapturedLines
 } from '../services/grnDocument';
 import { displayItemName, findInventoryItemById, planManualStockSave, planReceiptStockLink, preferMasterItem } from '../services/inventoryIdentity';
-import { canManageInwardGrn, cancelInwardGrn, grnChangeBlockReason, rollsForGrn } from '../services/grnLifecycle';
+import { canDeleteInwardQcInspection, canManageInwardGrn, cancelInwardGrn, deleteInwardQcBlockReason, grnChangeBlockReason, isGrnDeleted, receiptKg, rollsForGrn } from '../services/grnLifecycle';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, replacePayloadRecords, describeSaveError } from '../services/businessRecords';
 import { pushSlugState } from '../utils/slugRouter';
@@ -311,7 +311,8 @@ export default function InventoryManagement({
   onAddDispatchShipment,
   cylinders = [],
   onUpdateCylinder,
-  onUpdateOrder
+  onUpdateOrder,
+  onInwardQcDeleted
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -1395,6 +1396,8 @@ export default function InventoryManagement({
 
     // 1. Add batches from individual inventory rolls
     (inventoryRolls || []).forEach(r => {
+      const rollState = `${r.status || ''} ${r.qcStatus || ''}`.toLowerCase();
+      if (rollState.includes('void') || rollState.includes('delet')) return;
       if (r.itemId === selectedInvItem.id || (r.itemName && r.itemName.toLowerCase() === (selectedInvItem.itemName || '').toLowerCase())) {
         const batchKey = `ROLL_${r.barcodeId || r.id}`;
         if (!seenBatchKeys.has(batchKey)) {
@@ -1418,6 +1421,7 @@ export default function InventoryManagement({
 
     // 2. Add batches from matching GRNs
     matchingGRNs.forEach(g => {
+      if (isGrnDeleted(g)) return;
       const batchKey = `GRN_${g.grnNo || g.id}`;
       if (!seenBatchKeys.has(batchKey)) {
         seenBatchKeys.add(batchKey);
@@ -1499,6 +1503,8 @@ export default function InventoryManagement({
   const [grnStartDate, setGrnStartDate] = useState('');
   const [grnEndDate, setGrnEndDate] = useState('');
   const [grnStatusFilter, setGrnStatusFilter] = useState('ALL');
+  const [deleteQcPrompt, setDeleteQcPrompt] = useState(null);
+  const canDeleteQcInspection = canDeleteInwardQcInspection(currentUser);
   const [grnSortBy, setGrnSortBy] = useState('DATE_DESC');
 
   // Discrepancy Resolution Modal State (Admin Only)
@@ -1614,7 +1620,7 @@ export default function InventoryManagement({
       const delayDays = isPromisedValid ? Math.floor((new Date() - promisedDateObj) / 86400000) : 0;
 
       const matchingGRNs = (grns || []).filter(g => String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase());
-      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.quantity) || 0), 0);
+      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + receiptKg(g), 0);
       const totalPoQty = (po.items || []).reduce((sum, it) => sum + (parseFloat(it.qtyKg) || parseFloat(it.qty) || 0), 0);
       const pendingInwardQty = Math.max(0, totalPoQty - totalInwardQty);
 
@@ -1635,6 +1641,7 @@ export default function InventoryManagement({
       const resolvedInfo = poResolutions[po.poNumber] || po.priceDiscrepancyResolution || null;
 
       matchingGRNs.forEach(g => {
+        if (isGrnDeleted(g)) return;
         const grnRate = parseFloat(g.purchaseRatePerKg || g.purchaseRate || g.unitPrice) || 0;
         const grnQty = parseFloat(g.netWeightKg || g.receivedQtyKg || g.quantity) || 0;
         const grnItemName = (g.itemName || '').trim();
@@ -1684,10 +1691,11 @@ export default function InventoryManagement({
       });
 
       // Overall PO Quantity Variance check if goods arrived
-      if (matchingGRNs.length > 0 && totalPoQty > 0 && totalInwardQty > 0 && Math.abs(totalInwardQty - totalPoQty) > 0.1 && qtyVariations.length === 0) {
+      const countedGrns = matchingGRNs.filter((g) => !isGrnDeleted(g));
+      if (countedGrns.length > 0 && totalPoQty > 0 && totalInwardQty > 0 && Math.abs(totalInwardQty - totalPoQty) > 0.1 && qtyVariations.length === 0) {
         const netDiff = totalInwardQty - totalPoQty;
         qtyVariations.push({
-          grnNo: matchingGRNs.map(g => g.grnNo || g.grnNumber).join(', '),
+          grnNo: countedGrns.map(g => g.grnNo || g.grnNumber).join(', '),
           orderedQty: totalPoQty,
           receivedQty: totalInwardQty,
           variance: netDiff,
@@ -1774,9 +1782,7 @@ export default function InventoryManagement({
       g && String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase()
     );
 
-    const inwardQty = matchingGRNs.reduce((sum, g) => 
-      sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || parseFloat(g.quantity) || 0), 0
-    );
+    const inwardQty = matchingGRNs.reduce((sum, g) => sum + receiptKg(g), 0);
 
     const totalQty = (po.items || []).reduce((sum, it) => 
       sum + (parseFloat(it.qtyKg) || parseFloat(it.qty) || 0), 0
@@ -3500,6 +3506,34 @@ export default function InventoryManagement({
     alert(`GRN ${grn.grnNo || grn.id} is cancelled. No stock was added. The receipt stays in the register.`);
   };
 
+  const confirmDeleteInwardQc = async (event) => {
+    event.preventDefault();
+    const prompt = deleteQcPrompt;
+    if (!prompt?.grn) return;
+    const reason = String(prompt.reason || '').trim();
+    if (!reason) {
+      setDeleteQcPrompt({ ...prompt, error: 'Deletion needs a reason.' });
+      return;
+    }
+    const block = deleteInwardQcBlockReason(prompt.grn, currentUser);
+    if (block) {
+      setDeleteQcPrompt({ ...prompt, error: block });
+      return;
+    }
+    setDeleteQcPrompt({ ...prompt, busy: true, error: '' });
+    try {
+      const result = await deleteInwardQcInspection(prompt.grn.id || prompt.grn.grnNo, reason);
+      if (onInwardQcDeleted) onInwardQcDeleted(result);
+      setDeleteQcPrompt(null);
+      const lineNote = Number(result?.lineCount) > 1
+        ? ` All ${result.lineCount} lines on this receipt were removed from inspection together.`
+        : '';
+      alert(`GRN ${result?.grnNo || prompt.grn.grnNo} is Deleted. It stays in the inward history and was not added to inventory.${lineNote}`);
+    } catch (err) {
+      setDeleteQcPrompt({ ...prompt, busy: false, error: err.message || String(err) });
+    }
+  };
+
   // QC Approval / Rejection (Updates Stock for Films, Inks, Solvents, Adhesives, Spares, PPE)
   const switchQcLine = (lineId) => {
     if (!lineId || lineId === qcActiveLineId) return;
@@ -3518,6 +3552,11 @@ export default function InventoryManagement({
       return;
     }
     if (!qcInspectingGRN) return;
+    if (isGrnDeleted(qcInspectingGRN)) {
+      alert('This GRN is deleted and cannot be approved.');
+      setQcInspectingGRN(null);
+      return;
+    }
     const qcLines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
     if (qcLines.length > 1) {
       const isApproved = status === 'Approved';
@@ -3880,6 +3919,8 @@ export default function InventoryManagement({
     // 1. Search in inventoryRolls by barcodeId, id, vendorRollNo, batchNo, barcode
     const matchedRoll = (inventoryRolls || []).find(r => {
       if (isRetiredBarcode(r)) return false;
+      const rollState = `${r.status || ''} ${r.qcStatus || ''}`.toLowerCase();
+      if (rollState.includes('void') || rollState.includes('delet')) return false;
       const bId = codeKey(r.barcodeId);
       const rId = codeKey(r.id);
       const vRoll = codeKey(r.vendorRollNo);
@@ -3894,6 +3935,7 @@ export default function InventoryManagement({
 
     // 2. Search in safeGrns by grnNo, id, batchNo, barcode, invoiceNo, poNumber
     const matchedGrn = (safeGrns || []).find(g => {
+      if (isGrnDeleted(g)) return false;
       const gNo = codeKeyFrom(g.grnNo, g.grn_number, g.grnNumber);
       const gCode = gNo.replace(/^grn-/, '');
       const gId = codeKey(g.id);
@@ -4539,6 +4581,7 @@ export default function InventoryManagement({
 
 
   const pendingQCGRNs = (safeGrns || []).filter(g => {
+    if (isGrnDeleted(g)) return false;
     const st = String(g.status || '').trim().toLowerCase();
     const qcSt = String(g.qcStatus || '').trim().toLowerCase();
     const category = String(g.category || '').trim().toLowerCase();
@@ -4716,6 +4759,7 @@ export default function InventoryManagement({
         if (grnStatusFilter === 'PENDING') return st.includes('pending') || st.includes('awaiting');
         if (grnStatusFilter === 'REJECTED') return st.includes('reject') || st.includes('hold');
         if (grnStatusFilter === 'CANCELLED') return st.includes('cancel');
+        if (grnStatusFilter === 'DELETED') return st.includes('delet');
         return true;
       });
     }
@@ -5938,7 +5982,7 @@ export default function InventoryManagement({
                 Records: {filteredGrns.length} / {safeGrns.length}
               </span>
               <span className="badge badge-primary" style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '6px 12px', fontSize: '0.82rem', fontWeight: '700' }}>
-                Inward Weight: {filteredGrns.reduce((sum, g) => sum + Number(g.netWeightKg || g.receivedQtyKg || 0), 0).toLocaleString()} Kg
+                Inward Weight: {filteredGrns.reduce((sum, g) => sum + receiptKg(g), 0).toLocaleString()} Kg
               </span>
             </div>
           </div>
@@ -6020,6 +6064,7 @@ export default function InventoryManagement({
                   <option value="PENDING">⏳ Pending QC Clearance</option>
                   <option value="REJECTED">❌ Rejected by QC</option>
                   <option value="CANCELLED">Cancelled before QC</option>
+                  <option value="DELETED">Deleted</option>
                 </SearchableSelect>
               </div>
 
@@ -6114,16 +6159,19 @@ export default function InventoryManagement({
                       <td style={{ fontWeight: '700', color: '#60a5fa' }}>{g.netWeightKg} kg ({g.rollsReceived} rolls)</td>
                       <td><code>{g.batchNo || '—'}</code></td>
                       <td>
-                        {((g.status || '').toLowerCase().includes('cancel') || (g.qcStatus || '').toLowerCase().includes('cancel')) && (
+                        {isGrnDeleted(g) && (
+                          <span className="badge badge-warning" title={g.deleteReason ? `Deleted: ${g.deleteReason}` : 'Deleted'} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', fontWeight: '700' }}>DELETED</span>
+                        )}
+                        {!isGrnDeleted(g) && ((g.status || '').toLowerCase().includes('cancel') || (g.qcStatus || '').toLowerCase().includes('cancel')) && (
                           <span className="badge badge-warning" style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', fontWeight: '700' }}>CANCELLED</span>
                         )}
-                        {((g.status || '').toLowerCase().includes('approved') || (g.qcStatus || '').toLowerCase().includes('approved')) && (
+                        {!isGrnDeleted(g) && ((g.status || '').toLowerCase().includes('approved') || (g.qcStatus || '').toLowerCase().includes('approved')) && (
                           <span className="badge badge-us" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}>APPROVED BY QC</span>
                         )}
-                        {(((g.status || '').toLowerCase().includes('pending') || (!g.status && !g.qcStatus)) && !(g.status || '').toLowerCase().includes('approved') && !(g.status || '').toLowerCase().includes('cancel')) && (
+                        {!isGrnDeleted(g) && (((g.status || '').toLowerCase().includes('pending') || (!g.status && !g.qcStatus)) && !(g.status || '').toLowerCase().includes('approved') && !(g.status || '').toLowerCase().includes('cancel')) && (
                           <span className="badge badge-warning" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontWeight: '700' }}>⏳ PENDING QC APPROVAL</span>
                         )}
-                        {((g.status || '').toLowerCase().includes('reject') || (g.qcStatus || '').toLowerCase().includes('reject') || (g.status || '').toLowerCase().includes('hold')) && (
+                        {!isGrnDeleted(g) && ((g.status || '').toLowerCase().includes('reject') || (g.qcStatus || '').toLowerCase().includes('reject') || (g.status || '').toLowerCase().includes('hold')) && (
                           <span className="badge badge-warning" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontWeight: '700' }}>REJECTED BY QC</span>
                         )}
                       </td>
@@ -6156,6 +6204,7 @@ export default function InventoryManagement({
                           }}>
                             <Printer size={14} /> Print GRN
                           </button>
+                          {!isGrnDeleted(g) && (
                           <button 
                             className="btn-secondary" 
                             style={{ padding: '6px 12px', fontSize: '0.8rem', color: '#059669', borderColor: '#a7f3d0' }}
@@ -6200,6 +6249,7 @@ export default function InventoryManagement({
                           >
                             <Printer size={14} /> Barcode
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -6237,6 +6287,43 @@ export default function InventoryManagement({
             onPageChange={grnPagination.setCurrentPage}
             onPageSizeChange={grnPagination.setPageSize}
           />
+        </div>
+      )}
+
+      {deleteQcPrompt?.grn && (
+        <div className="modal-overlay" onClick={() => { if (!deleteQcPrompt.busy) setDeleteQcPrompt(null); }}>
+          <div className="modal-content" style={{ maxWidth: '520px', width: '94%' }} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Trash2 size={18} style={{ color: '#b91c1c' }} /> Delete inward QC inspection
+            </h3>
+            <p style={{ fontSize: '0.9rem', lineHeight: 1.45 }}>
+              Delete <strong>{deleteQcPrompt.grn.grnNo || deleteQcPrompt.grn.id}</strong> from the QC Approval Lab.
+              The whole receipt is marked Deleted, including every line on it. It stays on the Inward GRNs history
+              and is not added to inventory.
+            </p>
+            <form onSubmit={confirmDeleteInwardQc}>
+              <label style={{ display: 'block', fontWeight: '700', margin: '12px 0 6px' }} htmlFor="delete-qc-reason">Reason (required)</label>
+              <textarea
+                id="delete-qc-reason"
+                className="form-control"
+                required
+                maxLength={2000}
+                value={deleteQcPrompt.reason}
+                onChange={(event) => setDeleteQcPrompt((prev) => prev ? { ...prev, reason: event.target.value, error: '' } : prev)}
+                placeholder="Why is this inspection being removed?"
+                style={{ minHeight: '80px' }}
+              />
+              {deleteQcPrompt.error && (
+                <p style={{ color: '#b91c1c', fontSize: '0.84rem', margin: '8px 0 0' }}>{deleteQcPrompt.error}</p>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+                <button type="button" className="btn-secondary" disabled={deleteQcPrompt.busy} onClick={() => setDeleteQcPrompt(null)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={deleteQcPrompt.busy || !String(deleteQcPrompt.reason || '').trim()} style={{ background: '#dc2626', borderColor: '#dc2626' }}>
+                  {deleteQcPrompt.busy ? 'Deleting…' : 'Delete inspection'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -6336,6 +6423,16 @@ export default function InventoryManagement({
                       <p style={{ margin: 0, fontSize: '0.8rem', color: '#92400e', fontWeight: '700' }}>
                         QC approval is limited to QC Chemist, Plant Manager, Production Manager, and Admin.
                       </p>
+                    )}
+                    {canDeleteQcInspection && (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        style={{ width: '100%', marginTop: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '8px 16px', fontWeight: '700', color: '#b91c1c', borderColor: '#fecaca' }}
+                        onClick={() => setDeleteQcPrompt({ grn: g, reason: '', error: '', busy: false })}
+                      >
+                        <Trash2 size={16} /> Delete inspection
+                      </button>
                     )}
                   </div>
                 );
@@ -9465,7 +9562,7 @@ export default function InventoryManagement({
         const fallbackRate = itemActualUnitPrice || (DEFAULT_DAILY_RATES[item.filmType] || 0);
 
         // 1. Gather Inward Receipts (GRNs)
-        const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item));
+        const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item) && !isGrnDeleted(g));
         const inwardTxLines = matchingGRNs.map(g => {
           const txId = `GRN_${g.grnNo || g.id}`;
           const isApproved = g.status === 'Approved' || g.qcStatus === 'Approved';

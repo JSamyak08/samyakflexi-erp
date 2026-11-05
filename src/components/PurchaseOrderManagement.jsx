@@ -53,6 +53,7 @@ import {
 import { formatPlantDateTime } from '../utils/dbDates';
 import { loggedInActorLabel } from '../utils/recordedPerson';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
+import { isGrnDeleted, receiptKg } from '../services/grnLifecycle';
 import { planReceiptStockLink } from '../services/inventoryIdentity';
 import { calculateOrderStockReservations, generateInventoryId, linkedRequirementMatches, presentRequirementStock, requirementStockKey } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
@@ -277,7 +278,7 @@ export default function PurchaseOrderManagement({
       const matchingGRNs = (grns || []).filter(g => 
         String(g.poNumber || '').trim().toLowerCase() === String(existingPo.poNumber || '').trim().toLowerCase()
       );
-      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
+      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + receiptKg(g), 0);
       const totalPoQty = (existingPo.items || []).reduce((sum, it) => sum + (parseFloat(it.qtyKg) || 0), 0);
 
       // If already fully received, no active shortage
@@ -644,9 +645,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
         g && String(g.poNumber || '').trim().toLowerCase() === String(po.poNumber || '').trim().toLowerCase()
       );
 
-      const totalInwardQty = matchingGRNs.reduce((sum, g) => 
-        sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0
-      );
+      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + receiptKg(g), 0);
       const totalPoQty = ((po && po.items) || []).reduce((sum, it) => sum + (parseFloat(it.qtyKg) || 0), 0);
       const pendingQty = Math.max(0, totalPoQty - totalInwardQty);
 
@@ -836,7 +835,10 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
     const rows = filteredPurchaseOrders.map(po => {
       const itemsShort = (po.items || []).map(it => `${it.itemDesc || it.itemName} (${it.qtyKg} ${it.unit || 'Kg'})`).join('; ');
-      const grnNumbers = (po.matchingGRNs || []).map(g => g.grnNo || g.grnNumber).join('; ');
+      const grnNumbers = (po.matchingGRNs || []).map((g) => {
+        const no = g.grnNo || g.grnNumber;
+        return isGrnDeleted(g) ? `${no} (Deleted)` : no;
+      }).join('; ');
 
       return [
         `"${po.poNumber}"`,
@@ -1261,7 +1263,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           })));
         }
         const receivedTotal = Number(storedGRN.receivedQtyKg || storedGRN.netWeightKg) || 0;
-        const existingInward = (po.matchingGRNs || []).reduce((sum, g) => sum + (parseFloat(g.netWeightKg || g.receivedQtyKg) || 0), 0);
+        const existingInward = (po.matchingGRNs || []).reduce((sum, g) => sum + receiptKg(g), 0);
         const newTotalInward = existingInward + receivedTotal;
         const totalPoQty = po.totalPoQty || poQtyVal || 0;
         let newDeliveryStatus = 'Partially Received';
@@ -1397,7 +1399,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       }
 
       // 3. Update Purchase Order delivery status
-      const existingInward = (po.matchingGRNs || []).reduce((sum, g) => sum + (parseFloat(g.netWeightKg || g.receivedQtyKg) || 0), 0);
+      const existingInward = (po.matchingGRNs || []).reduce((sum, g) => sum + receiptKg(g), 0);
       const newTotalInward = existingInward + enteredWeight;
       const totalPoQty = po.totalPoQty || poQtyVal || 0;
 
@@ -3212,11 +3214,12 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
                                       fontWeight: '700', 
                                       padding: '2px 6px', 
                                       borderRadius: '4px', 
-                                      background: grn.status === 'Approved' ? '#ecfdf5' : '#eff6ff', 
-                                      color: grn.status === 'Approved' ? '#047857' : '#1d4ed8' 
+                                      background: isGrnDeleted(grn) ? '#f1f5f9' : (grn.status === 'Approved' ? '#ecfdf5' : '#eff6ff'), 
+                                      color: isGrnDeleted(grn) ? '#475569' : (grn.status === 'Approved' ? '#047857' : '#1d4ed8'),
+                                      border: isGrnDeleted(grn) ? '1px solid #cbd5e1' : 'none'
                                     }}
                                   >
-                                    {grn.status || 'Pending QC Approval'}
+                                    {isGrnDeleted(grn) ? 'Deleted' : (grn.status || 'Pending QC Approval')}
                                   </span>
                                 </td>
                               </tr>

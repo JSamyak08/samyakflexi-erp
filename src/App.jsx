@@ -3395,6 +3395,30 @@ export default function App() {
     logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
   };
 
+  const handleInwardQcDeleted = (result) => {
+    if (!result) return;
+    setGrns((prev) => prev.map((grn) => {
+      const same = String(grn.id) === String(result.id) || String(grn.grnNo) === String(result.grnNo);
+      if (!same) return grn;
+      return {
+        ...grn,
+        status: 'Deleted',
+        qcStatus: 'Deleted',
+        deletedBy: result.deletedBy || grn.deletedBy || '',
+        deletedAt: result.deletedAt || grn.deletedAt || '',
+        deleteReason: result.deleteReason || grn.deleteReason || ''
+      };
+    }));
+    const voided = new Set((result.voidedBarcodes || []).map((code) => String(code)));
+    if (voided.size > 0) {
+      setInventoryRolls((prev) => prev.map((roll) => {
+        const code = String(roll.barcodeId || roll.id || '');
+        if (!voided.has(code)) return roll;
+        return { ...roll, status: 'Void', qcStatus: 'Void', availableWeightKg: 0 };
+      }));
+    }
+  };
+
   const handleUpdateInventory = async (newInventory) => {
     requireDatabaseConnection('update inventory');
     if (Array.isArray(newInventory)) {
@@ -6461,6 +6485,7 @@ export default function App() {
             onAddRoll={handleAddRoll}
             onUpdateRoll={handleUpdateRoll}
             onUpdateInventoryRolls={handleUpdateInventoryRolls}
+            onInwardQcDeleted={handleInwardQcDeleted}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}
           />

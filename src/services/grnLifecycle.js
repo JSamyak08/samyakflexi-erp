@@ -3,6 +3,7 @@
  * Cancelling keeps the receipt and voids its rolls. It does not add stock.
  */
 
+import { userHasAnyRole } from '../assignedRoles.js';
 import { DEFAULT_ROLE_PERMISSIONS } from '../factoryStore.js';
 import { summarizeReceiptLines } from './grnDocument.js';
 
@@ -13,6 +14,25 @@ export function isQcApprovedStatus(status) {
 export function isGrnCancelled(grn) {
   const blob = `${grn?.status || ''} ${grn?.qcStatus || ''}`.toLowerCase();
   return blob.includes('cancel');
+}
+
+export function isGrnDeleted(grn) {
+  const blob = `${grn?.status || ''} ${grn?.qcStatus || ''}`.toLowerCase();
+  return blob.includes('delet');
+}
+
+/** Cancelled receipts still follow the older totals. Deleted receipts do not. */
+export function grnCountsAsReceipt(grn) {
+  return Boolean(grn) && !isGrnDeleted(grn);
+}
+
+export function receiptKg(grn) {
+  if (!grnCountsAsReceipt(grn)) return 0;
+  return Number(grn.netWeightKg ?? grn.receivedQtyKg ?? grn.received_qty_kg ?? grn.quantity) || 0;
+}
+
+export function canDeleteInwardQcInspection(user) {
+  return userHasAnyRole(user, 'Admin');
 }
 
 export function grnHasQcApproval(grn) {
@@ -40,8 +60,23 @@ export function grnChangeBlockReason(grn, role, matrix = DEFAULT_ROLE_PERMISSION
   if (grnHasQcApproval(grn)) {
     return 'This GRN is locked because a line has been QC-approved. Stock already posted cannot be edited or cancelled here.';
   }
+  if (isGrnDeleted(grn)) {
+    return 'This GRN is deleted and cannot be edited or approved.';
+  }
   if (isGrnCancelled(grn)) {
     return 'This GRN is already cancelled.';
+  }
+  return '';
+}
+
+export function deleteInwardQcBlockReason(grn, user) {
+  if (!canDeleteInwardQcInspection(user)) {
+    return 'Only an Admin can delete an inward QC inspection.';
+  }
+  if (!grn) return 'This GRN was not found.';
+  if (isGrnDeleted(grn)) return 'This GRN is already deleted.';
+  if (grnHasQcApproval(grn)) {
+    return 'This GRN was already QC-approved and posted to inventory. It cannot be deleted, and stock is not reversed.';
   }
   return '';
 }
@@ -49,7 +84,9 @@ export function grnChangeBlockReason(grn, role, matrix = DEFAULT_ROLE_PERMISSION
 function lockedError(grn) {
   const error = new Error(grnHasQcApproval(grn)
     ? 'This GRN is locked because a line has been QC-approved.'
-    : 'This GRN is already cancelled.');
+    : (isGrnDeleted(grn)
+      ? 'This GRN is deleted and cannot be edited or approved.'
+      : 'This GRN is already cancelled.'));
   error.code = 'GRN_LOCKED';
   return error;
 }
@@ -59,7 +96,7 @@ function lockedError(grn) {
  * inventoryDeltaKg is always 0: editing does not post stock.
  */
 export function editInwardGrn(grn, { header = {}, lines, actor, now } = {}) {
-  if (grnHasQcApproval(grn) || isGrnCancelled(grn)) throw lockedError(grn);
+  if (grnHasQcApproval(grn) || isGrnCancelled(grn) || isGrnDeleted(grn)) throw lockedError(grn);
   const nextLines = Array.isArray(lines) && lines.length > 0 ? lines : (grn.lineItems || []);
   const summary = summarizeReceiptLines(nextLines);
   const at = now || new Date().toISOString();
@@ -94,7 +131,7 @@ export function rollsForGrn(rolls, grn) {
  * Rolls are voided with zero available weight. Stock is not increased.
  */
 export function cancelInwardGrn(grn, { actor, reason, now, rolls = [] } = {}) {
-  if (grnHasQcApproval(grn)) throw lockedError(grn);
+  if (grnHasQcApproval(grn) || isGrnDeleted(grn)) throw lockedError(grn);
   const at = now || new Date().toISOString();
   const who = typeof actor === 'string' ? actor : (actor?.name || '');
   const why = String(reason || '').trim();

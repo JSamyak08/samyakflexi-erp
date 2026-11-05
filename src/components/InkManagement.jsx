@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { userHasAnyRole } from '../assignedRoles';
+import { isGrnDeleted, receiptKg } from '../services/grnLifecycle';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { 
   Droplet, 
@@ -884,7 +885,7 @@ export default function InkManagement({
         (tx.itemName && ink.shade && tx.itemName.toLowerCase().includes(ink.shade.toLowerCase()))
       );
 
-      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + (Number(g.netWeightKg) || 0), 0);
+      const totalInwardQty = matchingGRNs.reduce((sum, g) => sum + receiptKg(g), 0);
       const totalJobConsumedQty = matchingJobIssues.filter(t => t.issueType === 'issue').reduce((sum, t) => sum + (Number(t.qtyKg) || 0), 0);
       const totalJobReturnedQty = matchingJobIssues.filter(t => t.issueType === 'return').reduce((sum, t) => sum + (Number(t.qtyKg) || 0), 0);
       const netJobConsumedQty = Math.max(0, totalJobConsumedQty - totalJobReturnedQty);
@@ -1881,11 +1882,13 @@ export default function InkManagement({
                         <td style={{ fontWeight: '700' }}>{g.itemName}</td>
                         <td>{g.vendorName || g.supplierName}</td>
                         <td style={{ fontFamily: 'monospace' }}>{g.batchNo || g.lotNo || '-'}</td>
-                        <td style={{ fontWeight: '700', color: '#059669' }}>{g.netWeightKg || g.quantityKg || g.inwardQtyKg} kg</td>
+                        <td style={{ fontWeight: '700', color: isGrnDeleted(g) ? '#64748b' : '#059669' }}>{isGrnDeleted(g) ? '—' : `${g.netWeightKg || g.quantityKg || g.inwardQtyKg} kg`}</td>
                         <td>₹ {g.purchaseRatePerKg || g.unitPrice || 0} / kg</td>
-                        <td style={{ fontWeight: '800' }}>₹ {((Number(g.netWeightKg || g.quantityKg || 0)) * (Number(g.purchaseRatePerKg || g.unitPrice || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td style={{ fontWeight: '800' }}>{isGrnDeleted(g) ? '—' : `₹ ${((Number(g.netWeightKg || g.quantityKg || 0)) * (Number(g.purchaseRatePerKg || g.unitPrice || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}</td>
                         <td>
-                          {((g.status || g.qcStatus || '').toLowerCase().includes('approved')) ? (
+                          {isGrnDeleted(g) ? (
+                            <span className="badge" style={{ fontSize: '0.7rem', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' }}>Deleted</span>
+                          ) : ((g.status || g.qcStatus || '').toLowerCase().includes('approved')) ? (
                             <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Approved by QC</span>
                           ) : ((g.status || g.qcStatus || '').toLowerCase().includes('reject')) ? (
                             <span className="badge badge-danger" style={{ fontSize: '0.7rem' }}>Rejected</span>
@@ -2101,7 +2104,9 @@ export default function InkManagement({
                             <td>{g.inwardDate || g.date}</td>
                             <td>{g.vendorName || g.supplierName}</td>
                             <td style={{ fontFamily: 'monospace' }}>{g.batchNo || '-'}</td>
-                            <td style={{ fontWeight: '700', color: '#059669' }}>{g.netWeightKg || g.quantityKg} kg</td>
+                            <td style={{ fontWeight: '700', color: isGrnDeleted(g) ? '#64748b' : '#059669' }}>
+                              {isGrnDeleted(g) ? 'Deleted' : `${g.netWeightKg || g.quantityKg} kg`}
+                            </td>
                             <td>₹ {g.purchaseRatePerKg || g.unitPrice || 0} / kg</td>
                           </tr>
                         ))

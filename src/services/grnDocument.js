@@ -102,6 +102,11 @@ function grnIsCancelled(grn) {
   return blob.includes('cancel');
 }
 
+function grnIsDeleted(grn) {
+  const blob = `${grn?.status || ''} ${grn?.qcStatus || ''}`.toLowerCase();
+  return blob.includes('delet');
+}
+
 export function findDuplicateInvoice(existing, candidate) {
   const invoiceNo = normalizeInvoiceNo(candidate?.invoiceNo || candidate?.invoice_number);
   const vendorName = String(candidate?.vendorName || '').trim().toLowerCase();
@@ -112,7 +117,7 @@ export function findDuplicateInvoice(existing, candidate) {
       .map((value) => String(value))
   );
   return (existing || []).find((grn) => {
-    if (grnIsCancelled(grn)) return false;
+    if (grnIsCancelled(grn) || grnIsDeleted(grn)) return false;
     const theirInvoice = normalizeInvoiceNo(grn?.invoiceNo || grn?.invoice_number);
     const theirVendor = String(grn?.vendorName || '').trim().toLowerCase();
     const theirIds = [grn?.grnNo, grn?.id, grn?.grn_number].filter(Boolean).map(String);
@@ -653,6 +658,7 @@ function lineMatchesStockItem(line, item) {
 export function pendingQcKgForItem(item, grns) {
   let sum = 0;
   (grns || []).forEach((grn) => {
+    if (grnIsDeleted(grn)) return;
     const status = grn?.status || '';
     const lines = Array.isArray(grn?.lineItems) ? grn.lineItems : [];
     if (lines.length > 1) {

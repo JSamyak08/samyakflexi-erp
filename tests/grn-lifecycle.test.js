@@ -2,11 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
+  canDeleteInwardQcInspection,
   canManageInwardGrn,
   cancelInwardGrn,
+  deleteInwardQcBlockReason,
   editInwardGrn,
   grnChangeBlockReason,
-  grnHasQcApproval
+  grnHasQcApproval,
+  isGrnDeleted,
+  receiptKg
 } from '../src/services/grnLifecycle.js';
 
 const pending = {
@@ -92,6 +96,25 @@ test('QC hold can still be cancelled, and a cancel needs a reason', () => {
   assert.equal(result.grn.status, 'Cancelled');
   assert.equal(result.inventoryDeltaKg, 0);
   assert.throws(() => cancelInwardGrn(pending, { actor: 'Store', reason: '   ' }), /reason/);
+});
+
+test('only an Admin can delete an inspection, and an approved GRN is blocked', () => {
+  assert.equal(canDeleteInwardQcInspection('Admin'), true);
+  assert.equal(canDeleteInwardQcInspection({ role: 'Store Manager', assigned_roles: ['Admin'] }), true);
+  assert.equal(canDeleteInwardQcInspection('QC Chemist'), false);
+  assert.equal(canDeleteInwardQcInspection('Plant Manager'), false);
+  assert.equal(canDeleteInwardQcInspection('Production Manager'), false);
+  assert.equal(canDeleteInwardQcInspection(null), false);
+  assert.equal(deleteInwardQcBlockReason(pending, 'QC Chemist'), 'Only an Admin can delete an inward QC inspection.');
+  assert.equal(deleteInwardQcBlockReason(pending, 'Admin'), '');
+  const approved = { ...pending, status: 'Approved', qcStatus: 'Approved' };
+  assert.match(deleteInwardQcBlockReason(approved, 'Admin'), /not reversed/);
+  const deleted = { ...pending, status: 'Deleted', qcStatus: 'Deleted' };
+  assert.equal(isGrnDeleted(deleted), true);
+  assert.equal(receiptKg(deleted), 0);
+  assert.equal(receiptKg(pending), 100);
+  assert.match(grnChangeBlockReason(deleted, 'Admin'), /deleted/);
+  assert.throws(() => cancelInwardGrn(deleted, { actor: 'Admin', reason: 'again' }), /deleted/);
 });
 
 test('edit and cancel follow the inventory role, not a new permission', () => {
