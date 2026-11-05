@@ -1702,6 +1702,19 @@ td.no-capitalize,
   margin-top: 8px;
 }
 
+.auth-submit-btn:disabled,
+.btn-back-link:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.auth-recovery-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #475569;
+}
+
 .auth-divider {
   display: flex;
   align-items: center;

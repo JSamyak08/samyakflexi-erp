@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { isCompanyAddress, parseMailbox } from './emailPolicy';
+import { classifyPasswordResetFailure, passwordResetSuccessMessage } from './passwordReset';
 import { readUsername } from '../utils/activeUserLabel';
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
 import { resolvePublicOrigin } from '../utils/canonicalOrigin';
@@ -115,35 +116,55 @@ export async function signInUser(email, password) {
   };
 }
 
-export async function sendPasswordResetEmail(email) {
+function resetFailure(error) {
+  const failure = classifyPasswordResetFailure(error);
+  return {
+    success: false,
+    type: failure.type,
+    message: failure.message,
+    retryAfterMs: failure.retryAfterMs || 0,
+  };
+}
+
+export async function sendPasswordResetEmail(email, deps = {}) {
   const cleanEmail = (email || '').toLowerCase().trim();
-  // Forgot-password is not a signed-in Send click. Supabase Auth would mail
-  // whatever address is typed, so non-company addresses never reach that API.
-  if (!isCompanyAddress(parseMailbox(cleanEmail))) {
+  try {
+    // A mailbox that cannot be parsed is an input error. A parsed address on
+    // any other domain never reaches Supabase Auth: this is not a signed-in
+    // Send click, and Auth would otherwise mail whatever was typed.
+    const parsed = parseMailbox(cleanEmail);
+    if (!parsed) return resetFailure({ code: 'email_address_invalid', message: 'invalid email format' });
+    if (!isCompanyAddress(parsed)) {
+      return {
+        success: true,
+        suppressed: true,
+        message: passwordResetSuccessMessage(cleanEmail),
+      };
+    }
+    const configured = Object.prototype.hasOwnProperty.call(deps, 'isConfigured')
+      ? Boolean(deps.isConfigured)
+      : isSupabaseConfigured();
+    if (!configured) {
+      return { success: false, type: 'config', message: 'Supabase is not configured. Password reset unavailable.' };
+    }
+
+    const env = import.meta.env || {};
+    const origin = resolvePublicOrigin({
+      configured: deps.origin || env.VITE_PUBLIC_SITE_URL || env.VITE_APP_ORIGIN || '',
+      locationOrigin: typeof window !== 'undefined' ? window.location.origin : '',
+    });
+    const redirectTo = `${origin}/auth/confirm`;
+    const reset = deps.resetPasswordForEmail
+      || ((address, options) => supabase.auth.resetPasswordForEmail(address, options));
+    const response = await reset(cleanEmail, { redirectTo });
+    if (response?.error) return resetFailure(response.error);
     return {
       success: true,
-      suppressed: true,
-      message: `If ${cleanEmail} is a registered account, a password setup link is on its way.`,
+      message: passwordResetSuccessMessage(cleanEmail),
     };
+  } catch (error) {
+    return resetFailure(error);
   }
-  if (!isSupabaseConfigured()) {
-    return { success: false, message: 'Supabase is not configured. Password reset unavailable.' };
-  }
-
-  const origin = resolvePublicOrigin({
-    configured: import.meta.env.VITE_PUBLIC_SITE_URL || import.meta.env.VITE_APP_ORIGIN || '',
-    locationOrigin: typeof window !== 'undefined' ? window.location.origin : '',
-  });
-
-  const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-    redirectTo: `${origin}/auth/confirm`,
-  });
-
-  if (error) return { success: false, message: error.message };
-  return {
-    success: true,
-    message: `If ${cleanEmail} is a registered account, a password setup link is on its way.`,
-  };
 }
 
 export async function updateOwnPassword(newPassword) {
