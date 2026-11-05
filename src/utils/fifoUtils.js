@@ -53,6 +53,8 @@ export function getItemInwardDate(item, grns = [], rolls = []) {
   }, item).include) : (item.matchingGRNs || []);
 
   matchingGrnsList.forEach(g => {
+    const withdrawn = `${g.status || ''} ${g.qcStatus || ''}`.toLowerCase();
+    if (withdrawn.includes('delet')) return;
     const parsed = parseDateFlexible(g.receivedDate || g.grnDate || g.inwardDate || g.createdAt || g.createdDate || g.date);
     if (parsed) dates.push(parsed);
   });

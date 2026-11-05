@@ -7,6 +7,8 @@
  * revision columns set and is treated as Rev 00.
  */
 
+import { grnCountsAsReceipt } from '../services/grnLifecycle.js';
+
 const QTY_EPSILON = 0.0001;
 
 export function formatAmendmentLabel(revisionNo) {
@@ -118,6 +120,7 @@ export function receivedQtyForPurchaseOrder(grns, poNumber) {
   const byItem = new Map();
   let total = 0;
   for (const grn of grnsForPurchaseOrder(grns, poNumber)) {
+    if (!grnCountsAsReceipt(grn)) continue;
     const lines = Array.isArray(grn.lineItems) && grn.lineItems.length ? grn.lineItems : null;
     if (lines) {
       for (const line of lines) {

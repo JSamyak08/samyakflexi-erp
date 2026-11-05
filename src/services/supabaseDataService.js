@@ -1136,7 +1136,10 @@ export async function saveGRNToSupabase(grn) {
     cancelledAt: clean.cancelledAt || '',
     cancelReason: clean.cancelReason || '',
     editedBy: clean.editedBy || '',
-    editedAt: clean.editedAt || ''
+    editedAt: clean.editedAt || '',
+    deletedBy: clean.deletedBy || '',
+    deletedAt: clean.deletedAt || '',
+    deleteReason: clean.deleteReason || ''
   };
 
   const combinedItemName = `${itemNameVal} ||| ${JSON.stringify(meta)}`;
@@ -1184,7 +1187,8 @@ export async function saveGRNToSupabase(grn) {
     }
     const wantedVendor = targetVName.toLowerCase();
     const match = (existingGrns || []).find((row) => {
-      if (String(row.status || '').toLowerCase().includes('cancel')) return false;
+      const rowStatus = String(row.status || '').toLowerCase();
+      if (rowStatus.includes('cancel') || rowStatus.includes('delet')) return false;
       if (normalizeInvoiceNo(row.invoice_number) !== wantedInvoice) return false;
       const sameDocument = String(row.id) === String(grnId) || String(row.grn_number) === String(clean.grnNo || grnId);
       if (sameDocument) return false;
@@ -1248,6 +1252,25 @@ export async function saveGRNToSupabase(grn) {
     grnNo: savedNo,
     lineItems: stampLineIds(savedId, lines)
   };
+}
+
+/**
+ * Admin soft-delete of one inward QC inspection. The database voids pending
+ * rolls and writes the audit row. This does not post stock.
+ */
+export async function deleteInwardQcInspection(grnId, reason) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured.');
+  }
+  await ensureValidSession();
+  const { data, error } = await supabase.rpc('delete_inward_qc_inspection', {
+    p_grn_id: grnId,
+    p_reason: reason
+  });
+  if (error) {
+    throw new Error(error.message || 'The inspection was not deleted.');
+  }
+  return data;
 }
 
 export async function allocateGrnNumber(prefix) {

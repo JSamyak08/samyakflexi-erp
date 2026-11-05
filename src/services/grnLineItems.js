@@ -143,8 +143,12 @@ export function sanitizeGRN(rawGRN) {
   }
 
   const metallocenePct = meta.metallocenePct || rawGRN.metallocene_pct || rawGRN.metallocenePct || '';
-  const statusVal = rawGRN.status || meta.status || 'Pending QC Approval';
-  const qcStatusVal = meta.qcStatus || rawGRN.qcStatus || rawGRN.qc_remarks || statusVal;
+  const columnStatus = String(rawGRN.status || '').trim();
+  const metaStatus = String(meta.status || '').trim();
+  const metaQc = String(meta.qcStatus || rawGRN.qcStatus || '').trim();
+  const deleted = /delet/i.test(columnStatus) || /delet/i.test(metaStatus) || /delet/i.test(metaQc);
+  const statusVal = deleted ? 'Deleted' : (columnStatus || metaStatus || 'Pending QC Approval');
+  const qcStatusVal = deleted ? 'Deleted' : (metaQc || rawGRN.qc_remarks || statusVal);
   const explicitLines = Array.isArray(rawGRN.lineItems) ? rawGRN.lineItems : [];
   const metaLines = Array.isArray(meta.lineItems) ? meta.lineItems : [];
 
@@ -198,7 +202,10 @@ export function sanitizeGRN(rawGRN) {
     remarks: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
     notes: meta.itemRemarks || rawGRN.itemRemarks || rawGRN.remarks || meta.remarks || rawGRN.notes || '',
     location: meta.location || rawGRN.location || 'Store Bay',
-    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay'
+    storeLocation: meta.storeLocation || rawGRN.storeLocation || 'Store Bay',
+    deletedBy: meta.deletedBy || rawGRN.deletedBy || rawGRN.deleted_by || '',
+    deletedAt: meta.deletedAt || rawGRN.deletedAt || rawGRN.deleted_at || '',
+    deleteReason: meta.deleteReason || rawGRN.deleteReason || rawGRN.delete_reason || ''
   };
 
   return applyGrnLineItems(sanitized, explicitLines.length > 0 ? explicitLines : metaLines);

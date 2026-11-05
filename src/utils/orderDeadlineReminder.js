@@ -229,6 +229,10 @@ function grnCancelled(grn) {
   return /cancel/i.test(String(grn?.status || grn?.qcStatus || ''));
 }
 
+function grnDeleted(grn) {
+  return /delet/i.test(`${grn?.status || ''} ${grn?.qcStatus || ''}`);
+}
+
 function grnPendingQc(grn) {
   const status = `${grn?.status || ''} ${grn?.qcStatus || ''}`.toLowerCase();
   return status.includes('pending qc');
@@ -312,7 +316,7 @@ export function derivePrintingBlockers(order, context = {}) {
       const poNumbers = new Set(pos.map((po) => String(po.poNumber || po.id || '').trim().toLowerCase()).filter(Boolean));
       const grns = grnChecked
         ? (context.grns || []).filter((grn) => {
-          if (!grn || grnCancelled(grn)) return false;
+          if (!grn || grnCancelled(grn) || grnDeleted(grn)) return false;
           const poNumber = String(grn.poNumber || grn.po_number || '').trim().toLowerCase();
           return poNumber && poNumbers.has(poNumber);
         })

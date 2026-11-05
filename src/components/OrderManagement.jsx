@@ -43,6 +43,7 @@ import {
 } from '../factoryStore';
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { anyAssignedRole } from '../assignedRoles';
+import { receiptKg } from '../services/grnLifecycle';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
@@ -2661,7 +2662,7 @@ export default function OrderManagement({
                                             {(() => {
                                               const poNo = req.poNumber || order.poNumber;
                                               const matched = (grns || []).filter(g => String(g.poNumber || '').trim().toLowerCase() === String(poNo || '').trim().toLowerCase());
-                                              const inwQty = matched.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
+                                              const inwQty = matched.reduce((sum, g) => sum + receiptKg(g), 0);
                                               const reqQty = parseFloat(req.qtyKg) || 0;
                                               if (inwQty >= reqQty && reqQty > 0) {
                                                 return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({(inwQty || 0).toLocaleString()}kg)</div>;
@@ -3177,7 +3178,7 @@ export default function OrderManagement({
                                   {(() => {
                                     const poNo = req.poNumber || req.order?.poNumber;
                                     const matched = (grns || []).filter(g => String(g.poNumber || '').trim().toLowerCase() === String(poNo || '').trim().toLowerCase());
-                                    const inwQty = matched.reduce((sum, g) => sum + (parseFloat(g.netWeightKg) || parseFloat(g.receivedQtyKg) || 0), 0);
+                                    const inwQty = matched.reduce((sum, g) => sum + receiptKg(g), 0);
                                     const reqQty = parseFloat(req.qtyKg) || 0;
                                     if (inwQty >= reqQty && reqQty > 0) {
                                       return <div style={{ fontSize: '0.68rem', fontWeight: '700', color: '#047857', marginTop: '2px' }}>✅ GRN Received ({(inwQty || 0).toLocaleString()}kg)</div>;
