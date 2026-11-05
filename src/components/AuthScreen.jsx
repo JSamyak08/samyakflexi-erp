@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { 
   Lock as LockIcon,
   Mail, 
@@ -13,6 +13,15 @@ import {
   Send
 } from 'lucide-react';
 import { signInUser, sendPasswordResetEmail, updateOwnPassword } from '../services/authService';
+import {
+  classifyPasswordResetFailure,
+  createRecoveryFormState,
+  finishRecoverySubmit,
+  recoveryButtonDisabled,
+  recoveryButtonLabel,
+  recoveryCooldownSeconds,
+  runPasswordRecoverySubmit,
+} from '../services/passwordReset';
 
 
 export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUpdated, initialView = 'signin', onViewChange, linkError = '' }) {
@@ -76,7 +85,11 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
   }, [lockoutUntil]);
 
   const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
+  const [recoveryForm, setRecoveryForm] = useState(() => createRecoveryFormState());
+  const recoveryFormRef = useRef(recoveryForm);
+  recoveryFormRef.current = recoveryForm;
+  const recoverySubmitLock = useRef(false);
+  const [recoveryClock, setRecoveryClock] = useState(() => Date.now());
   const [newPassword, setNewPassword] = useState('');
   const [passwordResetDone, setPasswordResetDone] = useState(false);
 
@@ -143,25 +156,44 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
     }
   };
 
+  useEffect(() => {
+    if (!recoveryForm.cooldownUntil || recoveryForm.cooldownUntil <= Date.now()) return undefined;
+    const timer = setInterval(() => {
+      const next = Date.now();
+      setRecoveryClock(next);
+      if (next >= recoveryForm.cooldownUntil) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [recoveryForm.cooldownUntil]);
+
   // Password Recovery Submit Handler
   const handlePasswordRecoverySubmit = async (e) => {
     e.preventDefault();
+    if (recoverySubmitLock.current) return;
+    recoverySubmitLock.current = true;
     setError('');
-    setRecoverySuccessMsg('');
-
-    if (!recoveryEmail.trim()) {
-      setError('Please enter your registered work email address.');
-      return;
-    }
-
-    setIsLoading(true);
-    const supaResp = await sendPasswordResetEmail(recoveryEmail.trim());
-    setIsLoading(false);
-
-    if (supaResp.success) {
-      setRecoverySuccessMsg(supaResp.message || 'Password setup link sent.');
-    } else {
-      setError(supaResp.message || 'Failed to send the password setup email.');
+    try {
+      await runPasswordRecoverySubmit({
+        state: recoveryFormRef.current,
+        email: recoveryEmail,
+        send: sendPasswordResetEmail,
+        onUpdate: (next) => {
+          recoveryFormRef.current = next;
+          setRecoveryForm(next);
+          setRecoveryClock(Date.now());
+        },
+      });
+    } catch (err) {
+      const failure = classifyPasswordResetFailure(err);
+      const next = finishRecoverySubmit(recoveryFormRef.current, {
+        success: false,
+        message: failure.message,
+        retryAfterMs: failure.retryAfterMs,
+      });
+      recoveryFormRef.current = next;
+      setRecoveryForm(next);
+    } finally {
+      recoverySubmitLock.current = false;
     }
   };
 
@@ -236,10 +268,10 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
               </div>
 
 
-              {recoverySuccessMsg && (
-                <div className="auth-success-alert">
+              {recoveryForm.phase === 'sent' && recoveryForm.message && (
+                <div className="auth-success-alert" role="status">
                   <CheckCircle2 size={18} />
-                  <span>{recoverySuccessMsg}</span>
+                  <span>{recoveryForm.message}</span>
                 </div>
               )}
 
@@ -274,7 +306,6 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                       className="forgot-password-link"
                       onClick={() => {
                         setError('');
-                        setRecoverySuccessMsg('');
                         setRecoveryEmail(email);
                         chooseView('forgot_password');
                       }}
@@ -324,12 +355,14 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
           {!recoveryMode && viewMode === 'forgot_password' && (
             <>
               <div className="auth-form-header">
-                <button 
+                <button
+                  type="button"
                   className="btn-back-link"
                   onClick={() => {
                     setError('');
                     chooseView('signin');
                   }}
+                  disabled={recoveryForm.phase === 'sending'}
                 >
                   <ArrowLeft size={16} /> Back to Sign In
                 </button>
@@ -337,10 +370,17 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                 <p>Enter your registered work email. We will send a link to choose a new password.</p>
               </div>
 
-              {error && (
-                <div className="auth-error-alert">
+              {recoveryForm.message && recoveryForm.phase !== 'error' && (
+                <div className="auth-success-alert" role="status" aria-live="polite" data-testid="password-reset-status">
+                  <CheckCircle2 size={18} />
+                  <span>{recoveryForm.message}</span>
+                </div>
+              )}
+
+              {recoveryForm.error && (
+                <div className="auth-error-alert" role="alert" data-testid="password-reset-error">
                   <AlertCircle size={18} />
-                  <span>{error}</span>
+                  <span>{recoveryForm.error}</span>
                 </div>
               )}
 
@@ -349,30 +389,38 @@ export default function AuthScreen({ onLogin, recoveryMode = false, onPasswordUp
                   <label>Registered Work Email Address</label>
                   <div className="input-with-icon">
                     <Mail size={18} className="input-icon" />
-                    <input 
-                      type="email" 
+                    <input
+                      type="email"
                       className="form-control"
                       placeholder="e.g. admin@samyakinternational.in"
                       value={recoveryEmail}
                       onChange={(e) => setRecoveryEmail(e.target.value)}
                       required
+                      disabled={recoveryForm.phase === 'sending'}
                     />
                   </div>
                 </div>
 
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="btn-primary auth-submit-btn"
-                  disabled={isLoading}
+                  data-testid="send-password-link"
+                  aria-busy={recoveryForm.phase === 'sending'}
+                  disabled={recoveryButtonDisabled(recoveryForm, recoveryClock)}
                 >
-                  {isLoading ? (
+                  {recoveryForm.phase === 'sending' ? (
                     <span>Sending password link...</span>
                   ) : (
                     <>
-                      Send Password Link <Send size={16} />
+                      {recoveryButtonLabel(recoveryForm, recoveryClock)} <Send size={16} />
                     </>
                   )}
                 </button>
+                {recoveryForm.phase === 'sent' && recoveryCooldownSeconds(recoveryForm, recoveryClock) > 0 && (
+                  <p className="auth-recovery-hint" data-testid="password-reset-cooldown">
+                    You can resend the link in {recoveryCooldownSeconds(recoveryForm, recoveryClock)}s.
+                  </p>
+                )}
               </form>
             </>
           )}
