@@ -2044,7 +2044,19 @@ html, body {
 }
 
 .scheduler-queue-card.with-reorder {
-  grid-template-columns: 56px 1.4fr 1.6fr 1.2fr;
+  grid-template-columns: 72px 1.4fr 1.6fr 1.2fr;
+}
+
+.queue-reorder-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.scheduler-queue-card.is-drop-target {
+  outline: 2px dashed #0284c7;
+  outline-offset: -2px;
 }
 
 .scheduler-specs-grid {

@@ -5,6 +5,7 @@
  */
 
 import { toDatabaseTimestamp } from '../utils/dbDates.js';
+import { normalizePressQueue } from '../utils/pressQueueReorder.js';
 import { preserveLegacyScrapFields } from '../utils/scrapIdentity.js';
 import {
   applyScrapFilters,
@@ -376,7 +377,9 @@ export async function fetchPressBoard(supabase) {
 export async function savePressBoard(supabase, patch) {
   const current = await fetchPressBoard(supabase);
   const next = {
-    queueOrder: patch.queueOrder !== undefined ? patch.queueOrder : current.queueOrder,
+    queueOrder: patch.queueOrder !== undefined
+      ? normalizePressQueue(patch.queueOrder)
+      : normalizePressQueue(current.queueOrder),
     machineAssignments: patch.machineAssignments !== undefined ? patch.machineAssignments : current.machineAssignments,
     activeRunningJob: patch.activeRunningJob !== undefined ? patch.activeRunningJob : current.activeRunningJob
   };

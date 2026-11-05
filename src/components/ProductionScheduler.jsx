@@ -14,6 +14,19 @@ import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { pushSlugState } from '../utils/slugRouter';
 import { userHasAnyRole } from '../assignedRoles';
+import PressQueueReorderControls from './PressQueueReorderControls';
+import {
+  PRESS_QUEUE_REORDER_ROLES,
+  createQueueSaveBatch,
+  dropPressQueueItem,
+  guardReorderEvent,
+  movePressQueueItem,
+  normalizePressQueue,
+  queueMoveAvailability,
+  resolveActiveRunModal,
+  runningPressOrderIds,
+  sameQueueIds,
+} from '../utils/pressQueueReorder';
 import PrintRunAnalytics from './PrintRunAnalytics';
 import {
   activePrintConflictMessage,
@@ -40,8 +53,6 @@ import {
   Trash2,
   Edit3,
   Move,
-  ArrowUp,
-  ArrowDown,
   Clock,
   Image as ImageIcon,
   ExternalLink,
@@ -269,9 +280,10 @@ export default function ProductionScheduler({
   const [selectedMachineFilter, setSelectedMachineFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All'); // 'All' | 'In Production' | 'Ready' | 'Overdue' | 'Material Pending'
 
-  // Permission Check: Only Admin, Plant Manager, and Production Manager can re-arrange the Ready Queue
+  // Admin, Plant Manager, and Production Manager rearrange the queue.
+  // Printing Operator and Shop Floor Operator do not.
   const canRearrangeQueue = useMemo(
-    () => userHasAnyRole(currentUser, ['Admin', 'Plant Manager', 'Production Manager']),
+    () => userHasAnyRole(currentUser, PRESS_QUEUE_REORDER_ROLES),
     [currentUser],
   );
 
@@ -298,7 +310,11 @@ export default function ProductionScheduler({
   const [selectedOrderForRun, setSelectedOrderForRun] = useState(null);
   const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
   const [zoomArtworkSrc, setZoomArtworkSrc] = useState(null);
-  const [activeRunningJob, setActiveRunningJobState] = useState(initialPressActiveRunningJob);
+  // Closed until View Run, the running-job banner, or Start Job. A saved run
+  // must not pop this modal open while someone is reordering the queue.
+  const [activeRunningJob, setActiveRunningJobState] = useState(null);
+  const [queueSaveStatus, setQueueSaveStatus] = useState('idle');
+  const [dropTargetId, setDropTargetId] = useState(null);
   const [activeMachineSelection, setActiveMachineSelectionState] = useState(initialPressMachineAssignments);
 
   const settlePressSave = (result) => {
@@ -379,22 +395,51 @@ export default function ProductionScheduler({
     : null;
   const endJobIsMetersShortfall = endJobTargetMetersNum > 0 && endJobActualMetersNum > 0 && endJobActualMetersNum < endJobTargetMetersNum;
 
-  // Custom Queue Ordering State
+  // Custom Queue Ordering State. Local edits stay on screen until the
+  // debounced save is acknowledged, so a server echo cannot jump the list.
   const [queueOrderIds, setQueueOrderIds] = useState(() => {
+    const knownIds = (orders || []).map(o => o.id);
+    const runningIds = runningPressOrderIds(orders);
     if (initialPressQueueOrder && Array.isArray(initialPressQueueOrder) && initialPressQueueOrder.length > 0) {
-      return initialPressQueueOrder;
+      return normalizePressQueue(initialPressQueueOrder, { runningIds, knownIds });
     }
-    return (orders || []).map(o => o.id);
+    return normalizePressQueue(knownIds, { runningIds, knownIds });
   });
+  const queueOrderRef = useRef(queueOrderIds);
+  queueOrderRef.current = queueOrderIds;
+  const queueEpochRef = useRef(0);
+  const ackedEpochRef = useRef(0);
+  const queueStatusTimerRef = useRef(null);
+  const reorderSaveRef = useRef(onReorderQueue);
+  reorderSaveRef.current = onReorderQueue;
+  const queueBatchRef = useRef(null);
+  if (!queueBatchRef.current) {
+    queueBatchRef.current = createQueueSaveBatch({
+      delayMs: 400,
+      save: (order) => {
+        const saveQueue = reorderSaveRef.current;
+        if (!saveQueue) return null;
+        return saveQueue(order);
+      },
+      onStatus: (status) => setQueueSaveStatus(status),
+    });
+  }
 
-  // Keep queueOrderIds in sync with orders list and initialPressQueueOrder
+  useEffect(() => () => {
+    queueBatchRef.current?.cancel();
+    if (queueStatusTimerRef.current) clearTimeout(queueStatusTimerRef.current);
+  }, []);
+
   useEffect(() => {
     setQueueOrderIds(prev => {
-      const currentIds = (orders || []).map(o => o.id);
-      let baseOrder = (initialPressQueueOrder && initialPressQueueOrder.length > 0) ? initialPressQueueOrder : prev;
-      const filteredPrev = baseOrder.filter(id => currentIds.includes(id));
-      const newIds = currentIds.filter(id => !baseOrder.includes(id));
-      return [...filteredPrev, ...newIds];
+      const knownIds = (orders || []).map(o => o.id);
+      const runningIds = runningPressOrderIds(orders);
+      const localIsAhead = queueEpochRef.current !== ackedEpochRef.current;
+      const base = localIsAhead
+        ? prev
+        : ((initialPressQueueOrder && initialPressQueueOrder.length > 0) ? initialPressQueueOrder : prev);
+      const next = normalizePressQueue(base, { runningIds, knownIds });
+      return sameQueueIds(prev, next) ? prev : next;
     });
   }, [orders, initialPressQueueOrder]);
 
@@ -658,18 +703,20 @@ export default function ProductionScheduler({
     });
   }, [orders, inventory, jobMasters, cylinders, productionRecords, queueOrderIds]);
 
+  // Do not open the Active Print Run modal when the queue or the order list
+  // changes. allEnrichedOrders is a new array on every reorder, and syncing
+  // the running job from that used to pop the modal after one arrow click.
+  const activeRunningJobRef = useRef(activeRunningJob);
+  activeRunningJobRef.current = activeRunningJob;
   useEffect(() => {
-    if (initialPressActiveRunningJob) {
-      setActiveRunningJobState(initialPressActiveRunningJob);
-    } else if (allEnrichedOrders && allEnrichedOrders.length > 0) {
-      const activeInOrders = allEnrichedOrders.find(o => o.isCurrentlyInProduction);
-      if (activeInOrders) {
-        setActiveRunningJobState(activeInOrders);
-      }
-    }
-  }, [initialPressActiveRunningJob, allEnrichedOrders]);
+    const next = resolveActiveRunModal(activeRunningJobRef.current, {
+      type: 'queue-refresh',
+      savedJob: initialPressActiveRunningJob,
+    });
+    if (next !== activeRunningJobRef.current) setActiveRunningJobState(next);
+  }, [initialPressActiveRunningJob]);
 
-  // Keep activeRunningJob synced with fresh enriched orders when an order is updated
+  // Keep an already-open run in step with its order.
   useEffect(() => {
     if (activeRunningJob && allEnrichedOrders && allEnrichedOrders.length > 0) {
       const fresh = allEnrichedOrders.find(o => o.id === activeRunningJob.id);
@@ -786,44 +833,71 @@ export default function ProductionScheduler({
     return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  // Re-ordering queue item handler: running jobs are locked in execution; jobs below them can be rearranged
-  const handleMoveQueueItem = (orderId, direction) => {
-    if (!canRearrangeQueue) return;
-
-    // Find the item in filteredQueue
-    const currentIdx = filteredQueue.findIndex(o => o.id === orderId);
-    if (currentIdx === -1) return;
-
-    const currentOrder = filteredQueue[currentIdx];
-    // If the job itself is currently in production, it cannot be re-arranged
-    if (currentOrder.isCurrentlyInProduction) return;
-
-    const targetIdx = direction === 'up' ? currentIdx - 1 : currentIdx + 1;
-    if (targetIdx < 0 || targetIdx >= filteredQueue.length) return;
-
-    const targetOrder = filteredQueue[targetIdx];
-    // Cannot displace or move above a job that is currently in production
-    if (targetOrder.isCurrentlyInProduction) return;
-
-    setQueueOrderIds(prev => {
-      const idxA = prev.indexOf(orderId);
-      const idxB = prev.indexOf(targetOrder.id);
-      if (idxA === -1 || idxB === -1) return prev;
-
-      const updated = [...prev];
-      updated[idxA] = targetOrder.id;
-      updated[idxB] = orderId;
-
-      if (onReorderQueue) settlePressSave(onReorderQueue(updated));
-      return updated;
+  const rememberQueue = (next, { immediate = false, runningIds = runningPressOrderIds(orders) } = {}) => {
+    const knownIds = (orders || []).map((order) => order.id);
+    const normalized = normalizePressQueue(next, { runningIds, knownIds });
+    queueOrderRef.current = normalized;
+    queueEpochRef.current += 1;
+    const epoch = queueEpochRef.current;
+    setQueueOrderIds((prev) => (sameQueueIds(prev, normalized) ? prev : normalized));
+    setQueueSaveStatus(immediate ? 'saving' : 'pending');
+    const batch = queueBatchRef.current;
+    const pending = immediate ? batch.flushNow(normalized, epoch) : batch.push(normalized, epoch);
+    Promise.resolve(pending).then((savedEpoch) => {
+      if (typeof savedEpoch === 'number' && savedEpoch >= ackedEpochRef.current) {
+        ackedEpochRef.current = savedEpoch;
+      }
+      setQueueSaveStatus('saved');
+      if (queueStatusTimerRef.current) clearTimeout(queueStatusTimerRef.current);
+      queueStatusTimerRef.current = setTimeout(() => setQueueSaveStatus('idle'), 8000);
+    }).catch(() => {
+      setQueueSaveStatus('failed');
     });
+    return normalized;
+  };
+
+  // Arrow, drag, and move-to-top change the sequence only. resolveActiveRunModal
+  // refuses to open the run from those gestures, including when the list re-renders.
+  const noteReorderDoesNotOpenRun = (kind) => {
+    const next = resolveActiveRunModal(activeRunningJob, { type: kind });
+    if (next !== activeRunningJob) setActiveRunningJobState(next);
+  };
+
+  const handleMoveQueueItem = (orderId, direction, event) => {
+    guardReorderEvent(event);
+    noteReorderDoesNotOpenRun(direction === 'top' ? 'move-top' : 'arrow');
+    if (!canRearrangeQueue) return;
+    const result = movePressQueueItem(queueOrderRef.current, orderId, direction, {
+      runningIds: runningPressOrderIds(orders),
+      visibleIds: filteredQueue.map((order) => order.id),
+    });
+    if (!result.moved) return;
+    rememberQueue(result.order);
+  };
+
+  const handleDropQueueItem = (draggedId, targetId, event) => {
+    guardReorderEvent(event);
+    noteReorderDoesNotOpenRun('drag');
+    setDropTargetId(null);
+    if (!canRearrangeQueue) return;
+    const result = dropPressQueueItem(queueOrderRef.current, draggedId, targetId, {
+      runningIds: runningPressOrderIds(orders),
+    });
+    if (!result.moved) return;
+    rememberQueue(result.order);
+  };
+
+  const openActiveRunModal = (order, type = 'view-run') => {
+    const next = resolveActiveRunModal(null, { type, job: order });
+    if (!next) return;
+    setActiveRunningJob(next);
+    setPrintRunBlock(null);
   };
 
   const showRunningJob = (order) => {
     if (!order) return;
     choosePressTab('queue');
-    setActiveRunningJob(order);
-    setPrintRunBlock(null);
+    openActiveRunModal(order, 'view-run');
   };
 
   // Start Job Handler. The press confirms the save before the job is pinned as running.
@@ -856,13 +930,15 @@ export default function ProductionScheduler({
       return;
     }
 
-    setQueueOrderIds(prev => {
-      const remaining = prev.filter(id => id !== order.id);
-      const updated = [order.id, ...remaining];
-      if (onReorderQueue) settlePressSave(onReorderQueue(updated));
-      return updated;
+    const pinRunning = runningPressOrderIds([
+      startedOrder,
+      ...(orders || []).filter((item) => item.id !== order.id),
+    ]);
+    rememberQueue([order.id, ...queueOrderRef.current.filter((id) => id !== order.id)], {
+      immediate: true,
+      runningIds: pinRunning,
     });
-    setActiveRunningJob(startedOrder);
+    openActiveRunModal(startedOrder, 'start-job');
     setPrintRunBlock(null);
   };
 
@@ -1681,7 +1757,7 @@ export default function ProductionScheduler({
             </div>
 
             {/* Queue Re-arrangement Access Status Badge */}
-            <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
               {canRearrangeQueue ? (
                 <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', padding: '6px 12px', background: '#dcfce7', color: '#15803d', fontWeight: '800' }}>
                   <Move size={14} /> Queue Re-arrangement Active (Running Jobs Locked)
@@ -1693,6 +1769,27 @@ export default function ProductionScheduler({
               )}
             </div>
           </div>
+          {canRearrangeQueue && queueSaveStatus !== 'idle' && (
+            <div
+              data-testid="queue-save-status"
+              role="status"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                alignSelf: 'flex-start',
+                fontSize: '0.82rem',
+                fontWeight: '800',
+                padding: '8px 14px',
+                borderRadius: '999px',
+                background: queueSaveStatus === 'failed' ? '#b91c1c' : queueSaveStatus === 'saved' ? '#0f172a' : '#0369a1',
+                color: '#ffffff',
+              }}
+            >
+              {queueSaveStatus === 'saved' && <Check size={14} />}
+              {queueSaveStatus === 'failed' ? 'Queue save failed' : queueSaveStatus === 'saved' ? 'Queue saved' : 'Saving queue…'}
+            </div>
+          )}
 
           {/* Active Running Job Highlight Banner if one is running */}
           {readyQueueOrders.some(o => o.isCurrentlyInProduction) && (
@@ -1713,13 +1810,17 @@ export default function ProductionScheduler({
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <button
+                  type="button"
+                  data-testid="open-active-run"
                   className="btn-primary"
                   style={{ background: '#ffffff', color: '#1e3a8a', fontWeight: '900', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
-                  onClick={() => setActiveRunningJob(readyQueueOrders.find(o => o.isCurrentlyInProduction))}
+                  onClick={() => openActiveRunModal(readyQueueOrders.find(o => o.isCurrentlyInProduction), 'banner-open')}
                 >
                   <Eye size={16} /> Open Job Run Screen & Artwork
                 </button>
                 <button
+                  type="button"
+                  data-testid="end-active-run-banner"
                   className="btn-danger"
                   style={{ background: '#ef4444', color: '#ffffff', fontWeight: '900', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}
                   onClick={() => handleInitiateEndJob(readyQueueOrders.find(o => o.isCurrentlyInProduction))}
@@ -1749,21 +1850,36 @@ export default function ProductionScheduler({
                 const machineConflict = isSelfRunning
                   ? null
                   : findActivePrintConflict(allEnrichedOrders, { orderId: order.id, machineId: assignedMachineId });
-                const prevOrder = idx > 0 ? filteredQueue[idx - 1] : null;
-                const nextOrder = idx < filteredQueue.length - 1 ? filteredQueue[idx + 1] : null;
-
-                const isUpDisabled = isSelfRunning || idx === 0 || Boolean(prevOrder?.isCurrentlyInProduction);
-                const isDownDisabled = isSelfRunning || idx === filteredQueue.length - 1 || Boolean(nextOrder?.isCurrentlyInProduction);
+                const moveState = queueMoveAvailability(
+                  filteredQueue.map((item) => item.id),
+                  idx,
+                  runningPressOrderIds(orders),
+                );
 
                 return (
                   <div 
                     key={order.id}
                     id={`press-job-${order.id}`}
-                    className={`glass-card scheduler-queue-card ${canRearrangeQueue ? 'with-reorder' : ''}`} 
+                    data-order-id={order.id}
+                    data-queue-position={idx + 1}
+                    className={`glass-card scheduler-queue-card ${canRearrangeQueue ? 'with-reorder' : ''} ${dropTargetId === order.id ? 'is-drop-target' : ''}`} 
+                    onDragOver={(event) => {
+                      if (!canRearrangeQueue || isSelfRunning) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (dropTargetId !== order.id) setDropTargetId(order.id);
+                    }}
+                    onDragLeave={() => {
+                      if (dropTargetId === order.id) setDropTargetId(null);
+                    }}
+                    onDrop={(event) => {
+                      const draggedId = event.dataTransfer?.getData('text/plain');
+                      handleDropQueueItem(draggedId, order.id, event);
+                    }}
                     style={{ 
                       padding: '18px 22px', 
                       borderRadius: '14px',
-                      outline: focusOrderId && String(order.id) === focusOrderId ? '2px solid #ea580c' : 'none',
+                      outline: focusOrderId && String(order.id) === focusOrderId ? '2px solid #ea580c' : undefined,
                       borderLeft: order.isCurrentlyInProduction 
                         ? '6px solid #2563eb' 
                         : order.isOverdue 
@@ -1777,78 +1893,38 @@ export default function ProductionScheduler({
                   >
                     {/* Move Up / Move Down Priority Controls (Managers Only) */}
                     {canRearrangeQueue && (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                        {isSelfRunning ? (
-                          <div 
-                            style={{ 
-                              display: 'flex', 
-                              flexDirection: 'column', 
-                              alignItems: 'center', 
-                              gap: '2px', 
-                              padding: '5px 6px', 
-                              background: '#eff6ff', 
-                              border: '1.5px solid #93c5fd', 
-                              borderRadius: '8px',
-                              boxShadow: '0 1px 3px rgba(37, 99, 235, 0.1)'
-                            }}
-                            title="Job is actively running on press - locked in execution at #1 until ended."
-                          >
-                            <LockIcon size={13} style={{ color: '#2563eb' }} />
-                            <span style={{ fontSize: '0.62rem', fontWeight: '900', color: '#1d4ed8', letterSpacing: '0.3px', lineHeight: 1 }}>RUNNING</span>
-                            <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#3b82f6', marginTop: '1px' }}>#{idx + 1}</span>
-                          </div>
-                        ) : (
-                          <>
-                            <button 
-                              className="btn-secondary" 
-                              style={{ 
-                                padding: '4px', 
-                                width: '28px', 
-                                height: '28px', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                opacity: isUpDisabled ? 0.35 : 1,
-                                cursor: isUpDisabled ? 'not-allowed' : 'pointer'
-                              }}
-                              title={
-                                prevOrder?.isCurrentlyInProduction 
-                                  ? "Cannot move above actively running job" 
-                                  : idx === 0 
-                                  ? "Top of queue" 
-                                  : "Move Priority Up"
-                              }
-                              disabled={isUpDisabled}
-                              onClick={() => handleMoveQueueItem(order.id, 'up')}
-                            >
-                              <ArrowUp size={14} />
-                            </button>
-                            <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#64748b' }}>#{idx + 1}</span>
-                            <button 
-                              className="btn-secondary" 
-                              style={{ 
-                                padding: '4px', 
-                                width: '28px', 
-                                height: '28px', 
-                                display: 'flex', 
-                                alignItems: 'center', 
-                                justifyContent: 'center',
-                                opacity: isDownDisabled ? 0.35 : 1,
-                                cursor: isDownDisabled ? 'not-allowed' : 'pointer'
-                              }}
-                              title={
-                                idx === filteredQueue.length - 1 
-                                  ? "Bottom of queue" 
-                                  : "Move Priority Down"
-                              }
-                              disabled={isDownDisabled}
-                              onClick={() => handleMoveQueueItem(order.id, 'down')}
-                            >
-                              <ArrowDown size={14} />
-                            </button>
-                          </>
-                        )}
-                      </div>
+                      isSelfRunning ? (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            gap: '2px',
+                            padding: '5px 6px',
+                            background: '#eff6ff',
+                            border: '1.5px solid #93c5fd',
+                            borderRadius: '8px',
+                            boxShadow: '0 1px 3px rgba(37, 99, 235, 0.1)'
+                          }}
+                          title="Job is actively running on press - locked in execution at #1 until ended."
+                        >
+                          <LockIcon size={13} style={{ color: '#2563eb' }} />
+                          <span style={{ fontSize: '0.62rem', fontWeight: '900', color: '#1d4ed8', letterSpacing: '0.3px', lineHeight: 1 }}>RUNNING</span>
+                          <span style={{ fontSize: '0.72rem', fontWeight: '800', color: '#3b82f6', marginTop: '1px' }}>#{idx + 1}</span>
+                        </div>
+                      ) : (
+                        <PressQueueReorderControls
+                          orderId={order.id}
+                          position={idx + 1}
+                          canUp={moveState.up}
+                          canDown={moveState.down}
+                          canTop={moveState.top}
+                          canDrag={moveState.drag}
+                          onUp={() => handleMoveQueueItem(order.id, 'up')}
+                          onDown={() => handleMoveQueueItem(order.id, 'down')}
+                          onTop={() => handleMoveQueueItem(order.id, 'top')}
+                        />
+                      )
                     )}
 
                     {/* Job Order & Artwork Preview Thumbnail */}
@@ -1994,13 +2070,17 @@ export default function ProductionScheduler({
                       {order.isCurrentlyInProduction ? (
                         <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                           <button
+                            type="button"
+                            data-testid="view-active-run"
                             className="btn-secondary"
                             style={{ flex: 1, padding: '7px 12px', fontSize: '0.8rem', fontWeight: '800', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                            onClick={() => setActiveRunningJob(order)}
+                            onClick={() => openActiveRunModal(order, 'view-run')}
                           >
                             <Eye size={14} /> View Run
                           </button>
                           <button
+                            type="button"
+                            data-testid="end-active-run"
                             className="btn-danger"
                             style={{ flex: 1, padding: '7px 12px', fontSize: '0.8rem', fontWeight: '800', background: '#dc2626', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                             onClick={() => handleInitiateEndJob(order)}
@@ -2010,6 +2090,7 @@ export default function ProductionScheduler({
                         </div>
                       ) : (
                         <button
+                          type="button"
                           className="btn-primary"
                           style={{
                             width: '100%',
@@ -2253,7 +2334,7 @@ export default function ProductionScheduler({
                       <button
                         className="btn-secondary"
                         style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onClick={() => setActiveRunningJob(order)}
+                        onClick={() => openActiveRunModal(order, 'view-run')}
                       >
                         <Eye size={14} /> View Details & Artwork
                       </button>
@@ -2362,7 +2443,7 @@ export default function ProductionScheduler({
       {/* MODAL: ACTIVE JOB ORDER DETAILS & RUNNING TIMER EXECUTION SCREEN           */}
       {/* ========================================================================= */}
       {activeRunningJob && (
-        <div className="modal-overlay" onClick={() => setActiveRunningJob(null)}>
+        <div className="modal-overlay" data-testid="active-print-run-modal" onClick={() => setActiveRunningJob(null)}>
           <div className="modal-content" style={{ maxWidth: '1080px', width: '96%', maxHeight: '92vh', overflowY: 'auto', borderRadius: '16px' }} onClick={e => e.stopPropagation()}>
             
             {/* Header */}
@@ -2863,7 +2944,7 @@ export default function ProductionScheduler({
       {/* MODAL: END JOB POP-UP - SHOP FLOOR INPUTS & CONFIRMATION TAB              */}
       {/* ========================================================================= */}
       {isEndJobModalOpen && endJobTargetOrder && (
-        <div className="modal-overlay" onClick={() => !isSubmittingEndJob && setIsEndJobModalOpen(false)}>
+        <div className="modal-overlay" data-testid="end-job-modal" onClick={() => !isSubmittingEndJob && setIsEndJobModalOpen(false)}>
           <div className="modal-content" style={{ maxWidth: '640px', width: '96%', borderRadius: '16px' }} onClick={e => e.stopPropagation()}>
             
             {/* Modal Header */}
