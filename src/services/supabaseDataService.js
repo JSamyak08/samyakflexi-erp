@@ -2124,7 +2124,7 @@ export async function fetchInventoryRolls() {
         : (Number(r.core_weight_kg) || 0),
       purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
       unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
-      unit: r.unit || (r.category === 'Film Substrates' ? 'Kg' : 'Pcs'),
+      unit: r.unit || ((['RAW_MATERIAL', 'SEMI_FINISHED_GOODS', 'FINISHED_GOODS', 'SFG', 'FG', 'SFG_PRINTED', 'SFG_LAMINATED', 'FG_DISPATCH'].includes(String(r.roll_type || '').toUpperCase()) || /semi-finished|finished goods|film substrate|raw material/i.test(String(r.category || ''))) ? 'Kg' : 'Pcs'),
       inputBarcodeIds: Array.isArray(r.input_barcode_ids) ? r.input_barcode_ids : [],
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',

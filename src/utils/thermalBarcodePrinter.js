@@ -65,23 +65,151 @@ export function resolveItemPurchaseRate(r, inventory = [], inks = []) {
   return directRate;
 }
 
+const PIECE_UNITS = new Set([
+  'pcs', 'pc', 'piece', 'pieces', 'nos', 'no', 'each', 'pkt', 'pkts', 'packet', 'packets', 'set', 'sets'
+]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function cleanText(value) {
+  return String(value ?? '').trim();
+}
+
+function positiveNumber(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return number;
+}
+
+function firstPositive(values) {
+  for (const value of values) {
+    const number = positiveNumber(value);
+    if (number !== null) return number;
+  }
+  return null;
+}
+
+function canonicalUnit(value) {
+  const raw = cleanText(value);
+  if (!raw) return '';
+  const key = raw.toLowerCase().replace(/\.$/, '');
+  if (key === 'kg' || key === 'kgs' || key === 'kilogram' || key === 'kilograms') return 'Kg';
+  if (PIECE_UNITS.has(key)) return 'Pcs';
+  return raw;
+}
+
+/** Barcode printed on the sticker. A store row's batch code wins over a uuid primary key. */
+export function stickerBarcode(record) {
+  if (!record || typeof record !== 'object') return 'BC-2026-0000';
+  const batch = textFrom(record.barcodeId, record.sfgBatchCode, record.itemCode);
+  if (batch) return batch;
+  const id = textFrom(record.id);
+  if (id && !UUID_RE.test(id)) return id;
+  return 'BC-2026-0000';
+}
+
+function matchingInventoryRoll(item, inventoryRolls) {
+  const code = cleanText(textFrom(item?.barcodeId, item?.sfgBatchCode, item?.itemCode, item?.id)).toLowerCase();
+  if (!code || UUID_RE.test(code)) return null;
+  return (inventoryRolls || []).find((roll) => {
+    const rollCode = cleanText(textFrom(roll?.barcodeId, roll?.id)).toLowerCase();
+    return rollCode && rollCode === code;
+  }) || null;
+}
+
 /**
- * Categorizes the sticker item into film, non-film, SFG, FG, QC Hold
+ * Store Print Tag rows keep weight on availableKg / totalNetKg and meters on
+ * the inventory roll (length_meters) or the batch (totalMeters). Copy those
+ * onto the object the sticker renderer already understands.
+ */
+export function prepareStoreStickerRoll(item, inventoryRolls = []) {
+  if (!item || typeof item !== 'object') return item;
+  const match = matchingInventoryRoll(item, inventoryRolls);
+  const code = textFrom(item.barcodeId, item.sfgBatchCode, item.itemCode);
+  const meters = firstPositive([
+    item.lengthMeters, item.meters, item.totalMeters,
+    match?.lengthMeters, match?.meters, match?.totalMeters
+  ]);
+  const net = firstPositive([
+    item.netWeightKg, item.availableWeightKg, item.availableKg, item.totalNetKg, item.balanceKg,
+    match?.netWeightKg, match?.availableWeightKg, match?.availableKg
+  ]);
+  const gross = firstPositive([
+    item.grossWeightKg, item.totalGrossKg, match?.grossWeightKg, match?.totalGrossKg
+  ]);
+  const identity = rollIdentity({ ...item, ...(match || {}), barcodeId: code || item.barcodeId, sfgBatchCode: item.sfgBatchCode || code });
+  const kilogram = identity.isSFG || identity.isFG || identity.isRaw || identity.isBalance;
+  return {
+    ...item,
+    barcodeId: code || stickerBarcode(item),
+    sfgBatchCode: item.sfgBatchCode || code || item.barcodeId,
+    netWeightKg: net ?? 0,
+    availableWeightKg: firstPositive([item.availableWeightKg, item.availableKg, match?.availableWeightKg]) ?? net ?? 0,
+    availableKg: firstPositive([item.availableKg, item.availableWeightKg, match?.availableWeightKg]) ?? net ?? 0,
+    totalNetKg: firstPositive([item.totalNetKg, match?.totalNetKg]) ?? net ?? 0,
+    grossWeightKg: gross ?? undefined,
+    lengthMeters: meters,
+    totalMeters: meters,
+    rollType: item.rollType || match?.rollType || (identity.isFG ? 'FG' : identity.isRaw ? 'RAW_MATERIAL' : 'SFG'),
+    category: item.category || match?.category || (identity.isFG ? 'Finished Goods (FG)' : identity.isRaw ? 'Raw Material (RM)' : 'Semi-Finished Goods (SFG)'),
+    sfgType: item.sfgType || match?.sfgType,
+    unit: kilogram ? 'Kg' : (canonicalUnit(item.unit || item.uom || match?.unit) || item.unit),
+    uom: kilogram ? 'Kg' : (canonicalUnit(item.uom || item.unit || match?.uom) || item.uom),
+    itemName: item.itemName || item.jobName || match?.itemName || match?.jobName || ''
+  };
+}
+
+function rollIdentity(record) {
+  const rollType = cleanText(record?.rollType).toUpperCase();
+  const category = cleanText(record?.category).toLowerCase();
+  const sfgType = cleanText(record?.sfgType || record?.fgType).toLowerCase();
+  const code = cleanText(textFrom(record?.barcodeId, record?.sfgBatchCode, record?.itemCode, record?.id)).toUpperCase();
+  const isFG = rollType === 'FG' || rollType === 'FG_DISPATCH' || rollType === 'FINISHED_GOODS'
+    || (category.includes('finished') && !category.includes('semi'))
+    || (sfgType.includes('finished') && !sfgType.includes('semi'))
+    || code.startsWith('FG-');
+  const isSFG = !isFG && (
+    rollType === 'SFG' || rollType === 'SFG_PRINTED' || rollType === 'SFG_LAMINATED' || rollType === 'SEMI_FINISHED_GOODS'
+    || category.includes('semi-finished') || category === 'sfg'
+    || sfgType.includes('printed') || sfgType.includes('semi') || sfgType.includes('roll')
+    || code.startsWith('SFG-')
+  );
+  const isBalance = code.endsWith('-BAL') || record?.balanceRoll === true;
+  const isRaw = !isSFG && !isFG && (
+    rollType === 'RAW_MATERIAL'
+    || isBalance
+    || category.includes('raw material')
+    || category === 'film substrates'
+    || code.startsWith('RM-')
+  );
+  return { isFG, isSFG, isBalance, isRaw };
+}
+
+/**
+ * Categorizes the sticker item into film, non-film, SFG, FG, QC Hold.
+ * Film, SFG, FG, and balance rolls are kilograms. Pieces are used only when
+ * the item's own unit says so and the row is not one of those rolls.
  */
 export function getStickerCategoryInfo(r) {
   if (!r) return {
     isSFG: false,
     isFG: false,
     isFilmItem: false,
+    isRoll: false,
     isChemicalOrInk: false,
     isQCHold: false,
     displayUnit: 'Kg',
     displayQty: 0,
-    tagLabel: 'STORE ITEM'
+    tagLabel: 'STORE ITEM',
+    barcodeCode: 'BC-2026-0000',
+    grossKg: null,
+    lengthMeters: null,
+    lengthLabel: '-',
+    showLength: false
   };
 
-  const isSFG = r.rollType === 'SFG_PRINTED' || r.rollType === 'SFG_LAMINATED' || r.rollType === 'SFG';
-  const isFG = r.rollType === 'FG_DISPATCH' || r.rollType === 'FG';
+  const identity = rollIdentity(r);
+  const { isSFG, isFG, isRaw, isBalance } = identity;
 
   const nonFilmCategories = [
     'Doctor Blades', 'Doctor Blades & Wipers', 'Inks & Solvents',
@@ -116,13 +244,26 @@ export function getStickerCategoryInfo(r) {
 
   const catStr = codeKey(r.category);
   const isChemicalOrInk = catStr.includes('chemical') || catStr.includes('solvent') || catStr.includes('ink') || catStr.includes('adhesive') || catStr.includes('resin') || codeStartsWith(r.barcodeId, 'CON-BC') || codeStartsWith(r.barcodeId, 'RM-BC');
-  const displayUnit = r.unit || r.uom || (isFilmItem || isChemicalOrInk ? 'Kg' : 'Pcs');
+  const isRoll = isSFG || isFG || isRaw || isBalance || isFilmItem;
+  const explicitUnit = canonicalUnit(r.unit || r.uom);
+  const displayUnit = isRoll ? 'Kg' : (explicitUnit || (isChemicalOrInk ? 'Kg' : 'Pcs'));
 
-  const displayQty = (r.netWeightKg !== undefined && r.netWeightKg !== null && Number(r.netWeightKg) > 0)
-    ? Number(r.netWeightKg)
-    : ((r.availableWeightKg !== undefined && r.availableWeightKg !== null && Number(r.availableWeightKg) > 0)
-      ? Number(r.availableWeightKg)
-      : (Number(r.qty ?? r.weightKg ?? r.receivedQtyKg ?? 0)));
+  const displayQty = firstPositive([
+    r.netWeightKg,
+    r.availableWeightKg,
+    r.availableKg,
+    r.totalNetKg,
+    r.balanceKg,
+    r.weightKg,
+    r.receivedQtyKg,
+    r.availableQtyKg,
+    r.qty
+  ]) ?? 0;
+
+  const grossKg = firstPositive([r.grossWeightKg, r.totalGrossKg, r.gross_weight_kg]);
+  const lengthMeters = firstPositive([r.lengthMeters, r.length_meters, r.meters, r.totalMeters, r.total_meters]);
+  const showLength = isRoll;
+  const lengthLabel = lengthMeters === null ? '-' : `${lengthMeters} m`;
 
   const isQCHold = r.isQCHold || r.targetProcess === 'QC Hold Store' || r.status === 'QC_HOLD' || r.rollType === 'QC_HOLD' || r.isHold === true;
 
@@ -130,10 +271,10 @@ export function getStickerCategoryInfo(r) {
   if (isQCHold) {
     tagLabel = '🚨 QC HOLD MATERIAL';
   } else if (isSFG) {
-    tagLabel = 'SEMI-FINISHED (SFG)';
+    tagLabel = 'SEMI-FINISHED GOODS (SFG)';
   } else if (isFG) {
     tagLabel = 'FINISHED GOODS (FG)';
-  } else if (isFilmItem) {
+  } else if (isFilmItem || isRaw || isBalance) {
     tagLabel = 'RAW MATERIAL (RM)';
   } else if (r.category && r.category !== 'CONSUMABLE_ITEM') {
     tagLabel = r.category.toUpperCase();
@@ -143,11 +284,17 @@ export function getStickerCategoryInfo(r) {
     isSFG,
     isFG,
     isFilmItem,
+    isRoll,
     isChemicalOrInk,
     isQCHold,
     displayUnit,
     displayQty,
-    tagLabel
+    tagLabel,
+    barcodeCode: stickerBarcode(r),
+    grossKg,
+    lengthMeters,
+    lengthLabel,
+    showLength
   };
 }
 
@@ -251,12 +398,12 @@ export function getStickerDisplayDate(r, fallbackDate = '') {
  */
 export function generateSingleStickerHtml(r, company = {}, { inventory = [], inks = [], dateStr = '' } = {}) {
   const catInfo = getStickerCategoryInfo(r);
-  const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel } = catInfo;
+  const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel, barcodeCode, grossKg, showLength, lengthLabel } = catInfo;
 
   const rateVal = resolveItemPurchaseRate(r, inventory, inks);
   const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
   const batchStr = r.batchNo || r.heatNo || r.batch || '-';
-  const barcodeCodeStr = textFrom(r.barcodeId, r.id) || 'BC-2026-0000';
+  const barcodeCodeStr = barcodeCode || stickerBarcode(r);
   const displayDate = getStickerDisplayDate(r, dateStr);
 
   const qrSvg = generateSyncQrSvg(barcodeCodeStr, 1);
@@ -316,11 +463,11 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
           <div class="specs-right">
             <span class="specs-label">Net Qty / Weight</span>
             <div class="qty-val">${escapeHtml(displayQty)} <span class="qty-unit">${escapeHtml(displayUnit)}</span></div>
-            ${r.grossWeightKg ? `
-              <div class="qty-sub">Gross: ${escapeHtml(r.grossWeightKg)} kg ${(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Tare: ${escapeHtml(r.tareWeightKg ?? r.coreWeightKg)} kg` : ''}</div>
+            ${grossKg ? `
+              <div class="qty-sub">Gross: ${escapeHtml(grossKg)} kg ${(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Tare: ${escapeHtml(r.tareWeightKg ?? r.coreWeightKg)} kg` : ''}</div>
             ` : ''}
-            ${r.lengthMeters ? `
-              <div class="len-sub">Len: ${escapeHtml(r.lengthMeters)} m</div>
+            ${showLength ? `
+              <div class="len-sub">Len: ${escapeHtml(lengthLabel)}</div>
             ` : ''}
           </div>
         </div>
@@ -365,7 +512,7 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
  * Generates the full HTML document for isolated thermal label printing
  */
 export function generateThermalLabelsHtml(rollList = [], company = {}, { inventory = [], inks = [] } = {}) {
-  const stickersHtml = (rollList || []).map(r => generateSingleStickerHtml(r, company, { inventory, inks })).join('\n');
+  const stickersHtml = rollsEligibleForBarcodeLabel(rollList).map(r => generateSingleStickerHtml(r, company, { inventory, inks })).join('\n');
 
   return `<!DOCTYPE html>
 <html lang="en">

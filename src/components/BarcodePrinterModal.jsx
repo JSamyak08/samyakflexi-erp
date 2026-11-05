@@ -3,12 +3,12 @@ import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode, ArrowRight } from '
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import QRCode2D from './QRCode2D';
-import { textFrom } from '../utils/barcodeCode';
 import {
   printThermalBarcodeLabels,
   resolveItemPurchaseRate,
   getStickerCategoryInfo,
-  getStickerDisplayDate
+  getStickerDisplayDate,
+  stickerBarcode
 } from '../utils/thermalBarcodePrinter';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
@@ -69,12 +69,12 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
 
   const renderSingleStickerPreview = (r) => {
     const catInfo = getStickerCategoryInfo(r);
-    const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel } = catInfo;
+    const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel, grossKg, showLength, lengthLabel } = catInfo;
 
     const rateVal = resolveItemPurchaseRate(r, inventory, inks);
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
     const batchStr = r.batchNo || r.heatNo || r.batch || '-';
-    const barcodeCodeStr = textFrom(r.barcodeId, r.id) || 'BC-2026-0000';
+    const barcodeCodeStr = catInfo.barcodeCode || stickerBarcode(r);
     const displayDate = getStickerDisplayDate(r);
 
     return (
@@ -200,14 +200,14 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
             <div style={{ fontWeight: '900', fontSize: '1.12rem', color: '#047857', lineHeight: '1.1', marginTop: '1px' }}>
               {displayQty} <span style={{ fontSize: '0.70rem' }}>{displayUnit}</span>
             </div>
-            {r.grossWeightKg ? (
+            {grossKg ? (
               <div style={{ fontSize: '0.62rem', color: '#64748b', fontWeight: '600', marginTop: '1px', lineHeight: '1.15' }}>
-                Gross: {r.grossWeightKg} kg {(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Tare: ${r.tareWeightKg ?? r.coreWeightKg} kg` : ''}{(r.coreWeightKg !== undefined && r.coreWeightKg !== null && Number(r.coreWeightKg) !== Number(r.tareWeightKg ?? r.coreWeightKg)) ? ` | Core: ${r.coreWeightKg} kg` : ''}
+                Gross: {grossKg} kg {(r.tareWeightKg !== undefined || r.coreWeightKg !== undefined) ? `| Tare: ${r.tareWeightKg ?? r.coreWeightKg} kg` : ''}{(r.coreWeightKg !== undefined && r.coreWeightKg !== null && Number(r.coreWeightKg) !== Number(r.tareWeightKg ?? r.coreWeightKg)) ? ` | Core: ${r.coreWeightKg} kg` : ''}
               </div>
             ) : null}
-            {r.lengthMeters ? (
+            {showLength ? (
               <div style={{ fontSize: '0.62rem', color: '#0369a1', fontWeight: '700', marginTop: '1px', lineHeight: '1.15' }}>
-                Len: {r.lengthMeters} m
+                Len: {lengthLabel}
               </div>
             ) : null}
           </div>
@@ -315,7 +315,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
               <ChevronLeft size={14} /> Previous
             </button>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#047857' }}>
-              Previewing Sticker {activeIndex + 1} of {rollList.length} (Barcode: {activeRoll.barcodeId})
+              Previewing Sticker {activeIndex + 1} of {rollList.length} (Barcode: {stickerBarcode(activeRoll)})
             </span>
             <button 
               type="button"

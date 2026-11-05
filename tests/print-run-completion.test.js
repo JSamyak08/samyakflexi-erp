@@ -4,6 +4,7 @@ import { buildPrintRunPatch } from '../src/utils/printRun.js';
 import {
   completionForOrder,
   labelRoll,
+  lengthForPrintedRoll,
   printBarcodeBase,
   printedRollBarcode
 } from '../src/utils/printRunCompletion.js';
@@ -54,6 +55,9 @@ test('job history rebuilds printed, balance, and consumed rolls from the lot', (
   assert.equal(summary.printedRolls[0].lengthMeters, 1200);
   assert.equal(summary.balanceRolls[0].barcodeId, 'RM-1-BAL');
   assert.equal(summary.consumedRolls[0].consumedWeightKg, 40);
+  assert.equal(lengthForPrintedRoll({ lengthMeters: null }, { rollCount: 1, jobMeters: 370 }), 370);
+  assert.equal(lengthForPrintedRoll({ lengthMeters: 80 }, { rollCount: 1, jobMeters: 370 }), 80);
+  assert.equal(lengthForPrintedRoll({ lengthMeters: null }, { rollCount: 2, jobMeters: 370 }), null);
   const tag = labelRoll(summary.balanceRolls[0], summary);
   assert.equal(tag.rollType, 'RAW_MATERIAL');
   assert.equal(tag.barcodeId, 'RM-1-BAL');
