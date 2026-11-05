@@ -79,7 +79,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import PrintRunCompletionSummary from './PrintRunCompletionSummary';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
-import { completionForOrder, printedRollBarcode } from '../utils/printRunCompletion';
+import { completionForOrder, lengthForPrintedRoll, printedRollBarcode } from '../utils/printRunCompletion';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
@@ -1234,7 +1234,7 @@ export default function ProductionScheduler({
           availableWeightKg: rollWeight,
           availableKg: rollWeight,
           consumedKg: 0,
-          lengthMeters: finiteNumber(rItem.lengthMeters),
+          lengthMeters: lengthForPrintedRoll(rItem, { rollCount: outputRollsList.length, jobMeters: actualMetersNum }),
           purchaseRatePerKg: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           unitPrice: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           stationId: 'PRINTING_PRESS_REWINDER',

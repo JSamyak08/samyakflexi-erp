@@ -44,6 +44,7 @@ import {
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { labelRoll } from '../utils/printRunCompletion';
+import { prepareStoreStickerRoll } from '../utils/thermalBarcodePrinter';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { OutputExtraRolls, Substrate2ExtraRolls } from './ConsumeExtraRolls';
 import {
@@ -396,6 +397,13 @@ export default function SFGStoreManagement({
             filmType: item.filmType || 'PET',
             widthMm: item.widthMm || 460,
             micron: item.micron || 12,
+            barcodeId: item.barcodeId || item.itemCode || item.id,
+            rollType: item.rollType || (isFgCategory ? 'FG' : 'SFG'),
+            category: item.category || (isFgCategory ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
+            netWeightKg: Number(item.netWeightKg || item.availableQtyKg || 0),
+            grossWeightKg: Number(item.grossWeightKg) > 0 ? Number(item.grossWeightKg) : undefined,
+            lengthMeters: Number(item.lengthMeters || item.totalMeters) > 0 ? Number(item.lengthMeters || item.totalMeters) : null,
+            unit: 'Kg',
             totalNetKg: Number(item.availableQtyKg || item.netWeightKg || 0),
             availableKg: Number(item.availableQtyKg || item.availableWeightKg || 0),
             consumedKg: Number(item.allocatedQtyKg || 0),
@@ -419,9 +427,17 @@ export default function SFGStoreManagement({
         const exists = list.some(s => s.id === barcodeId || s.sfgBatchCode === barcodeId);
         if (!exists) {
           const netW = Number(roll.availableWeightKg || roll.netWeightKg || 0);
+          const storedMeters = Number(roll.lengthMeters || roll.totalMeters);
           list.push({
             id: barcodeId,
+            barcodeId,
             sfgBatchCode: barcodeId,
+            rollType: roll.rollType || (rollType === 'FINISHED_GOODS' ? 'FINISHED_GOODS' : 'SEMI_FINISHED_GOODS'),
+            category: roll.category || (rollType === 'FINISHED_GOODS' ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'),
+            netWeightKg: Number(roll.netWeightKg) > 0 ? Number(roll.netWeightKg) : netW,
+            grossWeightKg: Number(roll.grossWeightKg) > 0 ? Number(roll.grossWeightKg) : undefined,
+            lengthMeters: storedMeters > 0 ? storedMeters : null,
+            unit: 'Kg',
             orderId: roll.orderId || 'N/A',
             jobName: roll.jobName || roll.itemName || 'SFG Printed Roll',
             jobCode: roll.jobCode || roll.orderId || 'N/A',
@@ -2175,7 +2191,7 @@ export default function SFGStoreManagement({
                                           data-testid="sfg-child-print-tag"
                                           onClick={(event) => {
                                             event.stopPropagation();
-                                            setSelectedRollForBarcodeModal(labelRoll(roll, {
+                                            setSelectedRollForBarcodeModal(labelRoll(prepareStoreStickerRoll(roll, inventoryRolls), {
                                               jobName: item.jobName,
                                               jobCode: item.jobCode,
                                               orderId: item.orderId,
@@ -2203,7 +2219,7 @@ export default function SFGStoreManagement({
                                         data-testid="sfg-balance-print-tag"
                                         onClick={(event) => {
                                           event.stopPropagation();
-                                          setSelectedRollForBarcodeModal(labelRoll({ ...roll, rollType: 'RAW_MATERIAL' }, {
+                                          setSelectedRollForBarcodeModal(labelRoll(prepareStoreStickerRoll({ ...roll, rollType: 'RAW_MATERIAL' }, inventoryRolls), {
                                             jobName: item.jobName,
                                             jobCode: item.jobCode,
                                             orderId: item.orderId,
@@ -2221,7 +2237,7 @@ export default function SFGStoreManagement({
                                   <button
                                     type="button"
                                     data-testid="sfg-print-tag"
-                                    onClick={(e) => { e.stopPropagation(); setSelectedRollForBarcodeModal(item); }}
+                                    onClick={(e) => { e.stopPropagation(); setSelectedRollForBarcodeModal(prepareStoreStickerRoll(item, inventoryRolls)); }}
                                     style={{
                                       background: 'none',
                                       border: 'none',
