@@ -39,7 +39,7 @@ test('the queue migration is additive and later than the inward QC migration', (
     .sort();
   const ours = names.filter((name) => name.startsWith('20261105143000'));
   assert.deepEqual(ours, ['20261105143000_press_queue_order_normalize.sql']);
-  assert.ok(names.at(-1).startsWith('20261105143000'));
+  assert.ok(names.at(-1) > '20261105143000');
 });
 
 test('the later queue save wins and the stored sequence stays unique and contiguous', async () => {

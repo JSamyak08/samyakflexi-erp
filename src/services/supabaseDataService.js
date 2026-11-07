@@ -2244,7 +2244,7 @@ export async function saveInventoryRollToSupabase(roll) {
     ...(roll.coreWeightKg !== undefined && roll.coreWeightKg !== null ? { core_weight_kg: Number(roll.coreWeightKg) || 0 } : {}),
     net_weight_kg: netWeight,
     available_weight_kg: availableWeight,
-    length_meters: Number(roll.lengthMeters ?? 0) || 0,
+    length_meters: Number(roll.lengthMeters) > 0 ? Number(roll.lengthMeters) : null,
     joint_count: Number(roll.jointCount ?? 0) || 0,
     film_type: roll.filmType && roll.filmType !== '-' ? roll.filmType : null,
     qc_status: roll.qcStatus || 'Approved',

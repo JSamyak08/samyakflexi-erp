@@ -90,7 +90,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import PrintRunCompletionSummary from './PrintRunCompletionSummary';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
-import { completionForOrder, lengthForPrintedRoll, printedRollBarcode } from '../utils/printRunCompletion';
+import { balanceRollMeterErrors, completionForOrder, lengthForPrintedRoll, printedRollBarcode, printedRollMeterErrors, withEnteredBalanceMeters } from '../utils/printRunCompletion';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
@@ -1104,7 +1104,7 @@ export default function ProductionScheduler({
 
     setInputPrintedOutputKg('');
     setOutputRollsList([
-      { id: `roll-${Date.now()}-1`, rollNo: 1, netWeightKg: '' }
+      { id: `roll-${Date.now()}-1`, rollNo: 1, netWeightKg: '', lengthMeters: '' }
     ]);
 
     const grnCode = (order.jobCode || order.id || 'ORD').replace(/[^a-zA-Z0-9-]/g, '');
@@ -1140,6 +1140,12 @@ export default function ProductionScheduler({
     const actualNum = parseFloat(inputActualMeters);
     if (!inputActualMeters || isNaN(actualNum) || actualNum <= 0) {
       alert("Please enter a valid number for 'Actual Meters Printed'.");
+      return;
+    }
+    const printedMeterErrors = printedRollMeterErrors(outputRollsList);
+    const balanceMeterErrors = balanceRollMeterErrors(inputRollsList);
+    if (printedMeterErrors.length || balanceMeterErrors.length) {
+      alert([...printedMeterErrors, ...balanceMeterErrors].join('\n'));
       return;
     }
     if (!inputInkGsm || parseFloat(inputInkGsm) <= 0) {
@@ -1310,7 +1316,7 @@ export default function ProductionScheduler({
           availableWeightKg: rollWeight,
           availableKg: rollWeight,
           consumedKg: 0,
-          lengthMeters: lengthForPrintedRoll(rItem, { rollCount: outputRollsList.length, jobMeters: actualMetersNum }),
+          lengthMeters: lengthForPrintedRoll(rItem),
           purchaseRatePerKg: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           unitPrice: Number(endJobTargetOrder.rate || endJobTargetOrder.unitPrice || 0),
           stationId: 'PRINTING_PRESS_REWINDER',
@@ -1442,7 +1448,7 @@ export default function ProductionScheduler({
         filmType: endData.printFilmType || createdSfgRolls[0]?.filmType || '',
         meters: actualMetersNum,
         printedRolls: rollsEligibleForBarcodeLabel(printedRolls),
-        balanceRolls: rollsEligibleForBarcodeLabel(balanceRolls),
+        balanceRolls: rollsEligibleForBarcodeLabel(withEnteredBalanceMeters(balanceRolls, rollsForSave)),
         consumedRolls,
         outputRecorded: endResult?.outputRecorded !== false
       });
@@ -2804,6 +2810,21 @@ export default function ProductionScheduler({
                               <span className="badge badge-success" style={{ fontSize: '0.65rem', background: '#dcfce7', color: '#15803d', padding: '2px 8px' }}>
                                 Auto Balance Barcode
                               </span>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800' }}>
+                                Balance length (m) *
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0.01"
+                                  data-testid={`balance-roll-meters-${index}`}
+                                  className="form-control"
+                                  style={{ width: '120px', fontWeight: '800', color: '#0369a1' }}
+                                  placeholder="meters"
+                                  value={roll.balanceLengthMeters || ''}
+                                  disabled={activeRunningJob.isPrintingCompleted}
+                                  onChange={e => handleInputRollFieldChangeActiveRun(index, 'balanceLengthMeters', e.target.value)}
+                                />
+                              </label>
                             </div>
                           )}
                         </div>
@@ -3210,7 +3231,7 @@ export default function ProductionScheduler({
                           <Scale size={18} style={{ color: '#059669' }} /> Printed Output (Roll-Wise Sequence in Kgs) *
                         </label>
                         <span style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px', display: 'block' }}>
-                          Add net weight for each printed roll sequentially. Barcodes will be printed & SFG inventory updated automatically.
+                          Add the net weight and the measured length of each printed roll. The job total is not copied onto a roll.
                         </span>
                       </div>
                       <div style={{ textAlign: 'right' }}>
@@ -3256,6 +3277,23 @@ export default function ProductionScheduler({
                               required
                             />
                           </div>
+                          <div style={{ width: '140px' }}>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              className="form-control"
+                              data-testid={`printed-roll-meters-${index}`}
+                              style={{ fontSize: '1rem', fontWeight: '800', color: '#0369a1', border: '1.5px solid #0284c7', background: '#f0f9ff' }}
+                              placeholder="Length (m)"
+                              value={roll.lengthMeters || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setOutputRollsList(prev => prev.map((r, i) => i === index ? { ...r, lengthMeters: val } : r));
+                              }}
+                              required
+                            />
+                          </div>
 
                           <WeighingScaleCaptureButton 
                             onCapture={(weight) => {
@@ -3291,7 +3329,7 @@ export default function ProductionScheduler({
                       onClick={() => {
                         setOutputRollsList(prev => [
                           ...prev,
-                          { id: `roll-${Date.now()}-${prev.length + 1}`, rollNo: prev.length + 1, netWeightKg: '' }
+                          { id: `roll-${Date.now()}-${prev.length + 1}`, rollNo: prev.length + 1, netWeightKg: '', lengthMeters: '' }
                         ]);
                       }}
                       style={{

@@ -3,10 +3,13 @@ import assert from 'node:assert/strict';
 import { buildPrintRunPatch } from '../src/utils/printRun.js';
 import {
   completionForOrder,
+  balanceRollMeterErrors,
   labelRoll,
   lengthForPrintedRoll,
   printBarcodeBase,
-  printedRollBarcode
+  printedRollBarcode,
+  printedRollMeterErrors,
+  withEnteredBalanceMeters
 } from '../src/utils/printRunCompletion.js';
 
 test('a print-run patch keeps output and scrap fields and still drops a close', () => {
@@ -52,13 +55,54 @@ test('job history rebuilds printed, balance, and consumed rolls from the lot', (
   assert.equal(summary.outputRecorded, true);
   assert.equal(summary.printedRolls[0].barcodeId, 'SFG-BC-JOB-1-1');
   assert.equal(summary.printedRolls[0].netWeightKg, 36);
-  assert.equal(summary.printedRolls[0].lengthMeters, 1200);
+  assert.equal(summary.printedRolls[0].lengthMeters, null);
+  assert.equal(summary.meters, 1200);
   assert.equal(summary.balanceRolls[0].barcodeId, 'RM-1-BAL');
   assert.equal(summary.consumedRolls[0].consumedWeightKg, 40);
-  assert.equal(lengthForPrintedRoll({ lengthMeters: null }, { rollCount: 1, jobMeters: 370 }), 370);
-  assert.equal(lengthForPrintedRoll({ lengthMeters: 80 }, { rollCount: 1, jobMeters: 370 }), 80);
-  assert.equal(lengthForPrintedRoll({ lengthMeters: null }, { rollCount: 2, jobMeters: 370 }), null);
+  assert.equal(lengthForPrintedRoll({ lengthMeters: null }), null);
+  assert.equal(lengthForPrintedRoll({ lengthMeters: 80 }), 80);
+  assert.equal(lengthForPrintedRoll({ totalMeters: 370 }), null);
   const tag = labelRoll(summary.balanceRolls[0], summary);
   assert.equal(tag.rollType, 'RAW_MATERIAL');
   assert.equal(tag.barcodeId, 'RM-1-BAL');
+});
+
+test('each printed roll and each balance roll keeps its own entered meters', () => {
+  assert.deepEqual(printedRollMeterErrors([
+    { netWeightKg: 10, lengthMeters: 400 },
+    { netWeightKg: 8, lengthMeters: '' }
+  ]), ['Printed roll 2 needs its own length in meters.']);
+  assert.deepEqual(printedRollMeterErrors([{ netWeightKg: 10, lengthMeters: 0 }]), [
+    'Printed roll 1 needs its own length in meters.'
+  ]);
+  assert.deepEqual(printedRollMeterErrors([{ netWeightKg: 10, lengthMeters: -5 }]), [
+    'Printed roll 1 needs its own length in meters.'
+  ]);
+  assert.deepEqual(balanceRollMeterErrors([
+    { initialWeightKg: 20, consumedWeightKg: 20, balanceLengthMeters: '' },
+    { initialWeightKg: 20, consumedWeightKg: 5 }
+  ]), ['Input roll 2 has leftover film and needs the balance length in meters.']);
+  const tagged = withEnteredBalanceMeters(
+    [{ barcodeId: 'RM-9-BAL', parentBarcodeId: 'RM-9', netWeightKg: 15 }],
+    [{ barcodeId: 'RM-9', balanceLengthMeters: '640' }]
+  );
+  assert.equal(tagged[0].lengthMeters, 640);
+  const untouched = withEnteredBalanceMeters(
+    [{ barcodeId: 'RM-9-BAL', netWeightKg: 15 }],
+    [{ barcodeId: 'RM-9' }]
+  );
+  assert.equal(untouched[0].lengthMeters, null);
+  const summary = completionForOrder({
+    order: { id: 'ORD-2', actualMetersPrinted: 9000 },
+    sfgGoods: [{
+      sfgBatchCode: 'SFG-LOT-ORD-2',
+      childRolls: [
+        { barcodeId: 'SFG-BC-ORD-2-1', netWeightKg: 4, lengthMeters: 210 },
+        { barcodeId: 'SFG-BC-ORD-2-2', netWeightKg: 5 }
+      ]
+    }]
+  });
+  assert.equal(summary.printedRolls[0].lengthMeters, 210);
+  assert.equal(summary.printedRolls[1].lengthMeters, null);
+  assert.equal(summary.meters, 9000);
 });
