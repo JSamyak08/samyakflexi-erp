@@ -143,9 +143,6 @@ export function completionForOrder({ order, sfgGoods, inventoryRolls } = {}) {
   const jobMeters = finite(order?.actualMetersPrinted);
   const lotMeters = finite(lot?.totalMeters);
   const meters = jobMeters !== null && jobMeters > 0 ? jobMeters : (lotMeters !== null && lotMeters > 0 ? lotMeters : null);
-  if (printedRolls.length === 1 && !(printedRolls[0].lengthMeters > 0) && meters) {
-    printedRolls = [{ ...printedRolls[0], lengthMeters: meters }];
-  }
   printedRolls = withInventoryFacts(printedRolls, inventoryRolls);
   balanceRolls = withInventoryFacts(balanceRolls, inventoryRolls);
   return {
@@ -160,18 +157,58 @@ export function completionForOrder({ order, sfgGoods, inventoryRolls } = {}) {
   };
 }
 
-/**
- * A single printed roll with no length of its own uses the job meters the
- * operator just entered. Extra rolls stay blank until each one has a length.
- */
-export function lengthForPrintedRoll(roll, { rollCount = 1, jobMeters = null } = {}) {
-  const own = finite(roll?.lengthMeters ?? roll?.meters ?? roll?.totalMeters);
-  if (own !== null && own > 0) return own;
-  if (Number(rollCount) === 1) {
-    const job = finite(jobMeters);
-    if (job !== null && job > 0) return job;
-  }
-  return null;
+/** Balance stickers use the meters typed for that leftover roll. */
+export function withEnteredBalanceMeters(balanceRolls, inputRolls) {
+  return (Array.isArray(balanceRolls) ? balanceRolls : []).map((roll) => {
+    const own = lengthForPrintedRoll(roll);
+    if (own) return { ...roll, lengthMeters: own };
+    const barcode = text(roll?.barcodeId || roll?.id).toLowerCase();
+    const parent = text(roll?.parentBarcodeId || roll?.parentBarcode).toLowerCase();
+    const source = (Array.isArray(inputRolls) ? inputRolls : []).find((item) => {
+      const code = text(item?.barcodeId || item?.barcode).toLowerCase();
+      return code && (code === parent || `${code}-bal` === barcode);
+    });
+    const entered = finite(source?.balanceLengthMeters);
+    return { ...roll, lengthMeters: entered !== null && entered > 0 ? entered : null };
+  });
+}
+
+/** Length the operator typed for this roll. A job total is never copied onto a roll. */
+export function lengthForPrintedRoll(roll) {
+  const own = finite(roll?.lengthMeters ?? roll?.meters);
+  return own !== null && own > 0 ? own : null;
+}
+
+function positiveMeters(value) {
+  const number = finite(value);
+  return number !== null && number > 0 ? number : null;
+}
+
+/** Each weighed printed roll needs its own length. Blank, zero, and negative are rejected. */
+export function printedRollMeterErrors(rolls) {
+  const errors = [];
+  (Array.isArray(rolls) ? rolls : []).forEach((roll, index) => {
+    const weight = finite(roll?.netWeightKg);
+    if (weight === null || weight <= 0) return;
+    if (positiveMeters(roll?.lengthMeters) === null) {
+      errors.push(`Printed roll ${index + 1} needs its own length in meters.`);
+    }
+  });
+  return errors;
+}
+
+/** A leftover balance needs the meters measured on that balance roll, not a share of the job. */
+export function balanceRollMeterErrors(rolls) {
+  const errors = [];
+  (Array.isArray(rolls) ? rolls : []).forEach((roll, index) => {
+    const initial = finite(roll?.initialWeightKg ?? roll?.initialKg);
+    const consumed = finite(roll?.consumedWeightKg ?? roll?.consumedKg);
+    if (initial === null || consumed === null || !(initial > consumed) || !(consumed > 0)) return;
+    if (positiveMeters(roll?.balanceLengthMeters ?? roll?.lengthMeters) === null) {
+      errors.push(`Input roll ${index + 1} has leftover film and needs the balance length in meters.`);
+    }
+  });
+  return errors;
 }
 
 /** A roll the label printer can stick. Consumed parent rolls keep their old tag. */

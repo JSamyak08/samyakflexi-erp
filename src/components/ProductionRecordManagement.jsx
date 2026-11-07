@@ -174,7 +174,7 @@ function RollWiseInputOutputMasterRolls({
     const netKg = parseFloat(r.netWeightKg || r.total_net_kg || r.totalNetKg || r.availableWeightKg || r.available_weight_kg || 0) || 0;
     const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || 0) || 0;
     const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0) || 0;
-    const lengthM = parseFloat(r.lengthMeters || r.total_meters || r.totalMeters || r.meters || 0) || 0;
+    const lengthM = parseFloat(r.lengthMeters || r.meters || 0) || 0;
 
     // Discard entries with 0 weight (not weighed or uninitialized placeholder)
     if (netKg <= 0 && grossKg <= 0) return;
@@ -196,7 +196,7 @@ function RollWiseInputOutputMasterRolls({
         netWeightKg: netKg,
         grossWeightKg: grossKg,
         tareWeightKg: tareKg,
-        lengthMeters: lengthM,
+        lengthMeters: lengthM > 0 ? lengthM : null,
         filmType: film,
         micron: Number(micron),
         widthMm: Number(widthMm),

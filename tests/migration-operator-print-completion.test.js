@@ -306,6 +306,43 @@ async function asUser(db, authId) {
   await db.exec('SET ROLE authenticated');
 }
 
+test('a later migration keeps each roll length and does not copy the job total', async () => {
+  const later = fs.readFileSync(
+    new URL('../supabase/migrations/20261107020000_per_roll_entered_length.sql', import.meta.url),
+    'utf8'
+  );
+  assert.doesNotMatch(later, /jsonb_array_length\(printed\) = 1/);
+  assert.match(later, /stamp_balance_roll_length/);
+  assert.match(later, /balanceLengthMeters/);
+  assert.doesNotMatch(later, /eamstsaqkbeiywfaanhi/);
+  const db = await database();
+  await db.exec(later);
+  await asUser(db, OPERATOR);
+  const entered = await db.query(
+    `SELECT public.complete_print_run('ORD-1', $1::jsonb) AS run`,
+    [JSON.stringify({
+      ...endPatch(10, 0),
+      actualMetersPrinted: 1500,
+      outputRolls: [
+        { netWeightKg: 4, lengthMeters: 210, filmType: 'PET' },
+        { netWeightKg: 6, lengthMeters: 80, filmType: 'PET' }
+      ]
+    })]
+  );
+  const rolls = entered.rows[0].run.printedRolls;
+  assert.equal(Number(rolls[0].lengthMeters), 210);
+  assert.equal(Number(rolls[1].lengthMeters), 80);
+  const missing = await db.query(
+    `SELECT public.complete_print_run('ORD-2', $1::jsonb) AS run`,
+    [JSON.stringify({
+      ...endPatch(3, 0),
+      actualMetersPrinted: 900,
+      outputRolls: [{ netWeightKg: 3, filmType: 'PET' }]
+    })]
+  );
+  assert.equal(missing.rows[0].run.printedRolls[0].lengthMeters, null);
+});
+
 test('the completion migration is newer than the approval gates and does not grant store write', () => {
   assert.ok('20261103143000' > '20261103120000');
   assert.match(migrationSql, /complete_print_run/);
