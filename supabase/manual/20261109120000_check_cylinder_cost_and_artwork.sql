@@ -47,7 +47,7 @@ rated AS (
     money.*,
     CASE
       WHEN rate_per_sq_inch BETWEEN 0.2 AND 50 THEN rate_per_sq_inch
-      ELSE 1.6
+      ELSE 1.80
     END AS sane_rate
   FROM money
 ),

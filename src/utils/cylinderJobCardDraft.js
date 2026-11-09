@@ -1,4 +1,5 @@
 import { artworkOwnedByRow, artworkUrlsOf } from './cylinderArtwork.js';
+import { DEFAULT_CYLINDER_RATE_PER_SQ_CM, storedEngravingRate } from './cylinderCost.js';
 
 export function parseStructureToLayers(structStr) {
   if (!structStr || structStr === '—') return [];
@@ -101,7 +102,7 @@ export function buildCylinderJobCardDraft(initialData, matchingJM) {
       engravure: src.engravuresName || src.engravure || src.engraverName || '',
       cylinderCost: src.cylinderCost || '',
       costPerCylinder: src.costPerCylinder || '',
-      ratePerSqInch: src.ratePerSqInch || 1.60,
+      ratePerSqInch: storedEngravingRate(src.rate, src.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
       utilisationLimit: `${src.utilisationLimit || 10000}`,
       costBorneBy: src.costBorneBy || 'Client (100%)',
       costBorneType: src.costBorneType || 'client',

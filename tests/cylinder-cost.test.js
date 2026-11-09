@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  DEFAULT_CYLINDER_RATE_PER_SQ_CM,
   autoMapCylinderCsvHeaders,
   costsFromCsvRow,
   expectedCylinderCosts,
   formatInrAmount,
   parseInrAmount,
-  reconcileCylinderCosts
+  reconcileCylinderCosts,
+  storedEngravingRate
 } from '../src/utils/cylinderCost.js';
 
 const SONU = {
@@ -166,4 +168,55 @@ test('CSV import parses money and uses the same area formula when a cost cell is
   assert.equal(computed.costPerCylinder, 5139);
   assert.equal(computed.totalSetCost, 35973);
   assert.equal(parseInrAmount(computed.cylinderCostText), 35973);
+});
+
+test('the default engraving rate is 1.80 per sq cm and a stored rate is not replaced', () => {
+  assert.equal(DEFAULT_CYLINDER_RATE_PER_SQ_CM, 1.8);
+  const blank = expectedCylinderCosts({ faceLengthMm: 730, circumferenceMm: 440, colorsCount: 7 });
+  assert.equal(blank.rate, 1.8);
+  assert.equal(blank.areaSqCm, 3212);
+  assert.equal(blank.costPerCylinder, 5782);
+  assert.equal(blank.totalSetCost, 40474);
+
+  const kept = expectedCylinderCosts({ faceLengthMm: 730, circumferenceMm: 440, rate: 1.6, colorsCount: 7 });
+  assert.equal(kept.rate, 1.6);
+  assert.equal(kept.costPerCylinder, 5139);
+
+  const typed = expectedCylinderCosts({ faceLengthMm: 730, circumferenceMm: 440, rate: 2.1, colorsCount: 7 });
+  assert.equal(typed.rate, 2.1);
+  assert.equal(typed.costPerCylinder, 6745);
+  assert.equal(typed.totalSetCost, 47215);
+
+  assert.equal(storedEngravingRate(null, '', undefined), null);
+  assert.equal(storedEngravingRate(1.6), 1.6);
+  assert.equal(storedEngravingRate('2.10'), 2.1);
+
+  const agreedAtOldRate = reconcileCylinderCosts({
+    faceLengthMm: 730,
+    circumferenceMm: 440,
+    colorsCount: 7,
+    rate: 1.6,
+    cylinderCost: '₹ 35,973.00',
+    costPerCylinder: '₹ 5,139.00'
+  });
+  assert.equal(agreedAtOldRate.costPerCylinder, 5139);
+  assert.equal(agreedAtOldRate.totalSetCost, 35973);
+  assert.equal(agreedAtOldRate.perCorrected, false);
+  assert.equal(agreedAtOldRate.needsReview, false);
+
+  const imported = costsFromCsvRow({
+    faceLengthMm: '730',
+    circumferenceMm: '440',
+    colorsCount: '7',
+    rate: '2.10'
+  });
+  assert.equal(imported.rate, 2.1);
+  assert.equal(imported.costPerCylinder, 6745);
+  const importedDefault = costsFromCsvRow({
+    faceLengthMm: '730',
+    circumferenceMm: '440',
+    colorsCount: '7'
+  });
+  assert.equal(importedDefault.rate, 1.8);
+  assert.equal(importedDefault.costPerCylinder, 5782);
 });

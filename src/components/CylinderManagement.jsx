@@ -39,9 +39,11 @@ import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorag
 import {
   autoMapCylinderCsvHeaders,
   costsFromCsvRow,
+  DEFAULT_CYLINDER_RATE_PER_SQ_CM,
   expectedCylinderCosts,
   formatInrAmount,
-  reconcileCylinderCosts
+  reconcileCylinderCosts,
+  storedEngravingRate
 } from '../utils/cylinderCost';
 import { cylinderIdentityKey, displayArtworkUrl } from '../utils/cylinderArtwork';
 import { findMatchingJobMaster } from '../utils/cylinderJobCardDraft';
@@ -239,7 +241,7 @@ export default function CylinderManagement({
   const [clientGroup, setClientGroup] = useState('');
   const [colorsCount, setColorsCount] = useState(6);
   const [engravuresName, setEngravuresName] = useState('');
-  const [rate, setRate] = useState(1.60);
+  const [rate, setRate] = useState(DEFAULT_CYLINDER_RATE_PER_SQ_CM);
   const [cylinderCost, setCylinderCost] = useState('35000');
   const [costPerCylinder, setCostPerCylinder] = useState('5833');
   const [costBorneBy, setCostBorneBy] = useState('Client (100%)');
@@ -440,7 +442,7 @@ export default function CylinderManagement({
     setClientGroup('');
     setColorsCount(6);
     setEngravuresName('');
-    setRate(1.60);
+    setRate(DEFAULT_CYLINDER_RATE_PER_SQ_CM);
     setCircumferenceMm(400);
     setFaceLengthMm(1050);
     setPrintWidthMm(1000);
@@ -489,7 +491,7 @@ export default function CylinderManagement({
     setClientGroup(cyl.clientGroup || matchedJM?.clientName || '');
     setColorsCount(cyl.colorsCount || matchedJM?.colorsCount || 6);
     setEngravuresName(cyl.engravuresName || matchedJM?.engravuresName || '');
-    setRate(cyl.rate || cyl.ratePerSqInch || 1.60);
+    setRate(storedEngravingRate(cyl.rate, cyl.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM);
     setCircumferenceMm(cyl.circumferenceMm || matchedJM?.repeatLengthMm || 400);
     setFaceLengthMm(cyl.faceLengthMm || matchedJM?.faceLengthMm || 1050);
     setPrintWidthMm(cyl.printWidthMm || cyl.pouchOpenWidth || matchedJM?.printWidthMm || 1000);
@@ -684,8 +686,8 @@ export default function CylinderManagement({
       layers,
       jobMasterId: editingCylinder ? (editingCylinder.jobMasterId || editingCylinder.id) : nextJmId,
       colorsCount: parseInt(colorsCount) || 1,
-      rate: parseFloat(rate) || 1.6,
-      ratePerSqInch: parseFloat(rate) || 1.6,
+      rate: storedEngravingRate(rate) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+      ratePerSqInch: storedEngravingRate(rate) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
       costPerCylinder: formatInrAmount(costPerCylinder),
       cylinderCost: formatInrAmount(cylinderCost),
       engravuresName,

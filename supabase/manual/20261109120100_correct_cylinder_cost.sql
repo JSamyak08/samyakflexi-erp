@@ -18,7 +18,7 @@
 -- still agrees with the set total is left alone (it may be a real price) and
 -- is only listed by the read-only check.
 -- Geometry is (face mm x circumference mm) / 100 cm², times a rate that is
--- kept only when it is between ₹0.20 and ₹50 per cm² (otherwise ₹1.60).
+-- kept only when it is between ₹0.20 and ₹50 per cm² (otherwise ₹1.80).
 -- Text is stored as a plain rupee amount. The app formats Indian grouping on read.
 
 BEGIN;
@@ -45,7 +45,7 @@ WITH money AS (
     END AS area_sq_cm,
     CASE
       WHEN c.rate_per_sq_inch BETWEEN 0.2 AND 50 THEN c.rate_per_sq_inch
-      ELSE 1.6
+      ELSE 1.80
     END AS sane_rate
   FROM public.cylinders c
 ),

@@ -12,9 +12,23 @@
  * two extra zeros and multiplies the amount by 100 on the next save.
  */
 
-const DEFAULT_RATE = 1.6;
+/** ₹ per cm² used when a cylinder has no stored engraving rate. */
+export const DEFAULT_CYLINDER_RATE_PER_SQ_CM = 1.8;
 const RATE_MIN = 0.2;
 const RATE_MAX = 50;
+
+/**
+ * The rate written on the row, or null when nothing was stored.
+ * A typed or previously saved number is returned unchanged, including 1.60.
+ */
+export function storedEngravingRate(...candidates) {
+  for (const value of candidates) {
+    if (value == null || value === '') continue;
+    const numeric = typeof value === 'number' ? value : parseInrAmount(value);
+    if (numeric != null && numeric > 0) return numeric;
+  }
+  return null;
+}
 
 export function parseInrAmount(value) {
   if (value == null || value === '') return null;
@@ -59,8 +73,8 @@ export function cylinderSurfaceSqCm(faceLengthMm, circumferenceMm) {
 }
 
 export function saneEngravingRate(rate) {
-  const numeric = Number(rate);
-  if (!Number.isFinite(numeric) || numeric < RATE_MIN || numeric > RATE_MAX) return DEFAULT_RATE;
+  const numeric = storedEngravingRate(rate);
+  if (numeric == null || numeric < RATE_MIN || numeric > RATE_MAX) return DEFAULT_CYLINDER_RATE_PER_SQ_CM;
   return numeric;
 }
 
