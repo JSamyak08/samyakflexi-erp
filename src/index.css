@@ -2864,6 +2864,365 @@ div[style*="overflowX: 'auto'"] {
   }
 }
 
+.sidebar-bug-wrap {
+  padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-bug-btn {
+  background: linear-gradient(135deg, #b45309 0%, #9a3412 100%);
+  box-shadow: 0 4px 6px -1px rgba(154, 52, 18, 0.25), 0 2px 4px -2px rgba(154, 52, 18, 0.2);
+}
+
+.sidebar-my-bugs-btn {
+  background: #ffffff;
+  color: #9a3412;
+  border: 1px solid #fdba74;
+  box-shadow: none;
+}
+
+.mobile-bug-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid #fdba74;
+  background: #fff7ed;
+  color: #9a3412;
+  cursor: pointer;
+  padding: 0;
+}
+
+.bug-report-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow: auto;
+}
+
+.bug-report-layer[data-capturing='true'] {
+  visibility: hidden;
+}
+
+.bug-report-backdrop {
+  position: fixed;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.45);
+  cursor: pointer;
+}
+
+.bug-report-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(720px, 100%);
+  margin: 32px auto;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  padding: 18px 18px 20px;
+}
+
+.bug-report-dialog-head,
+.bug-report-dialog-title,
+.bug-report-actions,
+.bug-report-shot-actions,
+.bug-reports-toolbar,
+.bug-reports-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bug-report-dialog-head,
+.bug-reports-toolbar {
+  justify-content: space-between;
+}
+
+.bug-report-dialog-title h2,
+.bug-reports-detail-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.bug-report-close,
+.bug-report-previews button {
+  border: 0;
+  background: #f1f5f9;
+  color: #334155;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.bug-report-lead,
+.bug-report-hint,
+.bug-report-empty,
+.bug-reports-detail-head p {
+  color: #64748b;
+  font-size: 0.84rem;
+  margin: 8px 0;
+}
+
+.bug-report-required {
+  color: #b45309;
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.bug-report-input,
+.bug-report-textarea,
+.bug-reports-filters select,
+.bug-reports-filters input,
+.bug-report-status-form select,
+.bug-report-status-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.bug-report-textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.bug-report-optional-grid,
+.bug-reports-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.bug-reports-filters label,
+.bug-report-status-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.bug-report-field-error {
+  color: #b91c1c;
+  font-size: 0.82rem;
+  margin: 4px 0 8px;
+}
+
+.bug-report-actions {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.bug-report-shot-actions {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.bug-report-shot-actions .btn-secondary,
+.bug-reports-toolbar .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bug-report-previews {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.bug-report-previews li {
+  position: relative;
+}
+
+.bug-report-previews img,
+.bug-report-gallery img {
+  width: 120px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.bug-report-previews button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+}
+
+.bug-reports-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.bug-reports-list,
+.bug-reports-detail {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  min-width: 0;
+}
+
+.bug-reports-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #f1f5f9;
+  background: transparent;
+  padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.bug-reports-row.active,
+.bug-reports-row:hover {
+  background: #fff7ed;
+}
+
+.bug-reports-row-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.bug-reports-row-copy strong,
+.bug-reports-row-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bug-reports-row-copy span {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.bug-reports-detail {
+  padding: 16px;
+}
+
+.bug-report-description {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.bug-report-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 12px;
+  margin: 12px 0;
+}
+
+.bug-report-meta-grid div {
+  margin: 0;
+}
+
+.bug-report-meta-grid dt {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.bug-report-meta-grid dd {
+  margin: 2px 0 0;
+  word-break: break-word;
+}
+
+.bug-report-meta-wide {
+  grid-column: 1 / -1;
+}
+
+.bug-report-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bug-report-gallery img {
+  width: min(100%, 280px);
+  height: auto;
+  max-height: 220px;
+}
+
+.bug-severity,
+.bug-status {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.bug-severity-low { background: #ecfdf5; color: #047857; }
+.bug-severity-medium { background: #eff6ff; color: #1d4ed8; }
+.bug-severity-high { background: #fff7ed; color: #c2410c; }
+.bug-severity-critical { background: #fef2f2; color: #b91c1c; }
+.bug-status-new { background: #fef3c7; color: #92400e; }
+.bug-status-inprogress { background: #e0f2fe; color: #0369a1; }
+.bug-status-resolved { background: #dcfce7; color: #166534; }
+.bug-status-wontfix { background: #f1f5f9; color: #475569; }
+
+.bug-report-note {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.bug-report-status-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.sidebar.collapsed .sidebar-bug-wrap {
+  padding: 0 4px 6px;
+}
+
+@media (max-width: 1024px) {
+  .sidebar.collapsed .sidebar-bug-wrap {
+    padding: 0 12px 10px;
+  }
+
+  .bug-reports-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 
 
 
