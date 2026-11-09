@@ -6,6 +6,8 @@ import ArtworkModal from './ArtworkModal';
 import TablePagination, { usePagination } from './TablePagination';
 import { pushSlugState } from '../utils/slugRouter';
 import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
+import { reconcileCylinderCosts } from '../utils/cylinderCost';
+import { displayArtworkUrl } from '../utils/cylinderArtwork';
 
 export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], jobMasters = [], onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -147,21 +149,9 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
     let totalCyls = 0;
     let totalVal = 0;
     clientCylinders.forEach(c => {
-      const colors = parseInt(c.colorsCount || c.numberOfCylinders || 1, 10);
-      totalCyls += colors;
-      
-      let costPerCyl = parseFloat(c.costPerCylinder || 0);
-      let totalSetCost = parseFloat(typeof c.cylinderCost === 'string' ? c.cylinderCost.replace(/[^0-9.]/g, '') : (c.cylinderCost || 0));
-      
-      if (!totalSetCost && costPerCyl) {
-        totalSetCost = costPerCyl * colors;
-      } else if (!totalSetCost && c.faceLengthMm && c.circumferenceMm) {
-        const sqCm = (parseFloat(c.faceLengthMm) * parseFloat(c.circumferenceMm)) / 100;
-        const rate = parseFloat(c.rate || c.ratePerSqInch) || 1.60;
-        costPerCyl = sqCm * rate;
-        totalSetCost = costPerCyl * colors;
-      }
-      totalVal += (totalSetCost || 0);
+      const costs = reconcileCylinderCosts(c);
+      totalCyls += costs.colors;
+      totalVal += (costs.totalSetCost || 0);
     });
     return { totalCylinders: totalCyls, totalValue: totalVal };
   }, [clientCylinders]);
@@ -325,20 +315,11 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                   </thead>
                   <tbody>
                     {clientCylinders.map(c => {
-                      const colors = parseInt(c.colorsCount || c.numberOfCylinders || 1, 10);
-                      let costPerCyl = parseFloat(c.costPerCylinder || 0);
-                      let totalSetCost = parseFloat(typeof c.cylinderCost === 'string' ? c.cylinderCost.replace(/[^0-9.]/g, '') : (c.cylinderCost || 0));
-
-                      if (!costPerCyl && totalSetCost && colors) {
-                        costPerCyl = totalSetCost / colors;
-                      } else if (!totalSetCost && c.faceLengthMm && c.circumferenceMm) {
-                        const sqCm = (parseFloat(c.faceLengthMm) * parseFloat(c.circumferenceMm)) / 100;
-                        const rate = parseFloat(c.rate || c.ratePerSqInch) || 1.60;
-                        costPerCyl = sqCm * rate;
-                        totalSetCost = costPerCyl * colors;
-                      }
-
-                      const artwork = c.artworkUrl || c.imageUrl || c.artworkImage;
+                      const costs = reconcileCylinderCosts(c);
+                      const colors = costs.colors;
+                      const costPerCyl = costs.costPerCylinder;
+                      const totalSetCost = costs.totalSetCost;
+                      const artwork = displayArtworkUrl(c, clientCylinders);
 
                       return (
                         <tr key={c.id}>

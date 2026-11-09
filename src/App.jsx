@@ -23,6 +23,8 @@ import {
   DEFAULT_PRINTING_LEAD_DAYS,
 } from './utils/orderDeadlineReminder';
 import { loggedInActorLabel } from './utils/recordedPerson';
+import { withReconciledCosts } from './utils/cylinderCost';
+import { artworkToApply, cylinderIdentityKey, isExplicitCylinderJobLink } from './utils/cylinderArtwork';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -3775,10 +3777,10 @@ export default function App() {
     const targetJobName = (newCyl.jobName || '').trim().toLowerCase();
 
     setCylinders(prev => {
-      const matchIndex = prev.findIndex(c => 
-        c.id === newCyl.id || 
-        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) ||
-        (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName)
+      const matchIndex = prev.findIndex(c =>
+        (newCyl.id && c.id === newCyl.id) ||
+        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku &&
+          (!(c.jobName || '').trim() || !targetJobName || (c.jobName || '').trim().toLowerCase() === targetJobName))
       );
 
       if (matchIndex >= 0) {
@@ -3788,8 +3790,10 @@ export default function App() {
         copy[matchIndex] = updated;
         return copy.filter((c, idx) => {
           if (idx === matchIndex) return true;
-          if (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) return false;
-          if (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName) return false;
+          if (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) {
+            const existingName = (c.jobName || '').trim().toLowerCase();
+            if (!existingName || !targetJobName || existingName === targetJobName) return false;
+          }
           return true;
         });
       }
@@ -3808,13 +3812,16 @@ export default function App() {
     const targetSku = (cyl.sku || '').trim().toLowerCase();
     const targetJobName = (cyl.jobName || '').trim().toLowerCase();
 
+    const jobMastersWithThisName = (jobMasters || []).filter(j =>
+      j && targetJobName && (j.jobName || '').trim().toLowerCase() === targetJobName
+    );
     const matchedJobMasters = (jobMasters || []).filter(j => {
       if (!j) return false;
       if (targetJobMasterId && (j.id === targetJobMasterId || String(j.id) === String(targetJobMasterId))) return true;
       if (j.cylinderId && (j.cylinderId === targetCylId || String(j.cylinderId) === String(targetCylId) || j.cylinderId === cyl.sku)) return true;
       if (j.cylinderSku && targetSku && j.cylinderSku.trim().toLowerCase() === targetSku) return true;
       if (j.skuCode && targetSku && j.skuCode.trim().toLowerCase() === targetSku) return true;
-      if (j.jobName && targetJobName && j.jobName.trim().toLowerCase() === targetJobName) return true;
+      if (jobMastersWithThisName.length === 1 && jobMastersWithThisName[0] === j) return true;
       return false;
     });
 
@@ -3842,12 +3849,12 @@ export default function App() {
         pouchOpenWidth: cyl.pouchOpenWidth !== undefined && cyl.pouchOpenWidth !== null ? Number(cyl.pouchOpenWidth) : jm.pouchOpenWidth,
         pouchHeight: cyl.pouchHeight !== undefined && cyl.pouchHeight !== null ? Number(cyl.pouchHeight) : jm.pouchHeight,
         colorsCount: cyl.colorsCount !== undefined && cyl.colorsCount !== null ? Number(cyl.colorsCount) : jm.colorsCount,
-        cylinderCost: cyl.cylinderCost || cyl.costPerCylinder || jm.cylinderCost,
+        cylinderCost: withReconciledCosts({ ...jm, ...cyl, circumferenceMm: cyl.circumferenceMm ?? jm.repeatLengthMm }).cylinderCost || jm.cylinderCost,
         engravuresName: cyl.engravuresName || jm.engravuresName,
         costBorneBy: cyl.costBorneBy || jm.costBorneBy,
         utilisationLimit: cyl.utilisationLimit !== undefined && cyl.utilisationLimit !== null ? Number(cyl.utilisationLimit) : jm.utilisationLimit,
-        artworkUrl: cyl.artworkUrl || cyl.jobCardFileUrl || jm.artworkUrl,
-        jobCardFileUrl: cyl.jobCardFileUrl || cyl.artworkUrl || jm.jobCardFileUrl,
+        artworkUrl: artworkToApply({ source: cyl, target: jm, explicit: isExplicitCylinderJobLink(cyl, jm) }),
+        jobCardFileUrl: artworkToApply({ source: cyl, target: jm, explicit: isExplicitCylinderJobLink(cyl, jm) }),
         jobCardFileName: cyl.jobCardFileName || jm.jobCardFileName,
         silLogo: cyl.silLogo !== undefined && cyl.silLogo !== null ? cyl.silLogo : jm.silLogo,
         arcMark: cyl.arcMark || jm.arcMark,
@@ -3885,12 +3892,18 @@ export default function App() {
     const targetSku = (jobMaster.skuCode || jobMaster.cylinderSku || jobMaster.sku || '').trim().toLowerCase();
     const targetJobName = (jobMaster.jobName || '').trim().toLowerCase();
 
+    const cylindersWithThisName = (cylinders || []).filter(c =>
+      c && targetJobName && (c.jobName || '').trim().toLowerCase() === targetJobName
+    );
     const matchedCylinders = (cylinders || []).filter(c => {
       if (!c) return false;
       if (targetJmId && (c.jobMasterId === targetJmId || c.job_master_id === targetJmId)) return true;
-      if (c.sku && targetSku && c.sku.trim().toLowerCase() === targetSku) return true;
+      if (c.sku && targetSku && c.sku.trim().toLowerCase() === targetSku) {
+        const existingName = (c.jobName || '').trim().toLowerCase();
+        return !existingName || !targetJobName || existingName === targetJobName;
+      }
       if (c.skuCode && targetSku && c.skuCode.trim().toLowerCase() === targetSku) return true;
-      if (c.jobName && targetJobName && c.jobName.trim().toLowerCase() === targetJobName) return true;
+      if (cylindersWithThisName.length === 1 && cylindersWithThisName[0] === c) return true;
       return false;
     });
 
@@ -3904,6 +3917,20 @@ export default function App() {
       const derivedStructure = (layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (jobMaster.structure || cyl.structure || '—');
+      const explicitLink = isExplicitCylinderJobLink(
+        { ...cyl, jobMasterId: cyl.jobMasterId || targetJmId },
+        jobMaster
+      );
+      const reconciled = withReconciledCosts({
+        ...cyl,
+        faceLengthMm: jobMaster.faceLengthMm ?? cyl.faceLengthMm,
+        circumferenceMm: jobMaster.repeatLengthMm ?? cyl.circumferenceMm,
+        colorsCount: jobMaster.colorsCount ?? cyl.colorsCount,
+        cylinderCost: jobMaster.cylinderCost || cyl.cylinderCost,
+        costPerCylinder: cyl.costPerCylinder,
+        rate: cyl.rate ?? cyl.ratePerSqInch
+      });
+      const syncedArtwork = artworkToApply({ source: jobMaster, target: cyl, explicit: explicitLink });
 
       const updatedCyl = {
         ...cyl,
@@ -3920,12 +3947,13 @@ export default function App() {
         pouchOpenWidth: jobMaster.pouchOpenWidth !== undefined && jobMaster.pouchOpenWidth !== null ? Number(jobMaster.pouchOpenWidth) : cyl.pouchOpenWidth,
         pouchHeight: jobMaster.pouchHeight !== undefined && jobMaster.pouchHeight !== null ? Number(jobMaster.pouchHeight) : cyl.pouchHeight,
         colorsCount: jobMaster.colorsCount !== undefined && jobMaster.colorsCount !== null ? Number(jobMaster.colorsCount) : cyl.colorsCount,
-        cylinderCost: jobMaster.cylinderCost || cyl.cylinderCost,
+        cylinderCost: reconciled.cylinderCost || cyl.cylinderCost,
+        costPerCylinder: reconciled.costPerCylinder || cyl.costPerCylinder,
         engravuresName: jobMaster.engravuresName || cyl.engravuresName,
         costBorneBy: jobMaster.costBorneBy || cyl.costBorneBy,
         utilisationLimit: jobMaster.utilisationLimit !== undefined && jobMaster.utilisationLimit !== null ? Number(jobMaster.utilisationLimit) : cyl.utilisationLimit,
-        artworkUrl: jobMaster.artworkUrl || jobMaster.jobCardFileUrl || cyl.artworkUrl,
-        jobCardFileUrl: jobMaster.jobCardFileUrl || jobMaster.artworkUrl || cyl.jobCardFileUrl,
+        artworkUrl: syncedArtwork,
+        jobCardFileUrl: syncedArtwork,
         silLogo: jobMaster.silLogo !== undefined && jobMaster.silLogo !== null ? jobMaster.silLogo : cyl.silLogo,
         arcMark: jobMaster.arcMark || cyl.arcMark,
         slittingMark: jobMaster.slittingMark || cyl.slittingMark,
@@ -3957,11 +3985,11 @@ export default function App() {
     setCylinders(prev => {
       const map = new Map();
       (prev || []).forEach(c => {
-        const k = (c.sku || c.jobName || String(c.id)).trim().toLowerCase();
+        const k = cylinderIdentityKey(c);
         if (k) map.set(k, c);
       });
       newCylList.forEach(c => {
-        const k = (c.sku || c.jobName || String(c.id)).trim().toLowerCase();
+        const k = cylinderIdentityKey(c);
         if (k) {
           const existing = map.get(k);
           map.set(k, { ...(existing || {}), ...c });
@@ -3984,10 +4012,10 @@ export default function App() {
     const targetJobName = (updatedCyl.jobName || '').trim().toLowerCase();
 
     setCylinders(prev => {
-      const matchIndex = prev.findIndex(c => 
-        c.id === updatedCyl.id || 
-        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) ||
-        (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName)
+      const matchIndex = prev.findIndex(c =>
+        (updatedCyl.id && c.id === updatedCyl.id) ||
+        (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku &&
+          (!(c.jobName || '').trim() || !targetJobName || (c.jobName || '').trim().toLowerCase() === targetJobName))
       );
 
       if (matchIndex >= 0) {
@@ -3997,8 +4025,10 @@ export default function App() {
         copy[matchIndex] = merged;
         return copy.filter((c, idx) => {
           if (idx === matchIndex) return true;
-          if (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) return false;
-          if (targetJobName && c.jobName && c.jobName.trim().toLowerCase() === targetJobName) return false;
+          if (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku) {
+            const existingName = (c.jobName || '').trim().toLowerCase();
+            if (!existingName || !targetJobName || existingName === targetJobName) return false;
+          }
           return true;
         });
       }

@@ -13,6 +13,7 @@ import ArtworkModal from './components/ArtworkModal';
 import StorageImage from './components/StorageImage';
 import SearchableSelect from './components/SearchableSelect';
 import { applySavedJobCardSpec, buildCylinderJobCardDraft, findMatchingJobMaster, parseStructureToLayers } from './utils/cylinderJobCardDraft';
+import { DEFAULT_CYLINDER_RATE_PER_SQ_CM, storedEngravingRate } from './utils/cylinderCost';
 import { rawRoleNames, userHasAnyRole } from './assignedRoles';
 import { formatPlantDate } from './utils/dbDates';
 
@@ -321,7 +322,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     engravure: '',
     cylinderCost: '',
     costPerCylinder: '',
-    ratePerSqInch: 1.60,
+    ratePerSqInch: DEFAULT_CYLINDER_RATE_PER_SQ_CM,
     utilisationLimit: '10000',
     costBorneBy: 'Client (100%)',
     costBorneType: 'client',
@@ -547,7 +548,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           costBorneBy: customData.costBorneBy || existingJM.costBorneBy,
           cylinderCost: customData.cylinderCost || existingJM.cylinderCost || '',
           costPerCylinder: customData.costPerCylinder || existingJM.costPerCylinder || '',
-          ratePerSqInch: customData.ratePerSqInch || existingJM.ratePerSqInch || 1.6,
+          ratePerSqInch: storedEngravingRate(customData.ratePerSqInch, existingJM.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
           utilisationLimit: Number(customData.utilisationLimit) || existingJM.utilisationLimit || 10000,
           jobCardFileUrl: fileUrl,
           jobCardFileName: fileName,
@@ -591,7 +592,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           costBorneBy: customData.costBorneBy || 'Client (100%)',
           cylinderCost: customData.cylinderCost || '',
           costPerCylinder: customData.costPerCylinder || '',
-          ratePerSqInch: customData.ratePerSqInch || 1.6,
+          ratePerSqInch: storedEngravingRate(customData.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
           utilisationLimit: Number(customData.utilisationLimit) || 10000,
           jobCardFileUrl: fileUrl,
           jobCardFileName: fileName,
@@ -652,7 +653,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         colorsCount: colorsCountNum,
         cylinderCost: customData.cylinderCost || targetJobMaster.cylinderCost,
         costPerCylinder: customData.costPerCylinder,
-        ratePerSqInch: customData.ratePerSqInch || 1.6,
+        ratePerSqInch: storedEngravingRate(customData.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
         engravuresName: customData.engravure || targetJobMaster.engravuresName || '',
         costBorneBy: customData.costBorneBy || 'Client (100%)',
         costBorneType: customData.costBorneType || 'client',

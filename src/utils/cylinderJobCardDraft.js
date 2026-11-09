@@ -1,3 +1,6 @@
+import { artworkOwnedByRow, artworkUrlsOf } from './cylinderArtwork.js';
+import { DEFAULT_CYLINDER_RATE_PER_SQ_CM, storedEngravingRate } from './cylinderCost.js';
+
 export function parseStructureToLayers(structStr) {
   if (!structStr || structStr === '—') return [];
   const parts = structStr.split('/');
@@ -11,11 +14,27 @@ export function parseStructureToLayers(structStr) {
 }
 
 export function findMatchingJobMaster(jobMasters, initialData) {
-  return (jobMasters || []).find(j =>
-    (j.id && (j.id === initialData.jobMasterId || j.id === initialData.id)) ||
-    (j.skuCode && j.skuCode === (initialData.sku || initialData.skuCode)) ||
-    (j.jobName && j.jobName.toLowerCase() === (initialData.jobName || '').toLowerCase().trim())
-  );
+  const list = (jobMasters || []).filter(Boolean);
+  if (!initialData) return null;
+  const linkedId = initialData.jobMasterId || initialData.job_master_id;
+  if (linkedId) {
+    const byId = list.filter(job => job.id === linkedId);
+    if (byId.length === 1) return byId[0];
+  }
+
+  const sku = String(initialData.sku || initialData.skuCode || '').trim().toLowerCase();
+  if (sku) {
+    const bySku = list.filter(job => String(job.skuCode || job.sku || '').trim().toLowerCase() === sku);
+    if (bySku.length === 1) return bySku[0];
+    if (bySku.length > 1) return null;
+  }
+
+  const name = String(initialData.jobName || '').trim().toLowerCase();
+  if (name) {
+    const byName = list.filter(job => String(job.jobName || '').trim().toLowerCase() === name);
+    if (byName.length === 1) return byName[0];
+  }
+  return null;
 }
 
 export function buildCylinderJobCardDraft(initialData, matchingJM) {
@@ -45,9 +64,16 @@ export function buildCylinderJobCardDraft(initialData, matchingJM) {
   const rawPouchOpenWidth = initialData.pouchOpenWidth || matchingJM?.pouchOpenWidth || matchingJM?.printWidthMm || initialData.printWidthMm || '';
   const rawPouchHeight = initialData.pouchHeight || matchingJM?.pouchHeight || '';
 
+  const ownArtwork = artworkUrlsOf(initialData).find(url => artworkOwnedByRow(url, initialData)) || '';
+  const masterArtwork = artworkUrlsOf(matchingJM).find(url => artworkOwnedByRow(url, {
+    sku: initialData.sku || initialData.skuCode || matchingJM?.skuCode,
+    jobName: initialData.jobName || matchingJM?.jobName,
+    id: initialData.id
+  })) || '';
+
   return {
     layers: initLayers.length > 0 ? initLayers : [],
-    artworkUrl: src.artworkUrl || src.jobCardFileUrl || src.imageUrl || src.artworkImage || '',
+    artworkUrl: ownArtwork || masterArtwork,
     formData: {
       jobMasterId: src.jobMasterId || src.id || '',
       skuCode: src.sku || src.skuCode || '',
@@ -76,11 +102,11 @@ export function buildCylinderJobCardDraft(initialData, matchingJM) {
       engravure: src.engravuresName || src.engravure || src.engraverName || '',
       cylinderCost: src.cylinderCost || '',
       costPerCylinder: src.costPerCylinder || '',
-      ratePerSqInch: src.ratePerSqInch || 1.60,
+      ratePerSqInch: storedEngravingRate(src.rate, src.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
       utilisationLimit: `${src.utilisationLimit || 10000}`,
       costBorneBy: src.costBorneBy || 'Client (100%)',
       costBorneType: src.costBorneType || 'client',
-      artworkUrl: src.artworkUrl || src.jobCardFileUrl || src.imageUrl || src.artworkImage || '',
+      artworkUrl: ownArtwork || masterArtwork,
       chkEyemark: Boolean(src.chkEyemark || initialData?.chkEyemark || matchingJM?.chkEyemark),
       chkBarcode: Boolean(src.chkBarcode || initialData?.chkBarcode || matchingJM?.chkBarcode),
       chkOrientation: Boolean(src.chkOrientation || initialData?.chkOrientation || matchingJM?.chkOrientation),

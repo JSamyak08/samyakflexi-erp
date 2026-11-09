@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { parseInrAmount } from '../utils/cylinderCost';
 import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
 import SearchableSelect from './SearchableSelect';
 import { 
@@ -353,7 +354,7 @@ export default function DispatchManagement({
         hsnSac: '8442',
         quantity: Number(colors) || 6,
         unit: 'Nos',
-        rate: Number(c.costPerCylinder) || 0
+        rate: parseInrAmount(c.costPerCylinder) || 0
       });
     });
 

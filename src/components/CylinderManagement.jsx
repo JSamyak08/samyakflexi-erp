@@ -36,6 +36,17 @@ import { calculateUtilisation, getCylinderPrintedQtyKg } from '../dataStore';
 import { FILM_DENSITIES } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { uploadArtworkFile, openArtworkViewer } from '../services/supabaseStorageService';
+import {
+  autoMapCylinderCsvHeaders,
+  costsFromCsvRow,
+  DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+  expectedCylinderCosts,
+  formatInrAmount,
+  reconcileCylinderCosts,
+  storedEngravingRate
+} from '../utils/cylinderCost';
+import { cylinderIdentityKey, displayArtworkUrl } from '../utils/cylinderArtwork';
+import { findMatchingJobMaster } from '../utils/cylinderJobCardDraft';
 import ArtworkModal from './ArtworkModal';
 import TablePagination, { usePagination } from './TablePagination';
 
@@ -86,22 +97,7 @@ function parseCsvLine(line) {
  * Helper: Auto-detect CSV Header Mapping for Rotogravure Cylinders Bulk Upload
  */
 function autoMapHeaders(headers = []) {
-  const mapping = {};
-  headers.forEach(h => {
-    const clean = h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-    if (clean.includes('sku') || clean.includes('code') || clean.includes('serial')) mapping[h] = 'sku';
-    else if (clean.includes('jobname') || clean.includes('title') || clean.includes('design') || clean.includes('itemname')) mapping[h] = 'jobName';
-    else if (clean.includes('client') || clean.includes('party') || clean.includes('customer') || clean.includes('group')) mapping[h] = 'clientGroup';
-    else if (clean.includes('color') || clean.includes('colour') || clean.includes('count')) mapping[h] = 'colorsCount';
-    else if (clean.includes('printwidth') || clean.includes('webwidth') || clean.includes('width')) mapping[h] = 'printWidthMm';
-    else if (clean.includes('facelength') || clean.includes('shellsize') || clean.includes('length')) mapping[h] = 'faceLengthMm';
-    else if (clean.includes('repeat') || clean.includes('circumference') || clean.includes('dia')) mapping[h] = 'circumferenceMm';
-    else if (clean.includes('structure') || clean.includes('laminate') || clean.includes('film')) mapping[h] = 'structure';
-    else if (clean.includes('cost') || clean.includes('rate') || clean.includes('price')) mapping[h] = 'cylinderCost';
-    else if (clean.includes('engrav') || clean.includes('vendor') || clean.includes('maker')) mapping[h] = 'engravuresName';
-    else if (clean.includes('status') || clean.includes('condition')) mapping[h] = 'status';
-  });
-  return mapping;
+  return autoMapCylinderCsvHeaders(headers);
 }
 
 export default function CylinderManagement({ 
@@ -129,7 +125,6 @@ export default function CylinderManagement({
   const userRole = rawRoleNames(currentUser).join(', ');
   const canEditCylinders = userHasAnyRole(currentUser, EDIT_ROLES);
   const isAdminOrPlantManager = canEditCylinders;
-  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -246,7 +241,7 @@ export default function CylinderManagement({
   const [clientGroup, setClientGroup] = useState('');
   const [colorsCount, setColorsCount] = useState(6);
   const [engravuresName, setEngravuresName] = useState('');
-  const [rate, setRate] = useState(1.60);
+  const [rate, setRate] = useState(DEFAULT_CYLINDER_RATE_PER_SQ_CM);
   const [cylinderCost, setCylinderCost] = useState('35000');
   const [costPerCylinder, setCostPerCylinder] = useState('5833');
   const [costBorneBy, setCostBorneBy] = useState('Client (100%)');
@@ -377,10 +372,11 @@ export default function CylinderManagement({
     alert(`Client "${name}" onboarded and selected!`);
   };
 
-  // Surface Area and Cost Calculations: (Face Length × Circumference ÷ 100) × Rate × Colors
-  const billingAreaUnits = Number(((Number(circumferenceMm || 0) * Number(faceLengthMm || 0)) / 100).toFixed(2));
-  const calculatedCostPerCylinder = Math.round(billingAreaUnits * Number(rate || 1.6));
-  const calculatedTotalSetCost = Math.round(calculatedCostPerCylinder * (parseInt(colorsCount) || 1));
+  // Surface area is face mm × circumference mm / 100 = cm². Per-cylinder cost is area × ₹/cm².
+  const costQuote = expectedCylinderCosts({ faceLengthMm, circumferenceMm, rate, colorsCount });
+  const billingAreaUnits = costQuote.areaSqCm || 0;
+  const calculatedCostPerCylinder = costQuote.costPerCylinder || 0;
+  const calculatedTotalSetCost = costQuote.totalSetCost || 0;
 
   useEffect(() => {
     if (autoCalculateCost && circumferenceMm > 0 && faceLengthMm > 0) {
@@ -446,7 +442,7 @@ export default function CylinderManagement({
     setClientGroup('');
     setColorsCount(6);
     setEngravuresName('');
-    setRate(1.60);
+    setRate(DEFAULT_CYLINDER_RATE_PER_SQ_CM);
     setCircumferenceMm(400);
     setFaceLengthMm(1050);
     setPrintWidthMm(1000);
@@ -485,11 +481,7 @@ export default function CylinderManagement({
       return;
     }
 
-    const matchedJM = (jobMasters || []).find(j => 
-      (j.id && (j.id === cyl.jobMasterId || j.id === cyl.id)) ||
-      (j.skuCode && cyl.sku && j.skuCode.trim().toLowerCase() === cyl.sku.trim().toLowerCase()) ||
-      (j.jobName && cyl.jobName && j.jobName.trim().toLowerCase() === cyl.jobName.trim().toLowerCase())
-    );
+    const matchedJM = findMatchingJobMaster(jobMasters, cyl);
 
     const computedPrintedKg = getCylinderPrintedQtyKg(cyl, productionRecords, orders);
 
@@ -499,12 +491,21 @@ export default function CylinderManagement({
     setClientGroup(cyl.clientGroup || matchedJM?.clientName || '');
     setColorsCount(cyl.colorsCount || matchedJM?.colorsCount || 6);
     setEngravuresName(cyl.engravuresName || matchedJM?.engravuresName || '');
-    setRate(cyl.rate || cyl.ratePerSqInch || 1.60);
+    setRate(storedEngravingRate(cyl.rate, cyl.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM);
     setCircumferenceMm(cyl.circumferenceMm || matchedJM?.repeatLengthMm || 400);
     setFaceLengthMm(cyl.faceLengthMm || matchedJM?.faceLengthMm || 1050);
     setPrintWidthMm(cyl.printWidthMm || cyl.pouchOpenWidth || matchedJM?.printWidthMm || 1000);
-    setCylinderCost(`${cyl.cylinderCost || matchedJM?.cylinderCost || ''}`.replace(/[^0-9]/g, ''));
-    setCostPerCylinder(`${cyl.costPerCylinder || ''}`.replace(/[^0-9]/g, '') || String(Math.round((parseInt(`${cyl.cylinderCost || 0}`.replace(/[^0-9]/g, '')) || 0) / (cyl.colorsCount || 1))));
+    const reconciledCosts = reconcileCylinderCosts({
+      ...cyl,
+      faceLengthMm: cyl.faceLengthMm || matchedJM?.faceLengthMm,
+      circumferenceMm: cyl.circumferenceMm || matchedJM?.repeatLengthMm,
+      colorsCount: cyl.colorsCount || matchedJM?.colorsCount,
+      rate: cyl.rate || cyl.ratePerSqInch,
+      cylinderCost: cyl.cylinderCost || matchedJM?.cylinderCost,
+      costPerCylinder: cyl.costPerCylinder
+    });
+    setCylinderCost(reconciledCosts.totalSetCost != null ? String(reconciledCosts.totalSetCost) : '');
+    setCostPerCylinder(reconciledCosts.costPerCylinder != null ? String(reconciledCosts.costPerCylinder) : '');
     setAutoCalculateCost(false);
     setCostBorneBy(cyl.costBorneBy || matchedJM?.costBorneBy || 'Client (100%)');
     setCostBorneType(cyl.costBorneType || 'client');
@@ -513,7 +514,16 @@ export default function CylinderManagement({
     setUtilisationLimit(cyl.utilisationLimit || matchedJM?.utilisationLimit || 10000);
     setStatus(cyl.status || 'Active In-Use');
     setAssignedPress(cyl.assignedPress || printingPresses[0] || '');
-    setArtworkUrl(cyl.artworkUrl || matchedJM?.artworkUrl || '');
+    const ownArtwork = displayArtworkUrl(cyl, cylinders);
+    const linkedId = cyl.jobMasterId || cyl.job_master_id;
+    const linkedArtwork = (linkedId && matchedJM && String(matchedJM.id) === String(linkedId))
+      ? displayArtworkUrl({
+          ...matchedJM,
+          sku: matchedJM.sku || matchedJM.skuCode || cyl.sku,
+          jobName: matchedJM.jobName || cyl.jobName
+        }, cylinders)
+      : '';
+    setArtworkUrl(ownArtwork || linkedArtwork || '');
 
     const resolvedLayers = (cyl.layers && cyl.layers.length > 0)
       ? cyl.layers
@@ -676,10 +686,10 @@ export default function CylinderManagement({
       layers,
       jobMasterId: editingCylinder ? (editingCylinder.jobMasterId || editingCylinder.id) : nextJmId,
       colorsCount: parseInt(colorsCount) || 1,
-      rate: parseFloat(rate) || 1.6,
-      ratePerSqInch: parseFloat(rate) || 1.6,
-      costPerCylinder: `₹ ${parseInt(costPerCylinder || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      rate: storedEngravingRate(rate) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+      ratePerSqInch: storedEngravingRate(rate) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+      costPerCylinder: formatInrAmount(costPerCylinder),
+      cylinderCost: formatInrAmount(cylinderCost),
       engravuresName,
       costBorneBy,
       costBorneType,
@@ -730,7 +740,7 @@ export default function CylinderManagement({
           pouchHeight: parseFloat(pouchHeight) || 0,
           layers: layers,
           cylinderSku: sku.trim(),
-          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          cylinderCost: formatInrAmount(cylinderCost),
           colorsCount: parseInt(colorsCount) || 6,
           engravuresName,
           costBorneBy,
@@ -877,9 +887,17 @@ export default function CylinderManagement({
       const computedWidth = parseFloat(rawPrintWidth) || 1000;
       const computedFace = parseFloat(rawFaceLength) || 1050;
       const computedCirc = parseFloat(rawCircumference) || 400;
-      const computedRate = parseFloat(rawRate) || 1.6;
-      const computedCost = rawCost ? `₹ ${parseInt(rawCost.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate * computedColors).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-      const computedCostPerCyl = rawCostPerCyl ? `₹ ${parseInt(rawCostPerCyl.replace(/\D/g, '')) || 0}` : `₹ ${Math.round((computedFace * computedCirc / 100) * computedRate).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const importedCosts = costsFromCsvRow({
+        faceLengthMm: rawFaceLength || computedFace,
+        circumferenceMm: rawCircumference || computedCirc,
+        rate: rawRate,
+        colorsCount: rawColors || computedColors,
+        cylinderCost: rawCost,
+        costPerCylinder: rawCostPerCyl
+      });
+      const computedRate = importedCosts.rate;
+      const computedCost = importedCosts.cylinderCostText;
+      const computedCostPerCyl = importedCosts.costPerCylinderText;
 
       let parsedLayers = [
         { id: 1, filmType: 'PET', micron: 12 },
@@ -987,9 +1005,7 @@ export default function CylinderManagement({
     const map = new Map();
     (cylinders || []).forEach(c => {
       if (!c) return;
-      const skuKey = (c.sku || '').trim().toLowerCase();
-      const nameKey = (c.jobName || '').trim().toLowerCase();
-      const matchKey = skuKey || nameKey || String(c.id);
+      const matchKey = cylinderIdentityKey(c);
 
       if (!map.has(matchKey)) {
         map.set(matchKey, c);
@@ -997,13 +1013,10 @@ export default function CylinderManagement({
         const existing = map.get(matchKey);
         const isBetter = (c.updated_at && existing.updated_at && new Date(c.updated_at) > new Date(existing.updated_at)) ||
                          (c.approvedByHead && !existing.approvedByHead) ||
-                         (c.artworkUrl && !existing.artworkUrl) ||
                          ((c.layers?.length || 0) > (existing.layers?.length || 0));
-        if (isBetter) {
-          map.set(matchKey, { ...existing, ...c });
-        } else {
-          map.set(matchKey, { ...c, ...existing });
-        }
+        const primary = isBetter ? { ...existing, ...c, id: c.id || existing.id } : { ...c, ...existing };
+        const artwork = displayArtworkUrl(primary, [existing, c]) || displayArtworkUrl(existing, [existing, c]) || displayArtworkUrl(c, [existing, c]) || '';
+        map.set(matchKey, { ...primary, artworkUrl: artwork || null, jobCardFileUrl: artwork || primary.jobCardFileUrl || '' });
       }
     });
     return Array.from(map.values());
@@ -1037,7 +1050,7 @@ export default function CylinderManagement({
               <Layers size={22} style={{ color: 'var(--primary-brand)' }} /> Rotogravure Cylinder Database & Utilisation Tracking
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Automated Cylinder Surface Area {isAdmin ? '& Cost Calculation' : 'Tracking'}, CSV Bulk Upload, Job Locking Control, and Audit Changelogs.
+              Automated Cylinder Surface Area {canEditCylinders ? '& Cost Calculation' : 'Tracking'}, CSV Bulk Upload, Job Locking Control, and Audit Changelogs.
             </p>
           </div>
 
@@ -1116,8 +1129,8 @@ export default function CylinderManagement({
                 <th>Job Name & Colors</th>
                 <th>Dimensions & Area</th>
                 <th>Client Group</th>
-                <th>{isAdmin ? 'Cost & Engraver' : 'Engraver'}</th>
-                {isAdmin && <th>Cost Borne By</th>}
+                <th>{canEditCylinders ? 'Cost & Engraver' : 'Engraver'}</th>
+                {canEditCylinders && <th>Cost Borne By</th>}
                 <th>Wear Utilisation</th>
                 <th>Lock & Status</th>
                 <th>Assigned Press</th>
@@ -1136,9 +1149,11 @@ export default function CylinderManagement({
                   const actualPrintedKg = getCylinderPrintedQtyKg(c, productionRecords, orders);
                   const util = calculateUtilisation(actualPrintedKg, c.utilisationLimit || 10000);
                   const isWarning = util >= 80;
+                  const costs = reconcileCylinderCosts(c);
+                  const artwork = displayArtworkUrl(c, uniqueCylinders);
                   const cCirc = c.circumferenceMm || 400;
                   const cFace = c.faceLengthMm || 1050;
-                  const cUnits = Math.round((cCirc * cFace) / 100);
+                  const cUnits = costs.areaSqCm != null ? costs.areaSqCm : Math.round((Number(cCirc) * Number(cFace)) / 100);
                   const isLocked = Boolean(c.isLocked);
                   const changelogCount = Array.isArray(c.changelogs) ? c.changelogs.length : 0;
 
@@ -1146,12 +1161,13 @@ export default function CylinderManagement({
                     <tr key={c.id} style={isLocked ? { background: '#f8fafc' } : {}}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          {c.artworkUrl ? (
+                          {artwork ? (
                             <StorageImage 
-                              src={c.artworkUrl} 
+                              key={`${c.id}-${artwork}`}
+                              src={artwork} 
                               alt="Artwork" 
                               style={{ width: '40px', height: '40px', objectFit: 'contain', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }} 
-                              onClick={() => setActiveArtworkModal({ isOpen: true, url: c.artworkUrl, title: `${c.sku} - ${c.jobName}` })}
+                              onClick={() => setActiveArtworkModal({ isOpen: true, url: artwork, title: `${c.sku} - ${c.jobName}` })}
                               title="Click to view full artwork image"
                             />
                           ) : (
@@ -1166,6 +1182,7 @@ export default function CylinderManagement({
                                   type="file" 
                                   accept="image/*,.pdf" 
                                   style={{ display: 'none' }} 
+                                  data-cylinder-id={c.id}
                                   onChange={e => handleInlineArtworkUpload(e, c)} 
                                 />
                               )}
@@ -1176,10 +1193,10 @@ export default function CylinderManagement({
                               {c.sku}
                               {isLocked && <LockIcon size={12} style={{ color: '#d97706' }} title={`Locked by ${c.lockedBy || 'Admin'}`} />}
                             </div>
-                            {c.artworkUrl ? (
+                            {artwork ? (
                               <button 
                                 type="button"
-                                onClick={() => setActiveArtworkModal({ isOpen: true, url: c.artworkUrl, title: `${c.sku} - ${c.jobName}` })}
+                                onClick={() => setActiveArtworkModal({ isOpen: true, url: artwork, title: `${c.sku} - ${c.jobName}` })}
                                 style={{ background: 'none', border: 'none', padding: 0, fontSize: '0.7rem', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: '500' }}
                               >
                                 View Artwork <ExternalLink size={10} />
@@ -1199,11 +1216,7 @@ export default function CylinderManagement({
                       <td>
                         <div style={{ fontWeight: '700', color: '#0f172a' }}>{c.jobName}</div>
                         {(() => {
-                          const linkedJm = (jobMasters || []).find(j => 
-                            j.id === c.jobMasterId || 
-                            (j.skuCode && c.sku && j.skuCode.trim().toLowerCase() === c.sku.trim().toLowerCase()) || 
-                            (j.jobName && c.jobName && j.jobName.trim().toLowerCase() === c.jobName.trim().toLowerCase())
-                          );
+                          const linkedJm = findMatchingJobMaster(jobMasters, c);
                           return (
                             <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '4px', flexWrap: 'wrap' }}>
                               <span className="badge badge-both" style={{ fontSize: '0.7rem', padding: '2px 6px' }}>
@@ -1250,20 +1263,23 @@ export default function CylinderManagement({
                       </td>
 
                       <td>
-                        {isAdmin && (
+                        {canEditCylinders && (
                           <>
-                            <div style={{ fontWeight: '700', color: '#0f172a' }}>{c.cylinderCost}</div>
-                            {c.costPerCylinder && (
+                            <div style={{ fontWeight: '700', color: '#0f172a' }}>{costs.cylinderCostText || c.cylinderCost}</div>
+                            {(costs.costPerCylinderText || c.costPerCylinder) && (
                               <div style={{ fontSize: '0.75rem', color: '#047857', fontWeight: '600' }}>
-                                ({c.costPerCylinder} / cyl)
+                                ({costs.costPerCylinderText || c.costPerCylinder} / cyl)
                               </div>
+                            )}
+                            {costs.needsReview && (
+                              <div style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '700' }}>Review: above area formula</div>
                             )}
                           </>
                         )}
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.engravuresName}</div>
                       </td>
 
-                      {isAdmin && (
+                      {canEditCylinders && (
                         <td>
                           <span className={`badge badge-${c.costBorneType || 'client'}`}>{c.costBorneBy || 'Client (100%)'}</span>
                         </td>
@@ -1695,13 +1711,13 @@ export default function CylinderManagement({
                   <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> 2. Engraving & Commercial Costing
                 </h4>
 
-                <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: '14px', marginBottom: isAdmin ? '14px' : '0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: canEditCylinders ? '1fr 1fr' : '1fr', gap: '14px', marginBottom: canEditCylinders ? '14px' : '0' }}>
                   <div className="form-group">
                     <label>Engraver Name</label>
                     <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
                   </div>
 
-                  {isAdmin && (
+                  {canEditCylinders && (
                     <div className="form-group">
                       <label>Cost Borne By</label>
                       <SearchableSelect className="form-control" value={costBorneBy} onChange={e => {
@@ -1718,7 +1734,7 @@ export default function CylinderManagement({
                   )}
                 </div>
 
-                {isAdmin && (
+                {canEditCylinders && (
                   <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <span style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>

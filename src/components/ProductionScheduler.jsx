@@ -37,6 +37,7 @@ import {
 } from '../utils/printRunConflict';
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
+import { displayArtworkUrl } from '../utils/cylinderArtwork';
 import { 
   Printer, 
   Play,
@@ -496,13 +497,16 @@ export default function ProductionScheduler({
         firstFilmReq.widthMm
       ].map((value) => finiteNumber(value)).find((value) => value !== null && value > 0) || 0;
 
-      // Artwork resolution linked to Job Master / Cylinder / Order
-      const artworkUrl = order.artworkUrl ||
-                         order.jobDetails?.artworkUrl ||
-                         matchedJM?.artworkUrl ||
-                         matchedJM?.cylinderData?.artworkUrl ||
-                         matchedCylinder?.artworkUrl ||
-                         '';
+      // Artwork stays with the order, then a job master or cylinder whose file names that job.
+      const orderArtwork = order.artworkUrl || order.jobDetails?.artworkUrl || '';
+      const masterRow = matchedJM ? {
+        ...matchedJM,
+        sku: matchedJM.skuCode || order.skuCode || order.jobCode,
+        jobName: matchedJM.jobName || order.jobName
+      } : null;
+      const masterArtwork = displayArtworkUrl(masterRow, cylinders);
+      const cylinderArtwork = displayArtworkUrl(matchedCylinder, cylinders);
+      const artworkUrl = orderArtwork || masterArtwork || cylinderArtwork || '';
 
       // Colors resolution linked to Job Master / Cylinder / Order
       const rawColorsCount = order.colorsCount ||

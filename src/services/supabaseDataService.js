@@ -14,6 +14,7 @@ import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../util
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
 import { mapInkMasterToRow, mapInkRowToMaster, readHsnCode } from '../utils/inkHsn';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
+import { storedEngravingRate, withReconciledCosts } from '../utils/cylinderCost';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -1350,15 +1351,15 @@ export async function fetchCylinders() {
         layers = parseStructureStringToLayers(c.structure);
       }
 
-      return {
+      return withReconciledCosts({
         id: c.id,
         sku: c.sku,
         jobName: c.job_name,
         colorsCount: Number(c.colors_count) || 0,
         cylinderCost: c.cylinder_cost || pm.cylinderCost || '',
         costPerCylinder: c.cost_per_cylinder || pm.costPerCylinder || '',
-        rate: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch ?? pm.ratePerSqInch) || 1.6,
-        ratePerSqInch: Number(c.rate_per_sq_cm ?? c.rate_per_sq_inch ?? pm.ratePerSqInch) || 1.6,
+        rate: storedEngravingRate(c.rate_per_sq_cm, c.rate_per_sq_inch, pm.ratePerSqInch),
+        ratePerSqInch: storedEngravingRate(c.rate_per_sq_cm, c.rate_per_sq_inch, pm.ratePerSqInch),
         engravuresName: c.engravures_name || pm.engravuresName || '',
         costBorneBy: c.cost_borne_by || pm.costBorneBy || 'Client (100%)',
         costBorneType: c.cost_borne_type || pm.costBorneType || 'client',
@@ -1402,7 +1403,7 @@ export async function fetchCylinders() {
         lockedAt: c.locked_at || pm.lockedAt || '',
         changelogs: Array.isArray(c.changelogs) ? c.changelogs : (Array.isArray(pm.changelogs) ? pm.changelogs : []),
         press_marks: pm
-      };
+      });
     });
   } catch (err) {
     console.error("Error fetching cylinders from Supabase:", err);

@@ -31,8 +31,10 @@ export async function resolveReadableUrl(url) {
 
   let { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
 
-  // If initial attempt fails and bucket is in FALLBACK_BUCKETS, check the alternate bucket
-  if ((error || !data?.signedUrl) && FALLBACK_BUCKETS.includes(bucket)) {
+  // Only when the bucket itself is missing. A failed object must not be replaced
+  // by whatever happens to share the path in the other bucket.
+  const bucketMissing = Boolean(error) && /not found|bucket/i.test(String(error.message || error));
+  if ((!data?.signedUrl) && bucketMissing && FALLBACK_BUCKETS.includes(bucket)) {
     const fallbackBucket = FALLBACK_BUCKETS.find(b => b !== bucket);
     if (fallbackBucket) {
       const fallbackRes = await supabase.storage.from(fallbackBucket).createSignedUrl(path, 60 * 60);
@@ -555,9 +557,10 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
     }
   }
 
-  const cleanId = String(identifier || 'art').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 40);
+  const cleanId = String(identifier || 'art').replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_+/g, '_').substring(0, 40) || 'art';
   const timestamp = Date.now();
-  const filePath = `artwork/${cleanId}_${timestamp}.${fileExt}`;
+  const uniqueSuffix = Math.random().toString(36).slice(2, 8);
+  const filePath = `artwork/${cleanId}_${timestamp}_${uniqueSuffix}.${fileExt}`;
 
   // Helper function to perform upload
   const tryUpload = async () => {
@@ -567,8 +570,8 @@ export async function uploadArtworkFile(fileInput, identifier = 'job_art') {
         const { data, error } = await supabase.storage
           .from(bucket)
           .upload(filePath, fileBlob, {
-            cacheControl: '31536000', // 1 year CDN cache
-            upsert: true,
+            cacheControl: '3600',
+            upsert: false,
             contentType
           });
 
