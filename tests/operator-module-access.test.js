@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { generateFullRolePermissions, ALL_MODULES, SYSTEM_ROLES } from '../src/factoryStore.js';
+import { generateFullRolePermissions, ALL_MODULES, SYSTEM_ROLES, applyOperatorSfgViewBoundary, grantAllRolePermissions } from '../src/factoryStore.js';
 import {
   roleHasModule,
   roleCanEditSfgStore,
@@ -80,6 +80,22 @@ test('another role is unioned, and other roles keep their own modules', () => {
 
   assert.equal(roleCanEditSfgStore(defaults, 'Store Manager'), true);
   assert.equal(roleCanEditSfgStore(defaults, 'Sales Manager'), false);
+  const drifted = {
+    ...defaults,
+    'Printing Operator': { ...defaults['Printing Operator'], sfg_store: true, inventory: true, printing_scheduler: true },
+    'Shop Floor Operator': { ...defaults['Shop Floor Operator'], sfg_store: true, inventory: true, printing_scheduler: true },
+  };
+  assert.equal(roleCanEditSfgStore(drifted, 'Printing Operator'), false);
+  assert.equal(roleCanEditSfgStore(drifted, 'Shop Floor Operator'), false);
+  assert.equal(roleHasModule(drifted, 'Printing Operator', 'inventory'), true);
+  assert.equal(roleHasModule(drifted, 'Printing Operator', 'printing_scheduler'), true);
+  assert.equal(roleHasModule(drifted, 'Printing Operator', 'sfg_store'), true);
+  const locked = applyOperatorSfgViewBoundary(grantAllRolePermissions());
+  assert.equal(locked['Printing Operator'].sfg_store, 'view');
+  assert.equal(locked['Shop Floor Operator'].sfg_store, 'view');
+  assert.equal(locked['Printing Operator'].inventory, true);
+  assert.equal(locked['Printing Operator'].printing_scheduler, true);
+  assert.equal(locked['Store Manager'].sfg_store, true);
   assert.equal(defaults['Sales Manager'].dispatch, true);
   assert.equal(defaults['Sales Manager'].pellet_fuel, false);
   assert.equal(defaults['QC Chemist'].dispatch, true);

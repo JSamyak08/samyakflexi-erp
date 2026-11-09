@@ -36,16 +36,18 @@ export function mapRollLedgerRow(row) {
 }
 
 export function materialCoveredByRollLedger(material, record, entries) {
-  const barcode = String(material?.barcode || material?.barcodeId || '').trim().toLowerCase();
+  const barcode = String(material?.barcode || material?.barcodeId || material?.barcode_id || '').trim().toLowerCase();
   if (!barcode) return false;
+  const recordOrder = String(record?.orderId || record?.order_id || material?.orderId || material?.order_id || '').trim();
+  const recordId = String(record?.id || '').trim();
   return (entries || []).some((entry) => {
     const kind = entry.entryKind || entry.entry_kind;
     if (kind !== 'issue') return false;
     if (String(entry.barcode || '').trim().toLowerCase() !== barcode) return false;
-    const orderId = entry.orderId || entry.order_id;
-    const recordId = entry.productionRecordId || entry.production_record_id;
-    return (record?.orderId && orderId && String(record.orderId) === String(orderId))
-      || (record?.id && recordId && String(record.id) === String(recordId));
+    const orderId = String(entry.orderId || entry.order_id || '').trim();
+    const entryRecord = String(entry.productionRecordId || entry.production_record_id || '').trim();
+    return (recordOrder && orderId && recordOrder === orderId)
+      || (recordId && entryRecord && recordId === entryRecord);
   });
 }
 

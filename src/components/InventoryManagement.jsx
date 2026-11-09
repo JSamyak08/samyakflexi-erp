@@ -9870,6 +9870,10 @@ export default function InventoryManagement({
           };
           });
         const receiptBarcodes = new Set(bulkReceiptLines.map(line => String(line.barcode || '').trim().toLowerCase()).filter(Boolean));
+        postedReturns.forEach((line) => {
+          const barcode = String(line.barcode || '').trim().toLowerCase();
+          if (barcode) receiptBarcodes.add(barcode);
+        });
         const rollReceiptLines = (inventoryRolls || []).filter(roll => {
           const barcode = String(roll.barcodeId || roll.id || '').trim().toLowerCase();
           if (!barcode || receiptBarcodes.has(barcode)) return false;

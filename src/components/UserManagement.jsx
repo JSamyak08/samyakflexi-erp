@@ -19,8 +19,8 @@ import {
 } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
 import SearchableSelect from './SearchableSelect';
-import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary, applyPrintRunAnalyticsBoundary } from '../factoryStore';
-import { nextSfgStorePermission } from '../sfgStoreAccess';
+import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary, applyOperatorSfgViewBoundary, applyPrintRunAnalyticsBoundary } from '../factoryStore';
+import { nextSfgStorePermission, SFG_VIEW_ONLY_ROLES } from '../sfgStoreAccess';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
 import { notifyUserCreated } from '../services/emailService';
 import { assignedRolesOf, departmentForRole, primaryRole, userHasRole } from '../assignedRoles';
@@ -157,7 +157,7 @@ export default function UserManagement({
   };
 
   const persistPermissions = async (permsToSave, successMessage) => {
-    const bounded = applyPrintRunAnalyticsBoundary(applyAuditLogBoundary(permsToSave));
+    const bounded = applyOperatorSfgViewBoundary(applyPrintRunAnalyticsBoundary(applyAuditLogBoundary(permsToSave)));
     if (onUpdateRolePermissions) onUpdateRolePermissions(bounded);
     try {
       await saveRolePermissionsToSupabase(bounded);
@@ -179,6 +179,10 @@ export default function UserManagement({
     }
     if (moduleKey === 'print_run_analytics') {
       alert('Run and idle analytics stays with Admin, Plant Manager, and Production Manager.');
+      return;
+    }
+    if (moduleKey === 'sfg_store' && SFG_VIEW_ONLY_ROLES.includes(roleName)) {
+      alert('Printing Operator and Shop Floor Operator stay view-only on the SFG / FG Store. Inventory and the Printing Scheduler stay full entry and edit.');
       return;
     }
     const currentVal = rolePermissions[roleName]?.[moduleKey];
@@ -346,6 +350,8 @@ export default function UserManagement({
                             title={
                               mod.key === 'print_run_analytics'
                                 ? 'Fixed by role: Admin, Plant Manager, and Production Manager'
+                                : mod.key === 'sfg_store' && SFG_VIEW_ONLY_ROLES.includes(r)
+                                ? 'Fixed by role: Printing Operator and Shop Floor Operator stay view-only'
                                 : mod.key === 'sfg_store'
                                 ? (isAllowed ? `Full SFG access for ${r}. Click for view-only` : isView ? `View-only for ${r}. Click to block` : `No SFG access for ${r}. Click to grant full access`)
                                 : (isAllowed ? `Allowed for ${r}. Click to revoke` : `Restricted for ${r}. Click to grant`)

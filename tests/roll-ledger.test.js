@@ -78,3 +78,40 @@ test('issue plus balance receipt net to the consumed weight and hide the duplica
     [{ entryKind: 'issue', barcode: 'RM-100', orderId: 'ORD-1' }]
   ), false);
 });
+
+test('a print-run usage line is hidden once the ledger issue exists, and the balance receipt keeps the job and order', () => {
+  const entries = [
+    {
+      entryKind: 'issue',
+      barcode: 'RM-QA95-A1',
+      qtyKg: 20,
+      consumedKg: 8.4,
+      orderId: 'ORD-QA95-PRINT',
+      productionRecordId: 'PR-QA95-PRINT',
+      jobName: 'QA95 Meter Print Job',
+      stage: 'Printing'
+    },
+    {
+      entryKind: 'balance_receipt',
+      barcode: 'RM-QA95-A1-BAL',
+      qtyKg: 11.6,
+      orderId: 'ORD-QA95-PRINT',
+      jobName: 'QA95 Meter Print Job',
+      stage: 'Printing'
+    }
+  ];
+  assert.equal(materialCoveredByRollLedger(
+    { barcode: 'RM-QA95-A1', orderId: 'ORD-QA95-PRINT', netConsumedQtyKg: 8.4, ledgerSource: 'printing-input-roll' },
+    { id: 'PR-QA95-PRINT' },
+    entries
+  ), true);
+  const lines = rollLedgerTransactions(entries);
+  const issue = lines.find((line) => line.category === 'usage');
+  const receipt = lines.find((line) => line.category === 'inward');
+  assert.equal(lines.length, 2);
+  assert.equal(issue.outwardQtyKg, 20);
+  assert.equal(receipt.inwardQtyKg, 11.6);
+  assert.equal(issue.refNo, 'QA95 Meter Print Job');
+  assert.equal(receipt.jobLink.label, 'ORD-QA95-PRINT · Printing');
+  assert.equal(receipt.jobLink.href, '/orders/ORD-QA95-PRINT');
+});

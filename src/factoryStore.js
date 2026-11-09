@@ -3,6 +3,9 @@
 
 import { SEED_COMPANY_PROFILE, withCompanyTagline } from './services/companyProfile.js';
 import { SYSTEM_ROLES } from './roles.js';
+import { SFG_VIEW_ONLY_ROLES } from './sfgStoreAccess.js';
+
+export { SFG_VIEW_ONLY_ROLES };
 
 export { SYSTEM_ROLES };
 
@@ -1754,6 +1757,17 @@ export function applyPrintRunAnalyticsBoundary(rolePermissions) {
       ...(permissions || {}),
       print_run_analytics: PRINT_RUN_ANALYTICS_ROLES.includes(role)
     };
+  });
+  return next;
+}
+
+/** Operators keep Inventory and Printing Scheduler. SFG / FG Store stays view-only. */
+export function applyOperatorSfgViewBoundary(rolePermissions) {
+  const next = {};
+  Object.entries(rolePermissions || {}).forEach(([role, permissions]) => {
+    const row = { ...(permissions || {}) };
+    if (SFG_VIEW_ONLY_ROLES.includes(role)) row.sfg_store = 'view';
+    next[role] = row;
   });
   return next;
 }
