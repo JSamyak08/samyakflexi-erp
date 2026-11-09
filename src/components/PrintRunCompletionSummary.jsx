@@ -116,6 +116,7 @@ export default function PrintRunCompletionSummary({
             <Row key={roll.barcodeId} testId="print-run-balance-roll">
               <Code value={roll.barcodeId} />
               <Cell label="Weight" value={kg(roll.netWeightKg)} />
+              <Cell label="Meters" value={meters(roll.lengthMeters)} />
               <TagButton testId="print-run-balance-print-tag" onClick={() => onPrint?.([labelRoll({ ...roll, rollType: 'RAW_MATERIAL' }, context)])}>Print Tag</TagButton>
             </Row>
           ))}
