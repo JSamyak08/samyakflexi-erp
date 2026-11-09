@@ -3716,6 +3716,7 @@ export async function fetchSFGGoodsFromSupabase() {
         balanceKeptKg: Number(extra.balanceKeptKg) || 0,
         balanceQcHoldKg: Number(extra.balanceQcHoldKg) || 0,
         createdAt: item.created_at || new Date().toISOString(),
+        updatedAt: item.updated_at || null,
         ...(extra.parentSfgBatchCode ? {
           parentSfgBatchCode: extra.parentSfgBatchCode,
           parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode

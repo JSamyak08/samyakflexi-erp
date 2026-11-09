@@ -7,9 +7,12 @@
  * steps through groups. A group is never split, so every roll that belongs
  * to a group on the current page stays on that page.
  *
- * Rows are assembled in the browser (order specs, FIFO, printed-lot
- * children), so the query is not a single table the API can page. The
- * database read is the full store; this module is what decides the page.
+ * Rows are assembled in the browser (order specs, printed-lot children),
+ * so the query is not a single table the API can page. The database read
+ * is the full store; this module is what decides the page.
+ *
+ * The default order is the later of the modified and created timestamps,
+ * newest first. An equal timestamp keeps the higher id first.
  */
 
 export const SFG_STORE_GROUP_PAGE_SIZE = 25;
@@ -62,6 +65,42 @@ export function sfgStoreItemMatches(item, filters = {}) {
 
 export function filterSfgStoreItems(items, filters = {}) {
   return (items || []).filter((item) => sfgStoreItemMatches(item, filters));
+}
+
+function timestampMs(value) {
+  if (value == null || value === '') return null;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Later of the row's modified and created timestamps. Missing stamps sort last. */
+export function sfgStoreActivityMs(item) {
+  const updated = timestampMs(item?.updatedAt ?? item?.updated_at);
+  const created = timestampMs(
+    item?.createdAt ?? item?.created_at ?? item?.createdDate ?? item?.inwardDatetime
+  );
+  if (updated == null && created == null) return 0;
+  if (updated == null) return created;
+  if (created == null) return updated;
+  return Math.max(updated, created);
+}
+
+function compareIdDescending(a, b) {
+  const left = a?.id == null ? '' : String(a.id);
+  const right = b?.id == null ? '' : String(b.id);
+  if (left === right) return 0;
+  return left < right ? 1 : -1;
+}
+
+/** Newest activity first. The same activity keeps the higher id first. */
+export function compareSfgStoreItems(a, b) {
+  const byActivity = sfgStoreActivityMs(b) - sfgStoreActivityMs(a);
+  if (byActivity !== 0) return byActivity;
+  return compareIdDescending(a, b);
+}
+
+export function sortSfgStoreItems(items) {
+  return [...(items || [])].sort(compareSfgStoreItems);
 }
 
 function orderKeyFor(item) {

@@ -81,7 +81,7 @@ import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIde
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
-import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo } from '../utils/fifoUtils';
+import { getItemAgeInDays, getCategoryAgeingThreshold } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, fetchScrapStoreItems, replacePayloadRecords, upsertPayloadRecords, describeSaveError } from '../services/businessRecords';
@@ -95,7 +95,8 @@ import {
 import {
   SFG_STORE_GROUP_PAGE_SIZE,
   filterSfgStoreItems,
-  groupSfgStoreItems
+  groupSfgStoreItems,
+  sortSfgStoreItems
 } from '../utils/sfgStoreList';
 
 export default function SFGStoreManagement({
@@ -280,7 +281,7 @@ export default function SFGStoreManagement({
   const [scrapReason, setScrapReason] = useState('');
   const [scrapFormError, setScrapFormError] = useState('');
 
-  // Combined & Prepared SFG items with FIFO Sorting (oldest first)
+  // Combined store rows. Newest created or modified batch first.
   const allSfgItems = useMemo(() => {
     const list = Array.isArray(sfgGoods) ? [...sfgGoods] : [];
 
@@ -410,6 +411,8 @@ export default function SFGStoreManagement({
             consumedKg: Number(item.allocatedQtyKg || 0),
             status: Number(item.availableQtyKg || 0) > 0 ? 'In Stock' : 'Consumed',
             location: item.location || 'SFG Store',
+            createdAt: item.createdAt || item.created_at || null,
+            updatedAt: item.updatedAt || item.updated_at || null,
             createdDate: item.inwardDatetime || item.created_at || new Date().toISOString().split('T')[0]
           });
         }
@@ -452,6 +455,8 @@ export default function SFGStoreManagement({
             consumedKg: Math.max(0, Number(roll.netWeightKg || netW) - netW),
             status: netW > 0 ? (roll.status || 'In Stock') : 'Consumed',
             location: roll.locationBay || roll.location || 'SFG Store',
+            createdAt: roll.createdAt || roll.inwardDatetime || null,
+            updatedAt: roll.updatedAt || roll.updated_at || null,
             createdDate: roll.inwardDatetime || new Date().toISOString().split('T')[0]
           });
         }
@@ -468,7 +473,7 @@ export default function SFGStoreManagement({
       return !(isUntitledOrBlank && isZeroKg);
     });
 
-    return sortInventoryByFifo(omitPrintedLotChildren(cleanList));
+    return sortSfgStoreItems(omitPrintedLotChildren(cleanList));
   }, [sfgGoods, inventory, inventoryRolls, orders]);
 
 
