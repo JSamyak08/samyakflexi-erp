@@ -107,6 +107,11 @@ td.no-capitalize,
   gap: 18px;
   box-shadow: 2px 0 12px rgba(15, 23, 42, 0.03);
   z-index: 100;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1), padding 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -408,6 +413,7 @@ td.no-capitalize,
   overflow-y: auto;
   padding-right: 2px;
   flex: 1;
+  min-height: 0;
 }
 .nav-item {
   display: flex;
@@ -482,7 +488,7 @@ td.no-capitalize,
 
 /* Footer Status Card */
 .sidebar-footer-card {
-  margin-top: auto;
+  flex-shrink: 0;
   background: #f8fafc;
   padding: 10px 12px;
   border-radius: 8px;
@@ -2865,10 +2871,13 @@ div[style*="overflowX: 'auto'"] {
 }
 
 .sidebar-bug-wrap {
-  padding: 0 12px 10px;
+  margin-top: auto;
+  flex-shrink: 0;
+  padding: 10px 12px 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  border-top: 1px solid #f1f5f9;
 }
 
 .sidebar-bug-btn {
@@ -2876,25 +2885,10 @@ div[style*="overflowX: 'auto'"] {
   box-shadow: 0 4px 6px -1px rgba(154, 52, 18, 0.25), 0 2px 4px -2px rgba(154, 52, 18, 0.2);
 }
 
-.sidebar-my-bugs-btn {
-  background: #ffffff;
-  color: #9a3412;
-  border: 1px solid #fdba74;
-  box-shadow: none;
-}
-
-.mobile-bug-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.mobile-header-balance {
   width: 38px;
   height: 38px;
-  border-radius: 10px;
-  border: 1px solid #fdba74;
-  background: #fff7ed;
-  color: #9a3412;
-  cursor: pointer;
-  padding: 0;
+  flex-shrink: 0;
 }
 
 .bug-report-layer {
@@ -3215,7 +3209,7 @@ div[style*="overflowX: 'auto'"] {
 
 @media (max-width: 1024px) {
   .sidebar.collapsed .sidebar-bug-wrap {
-    padding: 0 12px 10px;
+    padding: 10px 12px 0;
   }
 
   .bug-reports-layout {

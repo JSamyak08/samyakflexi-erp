@@ -367,12 +367,13 @@ function stripActiveUserQueryFromLocation() {
   }
 }
 
-function SidebarNavItem({ active, onClick, color, icon, label, children }) {
+function SidebarNavItem({ active, onClick, color, icon, label, children, testId }) {
   return (
     <div
       className={`nav-item${active ? ' active' : ''}`}
       onClick={onClick}
       data-nav-label={label}
+      data-testid={testId}
     >
       <span className="nav-icon-box" style={{ color }}>
         {icon ? React.createElement(icon, { size: 18, 'aria-hidden': true }) : null}
@@ -5097,16 +5098,7 @@ export default function App() {
           <img src="/samyak-logo.png" alt="Samyak Logo" style={{ height: '24px', objectFit: 'contain' }} />
           <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>Samyak Flexi-ERP</span>
         </div>
-        <button
-          type="button"
-          className="mobile-bug-btn"
-          onClick={() => setBugReportOpen(true)}
-          aria-label="Report a Bug"
-          title="Report a Bug"
-          data-testid="report-bug-mobile"
-        >
-          <Bug size={18} aria-hidden="true" />
-        </button>
+        <span className="mobile-header-balance" aria-hidden="true" />
       </div>
 
       {isMobileMenuOpen && (
@@ -5181,42 +5173,6 @@ export default function App() {
               <span className="nav-label">Scan Barcode</span>
             </span>
             <span className="sidebar-scan-kbd">Alt+B</span>
-          </button>
-        </div>
-
-        <div className="sidebar-bug-wrap">
-          <button
-            type="button"
-            className="sidebar-scan-btn sidebar-bug-btn"
-            onClick={() => setBugReportOpen(true)}
-            data-nav-label={`Report a Bug (${bugReportShortcutLabel()})`}
-            title={railCollapsed ? undefined : `Report a Bug (${bugReportShortcutLabel()})`}
-            aria-label={`Report a Bug (${bugReportShortcutLabel()})`}
-            data-testid="report-bug-button"
-          >
-            <span className="sidebar-scan-btn-inner">
-              <span className="sidebar-scan-icon">
-                <Bug size={16} aria-hidden="true" />
-              </span>
-              <span className="nav-label">Report a Bug</span>
-            </span>
-            <span className="sidebar-scan-kbd">{bugReportShortcutLabel()}</span>
-          </button>
-          <button
-            type="button"
-            className="sidebar-scan-btn sidebar-my-bugs-btn"
-            onClick={() => handleTabChange('my_bug_reports')}
-            data-nav-label="My Bug Reports"
-            title={railCollapsed ? undefined : 'My Bug Reports'}
-            aria-label="My Bug Reports"
-            data-testid="my-bug-reports-nav"
-          >
-            <span className="sidebar-scan-btn-inner">
-              <span className="sidebar-scan-icon">
-                <Bug size={16} aria-hidden="true" />
-              </span>
-              <span className="nav-label">My Bug Reports</span>
-            </span>
           </button>
         </div>
 
@@ -5554,6 +5510,37 @@ export default function App() {
               )}
             </>
           )}
+
+        </div>
+
+        <div className="sidebar-bug-wrap">
+          {isTabAllowed('my_bug_reports') && (
+            <SidebarNavItem
+              active={activeTab === 'my_bug_reports'}
+              onClick={() => handleTabChange('my_bug_reports')}
+              color="#c2410c"
+              icon={Bug}
+              label="My Bug Reports"
+              testId="my-bug-reports-nav"
+            />
+          )}
+          <button
+            type="button"
+            className="sidebar-scan-btn sidebar-bug-btn"
+            onClick={() => setBugReportOpen(true)}
+            data-nav-label={`Report a Bug (${bugReportShortcutLabel()})`}
+            title={railCollapsed ? undefined : `Report a Bug (${bugReportShortcutLabel()})`}
+            aria-label={`Report a Bug (${bugReportShortcutLabel()})`}
+            data-testid="report-bug-button"
+          >
+            <span className="sidebar-scan-btn-inner">
+              <span className="sidebar-scan-icon">
+                <Bug size={16} aria-hidden="true" />
+              </span>
+              <span className="nav-label">Report a Bug</span>
+            </span>
+            <span className="sidebar-scan-kbd">{bugReportShortcutLabel()}</span>
+          </button>
         </div>
 
         <div

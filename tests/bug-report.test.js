@@ -149,19 +149,42 @@ test('every signed-in role can open their own reports and only Admin opens the q
   assert.equal(roleHasModule(defaults, [], 'my_bug_reports'), false);
 });
 
-test('the shell shows Report a Bug outside the role-gated module list', () => {
+test('Report a Bug is one pinned control under the menu, with no duplicate buttons', () => {
   const app = fs.readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   const start = app.indexOf('id="app-sidebar"');
-  const nav = app.indexOf('className="nav-links"', start);
-  const quick = app.slice(start, nav);
-  assert.match(quick, /Report a Bug/);
-  assert.match(quick, /data-testid="report-bug-button"/);
-  assert.match(quick, /data-testid="my-bug-reports-nav"/);
-  assert.equal(quick.includes('isTabAllowed'), false);
-  assert.match(app, /data-testid="report-bug-mobile"/);
+  const end = app.indexOf('className="main-content"', start);
+  const sidebar = app.slice(start, end);
+  const nav = sidebar.indexOf('className="nav-links"');
+  const bugWrap = sidebar.indexOf('sidebar-bug-wrap');
+  const footer = sidebar.indexOf('sidebar-footer-card');
+  const button = sidebar.indexOf('data-testid="report-bug-button"');
+  const mine = sidebar.indexOf('testId="my-bug-reports-nav"');
+  const pinned = sidebar.slice(bugWrap, footer);
+
+  assert.ok(nav > 0 && button > bugWrap && button < footer, 'the report button sits below the nav and above the user card');
+  assert.equal(sidebar.slice(0, nav).includes('Report a Bug'), false);
+  assert.equal((app.match(/data-testid="report-bug-button"/g) || []).length, 1);
+  assert.equal((sidebar.match(/testId="my-bug-reports-nav"/g) || []).length, 1);
+  assert.match(app, /data-testid=\{testId\}/);
+  assert.equal((sidebar.match(/label="Bug Reports"/g) || []).length, 1);
+  assert.ok(mine > bugWrap && mine < button, 'My Bug Reports is pinned once, above the report button');
+  assert.match(pinned, /isTabAllowed\('my_bug_reports'\)/);
+  assert.match(pinned, /label="My Bug Reports"/);
+  assert.equal(pinned.slice(pinned.indexOf('report-bug-button')).includes('isTabAllowed'), false);
+  assert.match(sidebar, /data-nav-label=\{`Report a Bug \(\$\{bugReportShortcutLabel\(\)\}\)`\}/);
+  assert.equal(app.includes('report-bug-mobile'), false);
+  assert.equal(app.includes('mobile-bug-btn'), false);
+  assert.equal(app.includes('sidebar-my-bugs-btn'), false);
   assert.match(app, /isBugReportShortcut\(e\)/);
-  assert.match(app, /label="Bug Reports"/);
   assert.match(app, /activeTab === 'my_bug_reports'/);
+
+  const css = fs.readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+  assert.match(css, /\.sidebar\s*\{[^}]*height:\s*100vh/s);
+  assert.match(css, /\.sidebar-bug-wrap\s*\{[^}]*margin-top:\s*auto/s);
+  assert.match(css, /\.sidebar-bug-wrap\s*\{[^}]*flex-shrink:\s*0/s);
+  assert.match(css, /\.sidebar\.collapsed \.sidebar-bug-wrap/);
+  assert.equal(css.includes('mobile-bug-btn'), false);
+
   const sql = fs.readFileSync(new URL('../supabase/migrations/20261109140000_bug_reports.sql', import.meta.url), 'utf8');
   assert.match(sql, /'bug-screenshots'/);
   assert.match(sql, /bug_reports_description_len/);
