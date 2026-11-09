@@ -1,0 +1,268 @@
+/**
+ * Rotogravure cylinder area and engraving cost.
+ *
+ * Area is (face mm × circumference mm) / 100 square centimetres,
+ * because 1 cm² = 100 mm². Cost per cylinder is that area × the
+ * engraving rate in ₹/cm². The set total is that amount × the colour count.
+ * Round the per-cylinder amount first, then multiply, so the set total
+ * stays an exact multiple of the per-cylinder figure.
+ *
+ * Stored amounts are text such as "₹ 5,139.00". The decimal point has to
+ * survive parsing. Dropping every non-digit turns the trailing ".00" into
+ * two extra zeros and multiplies the amount by 100 on the next save.
+ */
+
+const DEFAULT_RATE = 1.6;
+const RATE_MIN = 0.2;
+const RATE_MAX = 50;
+
+export function parseInrAmount(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  let text = String(value).trim();
+  if (!text) return null;
+  text = text.replace(/₹/g, '').replace(/rs\.?/ig, '').replace(/\s+/g, '');
+  if (!text) return null;
+
+  const lastDot = text.lastIndexOf('.');
+  const lastComma = text.lastIndexOf(',');
+  if (lastComma > lastDot) {
+    const fraction = text.slice(lastComma + 1);
+    if (!text.includes('.') && /^\d{1,2}$/.test(fraction)) {
+      text = `${text.slice(0, lastComma).replace(/,/g, '')}.${fraction}`;
+    } else {
+      text = text.replace(/,/g, '');
+    }
+  } else {
+    text = text.replace(/,/g, '');
+  }
+  text = text.replace(/[^0-9.-]/g, '');
+  if (!text || text === '.' || text === '-' || text === '-.') return null;
+  const amount = Number(text);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+export function formatInrAmount(value) {
+  const amount = typeof value === 'number' ? value : parseInrAmount(value);
+  if (amount == null) return '';
+  return `₹ ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Integer cm². Matches the directory's "sq. cm" figure. */
+export function cylinderSurfaceSqCm(faceLengthMm, circumferenceMm) {
+  const face = Number(faceLengthMm);
+  const circumference = Number(circumferenceMm);
+  if (!Number.isFinite(face) || !Number.isFinite(circumference) || face <= 0 || circumference <= 0) {
+    return null;
+  }
+  return Math.round((face * circumference) / 100);
+}
+
+export function saneEngravingRate(rate) {
+  const numeric = Number(rate);
+  if (!Number.isFinite(numeric) || numeric < RATE_MIN || numeric > RATE_MAX) return DEFAULT_RATE;
+  return numeric;
+}
+
+export function expectedCylinderCosts({ faceLengthMm, circumferenceMm, rate, colorsCount } = {}) {
+  const areaSqCm = cylinderSurfaceSqCm(faceLengthMm, circumferenceMm);
+  const colors = Math.max(1, parseInt(colorsCount, 10) || 1);
+  const saneRate = saneEngravingRate(rate);
+  if (areaSqCm == null) {
+    return { areaSqCm: null, rate: saneRate, colors, costPerCylinder: null, totalSetCost: null };
+  }
+  const costPerCylinder = Math.round(areaSqCm * saneRate);
+  const totalSetCost = costPerCylinder * colors;
+  return { areaSqCm, rate: saneRate, colors, costPerCylinder, totalSetCost };
+}
+
+function relativeGap(actual, expected) {
+  if (actual == null || expected == null || expected === 0) return Infinity;
+  return Math.abs(actual - expected) / Math.abs(expected);
+}
+
+/**
+ * Undo a repeated ".00" strip. Each bad save multiplies by 100.
+ * Returns the stored amount divided back down when a step lands near `anchor`,
+ * so a manual price that is not exactly the formula is preserved.
+ */
+export function unfoldHundredFold(actual, anchor) {
+  if (actual == null || anchor == null || anchor === 0) return null;
+  let value = actual;
+  for (let step = 0; step < 6; step += 1) {
+    if (Math.abs(value) <= Math.abs(anchor) * 50) return null;
+    value /= 100;
+    if (relativeGap(value, anchor) <= 0.2) return value;
+  }
+  return null;
+}
+
+/**
+ * Prefer a stored amount when it agrees with the other stored amount and with
+ * the engraving formula. Replace a figure that was inflated by decimal stripping
+ * or that is orders of magnitude away from the set total.
+ * Does not invent a cost when nothing was stored.
+ */
+export function reconcileCylinderCosts(row = {}) {
+  const colors = Math.max(1, parseInt(row.colorsCount ?? row.numberOfCylinders, 10) || 1);
+  const expected = expectedCylinderCosts({
+    faceLengthMm: row.faceLengthMm,
+    circumferenceMm: row.circumferenceMm ?? row.repeatLengthMm,
+    rate: row.rate ?? row.ratePerSqInch,
+    colorsCount: colors
+  });
+  let per = parseInrAmount(row.costPerCylinder);
+  let total = parseInrAmount(row.cylinderCost);
+  const storedPer = per;
+  const storedTotal = total;
+
+  const unfoldedPer = unfoldHundredFold(per, expected.costPerCylinder);
+  const unfoldedTotal = unfoldHundredFold(total, expected.totalSetCost);
+  if (unfoldedPer != null) per = unfoldedPer;
+  if (unfoldedTotal != null) total = unfoldedTotal;
+
+  const totalMatchesFormula = expected.totalSetCost != null && relativeGap(total, expected.totalSetCost) <= 0.02;
+  const perMatchesFormula = expected.costPerCylinder != null && relativeGap(per, expected.costPerCylinder) <= 0.02;
+  const pairAgrees = per != null && total != null && relativeGap(per * colors, total) <= 0.05;
+
+  if (totalMatchesFormula && (per == null || relativeGap(per, total / colors) > 0.02)) {
+    per = Math.round(total / colors);
+  } else if (perMatchesFormula && (total == null || relativeGap(per * colors, total) > 0.02)) {
+    total = per * colors;
+  } else if (per != null && total != null && !pairAgrees) {
+    if (totalMatchesFormula) per = Math.round(total / colors);
+    else if (perMatchesFormula) total = per * colors;
+    else if (expected.costPerCylinder != null) {
+      if (relativeGap(per, expected.costPerCylinder) > 20) per = expected.costPerCylinder;
+      if (expected.totalSetCost != null && relativeGap(total, expected.totalSetCost) > 20) total = expected.totalSetCost;
+    }
+  } else if (per != null && total == null) {
+    const wild = expected.costPerCylinder != null && relativeGap(per, expected.costPerCylinder) > 20;
+    if (wild) {
+      per = expected.costPerCylinder;
+      total = expected.totalSetCost;
+    } else {
+      total = per * colors;
+    }
+  } else if (total != null && per == null) {
+    const wild = expected.totalSetCost != null && relativeGap(total, expected.totalSetCost) > 20;
+    if (wild && expected.costPerCylinder != null) {
+      per = expected.costPerCylinder;
+      total = expected.totalSetCost;
+    } else {
+      per = Math.round(total / colors);
+    }
+  }
+
+  const perChanged = storedPer == null ? per != null : per == null || relativeGap(per, storedPer) > 0.001;
+  const totalChanged = storedTotal == null ? total != null : total == null || relativeGap(total, storedTotal) > 0.001;
+
+  return {
+    areaSqCm: expected.areaSqCm,
+    rate: expected.rate,
+    colors,
+    costPerCylinder: per,
+    totalSetCost: total,
+    costPerCylinderText: per == null ? '' : formatInrAmount(per),
+    cylinderCostText: total == null ? '' : formatInrAmount(total),
+    perCorrected: perChanged && storedPer != null,
+    totalCorrected: totalChanged && storedTotal != null,
+    storedPer,
+    storedTotal
+  };
+}
+
+export function withReconciledCosts(row) {
+  if (!row || typeof row !== 'object') return row;
+  const costs = reconcileCylinderCosts(row);
+  const next = { ...row, areaSqCm: costs.areaSqCm };
+  if (costs.costPerCylinder != null) next.costPerCylinder = costs.costPerCylinderText;
+  if (costs.totalSetCost != null && (costs.storedTotal != null || costs.storedPer != null)) {
+    next.cylinderCost = costs.cylinderCostText;
+  }
+  return next;
+}
+
+function headerToken(header) {
+  return String(header || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Maps CSV headers onto cylinder fields. The result is field key → header text,
+ * which is the shape the bulk-upload form reads. Rate, per-cylinder cost, and
+ * set cost are separate fields; a generic "cost" or "rate" header must not
+ * capture the wrong one.
+ */
+export function autoMapCylinderCsvHeaders(headers = []) {
+  const mapping = {};
+  const used = new Set();
+  const rules = [
+    { key: 'sku', test: (token) => token.includes('sku') || token.includes('serial') || (token.includes('code') && !token.includes('barcode') && !token.includes('hsn')) },
+    { key: 'jobName', test: (token) => token.includes('jobname') || token.includes('brand') || token.includes('design') || token.includes('itemname') || token === 'job' || token === 'name' },
+    { key: 'clientGroup', test: (token) => token.includes('client') || token.includes('party') || token.includes('customer') || token.includes('company') },
+    { key: 'colorsCount', test: (token) => token.includes('color') || token.includes('colour') || (token.includes('count') && !token.includes('cost')) },
+    { key: 'printWidthMm', test: (token) => token.includes('printwidth') || token.includes('webwidth') || (token.includes('width') && !token.includes('face')) },
+    { key: 'faceLengthMm', test: (token) => token.includes('facelength') || token.includes('shell') || (token.includes('length') && !token.includes('repeat')) },
+    { key: 'circumferenceMm', test: (token) => token.includes('repeat') || token.includes('circumference') || token.includes('dia') },
+    { key: 'structure', test: (token) => token.includes('structure') || token.includes('laminate') || token.includes('substrate') },
+    { key: 'costPerCylinder', test: (token) => token.includes('costpercyl') || token.includes('percylinder') || token.includes('percy') || (token.includes('cost') && token.includes('per')) },
+    { key: 'rate', test: (token) => token.includes('rate') || token.includes('persq') },
+    { key: 'cylinderCost', test: (token) => (token.includes('cost') || token.includes('price')) && !token.includes('borne') && !token.includes('per') },
+    { key: 'engravuresName', test: (token) => token.includes('engrav') || token.includes('vendor') || token.includes('maker') },
+    { key: 'costBorneBy', test: (token) => token.includes('borne') },
+    { key: 'status', test: (token) => token.includes('status') || token.includes('condition') },
+    { key: 'assignedPress', test: (token) => token.includes('press') || token.includes('machine') }
+  ];
+
+  rules.forEach((rule) => {
+    const header = headers.find((item) => !used.has(item) && rule.test(headerToken(item)));
+    if (header) {
+      mapping[rule.key] = header;
+      used.add(header);
+    }
+  });
+  return mapping;
+}
+
+export function costsFromCsvRow({
+  faceLengthMm,
+  circumferenceMm,
+  rate,
+  colorsCount,
+  cylinderCost,
+  costPerCylinder
+} = {}) {
+  const colors = parseInt(colorsCount, 10) || 1;
+  const face = parseFloat(faceLengthMm);
+  const circumference = parseFloat(circumferenceMm);
+  const parsedRate = parseInrAmount(rate);
+  const expected = expectedCylinderCosts({
+    faceLengthMm: Number.isFinite(face) ? face : null,
+    circumferenceMm: Number.isFinite(circumference) ? circumference : null,
+    rate: parsedRate == null ? rate : parsedRate,
+    colorsCount: colors
+  });
+  const reconciled = reconcileCylinderCosts({
+    faceLengthMm: Number.isFinite(face) ? face : null,
+    circumferenceMm: Number.isFinite(circumference) ? circumference : null,
+    rate: parsedRate == null ? rate : parsedRate,
+    colorsCount: colors,
+    cylinderCost,
+    costPerCylinder
+  });
+  const per = reconciled.costPerCylinder != null
+    ? reconciled.costPerCylinder
+    : expected.costPerCylinder;
+  const total = reconciled.totalSetCost != null
+    ? reconciled.totalSetCost
+    : expected.totalSetCost;
+  return {
+    areaSqCm: expected.areaSqCm,
+    rate: parsedRate == null ? expected.rate : parsedRate,
+    colors,
+    costPerCylinder: per,
+    totalSetCost: total,
+    costPerCylinderText: per == null ? '' : formatInrAmount(per),
+    cylinderCostText: total == null ? '' : formatInrAmount(total)
+  };
+}

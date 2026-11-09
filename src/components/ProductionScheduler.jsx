@@ -37,6 +37,7 @@ import {
 } from '../utils/printRunConflict';
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
+import { artworkOwnedByRow } from '../utils/cylinderArtwork';
 import { 
   Printer, 
   Play,
@@ -496,13 +497,18 @@ export default function ProductionScheduler({
         firstFilmReq.widthMm
       ].map((value) => finiteNumber(value)).find((value) => value !== null && value > 0) || 0;
 
-      // Artwork resolution linked to Job Master / Cylinder / Order
-      const artworkUrl = order.artworkUrl ||
-                         order.jobDetails?.artworkUrl ||
-                         matchedJM?.artworkUrl ||
-                         matchedJM?.cylinderData?.artworkUrl ||
-                         matchedCylinder?.artworkUrl ||
-                         '';
+      // Artwork stays with the order, then a job master or cylinder whose file names that job.
+      const orderArtwork = order.artworkUrl || order.jobDetails?.artworkUrl || '';
+      const masterArtwork = [matchedJM?.artworkUrl, matchedJM?.cylinderData?.artworkUrl]
+        .find(url => url && artworkOwnedByRow(url, {
+          sku: order.skuCode || order.jobCode || matchedJM?.skuCode,
+          jobName: order.jobName || matchedJM?.jobName,
+          id: matchedJM?.id
+        })) || '';
+      const cylinderArtwork = matchedCylinder?.artworkUrl && artworkOwnedByRow(matchedCylinder.artworkUrl, matchedCylinder)
+        ? matchedCylinder.artworkUrl
+        : '';
+      const artworkUrl = orderArtwork || masterArtwork || cylinderArtwork || '';
 
       // Colors resolution linked to Job Master / Cylinder / Order
       const rawColorsCount = order.colorsCount ||

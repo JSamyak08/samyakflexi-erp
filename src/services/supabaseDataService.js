@@ -14,6 +14,7 @@ import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../util
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
 import { mapInkMasterToRow, mapInkRowToMaster, readHsnCode } from '../utils/inkHsn';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
+import { withReconciledCosts } from '../utils/cylinderCost';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -1350,7 +1351,7 @@ export async function fetchCylinders() {
         layers = parseStructureStringToLayers(c.structure);
       }
 
-      return {
+      return withReconciledCosts({
         id: c.id,
         sku: c.sku,
         jobName: c.job_name,
@@ -1402,7 +1403,7 @@ export async function fetchCylinders() {
         lockedAt: c.locked_at || pm.lockedAt || '',
         changelogs: Array.isArray(c.changelogs) ? c.changelogs : (Array.isArray(pm.changelogs) ? pm.changelogs : []),
         press_marks: pm
-      };
+      });
     });
   } catch (err) {
     console.error("Error fetching cylinders from Supabase:", err);

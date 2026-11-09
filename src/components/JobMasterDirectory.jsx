@@ -44,6 +44,7 @@ import CylinderJobCardForm from '../CylinderJobCardForm';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { pushSlugState } from '../utils/slugRouter';
+import { formatInrAmount, parseInrAmount } from '../utils/cylinderCost';
 
 /**
  * Helper: Auto-detect CSV Header Mapping for Job Masters Bulk Upload
@@ -947,7 +948,8 @@ export default function JobMasterDirectory({
     const derivedForm = job.materialForm || (Array.isArray(job.processRouting) && job.processRouting.some(s => (s.operation || '').toLowerCase().includes('pouch')) ? 'Pouching Form' : 'Reel Form');
     setMaterialForm(derivedForm);
     setColorsCount(job.colorsCount || 6);
-    setCylinderCost(job.cylinderCost ? String(job.cylinderCost).replace(/[^0-9]/g, '') : '');
+    const parsedCylinderCost = parseInrAmount(job.cylinderCost);
+    setCylinderCost(parsedCylinderCost == null ? '' : String(parsedCylinderCost));
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
     setEngravuresName(job.engravuresName || '');
     setUtilisationLimit(job.utilisationLimit || 10000);
@@ -1037,7 +1039,7 @@ export default function JobMasterDirectory({
         adhesiveGsm: parseGsmValue(adhesiveGsm),
         processRouting: sanitizedRouting,
         cylinderSku: skuCode.trim(),
-        cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        cylinderCost: formatInrAmount(cylinderCost) || '₹ 0.00',
         colorsCount: parseInt(colorsCount) || 6,
         engravuresName,
         costBorneBy,
@@ -1082,7 +1084,7 @@ export default function JobMasterDirectory({
       adhesiveGsm: parseGsmValue(adhesiveGsm),
       processRouting: sanitizedRouting,
       cylinderSku: skuCode.trim(),
-      cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      cylinderCost: formatInrAmount(cylinderCost) || '₹ 0.00',
       colorsCount: parseInt(colorsCount) || 6,
       engravuresName,
       costBorneBy,
@@ -1110,7 +1112,7 @@ export default function JobMasterDirectory({
           jobName: jobName.trim(),
           clientGroup: clientName.trim(),
           colorsCount: parseInt(colorsCount) || 6,
-          cylinderCost: `₹ ${parseInt(cylinderCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          cylinderCost: formatInrAmount(cylinderCost) || '₹ 0.00',
           engravuresName,
           costBorneBy,
           costBorneType: costBorneBy.includes('Client') ? 'client' : (costBorneBy.includes('Us') ? 'us' : 'both'),
