@@ -329,6 +329,18 @@ export const MODULES = [
     legacy: ['/audit-logs'],
     patterns: [{ section: 'ledger', segs: [], default: true }],
   },
+  {
+    key: 'bug_reports',
+    path: '/bug-reports',
+    legacy: ['/bug-reports'],
+    patterns: [{ section: 'list', segs: [], default: true }],
+  },
+  {
+    key: 'my_bug_reports',
+    path: '/my-bug-reports',
+    legacy: ['/my-bug-reports'],
+    patterns: [{ section: 'list', segs: [], default: true }],
+  },
 ];
 
 const SPECIAL_PATHS = [

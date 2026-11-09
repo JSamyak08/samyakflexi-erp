@@ -56,6 +56,7 @@ import {
   Flame,
   PanelLeftClose,
   PanelLeftOpen,
+  Bug,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -79,6 +80,8 @@ import BarcodeRegistry from './components/BarcodeRegistry';
 import SalesManagement from './components/SalesManagement';
 import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
+import BugReportModal from './components/BugReportModal';
+import BugReportsScreen from './components/BugReportsScreen';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
@@ -116,6 +119,8 @@ import {
   sidebarShortcutLabel,
   toggleStoredSidebarCollapsed,
 } from './utils/sidebarCollapse';
+import { bugReportShortcutLabel, isBugReportShortcut } from './utils/bugReport';
+import { countNewBugReports } from './services/bugReports';
 import { assertPersistableMeasures } from './utils/productionRecordQuality';
 import {
   planAutoCloseUpdates,
@@ -867,14 +872,22 @@ export default function App() {
   }, [isAuthReady, isAuthenticated, currentUser, activeTab, rolePermissions, routeInfo.unknown]);
 
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [newBugCount, setNewBugCount] = useState(0);
 
   // Alt+B / Ctrl+B opens the barcode scanner. Ctrl/Cmd+\ collapses the sidebar.
+  // Alt+Shift+R opens Report a Bug and does not use those chords.
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (isSidebarCollapseShortcut(e)) {
         if (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1024px)').matches) return;
         e.preventDefault();
         toggleSidebarRef.current?.();
+        return;
+      }
+      if (isBugReportShortcut(e)) {
+        e.preventDefault();
+        setBugReportOpen(true);
         return;
       }
       if ((e.altKey || e.ctrlKey) && (e.key === 'b' || e.key === 'B')) {
@@ -885,6 +898,25 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !userHasRole(currentUser, 'Admin') || !isSupaActive) {
+      setNewBugCount(0);
+      return undefined;
+    }
+    let cancelled = false;
+    const refresh = () => {
+      countNewBugReports()
+        .then((count) => { if (!cancelled) setNewBugCount(count); })
+        .catch(() => { if (!cancelled) setNewBugCount(0); });
+    };
+    refresh();
+    window.addEventListener('bug-reports-changed', refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('bug-reports-changed', refresh);
+    };
+  }, [isAuthenticated, currentUser, isSupaActive]);
 
   // Reactive listener for Supabase credential updates
   useEffect(() => {
@@ -5034,7 +5066,16 @@ export default function App() {
           <img src="/samyak-logo.png" alt="Samyak Logo" style={{ height: '24px', objectFit: 'contain' }} />
           <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>Samyak Flexi-ERP</span>
         </div>
-        <div style={{ width: '38px' }} />
+        <button
+          type="button"
+          className="mobile-bug-btn"
+          onClick={() => setBugReportOpen(true)}
+          aria-label="Report a Bug"
+          title="Report a Bug"
+          data-testid="report-bug-mobile"
+        >
+          <Bug size={18} aria-hidden="true" />
+        </button>
       </div>
 
       {isMobileMenuOpen && (
@@ -5109,6 +5150,42 @@ export default function App() {
               <span className="nav-label">Scan Barcode</span>
             </span>
             <span className="sidebar-scan-kbd">Alt+B</span>
+          </button>
+        </div>
+
+        <div className="sidebar-bug-wrap">
+          <button
+            type="button"
+            className="sidebar-scan-btn sidebar-bug-btn"
+            onClick={() => setBugReportOpen(true)}
+            data-nav-label={`Report a Bug (${bugReportShortcutLabel()})`}
+            title={railCollapsed ? undefined : `Report a Bug (${bugReportShortcutLabel()})`}
+            aria-label={`Report a Bug (${bugReportShortcutLabel()})`}
+            data-testid="report-bug-button"
+          >
+            <span className="sidebar-scan-btn-inner">
+              <span className="sidebar-scan-icon">
+                <Bug size={16} aria-hidden="true" />
+              </span>
+              <span className="nav-label">Report a Bug</span>
+            </span>
+            <span className="sidebar-scan-kbd">{bugReportShortcutLabel()}</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-scan-btn sidebar-my-bugs-btn"
+            onClick={() => handleTabChange('my_bug_reports')}
+            data-nav-label="My Bug Reports"
+            title={railCollapsed ? undefined : 'My Bug Reports'}
+            aria-label="My Bug Reports"
+            data-testid="my-bug-reports-nav"
+          >
+            <span className="sidebar-scan-btn-inner">
+              <span className="sidebar-scan-icon">
+                <Bug size={16} aria-hidden="true" />
+              </span>
+              <span className="nav-label">My Bug Reports</span>
+            </span>
           </button>
         </div>
 
@@ -5423,6 +5500,20 @@ export default function App() {
 
               {userHasRole(currentUser, 'Admin') && (
                 <SidebarNavItem
+                  active={activeTab === 'bug_reports'}
+                  onClick={() => handleTabChange('bug_reports')}
+                  color="#c2410c"
+                  icon={Bug}
+                  label="Bug Reports"
+                >
+                  {newBugCount > 0 && (
+                    <SidebarCountBadge tone="nav-badge-warning" count={newBugCount} extra="New" />
+                  )}
+                </SidebarNavItem>
+              )}
+
+              {userHasRole(currentUser, 'Admin') && (
+                <SidebarNavItem
                   active={activeTab === 'audit_logs'}
                   onClick={() => handleTabChange('audit_logs')}
                   color="#ef4444"
@@ -5462,6 +5553,22 @@ export default function App() {
             <LogOut size={16} />
           </button>
         </div>
+        <BugReportModal
+          open={bugReportOpen}
+          onClose={() => setBugReportOpen(false)}
+          currentUser={currentUser}
+          activeTab={activeTab}
+          appVersion={import.meta.env.VITE_SENTRY_RELEASE || (typeof __SENTRY_RELEASE__ === 'string' ? __SENTRY_RELEASE__ : '')}
+          onSubmitted={(saved) => {
+            logAudit(
+              'CREATE',
+              'Bug Reports',
+              `Reported a bug${saved?.title ? `: ${saved.title}` : ''} on ${saved?.pageUrl || ''}`,
+              saved?.id
+            );
+            window.dispatchEvent(new CustomEvent('bug-reports-changed'));
+          }}
+        />
         {railCollapsed && navTooltip && typeof document !== 'undefined' && createPortal(
           <div
             className="sidebar-rail-tooltip"
@@ -5502,6 +5609,8 @@ export default function App() {
               {moduleOpen && activeTab === 'printing_scheduler' && 'Printing Machine Production Scheduler & Time Board'}
               {moduleOpen && activeTab === 'supabase' && 'Supabase Cloud Database & API Service'}
               {moduleOpen && activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
+              {moduleOpen && activeTab === 'bug_reports' && 'Bug Reports'}
+              {moduleOpen && activeTab === 'my_bug_reports' && 'My Bug Reports'}
             </h1>
 
 
@@ -6799,6 +6908,24 @@ export default function App() {
             productionRecords={productionRecords}
             orders={orders}
           />
+        )}
+
+        {moduleOpen && activeTab === 'bug_reports' && userHasRole(currentUser, 'Admin') && (
+          <BugReportsScreen
+            mode="admin"
+            onAudit={(updated, previousStatus) => {
+              logAudit(
+                'UPDATE',
+                'Bug Reports',
+                `Status ${previousStatus} -> ${updated.status}${updated.resolutionNote ? `. ${updated.resolutionNote}` : ''}`,
+                updated.id
+              );
+            }}
+          />
+        )}
+
+        {moduleOpen && activeTab === 'my_bug_reports' && (
+          <BugReportsScreen mode="mine" />
         )}
 
         {/* TAB: SYSTEM AUDIT LOGS (ADMIN ONLY) */}
