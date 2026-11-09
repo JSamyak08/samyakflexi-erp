@@ -10,7 +10,8 @@ import {
   SFG_STORE_GROUP_PAGE_SIZE,
   filterSfgStoreItems,
   groupSfgStoreItems,
-  pageSfgOrderGroups
+  pageSfgOrderGroups,
+  sortSfgStoreItems
 } from '../src/utils/sfgStoreList.js';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
@@ -68,6 +69,101 @@ test('search reads the whole store, including a job past the old 10-row page', (
   assert.deepEqual(consumed.map((item) => item.id), ['id-2', 'id-30']);
   const finished = filterSfgStoreItems(items, { typeFilter: 'Finished Goods' });
   assert.deepEqual(finished.map((item) => item.id), ['id-2']);
+});
+
+test('the default store order is the later activity timestamp, then id descending', () => {
+  const olderCreated = {
+    id: '00000000-0000-4000-8000-000000000001',
+    orderId: 'ORD-OLD',
+    jobName: 'Older Job',
+    sfgBatchCode: 'SFG-OLD',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z'
+  };
+  const modifiedLater = {
+    id: '00000000-0000-4000-8000-000000000003',
+    orderId: 'ORD-OLD',
+    jobName: 'Older Job',
+    sfgBatchCode: 'SFG-TOUCHED',
+    created_at: '2026-02-01T00:00:00.000Z',
+    updated_at: '2026-12-01T00:00:00.000Z'
+  };
+  const createdLaterThanItsUpdate = {
+    id: '00000000-0000-4000-8000-000000000002',
+    orderId: 'ORD-MID',
+    jobName: 'Mid Job',
+    sfgBatchCode: 'SFG-MID',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-03-01T00:00:00.000Z'
+  };
+  const sameActivityLowerId = {
+    id: '00000000-0000-4000-8000-000000000010',
+    orderId: 'ORD-TIE',
+    jobName: 'Tie Low',
+    sfgBatchCode: 'SFG-TIE-LOW',
+    createdAt: '2026-05-01T00:00:00.000Z',
+    updatedAt: '2026-05-01T00:00:00.000Z'
+  };
+  const sameActivityHigherId = {
+    id: '00000000-0000-4000-8000-000000000020',
+    orderId: 'ORD-TIE',
+    jobName: 'Tie High',
+    sfgBatchCode: 'SFG-TIE-HIGH',
+    createdDate: '2026-05-01T00:00:00.000Z'
+  };
+  const rollOnly = {
+    id: '00000000-0000-4000-8000-000000000004',
+    orderId: 'ORD-ROLL',
+    jobName: 'Roll Job',
+    sfgBatchCode: 'SFG-ROLL',
+    inwardDatetime: '2026-04-01T08:00:00.000Z'
+  };
+  const undated = {
+    id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    orderId: 'ORD-NONE',
+    jobName: 'No Stamp',
+    sfgBatchCode: 'SFG-NONE'
+  };
+  const input = [
+    olderCreated,
+    createdLaterThanItsUpdate,
+    sameActivityLowerId,
+    rollOnly,
+    undated,
+    modifiedLater,
+    sameActivityHigherId
+  ];
+  const snapshot = input.map((item) => ({ ...item }));
+  const sorted = sortSfgStoreItems(input);
+
+  assert.deepEqual(input, snapshot);
+  assert.deepEqual(sorted.map((item) => item.sfgBatchCode), [
+    'SFG-TOUCHED',
+    'SFG-MID',
+    'SFG-TIE-HIGH',
+    'SFG-TIE-LOW',
+    'SFG-ROLL',
+    'SFG-OLD',
+    'SFG-NONE'
+  ]);
+  assert.deepEqual(sortSfgStoreItems(null), []);
+  assert.deepEqual(sortSfgStoreItems(undefined), []);
+
+  const groups = groupSfgStoreItems(sorted, []);
+  assert.deepEqual(groups.map((group) => group.orderKey), [
+    'ORD-OLD',
+    'ORD-MID',
+    'ORD-TIE',
+    'ORD-ROLL',
+    'ORD-NONE'
+  ]);
+  assert.deepEqual(groups[0].items.map((item) => item.sfgBatchCode), ['SFG-TOUCHED', 'SFG-OLD']);
+  assert.deepEqual(groups[3].items.map((item) => item.id), [rollOnly.id]);
+
+  const finishedOnly = filterSfgStoreItems(sorted, { typeFilter: 'Finished Goods' });
+  assert.deepEqual(finishedOnly, []);
+  const searched = filterSfgStoreItems(sorted, { searchTerm: 'tie' });
+  assert.deepEqual(searched.map((item) => item.sfgBatchCode), ['SFG-TIE-HIGH', 'SFG-TIE-LOW']);
 });
 
 test('order groups keep every roll and the pager counts groups, not a fixed first page', () => {
@@ -135,6 +231,8 @@ test('order groups keep every roll and the pager counts groups, not a fixed firs
 test('the store screen pages filtered order groups and the other tabs do not slice to 10', () => {
   const screen = fs.readFileSync(path.join(root, 'src/components/SFGStoreManagement.jsx'), 'utf8');
   assert.match(screen, /filterSfgStoreItems\(allSfgItems/);
+  assert.match(screen, /sortSfgStoreItems\(omitPrintedLotChildren\(cleanList\)\)/);
+  assert.doesNotMatch(screen, /sortInventoryByFifo\(/);
   assert.match(screen, /groupSfgStoreItems\(filteredItems,\s*orders\)/);
   assert.match(screen, /usePagination\(groupedOrders,\s*SFG_STORE_GROUP_PAGE_SIZE\)/);
   assert.match(screen, /<TablePagination pagination=\{groupPagination\} \/>/);
@@ -151,6 +249,7 @@ test('the store screen pages filtered order groups and the other tabs do not sli
     service.indexOf('export function buildSfgNotesEnvelope')
   );
   assert.match(fetchSfg, /from\('sfg_goods'\)\.select\('\*'\)/);
+  assert.match(fetchSfg, /updatedAt: item\.updated_at \|\| null/);
   assert.doesNotMatch(fetchSfg, /\.limit\(|\.range\(/);
 
   const records = fs.readFileSync(path.join(root, 'src/services/businessRecords.js'), 'utf8');
@@ -265,6 +364,31 @@ test('the rendered list footer counts order groups and shows every roll in a gro
   assert.match(one, /data-testid="sfg-store-search"/);
   assert.match(one, /data-testid="sfg-store-view-only"/);
   assert.doesNotMatch(one, /data-testid="sfg-consume"/);
+
+  const ordered = render({
+    sfgGoods: [
+      batch(1, {
+        id: '00000000-0000-4000-8000-000000000001',
+        orderId: 'ORD-OLD',
+        jobName: 'Older Store Job',
+        sfgBatchCode: 'SFG-OLD-ROW',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-02T00:00:00.000Z'
+      }),
+      batch(2, {
+        id: '00000000-0000-4000-8000-000000000002',
+        orderId: 'ORD-NEW',
+        jobName: 'Newest Store Job',
+        sfgBatchCode: 'SFG-NEW-ROW',
+        createdAt: '2026-02-01T00:00:00.000Z',
+        updatedAt: '2026-11-01T00:00:00.000Z'
+      })
+    ],
+    canEditStore: true,
+    previewScrapItems: []
+  });
+  assert.ok(ordered.indexOf('Newest Store Job') < ordered.indexOf('Older Store Job'));
+  assert.ok(ordered.indexOf('SFG-NEW-ROW') < ordered.indexOf('SFG-OLD-ROW'));
 
   const empty = render({ sfgGoods: [], canEditStore: false, previewScrapItems: [] });
   assert.equal(count(empty, 'data-testid="sfg-order-group"'), 0);

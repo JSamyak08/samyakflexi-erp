@@ -3717,6 +3717,7 @@ export async function fetchSFGGoodsFromSupabase() {
         balanceKeptKg: Number(extra.balanceKeptKg) || 0,
         balanceQcHoldKg: Number(extra.balanceQcHoldKg) || 0,
         createdAt: item.created_at || new Date().toISOString(),
+        updatedAt: item.updated_at || null,
         ...(extra.parentSfgBatchCode ? {
           parentSfgBatchCode: extra.parentSfgBatchCode,
           parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode
@@ -3878,6 +3879,10 @@ export async function saveSFGGoodToSupabase(item) {
     notes: notesEnvelope,
     updated_at: new Date().toISOString()
   };
+  // The store list sorts on this same stamp. Keep it on the in-memory row
+  // so a save moves that lot without waiting for the next full fetch.
+  item.updatedAt = payload.updated_at;
+  if (!item.createdAt && !item.created_at) item.createdAt = payload.updated_at;
 
   // sfg_goods.id is a uuid. A barcode such as SFG-BC-... must not be written into it.
   // Send the existing uuid, or a new one. The column default gen_random_uuid()
