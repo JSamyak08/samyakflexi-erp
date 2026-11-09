@@ -8,6 +8,7 @@ import {
 } from '../src/utils/finishedGoods.js';
 import { planDispatchSfgDeductions, planDispatchRollDeductions } from '../src/services/guardedWrite.js';
 import { collectBarcodes, BARCODE_SOURCE } from '../src/utils/barcodeRegistry.js';
+import { buildOrderReportRows } from '../src/utils/orderCsvReport.js';
 
 const palekar = {
   id: 'ORD-2026-224',
@@ -198,6 +199,35 @@ test('dispatch can select and deduct finished goods only', () => {
   });
   assert.equal(rolls.updates.length, 1);
   assert.equal(rolls.updates[0].after.barcodeId, 'FG-BC-224');
+});
+
+test('the order csv uses the same stage the screen shows', () => {
+  const sfgRows = buildOrderReportRows({
+    kind: 'pending',
+    today: '2026-11-09',
+    orders: [palekar],
+    sfgGoods: [printedLot()]
+  });
+  assert.equal(sfgRows[0]['Current Stage'], 'Printed — awaiting lamination');
+  assert.equal(sfgRows[0]['Current Stage'].includes('Ready for Dispatch'), false);
+
+  const fgRows = buildOrderReportRows({
+    kind: 'pending',
+    today: '2026-11-09',
+    orders: [{ id: 'ORD-2026-201', jobName: 'Chocovalley', clientName: 'QA', orderQtyKg: 700, status: 'In Production', targetDeliveryDate: '2026-12-01' }],
+    sfgGoods: [{
+      orderId: 'ORD-2026-201',
+      sfgBatchCode: 'FG-BC-ORD2026201-2096',
+      sfgType: 'Finished Goods (FG)',
+      category: 'Finished Goods (FG)',
+      rollType: 'FG',
+      status: 'Ready for Dispatch',
+      storageBay: 'Bay A',
+      totalNetKg: 40,
+      availableKg: 40
+    }]
+  });
+  assert.equal(fgRows[0]['Current Stage'], 'Ready for Dispatch (40kg)');
 });
 
 test('a semi-finished lot stays an SFG barcode and still blocks auto-close as leftover WIP', () => {
