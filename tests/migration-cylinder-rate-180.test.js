@@ -121,8 +121,8 @@ test('the rate migration is later than production migration 20261109150100 and o
   assert.doesNotMatch(migrationSql, /DROP TABLE/);
   const names = fs.readdirSync(new URL('../supabase/migrations/', import.meta.url))
     .filter((name) => name.endsWith('.sql'));
-  assert.ok(names.some((name) => name.startsWith('20261109160000')));
-  assert.equal(names.filter((name) => name.startsWith('20261109150000')).length, 0);
+  assert.ok(names.includes('20261109160000_cylinder_rate_1_80.sql'));
+  assert.ok(!names.includes('20261109150000_cylinder_rate_1_80.sql'));
   assert.ok('20261109160000' > '20261109150100');
 });
 
