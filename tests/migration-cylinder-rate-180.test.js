@@ -5,7 +5,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { planCylinderRateMove } from '../src/utils/cylinderCost.js';
 
 const migrationSql = fs.readFileSync(
-  new URL('../supabase/migrations/20261109150000_cylinder_rate_1_80.sql', import.meta.url),
+  new URL('../supabase/migrations/20261109160000_cylinder_rate_1_80.sql', import.meta.url),
   'utf8'
 );
 
@@ -113,8 +113,7 @@ async function database() {
   return db;
 }
 
-test('the rate migration is later than 20261109140000 and only updates 1.6', () => {
-  assert.ok(migrationSql.includes('20261109150000') || true);
+test('the rate migration is later than production migration 20261109150100 and only updates 1.6', () => {
   assert.match(migrationSql, /ALTER COLUMN rate_per_sq_inch SET DEFAULT 1\.8/);
   assert.match(migrationSql, /cylinder_rate_backup_20261109/);
   assert.match(migrationSql, /rate_per_sq_inch = 1\.6/);
@@ -122,8 +121,9 @@ test('the rate migration is later than 20261109140000 and only updates 1.6', () 
   assert.doesNotMatch(migrationSql, /DROP TABLE/);
   const names = fs.readdirSync(new URL('../supabase/migrations/', import.meta.url))
     .filter((name) => name.endsWith('.sql'));
-  assert.ok(names.some((name) => name.startsWith('20261109150000')));
-  assert.ok('20261109150000' > '20261109140000');
+  assert.ok(names.some((name) => name.startsWith('20261109160000')));
+  assert.equal(names.filter((name) => name.startsWith('20261109150000')).length, 0);
+  assert.ok('20261109160000' > '20261109150100');
 });
 
 test('₹1.60 rows move to ₹1.80 and a second run changes nothing', async () => {

@@ -1,4 +1,4 @@
--- Restore cylinders moved from ₹1.60 to ₹1.80 by 20261109150000_cylinder_rate_1_80.
+-- Restore cylinders moved from ₹1.60 to ₹1.80 by 20261109160000_cylinder_rate_1_80.
 -- NOT a migration. Do not put this file in supabase/migrations.
 --
 -- The transaction ends in ROLLBACK. Change that last line to COMMIT only
