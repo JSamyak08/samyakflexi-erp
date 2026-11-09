@@ -7,6 +7,7 @@ import {
   expectedCylinderCosts,
   formatInrAmount,
   parseInrAmount,
+  planCylinderRateMove,
   reconcileCylinderCosts,
   storedEngravingRate
 } from '../src/utils/cylinderCost.js';
@@ -219,4 +220,48 @@ test('the default engraving rate is 1.80 per sq cm and a stored rate is not repl
   });
   assert.equal(importedDefault.rate, 1.8);
   assert.equal(importedDefault.costPerCylinder, 5782);
+});
+
+test('moving ₹1.60 rows recomputes formula prices and leaves an agreed price', () => {
+  const clean = planCylinderRateMove({
+    faceLengthMm: 730,
+    circumferenceMm: 440,
+    colorsCount: 7,
+    rate: 1.6,
+    cylinderCost: '₹ 35,973.00',
+    costPerCylinder: '₹ 5,139.00'
+  });
+  assert.equal(clean.action, 'recompute');
+  assert.equal(clean.rate, 1.8);
+  assert.equal(clean.costPerCylinderText, '₹ 5,782.00');
+  assert.equal(clean.cylinderCostText, '₹ 40,474.00');
+
+  const inflated = planCylinderRateMove({
+    ...SONU,
+    cylinderCost: '₹ 35,973.00',
+    costPerCylinder: '₹ 6,85,40,000.00'
+  });
+  assert.equal(inflated.action, 'recompute');
+  assert.equal(inflated.cylinderCostText, '₹ 40,474.00');
+  assert.equal(inflated.costPerCylinderText, '₹ 5,782.00');
+
+  const agreed = planCylinderRateMove({
+    faceLengthMm: 730,
+    circumferenceMm: 440,
+    colorsCount: 7,
+    rate: 1.6,
+    cylinderCost: '₹ 35,97,300.00',
+    costPerCylinder: '₹ 5,13,900.00'
+  });
+  assert.equal(agreed.action, 'keep_costs');
+  assert.equal(agreed.rate, 1.8);
+  assert.equal(agreed.needsReview, true);
+
+  assert.equal(planCylinderRateMove({
+    rate: 1.6,
+    cylinderCost: '₹ 28,500.00',
+    costPerCylinder: '₹ 4,750.00'
+  }).action, 'rate_only');
+  assert.equal(planCylinderRateMove({ rate: 2.1, faceLengthMm: 730, circumferenceMm: 440 }).action, 'untouched');
+  assert.equal(planCylinderRateMove({ rate: null, faceLengthMm: 730, circumferenceMm: 440 }).action, 'untouched');
 });

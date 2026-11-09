@@ -158,6 +158,61 @@ export function reconcileCylinderCosts(row = {}) {
   };
 }
 
+const OLD_DEFAULT_RATE = 1.6;
+const FORMULA_MATCH_TOLERANCE = 0.02;
+
+/**
+ * How a stored ₹1.60/sq cm row moves to ₹1.80.
+ * Rows at any other rate, including null, are untouched.
+ * Costs are recomputed only when a stored side matches the ₹1.60 area formula
+ * (so an inflated per-cylinder figure beside a correct set total is corrected)
+ * or when both cost fields are empty. A price that does not match that formula,
+ * such as an agreed amount far above it, keeps its cost text. The directory
+ * review flag then stays on when that price is still more than 20× the ₹1.80 formula.
+ * Missing face length or circumference changes the rate only.
+ */
+export function planCylinderRateMove(row = {}) {
+  const rate = storedEngravingRate(row.rate ?? row.ratePerSqInch ?? row.rate_per_sq_inch);
+  if (rate == null || Math.abs(rate - OLD_DEFAULT_RATE) > 1e-9) {
+    return { action: 'untouched' };
+  }
+  const colors = Math.max(1, parseInt(row.colorsCount ?? row.colors_count ?? row.numberOfCylinders, 10) || 1);
+  const dimensions = {
+    faceLengthMm: row.faceLengthMm ?? row.face_length_mm,
+    circumferenceMm: row.circumferenceMm ?? row.circumference_mm ?? row.repeatLengthMm,
+    colorsCount: colors
+  };
+  const atOldRate = expectedCylinderCosts({ ...dimensions, rate: OLD_DEFAULT_RATE });
+  const atNewRate = expectedCylinderCosts({ ...dimensions, rate: DEFAULT_CYLINDER_RATE_PER_SQ_CM });
+  if (atOldRate.areaSqCm == null) {
+    return { action: 'rate_only', rate: DEFAULT_CYLINDER_RATE_PER_SQ_CM };
+  }
+  const per = parseInrAmount(row.costPerCylinder ?? row.cost_per_cylinder);
+  const total = parseInrAmount(row.cylinderCost ?? row.cylinder_cost);
+  const totalMatches = total != null && relativeGap(total, atOldRate.totalSetCost) <= FORMULA_MATCH_TOLERANCE;
+  const perMatches = per != null && relativeGap(per, atOldRate.costPerCylinder) <= FORMULA_MATCH_TOLERANCE;
+  if ((per == null && total == null) || totalMatches || perMatches) {
+    return {
+      action: 'recompute',
+      rate: DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+      costPerCylinder: atNewRate.costPerCylinder,
+      totalSetCost: atNewRate.totalSetCost,
+      costPerCylinderText: formatInrAmount(atNewRate.costPerCylinder),
+      cylinderCostText: formatInrAmount(atNewRate.totalSetCost)
+    };
+  }
+  const agrees = per != null && total != null && relativeGap(per * colors, total) <= 0.05;
+  return {
+    action: 'keep_costs',
+    rate: DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+    needsReview: Boolean(
+      atNewRate.costPerCylinder
+      && agrees
+      && relativeGap(per, atNewRate.costPerCylinder) > 20
+    )
+  };
+}
+
 export function withReconciledCosts(row) {
   if (!row || typeof row !== 'object') return row;
   const costs = reconcileCylinderCosts(row);
