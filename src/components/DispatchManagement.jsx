@@ -51,6 +51,7 @@ import {
   PACKING_STATUS_OPEN
 } from '../utils/dispatchPacking';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from '../utils/finishedGoods';
 import { getCompanyProfile } from '../services/companyProfile';
 import { supabase } from '../services/supabaseClient';
 import { fetchMaterialTemplates, saveMaterialTemplate, deleteMaterialTemplate, describeSaveError } from '../services/businessRecords';
@@ -241,13 +242,8 @@ export default function DispatchManagement({
     return (sfgGoods || []).filter(item => {
       const jobMatch = (item.jobName && item.jobName.trim().toLowerCase() === cleanJob) ||
                        (orderId && String(item.orderId) === String(orderId));
-      const isFG = item.rollType === 'FG' || 
-                   (item.sfgType && item.sfgType.includes('Finished')) ||
-                   (item.category && item.category.includes('Finished')) ||
-                   (item.sfgBatchCode && item.sfgBatchCode.startsWith('FG-')) ||
-                   (item.id && String(item.id).startsWith('FG-'));
-      const hasAvail = Number(item.availableKg) > 0.01;
-      return jobMatch && isFG && hasAvail;
+      const hasAvail = Number(item.availableKg) > DISPATCH_READY_DUST_KG;
+      return jobMatch && isFinishedGoodsStock(item) && hasAvail;
     });
   }, [sfgGoods, pktJobName, orders]);
 
@@ -1453,6 +1449,7 @@ export default function DispatchManagement({
     const nextRollNo = pktRollsList.length + 1;
 
     if (directFgItem) {
+      if (!isFinishedGoodsStock(directFgItem)) return;
       const netW = Number(directFgItem.availableKg ?? directFgItem.totalNetKg) || 0;
       const tareW = Number(directFgItem.tareWeightKg) || Number(pktCoreWeight) || 0;
       const grossW = Number(directFgItem.totalGrossKg) || Number((netW + tareW).toFixed(2));
@@ -1487,6 +1484,10 @@ export default function DispatchManagement({
     const tareW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 0;
     const grossW = Number((netW + tareW).toFixed(2));
     const sourceFg = selectedFgRollForWeighing;
+    if (sourceFg && !isFinishedGoodsStock(sourceFg)) {
+      alert('Only finished goods can be added to a dispatch. SFG and WIP stay in the SFG store.');
+      return;
+    }
 
     const newRollItem = {
       rollNo: nextRollNo,
@@ -1517,6 +1518,7 @@ export default function DispatchManagement({
   };
 
   const handleLoadFgToScale4 = (fg) => {
+    if (!isFinishedGoodsStock(fg)) return;
     setSelectedFgRollForWeighing(fg);
     setCurrentPktNetWeight(Number(fg.availableKg ?? fg.totalNetKg) || 0);
     if (fg.tareWeightKg) setPktCoreWeight(Number(fg.tareWeightKg));

@@ -10,6 +10,7 @@
  */
 
 import { isReusablePrintedLot } from './printingSfgLot.js';
+import { isFinishedGoodsStock } from './finishedGoods.js';
 import { rawRoleNames } from '../assignedRoles.js';
 
 export const ORDER_CLOSE_TOLERANCE_PCT = 10;
@@ -109,9 +110,7 @@ export function dispatchedKgForOrder(order, challans = [], shipments = []) {
 }
 
 function isFgLot(item) {
-  const type = String(item?.sfgType || item?.category || '');
-  const code = String(item?.sfgBatchCode || item?.barcodeId || '');
-  return item?.rollType === 'FG' || /finish/i.test(type) || code.startsWith('FG-');
+  return isFinishedGoodsStock(item);
 }
 
 function availableKg(item) {

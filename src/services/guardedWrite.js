@@ -5,7 +5,8 @@
  */
 
 import { describeSaveError } from './businessRecords.js';
-import { codeStartsWith, codeText, firstCodeValue } from '../utils/barcodeCode.js';
+import { codeText, firstCodeValue } from '../utils/barcodeCode.js';
+import { isFinishedGoodsStock } from '../utils/finishedGoods.js';
 
 export class PartialSaveError extends Error {
   constructor(message, details = {}) {
@@ -134,10 +135,7 @@ function deductSfg(current, shipment, weightKg) {
 }
 
 function isFinishedGood(row) {
-  return row.rollType === 'FG'
-    || (row.sfgType || '').includes('Finished')
-    || (row.category || '').includes('Finished')
-    || codeStartsWith(row.sfgBatchCode, 'FG-');
+  return isFinishedGoodsStock(row);
 }
 
 /**
@@ -166,6 +164,7 @@ export function planDispatchSfgDeductions(sfgGoods, shipment) {
       || (targetBarcode && (row.sfgBatchCode === targetBarcode || row.id === targetBarcode))
     ));
     if (foundIdx < 0) continue;
+    if (!isFinishedGood(working[foundIdx])) continue;
 
     const after = deductSfg(working[foundIdx], shipment, itemNetKg);
     working[foundIdx] = after;
@@ -203,10 +202,10 @@ export function planDispatchSfgDeductions(sfgGoods, shipment) {
 }
 
 function isInventoryFinishedGood(row) {
-  return row.rollType === 'FINISHED_GOODS'
-    || row.rollType === 'FG'
-    || (row.sfgType || '').includes('Finished')
-    || codeStartsWith(row.barcodeId, 'FG-');
+  return isFinishedGoodsStock({
+    ...row,
+    sfgBatchCode: row.sfgBatchCode || row.barcodeId
+  });
 }
 
 /**
@@ -231,6 +230,7 @@ export function planDispatchRollDeductions(rolls, shipment) {
     ));
 
     if (itemMatch) {
+      if (!isInventoryFinishedGood(roll)) return;
       const weightKg = Number(itemMatch.netWeightKg) || 0;
       const prevDispatched = Number(roll.dispatchedKg) || 0;
       const newDispatched = round2(prevDispatched + weightKg);

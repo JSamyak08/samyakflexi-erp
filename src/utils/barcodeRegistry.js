@@ -6,6 +6,7 @@
  */
 
 import { codeKey, codeText } from './barcodeCode.js';
+import { isFinishedGoodsStock } from './finishedGoods.js';
 import { legacyScrapBarcode } from './scrapIdentity.js';
 
 export const BARCODE_SOURCE = {
@@ -80,8 +81,7 @@ function sourceForSfg(item, code) {
   if (plain(item?.parentSfgBatchCode, item?.parentBarcode)) return BARCODE_SOURCE.child;
   if (/^FG-DISP-/i.test(code)) return BARCODE_SOURCE.dispatch;
   if (/^(SFG|FG)-/i.test(code) && /-R\d+$/i.test(code)) return BARCODE_SOURCE.child;
-  const kind = `${plain(item?.sfgType)} ${plain(item?.rollType)} ${plain(item?.category)}`;
-  if (/^FG-/i.test(code) || /finish/i.test(kind) || plain(item?.rollType).toUpperCase() === 'FG') {
+  if (isFinishedGoodsStock({ ...item, sfgBatchCode: code })) {
     return BARCODE_SOURCE.fg;
   }
   return BARCODE_SOURCE.sfg;

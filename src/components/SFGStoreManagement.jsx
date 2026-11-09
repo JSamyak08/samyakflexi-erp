@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { displayPartyName } from '../utils/textHelpers';
 import { loggedInActorLabel } from '../utils/recordedPerson';
 import { isDispatchPacking } from '../utils/dispatchPacking';
+import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import {
   NO_MACHINE_FOR_PROCESS_HINT,
   defaultMachineForProcess,
@@ -2160,16 +2161,7 @@ export default function SFGStoreManagement({
                             statusBorder = '#cbd5e1';
                           }
 
-                          const sType = String(item.sfgType || '').toLowerCase();
-                          const cType = String(item.category || '').toLowerCase();
-                          const isFgType = (
-                            (sType.includes('finished') && !sType.includes('semi')) ||
-                            (sType.includes('fg') && !sType.includes('sfg')) ||
-                            sType.includes('slit') ||
-                            sType.includes('pouch') ||
-                            (cType.includes('finished') && !cType.includes('semi')) ||
-                            item.mode === 'FG'
-                          );
+                          const isFgType = isFinishedGoodsStock(item);
 
                           return (
                             <tr key={item.id || item.sfgBatchCode} data-testid="sfg-order-roll" style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>

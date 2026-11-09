@@ -192,6 +192,7 @@ import {
 } from './services/guardedWrite';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
 import { buildChildStockRecords, saveConsumeChildRolls } from './services/consumeChildRolls';
+import { isFinishedGoodsStock } from './utils/finishedGoods';
 import { planJobWastage } from './utils/jobWastage';
 import {
   PRINTING_FILM_SOURCE,
@@ -4095,7 +4096,7 @@ export default function App() {
             availableKg: 0
           };
         }
-        if ((or.rollType === 'FG' || (or.stage || '').includes('Slitting') || (or.stage || '').includes('Pouching')) && or.status !== 'Dispatched' && remDispatchForRolls > 0) {
+        if (isFinishedGoodsStock(or) && or.status !== 'Dispatched' && remDispatchForRolls > 0) {
           const rNet = Number(or.netWeightKg) || 0;
           if (remDispatchForRolls >= rNet - 0.1) {
             remDispatchForRolls -= rNet;

@@ -39,6 +39,7 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap } from '../factoryStore';
+import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
 import {
@@ -55,7 +56,7 @@ import { supabase } from '../services/supabaseClient';
 import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
 import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
-import { codeStartsWith, codesEqual } from '../utils/barcodeCode';
+import { codesEqual } from '../utils/barcodeCode';
 import MeasureRangeHint from './MeasureRangeHint';
 import RollLineageSummary from './RollLineageSummary';
 import {
@@ -180,7 +181,13 @@ function RollWiseInputOutputMasterRolls({
     if (netKg <= 0 && grossKg <= 0) return;
 
     if (!rollMap.has(barcode)) {
-      const isFg = rType.includes('finish') || rType === 'fg' || barcode.startsWith('FG-');
+      const isFg = isFinishedGoodsStock({
+        rollType: r.rollType || r.roll_type,
+        sfgType: r.sfgType || r.sfg_type,
+        category: r.category,
+        sfgBatchCode: barcode,
+        barcodeId: barcode
+      });
       const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || '';
       const micron = finiteNumber(r.micron ?? effectiveOrder?.micron);
       const widthMm = finiteNumber(r.widthMm ?? r.width_mm ?? effectiveOrder?.printWidthMm ?? effectiveOrder?.widthMm);
@@ -3130,7 +3137,7 @@ export default function ProductionRecordManagement({
                         {outputRolls.map((r, idx) => {
                           const netW = parseFloat(r.netWeightKg || r.weightKg) || 0;
                           const lengthM = parseFloat(r.lengthMeters) || 0;
-                          const isFG = r.rollType === 'FG' || (r.stage || '').includes('Slitting') || (r.stage || '').includes('Pouching') || codeStartsWith(r.barcodeId, 'FG-');
+                          const isFG = isFinishedGoodsStock(r);
                           return (
                             <tr key={idx}>
                               <td style={{ fontWeight: '700' }}>Roll #{r.rollNo || r.unitNo || (idx + 1)}</td>

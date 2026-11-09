@@ -13,6 +13,7 @@ import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '..
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
 import { mapInkMasterToRow, mapInkRowToMaster, readHsnCode } from '../utils/inkHsn';
+import { isFinishedGoodsStock } from '../utils/finishedGoods';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -3666,7 +3667,12 @@ export async function fetchSFGGoodsFromSupabase() {
         computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
       }
 
-      const isFg = item.sfg_type?.includes('Finished') || extra.rollType === 'FG' || extra.category?.includes('Finished') || (item.sfg_batch_code || '').startsWith('FG-');
+      const isFg = isFinishedGoodsStock({
+        sfgType: item.sfg_type || extra.sfgType,
+        category: extra.category,
+        rollType: extra.rollType,
+        sfgBatchCode: item.sfg_batch_code || extra.sfgBatchCode
+      });
 
       return {
         id: String(item.id),
@@ -3745,9 +3751,12 @@ export function buildSfgNotesEnvelope(item, overrides = {}) {
       computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
     }
   }
-  const isFg = overrides.isFg ?? (
-    item?.sfgType?.includes('Finished') || item?.rollType === 'FG' || item?.category?.includes('Finished') || String(sfgBatchCode).startsWith('FG-')
-  );
+  const isFg = overrides.isFg ?? isFinishedGoodsStock({
+    sfgType: item?.sfgType,
+    category: item?.category,
+    rollType: item?.rollType,
+    sfgBatchCode
+  });
   const notesBody = {
     sfgBatchCode,
     sfgType: item?.sfgType || (isFg ? 'Finished Goods (FG)' : 'Printed Rolls'),
@@ -3819,7 +3828,12 @@ export async function saveSFGGoodToSupabase(item) {
     computedStatus = availableKg <= 0 ? 'Fully Consumed' : 'Partially Consumed';
   }
 
-  const isFg = item.sfgType?.includes('Finished') || item.rollType === 'FG' || item.category?.includes('Finished') || sfgBatchCode.startsWith('FG-');
+  const isFg = isFinishedGoodsStock({
+    sfgType: item.sfgType,
+    category: item.category,
+    rollType: item.rollType,
+    sfgBatchCode
+  });
 
   const notesEnvelope = buildSfgNotesEnvelope(item, {
     sfgBatchCode,
