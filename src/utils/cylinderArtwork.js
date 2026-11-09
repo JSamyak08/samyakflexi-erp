@@ -54,19 +54,40 @@ function ownTokens(row) {
     .filter((token) => token && token.length >= 3);
 }
 
-export function artworkOwnedByRow(url, row) {
+function rowSku(row) {
+  return String(row?.sku || row?.skuCode || row?.sku_code || row?.cylinderSku || '').trim().toUpperCase();
+}
+
+/**
+ * A stored link is shown for the row that holds it.
+ * It is rejected only when the filename clearly names another cylinder:
+ * a different SKU-CYL code, or an embedded name that matches a different job
+ * and does not match this row. A legacy file with no SKU stays visible.
+ */
+export function artworkClearlyForeign(url, row, siblings = []) {
   if (!url || !row) return false;
   const skus = skuTokensInUrl(url);
-  const ownSku = String(row.sku || row.skuCode || row.sku_code || row.cylinderSku || '').trim().toUpperCase();
-  if (skus.length > 0) return Boolean(ownSku) && skus.every((token) => token === ownSku);
+  const ownSku = rowSku(row);
+  if (skus.length > 0) return !ownSku || skus.some((token) => token !== ownSku);
 
   const embedded = embeddedArtworkToken(url);
-  if (!embedded || embedded.length < 3) return true;
-  return ownTokens(row).some((token) => {
-    if (token === embedded) return true;
-    if (embedded.length < 8 || token.length < 8) return false;
-    return token.startsWith(embedded) || embedded.startsWith(token);
+  if (!embedded || embedded.length < 8) return false;
+  const matches = (candidate) => ownTokens(candidate).some((token) => {
+    if (token.length < 8) return false;
+    return token === embedded || token.startsWith(embedded) || embedded.startsWith(token);
   });
+  if (matches(row)) return false;
+  return (siblings || []).some((other) => {
+    if (!other || other === row) return false;
+    if (row.id != null && other.id != null && String(other.id) === String(row.id)) return false;
+    if (sameJob(row, other)) return false;
+    return matches(other);
+  });
+}
+
+export function artworkOwnedByRow(url, row) {
+  if (!url || !row) return false;
+  return !artworkClearlyForeign(url, row, []);
 }
 
 function sameJob(left, right) {
@@ -78,27 +99,16 @@ function sameJob(left, right) {
   return Boolean(name) && name === otherName;
 }
 
-function filenameClaims(url, row) {
-  return artworkOwnedByRow(url, row) && (skuTokensInUrl(url).length > 0 || Boolean(embeddedArtworkToken(url)));
-}
-
 /**
  * URL to render for this row. An empty string is the no-artwork placeholder.
- * A file shared with a different job is shown only when its name identifies this row.
+ * The row's own stored link is used. A file is dropped only when its name
+ * clearly belongs to a different SKU or a different known job.
  */
 export function displayArtworkUrl(row, siblings = []) {
   const urls = artworkUrlsOf(row);
   for (let index = 0; index < urls.length; index += 1) {
     const url = urls[index];
-    if (!artworkOwnedByRow(url, row)) continue;
-    const sharedWithOtherJob = (siblings || []).some((other) => {
-      if (!other || other === row) return false;
-      if (row.id != null && other.id != null && String(other.id) === String(row.id)) return false;
-      if (sameJob(row, other)) return false;
-      return artworkUrlsOf(other).some((otherUrl) => sameArtworkUrl(otherUrl, url));
-    });
-    if (sharedWithOtherJob && !filenameClaims(url, row)) continue;
-    return url;
+    if (!artworkClearlyForeign(url, row, siblings)) return url;
   }
   return '';
 }

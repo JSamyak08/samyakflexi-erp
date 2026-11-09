@@ -82,26 +82,15 @@ function relativeGap(actual, expected) {
 }
 
 /**
- * Undo a repeated ".00" strip. Each bad save multiplies by 100.
- * Returns the stored amount divided back down when a step lands near `anchor`,
- * so a manual price that is not exactly the formula is preserved.
- */
-export function unfoldHundredFold(actual, anchor) {
-  if (actual == null || anchor == null || anchor === 0) return null;
-  let value = actual;
-  for (let step = 0; step < 6; step += 1) {
-    if (Math.abs(value) <= Math.abs(anchor) * 50) return null;
-    value /= 100;
-    if (relativeGap(value, anchor) <= 0.2) return value;
-  }
-  return null;
-}
-
-/**
- * Prefer a stored amount when it agrees with the other stored amount and with
- * the engraving formula. Replace a figure that was inflated by decimal stripping
- * or that is orders of magnitude away from the set total.
- * Does not invent a cost when nothing was stored.
+ * Stored text is trusted when the per-cylinder amount and the set total agree.
+ * A large agreed price is left alone: it might be a real commercial rate, and
+ * dividing by 100 would silently destroy it. The SQL check lists those rows
+ * for review (`needsReview`).
+ *
+ * The one silent fix is unambiguous. One stored side already matches the
+ * engraving formula and the other side contradicts it, as with a set total of
+ * ₹35,973 and a per-cylinder string of ₹6,85,40,000. The contradicting side
+ * becomes the agreed side (total / colours, or per × colours).
  */
 export function reconcileCylinderCosts(row = {}) {
   const colors = Math.max(1, parseInt(row.colorsCount ?? row.numberOfCylinders, 10) || 1);
@@ -116,43 +105,25 @@ export function reconcileCylinderCosts(row = {}) {
   const storedPer = per;
   const storedTotal = total;
 
-  const unfoldedPer = unfoldHundredFold(per, expected.costPerCylinder);
-  const unfoldedTotal = unfoldHundredFold(total, expected.totalSetCost);
-  if (unfoldedPer != null) per = unfoldedPer;
-  if (unfoldedTotal != null) total = unfoldedTotal;
+  const totalMatchesFormula = expected.totalSetCost != null && total != null && relativeGap(total, expected.totalSetCost) <= 0.02;
+  const perMatchesFormula = expected.costPerCylinder != null && per != null && relativeGap(per, expected.costPerCylinder) <= 0.02;
 
-  const totalMatchesFormula = expected.totalSetCost != null && relativeGap(total, expected.totalSetCost) <= 0.02;
-  const perMatchesFormula = expected.costPerCylinder != null && relativeGap(per, expected.costPerCylinder) <= 0.02;
-  const pairAgrees = per != null && total != null && relativeGap(per * colors, total) <= 0.05;
-
-  if (totalMatchesFormula && (per == null || relativeGap(per, total / colors) > 0.02)) {
+  if (totalMatchesFormula && per != null && relativeGap(per, total / colors) > 0.02) {
     per = Math.round(total / colors);
-  } else if (perMatchesFormula && (total == null || relativeGap(per * colors, total) > 0.02)) {
-    total = per * colors;
-  } else if (per != null && total != null && !pairAgrees) {
-    if (totalMatchesFormula) per = Math.round(total / colors);
-    else if (perMatchesFormula) total = per * colors;
-    else if (expected.costPerCylinder != null) {
-      if (relativeGap(per, expected.costPerCylinder) > 20) per = expected.costPerCylinder;
-      if (expected.totalSetCost != null && relativeGap(total, expected.totalSetCost) > 20) total = expected.totalSetCost;
-    }
+  } else if (perMatchesFormula && total != null && relativeGap(per * colors, total) > 0.02) {
+    total = Math.round(per * colors);
   } else if (per != null && total == null) {
-    const wild = expected.costPerCylinder != null && relativeGap(per, expected.costPerCylinder) > 20;
-    if (wild) {
-      per = expected.costPerCylinder;
-      total = expected.totalSetCost;
-    } else {
-      total = per * colors;
-    }
+    total = Math.round(per * colors);
   } else if (total != null && per == null) {
-    const wild = expected.totalSetCost != null && relativeGap(total, expected.totalSetCost) > 20;
-    if (wild && expected.costPerCylinder != null) {
-      per = expected.costPerCylinder;
-      total = expected.totalSetCost;
-    } else {
-      per = Math.round(total / colors);
-    }
+    per = Math.round(total / colors);
   }
+
+  const shownAgrees = per != null && total != null && relativeGap(per * colors, total) <= 0.05;
+  const needsReview = Boolean(
+    expected.costPerCylinder
+    && shownAgrees
+    && relativeGap(per, expected.costPerCylinder) > 20
+  );
 
   const perChanged = storedPer == null ? per != null : per == null || relativeGap(per, storedPer) > 0.001;
   const totalChanged = storedTotal == null ? total != null : total == null || relativeGap(total, storedTotal) > 0.001;
@@ -167,6 +138,7 @@ export function reconcileCylinderCosts(row = {}) {
     cylinderCostText: total == null ? '' : formatInrAmount(total),
     perCorrected: perChanged && storedPer != null,
     totalCorrected: totalChanged && storedTotal != null,
+    needsReview,
     storedPer,
     storedTotal
   };

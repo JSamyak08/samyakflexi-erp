@@ -37,7 +37,7 @@ import {
 } from '../utils/printRunConflict';
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
-import { artworkOwnedByRow } from '../utils/cylinderArtwork';
+import { displayArtworkUrl } from '../utils/cylinderArtwork';
 import { 
   Printer, 
   Play,
@@ -499,15 +499,13 @@ export default function ProductionScheduler({
 
       // Artwork stays with the order, then a job master or cylinder whose file names that job.
       const orderArtwork = order.artworkUrl || order.jobDetails?.artworkUrl || '';
-      const masterArtwork = [matchedJM?.artworkUrl, matchedJM?.cylinderData?.artworkUrl]
-        .find(url => url && artworkOwnedByRow(url, {
-          sku: order.skuCode || order.jobCode || matchedJM?.skuCode,
-          jobName: order.jobName || matchedJM?.jobName,
-          id: matchedJM?.id
-        })) || '';
-      const cylinderArtwork = matchedCylinder?.artworkUrl && artworkOwnedByRow(matchedCylinder.artworkUrl, matchedCylinder)
-        ? matchedCylinder.artworkUrl
-        : '';
+      const masterRow = matchedJM ? {
+        ...matchedJM,
+        sku: matchedJM.skuCode || order.skuCode || order.jobCode,
+        jobName: matchedJM.jobName || order.jobName
+      } : null;
+      const masterArtwork = displayArtworkUrl(masterRow, cylinders);
+      const cylinderArtwork = displayArtworkUrl(matchedCylinder, cylinders);
       const artworkUrl = orderArtwork || masterArtwork || cylinderArtwork || '';
 
       // Colors resolution linked to Job Master / Cylinder / Order

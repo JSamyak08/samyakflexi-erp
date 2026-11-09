@@ -13,12 +13,12 @@
 -- and only on a database you intend to correct. Running the file as-is prints
 -- the proposal and leaves every row unchanged.
 --
--- A row is corrected when the stored per-cylinder amount or set total is more
--- than 20x the geometric cost, or the per-cylinder amount disagrees with the
--- set total. Geometry is (face mm x circumference mm) / 100 cm², times a rate
--- that is kept only when it is between ₹0.20 and ₹50 per cm² (otherwise ₹1.60).
--- When the set total already matches that geometry, the per-cylinder amount
--- becomes total / colours. Otherwise both amounts are rewritten from geometry.
+-- A row is corrected only when one stored side already matches the geometric
+-- cost and the other side contradicts it. A large per-cylinder amount that
+-- still agrees with the set total is left alone (it may be a real price) and
+-- is only listed by the read-only check.
+-- Geometry is (face mm x circumference mm) / 100 cm², times a rate that is
+-- kept only when it is between ₹0.20 and ₹50 per cm² (otherwise ₹1.60).
 -- Text is stored as a plain rupee amount. The app formats Indian grouping on read.
 
 BEGIN;
@@ -83,9 +83,18 @@ proposed AS (
   FROM expected
   WHERE area_sq_cm IS NOT NULL
     AND (
-      (per_num IS NOT NULL AND expected_per IS NOT NULL AND per_num > expected_per * 20)
-      OR (total_num IS NOT NULL AND expected_total IS NOT NULL AND total_num > expected_total * 20)
-      OR (total_num > 0 AND per_num IS NOT NULL AND abs(per_num * colors - total_num) / total_num > 0.5)
+      (
+        total_num IS NOT NULL AND expected_total IS NOT NULL
+        AND abs(total_num - expected_total) / NULLIF(expected_total, 0) <= 0.02
+        AND per_num IS NOT NULL
+        AND abs(per_num * colors - total_num) / NULLIF(total_num, 0) > 0.02
+      )
+      OR (
+        per_num IS NOT NULL AND expected_per IS NOT NULL
+        AND abs(per_num - expected_per) / NULLIF(expected_per, 0) <= 0.02
+        AND total_num IS NOT NULL
+        AND abs(per_num * colors - total_num) / NULLIF(GREATEST(total_num, 1), 0) > 0.02
+      )
     )
 )
 SELECT

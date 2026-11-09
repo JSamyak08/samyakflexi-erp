@@ -123,7 +123,6 @@ export default function CylinderManagement({
   const userRole = rawRoleNames(currentUser).join(', ');
   const canEditCylinders = userHasAnyRole(currentUser, EDIT_ROLES);
   const isAdminOrPlantManager = canEditCylinders;
-  const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -1049,7 +1048,7 @@ export default function CylinderManagement({
               <Layers size={22} style={{ color: 'var(--primary-brand)' }} /> Rotogravure Cylinder Database & Utilisation Tracking
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Automated Cylinder Surface Area {isAdmin ? '& Cost Calculation' : 'Tracking'}, CSV Bulk Upload, Job Locking Control, and Audit Changelogs.
+              Automated Cylinder Surface Area {canEditCylinders ? '& Cost Calculation' : 'Tracking'}, CSV Bulk Upload, Job Locking Control, and Audit Changelogs.
             </p>
           </div>
 
@@ -1128,8 +1127,8 @@ export default function CylinderManagement({
                 <th>Job Name & Colors</th>
                 <th>Dimensions & Area</th>
                 <th>Client Group</th>
-                <th>{isAdmin ? 'Cost & Engraver' : 'Engraver'}</th>
-                {isAdmin && <th>Cost Borne By</th>}
+                <th>{canEditCylinders ? 'Cost & Engraver' : 'Engraver'}</th>
+                {canEditCylinders && <th>Cost Borne By</th>}
                 <th>Wear Utilisation</th>
                 <th>Lock & Status</th>
                 <th>Assigned Press</th>
@@ -1262,7 +1261,7 @@ export default function CylinderManagement({
                       </td>
 
                       <td>
-                        {isAdmin && (
+                        {canEditCylinders && (
                           <>
                             <div style={{ fontWeight: '700', color: '#0f172a' }}>{costs.cylinderCostText || c.cylinderCost}</div>
                             {(costs.costPerCylinderText || c.costPerCylinder) && (
@@ -1270,12 +1269,15 @@ export default function CylinderManagement({
                                 ({costs.costPerCylinderText || c.costPerCylinder} / cyl)
                               </div>
                             )}
+                            {costs.needsReview && (
+                              <div style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '700' }}>Review: above area formula</div>
+                            )}
                           </>
                         )}
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{c.engravuresName}</div>
                       </td>
 
-                      {isAdmin && (
+                      {canEditCylinders && (
                         <td>
                           <span className={`badge badge-${c.costBorneType || 'client'}`}>{c.costBorneBy || 'Client (100%)'}</span>
                         </td>
@@ -1707,13 +1709,13 @@ export default function CylinderManagement({
                   <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> 2. Engraving & Commercial Costing
                 </h4>
 
-                <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: '14px', marginBottom: isAdmin ? '14px' : '0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: canEditCylinders ? '1fr 1fr' : '1fr', gap: '14px', marginBottom: canEditCylinders ? '14px' : '0' }}>
                   <div className="form-group">
                     <label>Engraver Name</label>
                     <input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} />
                   </div>
 
-                  {isAdmin && (
+                  {canEditCylinders && (
                     <div className="form-group">
                       <label>Cost Borne By</label>
                       <SearchableSelect className="form-control" value={costBorneBy} onChange={e => {
@@ -1730,7 +1732,7 @@ export default function CylinderManagement({
                   )}
                 </div>
 
-                {isAdmin && (
+                {canEditCylinders && (
                   <div style={{ background: '#f8fafc', padding: '14px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <span style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>

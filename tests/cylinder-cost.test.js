@@ -6,8 +6,7 @@ import {
   expectedCylinderCosts,
   formatInrAmount,
   parseInrAmount,
-  reconcileCylinderCosts,
-  unfoldHundredFold
+  reconcileCylinderCosts
 } from '../src/utils/cylinderCost.js';
 
 const SONU = {
@@ -83,12 +82,8 @@ test('a consistent per-cylinder price is kept when it matches the set total', ()
   assert.equal(costs.totalCorrected, false);
 });
 
-test('decimal stripping is undone without wiping a nearby manual price', () => {
-  assert.equal(unfoldHundredFold(513900, 5139), 5139);
-  assert.equal(unfoldHundredFold(600000, 5139), 6000);
-  assert.equal(unfoldHundredFold(68540000, 5139), null);
-
-  const inflatedManual = reconcileCylinderCosts({
+test('an agreed high price is flagged and not divided back down', () => {
+  const agreedHigh = reconcileCylinderCosts({
     faceLengthMm: 730,
     circumferenceMm: 440,
     colorsCount: 7,
@@ -96,10 +91,13 @@ test('decimal stripping is undone without wiping a nearby manual price', () => {
     cylinderCost: '₹ 42,00,000.00',
     costPerCylinder: '₹ 6,00,000.00'
   });
-  assert.equal(inflatedManual.costPerCylinder, 6000);
-  assert.equal(inflatedManual.totalSetCost, 42000);
+  assert.equal(agreedHigh.costPerCylinder, 600000);
+  assert.equal(agreedHigh.totalSetCost, 4200000);
+  assert.equal(agreedHigh.perCorrected, false);
+  assert.equal(agreedHigh.totalCorrected, false);
+  assert.equal(agreedHigh.needsReview, true);
 
-  const openedTwice = reconcileCylinderCosts({
+  const bothInflatedTogether = reconcileCylinderCosts({
     faceLengthMm: 730,
     circumferenceMm: 440,
     colorsCount: 7,
@@ -107,8 +105,9 @@ test('decimal stripping is undone without wiping a nearby manual price', () => {
     cylinderCost: formatInrAmount(3597300),
     costPerCylinder: formatInrAmount(513900)
   });
-  assert.equal(openedTwice.costPerCylinder, 5139);
-  assert.equal(openedTwice.totalSetCost, 35973);
+  assert.equal(bothInflatedTogether.costPerCylinder, 513900);
+  assert.equal(bothInflatedTogether.totalSetCost, 3597300);
+  assert.equal(bothInflatedTogether.needsReview, true);
 });
 
 test('blank costs stay blank instead of being invented', () => {

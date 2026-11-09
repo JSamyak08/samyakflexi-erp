@@ -27,13 +27,21 @@ test('a file shared by two different jobs is not shown on the job it does not na
   assert.equal(displayArtworkUrl(copy, rows), '');
 });
 
-test('a legacy file with no identity is shown only when no other job uses it', () => {
-  const shared = 'https://cdn.example.com/artwork/proof.jpg';
-  const a = { id: 'a', sku: 'SKU-CYL-1', jobName: 'Alpha', artworkUrl: shared };
-  const b = { id: 'b', sku: 'SKU-CYL-2', jobName: 'Beta', artworkUrl: shared };
-  assert.equal(displayArtworkUrl(a, [a]), shared);
-  assert.equal(displayArtworkUrl(a, [a, b]), '');
-  assert.equal(displayArtworkUrl(b, [a, b]), '');
+test('a legacy file with no SKU still displays, including when another job stores the same link', () => {
+  const shared = 'https://cdn.example.com/artwork/legacy_proof.jpg';
+  const timed = 'https://cdn.example.com/artwork/legacy_pickle_proof_1710000000000.jpg';
+  const a = { id: 'a', sku: 'SKU-CYL-902', jobName: 'Shared Brand Pickle', artworkUrl: shared };
+  const b = { id: 'b', sku: 'SKU-CYL-903', jobName: 'Shared Brand Pickle', artworkUrl: timed };
+  assert.equal(displayArtworkUrl(a, [a, b]), shared);
+  assert.equal(displayArtworkUrl(b, [a, b]), timed);
+});
+
+test('a filename that names a different known job is hidden', () => {
+  const named = 'https://cdn.example.com/artwork/Prime_Corn_On_The_Cob_1710000000000.jpg';
+  const owner = { id: 'corn', sku: 'SKU-CYL-513', jobName: 'Prime Corn On The Cob', artworkUrl: named };
+  const other = { id: 'sonu', sku: 'SKU-CYL-518', jobName: 'Sonu gold mango mirchi', artworkUrl: named };
+  assert.equal(displayArtworkUrl(owner, [owner, other]), named);
+  assert.equal(displayArtworkUrl(other, [owner, other]), '');
 });
 
 test('an upload named for this job is shown, and a missing file stays a placeholder', () => {
