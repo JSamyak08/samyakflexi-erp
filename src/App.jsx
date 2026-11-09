@@ -5,6 +5,7 @@ import {
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
   applyBarcodePermissionDefaults,
+  applyOperatorSfgViewBoundary,
   applyPrintRunAnalyticsDefaults,
   isOrderOverdue,
   isOrderNearingDeadline,
@@ -1455,7 +1456,7 @@ export default function App() {
         if (loadedMatrix && typeof loadedMatrix === 'object' && !Array.isArray(loadedMatrix) && Object.keys(loadedMatrix).length > 0) {
           accessMatrix = loadedMatrix;
         }
-        accessMatrix = applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(accessMatrix));
+        accessMatrix = applyOperatorSfgViewBoundary(applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(accessMatrix)));
         setRolePermissions(accessMatrix);
         safeLocalStorageSet('samyak_cache_role_permissions', accessMatrix);
         const allow = (moduleKey) => roleHasModule(accessMatrix, roleNames, moduleKey);

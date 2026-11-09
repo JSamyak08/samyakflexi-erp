@@ -1,3 +1,5 @@
+import { SFG_VIEW_ONLY_ROLES } from './sfgStoreAccess.js';
+
 /**
  * Which boot reads and browser caches a signed-in role may keep.
  * A user may have several plant roles. Access is the union of those roles.
@@ -46,6 +48,10 @@ export function roleCanEditSfgStore(matrix, roleOrUser) {
   const roles = namesOf(roleOrUser);
   if (roles.includes('Admin')) return true;
   return roles.some((role) => {
+    // These two roles open the store to look up rolls and print tags.
+    // Their own row never grants a store edit, even when sfg_store is true
+    // or Inventory and the Printing Scheduler are full write.
+    if (SFG_VIEW_ONLY_ROLES.includes(role)) return false;
     const permissions = matrix?.[role];
     if (!permissions) return false;
     if (permissions.sfg_store === true) return true;

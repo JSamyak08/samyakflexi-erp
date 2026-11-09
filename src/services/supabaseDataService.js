@@ -38,6 +38,7 @@ import {
   FILM_DENSITIES,
   parseStandardDate,
   applyAuditLogBoundary,
+  applyOperatorSfgViewBoundary,
   applyPrintRunAnalyticsBoundary
 } from '../factoryStore';
 import { buildEmployeeAttendanceRow, factoryCalendarDate, mapEmployeeAttendanceRow } from './employeeAttendance';
@@ -3207,7 +3208,9 @@ export async function saveFilmSubstratesToSupabase(substratesList) {
 }
 
 function enforceRoleBoundaries(role, permissions) {
-  return applyPrintRunAnalyticsBoundary(applyAuditLogBoundary({ [role]: permissions }))[role];
+  return applyOperatorSfgViewBoundary(
+    applyPrintRunAnalyticsBoundary(applyAuditLogBoundary({ [role]: permissions }))
+  )[role];
 }
 
 export async function saveRolePermissionsToSupabase(rolePermissions) {

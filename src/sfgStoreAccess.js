@@ -2,7 +2,11 @@
  * SFG / FG Store is the only module with a view-only level.
  * The rest of the matrix stays true or false. "view" means the screen
  * opens for search, filter, and lookup, and store mutations stay off.
+ *
+ * Printing Operator and Shop Floor Operator are fixed at that level.
+ * Inventory and the Printing Scheduler stay full write for those roles.
  */
+export const SFG_VIEW_ONLY_ROLES = ['Printing Operator', 'Shop Floor Operator'];
 
 export function nextSfgStorePermission(current) {
   if (current === true) return 'view';
