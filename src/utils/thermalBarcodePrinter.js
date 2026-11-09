@@ -2,6 +2,7 @@ import QRCode from 'qrcode';
 import { codeKey, codeStartsWith, textFrom } from './barcodeCode.js';
 import { generateSyncQrSvg } from './qrCodeSvg.js';
 import { rollsEligibleForBarcodeLabel } from './scrapIdentity.js';
+import { isFinishedGoodsStock } from './finishedGoods.js';
 
 /**
  * Escapes HTML characters to prevent XSS and malformed markup
@@ -164,10 +165,13 @@ function rollIdentity(record) {
   const category = cleanText(record?.category).toLowerCase();
   const sfgType = cleanText(record?.sfgType || record?.fgType).toLowerCase();
   const code = cleanText(textFrom(record?.barcodeId, record?.sfgBatchCode, record?.itemCode, record?.id)).toUpperCase();
-  const isFG = rollType === 'FG' || rollType === 'FG_DISPATCH' || rollType === 'FINISHED_GOODS'
-    || (category.includes('finished') && !category.includes('semi'))
-    || (sfgType.includes('finished') && !sfgType.includes('semi'))
-    || code.startsWith('FG-');
+  const isFG = isFinishedGoodsStock({
+    rollType: record?.rollType,
+    sfgType: record?.sfgType || record?.fgType,
+    category: record?.category,
+    sfgBatchCode: textFrom(record?.barcodeId, record?.sfgBatchCode),
+    barcodeId: record?.barcodeId
+  });
   const isSFG = !isFG && (
     rollType === 'SFG' || rollType === 'SFG_PRINTED' || rollType === 'SFG_LAMINATED' || rollType === 'SEMI_FINISHED_GOODS'
     || category.includes('semi-finished') || category === 'sfg'

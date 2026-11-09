@@ -13,6 +13,7 @@ export const COMPANY_DETAILS = withCompanyTagline({ ...SEED_COMPANY_PROFILE });
 import { getFilmSubstrates } from './services/filmSubstratesService.js';
 import { attendanceCalendarDate } from './services/employeeAttendance.js';
 import { isPayrollRecoverableAdvance } from './services/salaryAdvance.js';
+import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from './utils/finishedGoods.js';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -1094,6 +1095,18 @@ export const isOrderNearingDeadline = (order) => {
   return getOrderStatusInfo(order).isNearingDeadline;
 };
 
+function printedStockAwaitsLamination(order, lots) {
+  const printed = (lots || []).filter((lot) => (
+    lot.rollType !== 'FG'
+    && Number(lot.availableKg) > DISPATCH_READY_DUST_KG
+    && /print/i.test(`${lot.stage || ''} ${lot.sfgType || ''}`)
+  ));
+  if (printed.length === 0) return false;
+  const next = String(order?.nextProcess || order?.jobDetails?.nextProcess || '').toLowerCase();
+  const inPreLamBay = printed.some((lot) => /pre-?lamination/i.test(String(lot.storageBay || '')));
+  return inPreLamBay || next.includes('laminat');
+}
+
 /**
  * Helper to compute real-time SFG/FG production stage for a given job order:
  * Matches live sfgGoods and productionRecords.
@@ -1203,7 +1216,7 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
   let totalDispatchedKg = 0;
 
   const activeLots = matchedSfg.map(item => {
-    const isFg = item.rollType === 'FG' || (item.sfgType || '').includes('Finished') || (item.category || '').includes('Finished') || (item.sfgBatchCode || '').startsWith('FG-');
+    const isFg = isFinishedGoodsStock(item);
     const netKg = Number(item.totalNetKg ?? item.netWeightKg ?? 0) || 0;
     const consumedKg = Number(item.consumedKg ?? 0) || 0;
     const dispatchedKg = Number(item.dispatchedKg ?? 0) || 0;
@@ -1212,9 +1225,9 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
       : Math.max(0, netKg - consumedKg - dispatchedKg);
 
     totalAvailableKg += availKg;
-    totalDispatchedKg += dispatchedKg;
     if (isFg) {
       fgAvailableKg += availKg;
+      totalDispatchedKg += dispatchedKg;
     } else {
       sfgAvailableKg += availKg;
     }
@@ -1222,6 +1235,7 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
     return {
       id: item.id || item.sfgBatchCode,
       sfgBatchCode: item.sfgBatchCode || item.id,
+      sfgType: item.sfgType || item.sfg_type || '',
       stage: item.stage || (isFg ? 'Finished Goods (FG)' : (item.sfgType || 'Printed Rolls')),
       rollType: isFg ? 'FG' : 'SFG',
       availableKg: availKg,
@@ -1238,19 +1252,24 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
 
   const orderQtyKg = Number(order.orderQtyKg || 0);
 
-  // Check from highest to lowest:
-  // 1. Fully Dispatched
+  // Dispatch progress uses finished goods only. Printed rolls, laminated
+  // WIP, slitting WIP, and balance rolls stay on the production stage.
+  const fgLots = activeLots.filter((lot) => lot.rollType === 'FG');
   const isOrderCompleted = order.status === 'Completed';
-  const isFullyDispatched = (orderQtyKg > 0 && totalDispatchedKg >= orderQtyKg) || 
-    (matchedSfg.length > 0 && totalDispatchedKg > 0 && totalAvailableKg === 0 && matchedSfg.every(s => s.status === 'Dispatched' || s.status === 'Fully Consumed'));
+  const isFullyDispatched = (orderQtyKg > 0 && totalDispatchedKg >= orderQtyKg) || (
+    fgLots.length > 0
+    && totalDispatchedKg > 0
+    && fgAvailableKg <= DISPATCH_READY_DUST_KG
+    && fgLots.every((lot) => lot.status === 'Dispatched' || lot.status === 'Fully Consumed')
+  );
 
   if (isOrderCompleted || isFullyDispatched) {
     currentStage = 'Dispatched';
     stageIndex = 5;
-  } else if (totalDispatchedKg > 0) {
+  } else if (totalDispatchedKg > DISPATCH_READY_DUST_KG) {
     currentStage = 'Partially Dispatched';
     stageIndex = 5;
-  } else if (fgAvailableKg > 0 || matchedSfg.some(s => s.rollType === 'FG' || s.status === 'Ready for Dispatch' || (s.sfgBatchCode || '').startsWith('FG-'))) {
+  } else if (fgAvailableKg > DISPATCH_READY_DUST_KG) {
     currentStage = 'Ready for Dispatch';
     stageIndex = 4;
   } else if (
@@ -1322,7 +1341,9 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
       badgeStyle = { background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' };
       break;
     case 'Printing (Pass 1)':
-      stageLabel = '🖨️ Printing (Pass 1)';
+      stageLabel = printedStockAwaitsLamination(order, activeLots)
+        ? '🖨️ Printed — awaiting lamination'
+        : '🖨️ Printing (Pass 1)';
       badgeStyle = { background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa' };
       break;
     default:

@@ -364,6 +364,11 @@ function stageProgress(order, stageInfo, productionRecords) {
   };
 }
 
+function visibleStageLabel(stageInfo) {
+  const label = String(stageInfo?.stageLabel || stageInfo?.stage || '');
+  return label.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+}
+
 function nextStageLabel(stageInfo) {
   const steps = Array.isArray(stageInfo?.pipeline) ? stageInfo.pipeline : [];
   const upcoming = steps.find((step) => step?.isUpcoming);
@@ -558,7 +563,7 @@ export function buildOrderReportRows(options = {}) {
       'Days Remaining': daysRemaining === null ? '' : daysRemaining,
       Priority: priorityOf(order),
       'Current Status': firstText(order.status, 'In Progress'),
-      'Current Stage': stageInfo.stage || '',
+      'Current Stage': visibleStageLabel(stageInfo),
       'Stage Qty Produced (kg)': progress.qty,
       'Stage Percent Complete': progress.pct,
       'Next Stage': nextStageLabel(stageInfo),

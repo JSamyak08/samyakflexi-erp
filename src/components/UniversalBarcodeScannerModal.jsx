@@ -47,6 +47,7 @@ import { loadDeletedBarcodes } from '../services/supabaseDataService';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords } from '../services/businessRecords';
 import { findScrapForScan, legacyScrapBarcode, scrapScanCard } from '../utils/scrapIdentity';
+import { isFinishedGoodsStock } from '../utils/finishedGoods';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -423,8 +424,17 @@ export default function UniversalBarcodeScannerModal({
       const resolvedPackaging = matchedRoll.packagingType || linkedGrn?.packagingType || (resolvedCategory.includes('Chemical') || resolvedCategory.includes('Solvent') ? 'Drum / Container' : (resolvedCategory.includes('Ink') ? 'Ink Container / Bucket' : 'Roll / Pack'));
 
       const rollTypeText = textFrom(matchedRoll.rollType);
-      const isSFG = matchedRoll.rollType === 'SFG' || (resolvedCategory && resolvedCategory.includes('Semi-Finished')) || rollTypeText.includes('SFG');
-      const isFG = matchedRoll.rollType === 'FG' || (resolvedCategory && resolvedCategory.includes('Finished')) || rollTypeText.includes('FG') || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-');
+      const isFG = isFinishedGoodsStock({
+        ...matchedRoll,
+        category: matchedRoll.category || resolvedCategory,
+        sfgBatchCode: matchedRoll.sfgBatchCode || matchedRoll.barcodeId
+      }) || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-');
+      const isSFG = !isFG && (
+        matchedRoll.rollType === 'SFG'
+        || (resolvedCategory && resolvedCategory.includes('Semi-Finished'))
+        || rollTypeText.includes('SFG')
+        || codeStartsWith(matchedRoll.barcodeId, 'SFG-')
+      );
       const isFilm = resolvedCategory === 'Film Substrates' || (!resolvedCategory && (matchedRoll.rollType === 'RAW_MATERIAL' || codeStartsWith(matchedRoll.barcodeId, 'RM-BC') || Number(matchedRoll.micron) > 0));
 
       let entityCatTitle = 'Raw Material (RM) Substrate Roll';
