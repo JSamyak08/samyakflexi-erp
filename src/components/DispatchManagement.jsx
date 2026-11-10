@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { parseInrAmount } from '../utils/cylinderCost';
 import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
@@ -53,6 +53,8 @@ import {
 } from '../utils/dispatchPacking';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from '../utils/finishedGoods';
+import { packingListsAwaitingChallan } from '../utils/sfgStoreActions';
+import PackingListSavedDialog from './PackingListSavedDialog';
 import { getCompanyProfile } from '../services/companyProfile';
 import { supabase } from '../services/supabaseClient';
 import { fetchMaterialTemplates, saveMaterialTemplate, deleteMaterialTemplate, describeSaveError } from '../services/businessRecords';
@@ -232,6 +234,8 @@ export default function DispatchManagement({
   const [pktPackingStatus, setPktPackingStatus] = useState(PACKING_STATUS_FINALISED);
   const [pktConsumptions, setPktConsumptions] = useState([]);
   const [selectedFgRollForWeighing, setSelectedFgRollForWeighing] = useState(null);
+  const [packingSaved, setPackingSaved] = useState(null);
+  const storeIntentKey = useRef('');
 
   // Available Finished Goods (FG) in store for the selected production job
   const availableFgGoodsForJob = useMemo(() => {
@@ -1266,7 +1270,7 @@ export default function DispatchManagement({
   const coaPagination = usePagination(filteredCoAs, 10);
   const packingPagination = usePagination(filteredPackingLists, 10);
 
-  const handleImportMultiplePackingLists = (selectedIds) => {
+  const handleImportMultiplePackingLists = (selectedIds, extraShipments = []) => {
     setEditingDcId(null);
     const validIds = Array.isArray(selectedIds) ? selectedIds : [selectedIds].filter(Boolean);
     const strIds = validIds.map(id => String(id));
@@ -1274,11 +1278,23 @@ export default function DispatchManagement({
 
     if (strIds.length === 0) return;
 
-    const matchedShipments = (dispatchShipments || []).filter(s =>
+    const pool = [];
+    const seen = new Set();
+    [...(extraShipments || []), ...(dispatchShipments || [])].forEach((shipment) => {
+      const id = String(shipment?.dispatchId || shipment?.id || '');
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      pool.push(shipment);
+    });
+    const matchedShipments = pool.filter(s =>
       strIds.includes(String(s.dispatchId || s.id))
     );
 
     if (matchedShipments.length === 0) return;
+
+    const now = new Date();
+    const isoString = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    setDcDispatchDateTime(isoString);
 
     const newDcNo = dcChallanNo || getNextDocRefNumber('dc');
     setDcChallanNo(newDcNo);
@@ -1439,14 +1455,62 @@ export default function DispatchManagement({
       }
     }
     const plId = String(source.dispatchId || source.id);
-    handleImportMultiplePackingLists([plId]);
+    handleImportMultiplePackingLists([plId], [source]);
     handleTabSwitch('challans');
     setIsDcModalOpen(true);
   };
 
+  const openPackingListFromStore = ({ orderId, jobName, code } = {}) => {
+    const order = (orders || []).find((row) => String(row.id) === String(orderId))
+      || (orders || []).find((row) => row.jobName === jobName);
+    const roll = (sfgGoods || []).find((item) => {
+      const barcode = String(item.sfgBatchCode || '');
+      return code && (barcode === String(code) || String(item.id) === String(code));
+    });
+    const job = order?.jobName || roll?.jobName || jobName || '';
+    resetPackingDraft();
+    setPktDispatchId(generateDocRefNumber('pl'));
+    setPktJobName(job);
+    setPktClientName(order?.clientName || order?.customerName || roll?.clientName || '');
+    setPktPoNo(order?.poNo || '');
+    setPktOrderId(order?.id || orderId || roll?.orderId || '');
+    if (roll && isFinishedGoodsStock(roll)) {
+      setSelectedFgRollForWeighing(roll);
+      setCurrentPktNetWeight(Number(roll.availableKg ?? roll.totalNetKg) || 0);
+      if (roll.tareWeightKg) setPktCoreWeight(Number(roll.tareWeightKg) || 0);
+    }
+    setActiveTab('packing');
+    setIsPackingModalOpen(true);
+  };
+
+  useEffect(() => {
+    const action = urlParams?.action;
+    if (action !== 'packing' && action !== 'challan') return;
+    const key = [action, urlParams.orderId || '', urlParams.jobName || '', urlParams.code || ''].join('|');
+    if (storeIntentKey.current === key) return;
+    if (action === 'packing') {
+      const waitingForRoll = urlParams.code && (sfgGoods || []).length === 0;
+      const waitingForOrder = urlParams.orderId && (orders || []).length === 0;
+      if (waitingForRoll || waitingForOrder) return;
+      storeIntentKey.current = key;
+      openPackingListFromStore(urlParams);
+      return;
+    }
+    const listId = String(urlParams.code || '').trim();
+    if (!listId) return;
+    const shipment = (dispatchShipments || []).find((row) => String(row.dispatchId || row.id) === listId);
+    if (!shipment) {
+      if ((dispatchShipments || []).length === 0) return;
+      storeIntentKey.current = key;
+      return;
+    }
+    storeIntentKey.current = key;
+    handleCreateDcFromPackingList(shipment);
+  }, [urlParams?.action, urlParams?.orderId, urlParams?.jobName, urlParams?.code, orders, sfgGoods, dispatchShipments]);
+
   const handleAddRollToPackingList = (directFgItem = null) => {
     const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
-    const orderId = matchedOrder?.id || 'N/A';
+    const orderId = matchedOrder?.id || pktOrderId || 'N/A';
     const nextRollNo = pktRollsList.length + 1;
 
     if (directFgItem) {
@@ -1646,8 +1710,9 @@ export default function DispatchManagement({
           if (err?.name !== 'PartialSaveError') return;
         }
         setIsPackingModalOpen(false);
-        setSelectedDispatchForPackingList(newShipment);
+        setSelectedRollForBarcodeModal(null);
         setPendingDocConfirmation(null);
+        setPackingSaved(newShipment);
       }
     });
   };
@@ -1664,6 +1729,10 @@ export default function DispatchManagement({
   const totalChallanValue = safeChallans.reduce((sum, dc) => sum + (parseFloat(dc.grandTotalAmount) || 0), 0);
 
   const totalCoasCount = safeCoAs.length;
+  const pendingDcLists = useMemo(
+    () => packingListsAwaitingChallan(dispatchShipments, deliveryChallans),
+    [dispatchShipments, deliveryChallans]
+  );
   const passedCoasCount = safeCoAs.filter(c => (c.overallStatus || '').includes('PASSED') || (c.overallStatus || '').includes('APPROVED')).length;
 
   return (
@@ -1752,6 +1821,21 @@ export default function DispatchManagement({
             }}
           >
             <Package size={16} /> Create Packing List ({(dispatchShipments || []).length})
+            {pendingDcLists.length > 0 && (
+              <span
+                data-testid="dispatch-pending-dc"
+                style={{
+                  background: '#fff7ed',
+                  color: '#9a3412',
+                  borderRadius: '999px',
+                  padding: '2px 8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 800
+                }}
+              >
+                {pendingDcLists.length} awaiting DC
+              </span>
+            )}
           </button>
 
           {/* 2nd Position: Delivery Challans */}
@@ -2117,6 +2201,11 @@ export default function DispatchManagement({
                 <Plus size={18} /> + Create New Packing List
               </button>
             </div>
+            {pendingDcLists.length > 0 && (
+              <div style={{ background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.84rem', fontWeight: 700 }}>
+                {pendingDcLists.length} packing {pendingDcLists.length === 1 ? 'list has' : 'lists have'} no delivery challan yet. Generate the challan so the dispatch is not left unfinished.
+              </div>
+            )}
 
             <div style={{ overflowX: 'auto', background: '#ffffff', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
               <table className="data-table">
@@ -2429,7 +2518,7 @@ export default function DispatchManagement({
       {/* MODAL 1: CREATE / EDIT DELIVERY CHALLAN */}
       {/* ==================================================================== */}
       {isDcModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsDcModalOpen(false)}>
+        <div className="modal-overlay" data-testid="delivery-challan-modal" data-job={dcJobName} onClick={() => setIsDcModalOpen(false)}>
           <div className="glass-card modal-content" style={{ width: '920px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Header */}
@@ -2494,7 +2583,7 @@ export default function DispatchManagement({
 
                 {/* Active Linked Packing List Chips */}
                 {dcSelectedPackingListIds.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', paddingTop: '8px', borderTop: '1px dashed #a7f3d0' }}>
+                  <div data-testid="dc-linked-packing-lists" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center', paddingTop: '8px', borderTop: '1px dashed #a7f3d0' }}>
                     <span style={{ fontSize: '0.76rem', fontWeight: '800', color: '#065f46' }}>Linked Packing Lists:</span>
                     {dcSelectedPackingListIds.map(plId => {
                       const matched = (dispatchShipments || []).find(s => String(s.dispatchId || s.id) === String(plId));
@@ -3126,7 +3215,7 @@ export default function DispatchManagement({
               {/* Form Buttons */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsDcModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
+                <button type="submit" data-testid="dc-save" className="btn-primary" style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}>
                   <Printer size={18} /> Save & Open Delivery Challan PDF
                 </button>
               </div>
@@ -3966,7 +4055,7 @@ export default function DispatchManagement({
       {/* ==================================================================== */}
       {isPackingModalOpen && (
         <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsPackingModalOpen(false)}>
-          <div className="glass-card modal-content" style={{ width: pktConsumptions.length ? '920px' : '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
+          <div className="glass-card modal-content" data-testid="scale4-packing-modal" data-job-name={pktJobName} data-order-id={pktOrderId} style={{ width: pktConsumptions.length ? '920px' : '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
                 <h3 style={{ fontSize: '1.15rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -4062,7 +4151,7 @@ export default function DispatchManagement({
 
                 <div className="form-group">
                   <label>Vehicle Number{pktConsumptions.length ? '' : ' *'}</label>
-                  <input type="text" className="form-control" value={pktVehicleNo} onChange={e => setPktVehicleNo(e.target.value)} placeholder={pktConsumptions.length ? 'Required when the packing list is finalised' : ''} />
+                  <input data-testid="scale4-vehicle" type="text" className="form-control" value={pktVehicleNo} onChange={e => setPktVehicleNo(e.target.value)} placeholder={pktConsumptions.length ? 'Required when the packing list is finalised' : ''} />
                 </div>
 
                 <div className="form-group">
@@ -4123,7 +4212,7 @@ export default function DispatchManagement({
                 </div>
 
                 {selectedFgRollForWeighing && (
-                  <div style={{ gridColumn: 'span 2', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
+                  <div data-testid="scale4-loaded-roll" style={{ gridColumn: 'span 2', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
                     <div style={{ fontSize: '0.8rem', color: '#1e40af', fontWeight: '700' }}>
                       ⚖️ Loaded FG Roll for Weighing: <span style={{ fontFamily: 'monospace' }}>{selectedFgRollForWeighing.sfgBatchCode}</span> ({Number(selectedFgRollForWeighing.availableKg).toFixed(1)} kg available in FG Store)
                     </div>
@@ -4307,8 +4396,8 @@ export default function DispatchManagement({
                       </button>
                     </>
                   ) : (
-                    <button type="submit" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
-                      <Printer size={16} /> Save Packing List & Preview PDF
+                    <button type="submit" data-testid="scale4-save" className="btn-primary" style={{ background: '#059669', borderColor: '#059669' }}>
+                      <Printer size={16} /> Save Packing List
                     </button>
                   )}
                 </div>
@@ -4316,6 +4405,18 @@ export default function DispatchManagement({
             </form>
           </div>
         </div>
+      )}
+
+      {packingSaved && (
+        <PackingListSavedDialog
+          shipment={packingSaved}
+          onClose={() => setPackingSaved(null)}
+          onGenerateDc={() => {
+            const shipment = packingSaved;
+            setPackingSaved(null);
+            handleCreateDcFromPackingList(shipment);
+          }}
+        />
       )}
 
       {/* MODAL 8: PACKING LIST PDF PREVIEW */}
@@ -4521,6 +4622,7 @@ export default function DispatchManagement({
               </button>
               <button
                 type="button"
+                data-testid="confirm-save-document"
                 onClick={() => {
                   if (pendingDocConfirmation && pendingDocConfirmation.onConfirm) {
                     pendingDocConfirmation.onConfirm();

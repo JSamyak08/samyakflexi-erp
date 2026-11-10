@@ -6694,6 +6694,10 @@ export default function App() {
             onConsumeSFG={handleConsumeSFG}
             onDeleteSFGGood={handleDeleteSFGGood}
             canEditStore={roleCanEditSfgStore(rolePermissions, assignedRolesOf(currentUser))}
+            canDispatch={roleHasModule(rolePermissions, assignedRolesOf(currentUser), 'dispatch')}
+            dispatchShipments={dispatchShipments}
+            deliveryChallans={deliveryChallans}
+            onNavigateTab={handleTabChange}
           />
         )}
 

@@ -41,7 +41,8 @@ import {
   AlertOctagon,
   ArrowRight,
   Printer,
-  RefreshCw
+  RefreshCw,
+  Truck
 } from 'lucide-react';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
@@ -83,6 +84,13 @@ import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIde
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
+import { userHasRole } from '../assignedRoles';
+import {
+  planHasAction,
+  sfgOrderHeaderPlan,
+  sfgProgressLabel,
+  sfgStoreRowPlan
+} from '../utils/sfgStoreActions';
 import { getItemAgeInDays, getCategoryAgeingThreshold } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { supabase } from '../services/supabaseClient';
@@ -203,9 +211,43 @@ export default function SFGStoreManagement({
   onConsumeSFG,
   onDeleteSFGGood,
   canEditStore = true,
+  canDispatch = false,
+  dispatchShipments = [],
+  deliveryChallans = [],
+  onNavigateTab,
   previewScrapItems = null
 }) {
   const storeUi = sfgStoreUi(canEditStore);
+  const canReworkFg = storeUi.canConsume && userHasRole(currentUser, 'Admin');
+  const actionContext = useMemo(() => ({
+    canConsume: storeUi.canConsume,
+    canDispatch: canDispatch === true,
+    canRework: canReworkFg,
+    shipments: dispatchShipments,
+    challans: deliveryChallans
+  }), [storeUi.canConsume, canDispatch, canReworkFg, dispatchShipments, deliveryChallans]);
+  const startPackingList = (item) => {
+    if (canDispatch !== true || typeof onNavigateTab !== 'function' || !item) return;
+    onNavigateTab('dispatch', {
+      section: 'packing-new',
+      action: 'packing',
+      orderId: item.orderId && item.orderId !== 'N/A' ? item.orderId : '',
+      jobName: item.jobName || '',
+      code: item.sfgBatchCode || item.id || ''
+    });
+  };
+  const continueToChallan = (item, plan) => {
+    if (canDispatch !== true || typeof onNavigateTab !== 'function') return;
+    const packingListId = plan?.progress?.packingListId || '';
+    if (!packingListId) return;
+    onNavigateTab('dispatch', {
+      section: 'challan-new',
+      action: 'challan',
+      orderId: item.orderId && item.orderId !== 'N/A' ? item.orderId : '',
+      jobName: item.jobName || '',
+      code: packingListId
+    });
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all', 'In Stock (WIP)', 'Partially Consumed', 'Fully Consumed'
   const [typeFilter, setTypeFilter] = useState('all');
@@ -2089,6 +2131,7 @@ export default function SFGStoreManagement({
         ) : (
           paginatedGroups.map((group) => {
             const expanded = isOrderExpanded(group.orderKey);
+            const headerPlan = sfgOrderHeaderPlan(group.items, actionContext);
 
             return (
               <div
@@ -2209,6 +2252,50 @@ export default function SFGStoreManagement({
 
                   {/* Summary Badges on Header */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                    {headerPlan.allFinishedGoods && headerPlan.step && (
+                      <div
+                        data-testid="sfg-order-step"
+                        style={{
+                          background: '#ffffff',
+                          border: '1px solid #cbd5e1',
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          color: '#334155',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        Step {headerPlan.step.number} of 4 · {headerPlan.step.label}
+                      </div>
+                    )}
+                    {planHasAction(headerPlan, 'create-packing-list') && (
+                      <button
+                        type="button"
+                        data-testid="sfg-order-create-packing-list"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const roll = group.items.find((item) => planHasAction(sfgStoreRowPlan(item, actionContext), 'create-packing-list'));
+                          startPackingList(roll);
+                        }}
+                        style={{
+                          background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: '8px',
+                          padding: '8px 12px',
+                          fontSize: '0.76rem',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        <Package size={14} /> Create Packing List
+                      </button>
+                    )}
                     <div style={{
                       background: '#f1f5f9',
                       border: '1px solid #cbd5e1',
@@ -2248,7 +2335,7 @@ export default function SFGStoreManagement({
                 {/* Collapsible Content Body */}
                 {expanded && (
                   <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', minWidth: 1088, borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem', tableLayout: 'fixed' }}>
+                    <table style={{ width: '100%', minWidth: 1220, borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem', tableLayout: 'fixed' }}>
                       <colgroup>
                         <col style={{ width: 188 }} />
                         <col style={{ width: 150 }} />
@@ -2258,8 +2345,8 @@ export default function SFGStoreManagement({
                         <col style={{ width: 72 }} />
                         <col style={{ width: 82 }} />
                         <col style={{ width: 100 }} />
-                        <col style={{ width: 104 }} />
-                        <col style={{ width: 132 }} />
+                        <col style={{ width: 168 }} />
+                        <col style={{ width: 200 }} />
                       </colgroup>
                       <thead>
                         <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -2288,6 +2375,8 @@ export default function SFGStoreManagement({
                           const net = Number(item.totalNetKg) || 0;
                           const consumed = Number(item.consumedKg) || 0;
                           const available = item.availableKg !== undefined ? Number(item.availableKg) : Math.max(0, net - consumed);
+                          const rowPlan = sfgStoreRowPlan(item, actionContext);
+                          const progressLabel = sfgProgressLabel(rowPlan);
 
                           let statusBg = '#eff6ff';
                           let statusColor = '#1d4ed8';
@@ -2313,6 +2402,15 @@ export default function SFGStoreManagement({
                             statusBg = '#f1f5f9';
                             statusColor = '#64748b';
                             statusBorder = '#cbd5e1';
+                          }
+                          if (rowPlan.stage === 'fg-packed') {
+                            statusBg = '#fff7ed';
+                            statusColor = '#9a3412';
+                            statusBorder = '#fdba74';
+                          } else if (rowPlan.stage === 'fg-dispatched' && rowPlan.progress?.challanNo) {
+                            statusBg = '#ecfdf5';
+                            statusColor = '#047857';
+                            statusBorder = '#a7f3d0';
                           }
 
                           const isFgType = isFinishedGoodsStock(item);
@@ -2478,21 +2576,25 @@ export default function SFGStoreManagement({
                               </td>
 
                               {/* Status Badge */}
-                              <td style={{ padding: '10px 8px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                              <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
-                                  <span style={{
-                                    padding: '2px 8px',
-                                    borderRadius: '12px',
-                                    fontSize: '0.7rem',
-                                    fontWeight: '800',
-                                    background: statusBg,
-                                    color: statusColor,
-                                    border: `1px solid ${statusBorder}`,
-                                    lineHeight: 1.3,
-                                    maxWidth: '100%',
-                                    display: 'inline-block'
-                                  }}>
-                                    {item.status || 'In Stock (WIP)'}
+                                  <span
+                                    data-testid={progressLabel ? 'sfg-progress' : undefined}
+                                    style={{
+                                      padding: '2px 8px',
+                                      borderRadius: '12px',
+                                      fontSize: '0.7rem',
+                                      fontWeight: '800',
+                                      background: statusBg,
+                                      color: statusColor,
+                                      border: `1px solid ${statusBorder}`,
+                                      lineHeight: 1.35,
+                                      maxWidth: '100%',
+                                      display: 'inline-block',
+                                      whiteSpace: 'normal'
+                                    }}
+                                  >
+                                    {progressLabel || item.status || 'In Stock (WIP)'}
                                   </span>
                                   {orderClosedStockLabel((orders || []).find((order) => String(order.id) === String(item.orderId))) && (
                                     <span style={{ background: '#fff7ed', color: '#9a3412', border: '1px solid #fdba74', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px' }}>
@@ -2521,8 +2623,8 @@ export default function SFGStoreManagement({
 
                               {/* Actions */}
                               <td style={{ ...sfgStickyCell, padding: '8px', textAlign: 'center', verticalAlign: 'middle', borderBottom: hasRunRolls ? 'none' : '1px solid #f1f5f9' }}>
-                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'nowrap' }}>
-                                  {storeUi.canConsume && (
+                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                  {planHasAction(rowPlan, 'consume') && (
                                   <button
                                     type="button"
                                     data-testid="sfg-consume"
@@ -2546,6 +2648,73 @@ export default function SFGStoreManagement({
                                     }}
                                   >
                                     <Zap size={13} /> Consume
+                                  </button>
+                                  )}
+                                  {planHasAction(rowPlan, 'create-packing-list') && (
+                                  <button
+                                    type="button"
+                                    data-testid="sfg-create-packing-list"
+                                    onClick={(e) => { e.stopPropagation(); startPackingList(item); }}
+                                    style={{
+                                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '6px 10px',
+                                      fontSize: '0.74rem',
+                                      fontWeight: '800',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    <Package size={13} /> Create Packing List
+                                  </button>
+                                  )}
+                                  {planHasAction(rowPlan, 'continue-dc') && (
+                                  <button
+                                    type="button"
+                                    data-testid="sfg-continue-dc"
+                                    onClick={(e) => { e.stopPropagation(); continueToChallan(item, rowPlan); }}
+                                    style={{
+                                      background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                                      color: '#ffffff',
+                                      border: 'none',
+                                      borderRadius: '8px',
+                                      padding: '6px 10px',
+                                      fontSize: '0.74rem',
+                                      fontWeight: '800',
+                                      cursor: 'pointer',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    <Truck size={13} /> Generate DC
+                                  </button>
+                                  )}
+                                  {planHasAction(rowPlan, 'rework') && (
+                                  <button
+                                    type="button"
+                                    data-testid="sfg-fg-rework"
+                                    title="Admin rework: consume this finished good back into a process"
+                                    onClick={(e) => { e.stopPropagation(); handleOpenConsumeModal(item); }}
+                                    style={{
+                                      background: '#ffffff',
+                                      color: '#475569',
+                                      border: '1px solid #cbd5e1',
+                                      borderRadius: '8px',
+                                      padding: '6px 8px',
+                                      fontSize: '0.72rem',
+                                      fontWeight: '700',
+                                      cursor: 'pointer',
+                                      whiteSpace: 'nowrap'
+                                    }}
+                                  >
+                                    Rework
                                   </button>
                                   )}
 
