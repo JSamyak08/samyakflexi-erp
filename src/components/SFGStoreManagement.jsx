@@ -28,6 +28,7 @@ import {
   X, 
   Check, 
   History as HistoryIcon,
+  Copy,
   QrCode,
   Zap,
   ChevronRight,
@@ -99,6 +100,94 @@ import {
   groupSfgStoreItems,
   sortSfgStoreItems
 } from '../utils/sfgStoreList';
+
+const SFG_MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+const sfgTagButtonStyle = {
+  flex: '0 0 auto',
+  width: 26,
+  height: 26,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: '1px solid #bfdbfe',
+  background: '#eff6ff',
+  color: '#1d4ed8',
+  borderRadius: 6,
+  cursor: 'pointer',
+  padding: 0
+};
+
+const sfgStickyCell = {
+  position: 'sticky',
+  right: 0,
+  zIndex: 2,
+  background: '#ffffff',
+  borderLeft: '1px solid #e2e8f0',
+  boxShadow: '-8px 0 8px -8px rgba(15, 23, 42, 0.18)'
+};
+
+function SfgCopyButton({ value }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      title={copied ? 'Copied' : 'Copy barcode'}
+      aria-label={copied ? 'Copied barcode' : 'Copy barcode'}
+      onClick={(event) => {
+        event.stopPropagation();
+        const text = String(value || '');
+        const mark = () => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1200);
+        };
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(text).then(mark).catch(mark);
+        } else {
+          mark();
+        }
+      }}
+      style={sfgTagButtonStyle}
+    >
+      {copied ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
+function SfgRollLine({ roll, kind, onPrint }) {
+  const kg = Number(roll.netWeightKg) > 0 ? `${Number(roll.netWeightKg).toFixed(2)} kg` : '';
+  const meters = Number(roll.lengthMeters) > 0 ? `${Number(roll.lengthMeters).toLocaleString()} m` : '';
+  const code = roll.barcodeId || '';
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 360px) 92px 76px 26px', columnGap: 10, alignItems: 'center' }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+        {kind === 'balance' && (
+          <span style={{ flex: '0 0 auto', fontSize: '0.62rem', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: 4, padding: '1px 5px' }}>
+            Balance
+          </span>
+        )}
+        <span title={code} style={{ fontFamily: SFG_MONO, fontWeight: 700, fontSize: '0.75rem', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+          {code}
+        </span>
+      </span>
+      <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: 700, fontSize: '0.75rem', color: '#334155', whiteSpace: 'nowrap' }}>{kg}</span>
+      <span style={{ textAlign: 'right', fontSize: '0.72rem', color: '#64748b', whiteSpace: 'nowrap' }}>{meters}</span>
+      <button
+        type="button"
+        data-testid={kind === 'balance' ? 'sfg-balance-print-tag' : 'sfg-child-print-tag'}
+        title="Print Tag"
+        aria-label={`Print Tag ${code}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          onPrint(roll);
+        }}
+        style={sfgTagButtonStyle}
+      >
+        <QrCode size={13} />
+      </button>
+    </div>
+  );
+}
 
 export default function SFGStoreManagement({
   sfgGoods = [],
@@ -1568,6 +1657,8 @@ export default function SFGStoreManagement({
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '16px',
         background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
         padding: '24px 32px',
         borderRadius: '16px',
@@ -2021,6 +2112,8 @@ export default function SFGStoreManagement({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px 16px',
                     cursor: 'pointer',
                     userSelect: 'none',
                     borderBottom: expanded ? '1px solid #cbd5e1' : 'none',
@@ -2155,19 +2248,39 @@ export default function SFGStoreManagement({
                 {/* Collapsible Content Body */}
                 {expanded && (
                   <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+                    <table style={{ width: '100%', minWidth: 1088, borderCollapse: 'separate', borderSpacing: 0, textAlign: 'left', fontSize: '0.84rem', tableLayout: 'fixed' }}>
+                      <colgroup>
+                        <col style={{ width: 188 }} />
+                        <col style={{ width: 150 }} />
+                        <col style={{ width: 84 }} />
+                        <col style={{ width: 104 }} />
+                        <col style={{ width: 72 }} />
+                        <col style={{ width: 72 }} />
+                        <col style={{ width: 82 }} />
+                        <col style={{ width: 100 }} />
+                        <col style={{ width: 104 }} />
+                        <col style={{ width: 132 }} />
+                      </colgroup>
                       <thead>
-                        <tr style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          <th style={{ padding: '12px 16px' }}>SFG / FG Barcode</th>
-                          <th style={{ padding: '12px 16px' }}>Roll / Batch Code & Title</th>
-                          <th style={{ padding: '12px 16px' }}>Substrate & Size</th>
-                          <th style={{ padding: '12px 16px' }}>Stock Type</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'right' }}>Initial Net (kg)</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'right' }}>Consumed (kg)</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'right' }}>Available Balance (kg)</th>
-                          <th style={{ padding: '12px 16px' }}>Bay</th>
-                          <th style={{ padding: '12px 16px' }}>Status</th>
-                          <th style={{ padding: '12px 16px', textAlign: 'center' }}>Actions</th>
+                        <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {[
+                            ['Barcode', 'SFG / FG Barcode', 'left'],
+                            ['Title', 'Roll / Batch Code & Title', 'left'],
+                            ['Substrate', 'Substrate & Size', 'left'],
+                            ['Type', 'Stock Type', 'left'],
+                            ['Initial', 'Initial Net (kg)', 'right'],
+                            ['Consumed', 'Consumed (kg)', 'right'],
+                            ['Balance', 'Available Balance (kg)', 'right'],
+                            ['Bay', 'Storage bay', 'left'],
+                            ['Status', 'Status', 'left']
+                          ].map(([label, hint, align]) => (
+                            <th key={label} title={hint} scope="col" style={{ padding: '10px 12px', textAlign: align, fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                              {label}
+                            </th>
+                          ))}
+                          <th scope="col" title="Actions" style={{ ...sfgStickyCell, padding: '10px 8px', textAlign: 'center', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', zIndex: 3 }}>
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2204,139 +2317,121 @@ export default function SFGStoreManagement({
 
                           const isFgType = isFinishedGoodsStock(item);
 
+                          const hasRunRolls = (Array.isArray(item.childRolls) && item.childRolls.length > 0)
+                            || (Array.isArray(item.runBalanceRolls) && item.runBalanceRolls.length > 0);
+                          const bayLabel = item.storageBay || item.location || 'Bay A';
+
                           return (
-                            <tr key={item.id || item.sfgBatchCode} data-testid="sfg-order-roll" style={{ borderBottom: '1px solid #f1f5f9', transition: 'background 0.15s ease' }}>
+                            <React.Fragment key={item.id || item.sfgBatchCode}>
+                            <tr data-testid="sfg-order-roll" style={{ borderBottom: hasRunRolls ? 'none' : '1px solid #f1f5f9' }}>
                               
-                              {/* Barcode / Batch Code */}
-                              <td style={{ padding: '12px 16px' }}>
-                                <div style={{ fontFamily: 'monospace', fontWeight: '800', color: '#0f172a', fontSize: '0.84rem', background: '#f8fafc', padding: '3px 8px', borderRadius: '5px', border: '1px solid #e2e8f0', display: 'inline-block' }}>
-                                  {item.sfgBatchCode}
-                                </div>
-                                {Array.isArray(item.childRolls) && item.childRolls.length > 0 && (
-                                  <div data-testid="sfg-run-output" style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    {item.childRolls.map((roll) => (
-                                      <div key={roll.barcodeId || roll.rollNo} style={{ fontSize: '0.72rem', color: '#334155', display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                                        <span style={{ fontFamily: 'monospace', fontWeight: '800' }}>{roll.barcodeId}</span>
-                                        <span>{Number(roll.netWeightKg) > 0 ? `${Number(roll.netWeightKg).toFixed(2)} kg` : ''}</span>
-                                        <span>{Number(roll.lengthMeters) > 0 ? `${Number(roll.lengthMeters).toLocaleString()} m` : ''}</span>
-                                        <button
-                                          type="button"
-                                          data-testid="sfg-child-print-tag"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            setSelectedRollForBarcodeModal(labelRoll(prepareStoreStickerRoll(roll, inventoryRolls), {
-                                              jobName: item.jobName,
-                                              jobCode: item.jobCode,
-                                              orderId: item.orderId,
-                                              clientName: item.clientName,
-                                              filmType: item.filmType,
-                                              micron: item.micron,
-                                              widthMm: item.widthMm
-                                            }));
-                                          }}
-                                          style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', padding: 0 }}
-                                        >
-                                          Print Tag
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                                {Array.isArray(item.runBalanceRolls) && item.runBalanceRolls.length > 0 && (
-                                  <div style={{ marginTop: '4px', fontSize: '0.72rem', color: '#475569' }}>
-                                    Balance: {item.runBalanceRolls.map((roll) => `${roll.barcodeId}${Number(roll.netWeightKg) > 0 ? ` ${Number(roll.netWeightKg).toFixed(2)} kg` : ''}`).join(', ')}
-                                    {item.runBalanceRolls.map((roll) => (
-                                      <button
-                                        key={roll.barcodeId}
-                                        type="button"
-                                        data-testid="sfg-balance-print-tag"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          setSelectedRollForBarcodeModal(labelRoll(prepareStoreStickerRoll({ ...roll, rollType: 'RAW_MATERIAL' }, inventoryRolls), {
-                                            jobName: item.jobName,
-                                            jobCode: item.jobCode,
-                                            orderId: item.orderId,
-                                            filmType: roll.filmType || item.filmType
-                                          }));
-                                        }}
-                                        style={{ background: 'none', border: 'none', color: '#2563eb', fontWeight: '800', cursor: 'pointer', marginLeft: '6px', padding: 0 }}
-                                      >
-                                        Print Tag
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                                <div style={{ marginTop: '4px' }}>
-                                  <button
-                                    type="button"
-                                    data-testid="sfg-print-tag"
-                                    onClick={(e) => { e.stopPropagation(); setSelectedRollForBarcodeModal(prepareStoreStickerRoll(item, inventoryRolls)); }}
+                              {/* Barcode */}
+                              <td style={{ padding: '10px 8px', minWidth: 0, verticalAlign: 'middle' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, minWidth: 0 }}>
+                                  <span
+                                    title={item.sfgBatchCode}
                                     style={{
-                                      background: 'none',
-                                      border: 'none',
-                                      color: '#2563eb',
-                                      fontSize: '0.74rem',
-                                      fontWeight: '700',
-                                      cursor: 'pointer',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '3px',
-                                      padding: 0
+                                      fontFamily: SFG_MONO,
+                                      fontWeight: 800,
+                                      color: '#0f172a',
+                                      fontSize: '0.78rem',
+                                      background: '#f8fafc',
+                                      padding: '3px 6px',
+                                      borderRadius: 5,
+                                      border: '1px solid #e2e8f0',
+                                      whiteSpace: 'nowrap',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      maxWidth: '100%',
+                                      display: 'inline-block'
                                     }}
                                   >
-                                    <QrCode size={12} /> Print Tag
-                                  </button>
+                                    {item.sfgBatchCode}
+                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <SfgCopyButton value={item.sfgBatchCode} />
+                                    <button
+                                      type="button"
+                                      data-testid="sfg-print-tag"
+                                      title="Print Tag"
+                                      aria-label="Print Tag"
+                                      onClick={(e) => { e.stopPropagation(); setSelectedRollForBarcodeModal(prepareStoreStickerRoll(item, inventoryRolls)); }}
+                                      style={sfgTagButtonStyle}
+                                    >
+                                      <QrCode size={13} />
+                                    </button>
+                                  </div>
                                 </div>
                               </td>
 
                               {/* Roll / Batch Code & Title */}
-                              <td style={{ padding: '12px 16px' }}>
-                                <div style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.86rem' }}>
+                              <td style={{ padding: '10px 8px', minWidth: 0, verticalAlign: 'middle' }}>
+                                <div
+                                  title={item.jobName || 'Untitled Item'}
+                                  style={{
+                                    fontWeight: 700,
+                                    color: '#0f172a',
+                                    fontSize: '0.84rem',
+                                    lineHeight: 1.35,
+                                    display: '-webkit-box',
+                                    WebkitLineClamp: 2,
+                                    WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden'
+                                  }}
+                                >
                                   {item.jobName || 'Untitled Item'}
                                 </div>
                                 {item.jobCode && item.jobCode !== 'N/A' && (
-                                  <span style={{ fontSize: '0.72rem', color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontWeight: '600', marginTop: '2px', display: 'inline-block' }}>
+                                  <div title={item.jobCode} style={{ marginTop: 3, fontFamily: SFG_MONO, fontSize: '0.7rem', fontWeight: 600, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {item.jobCode}
-                                  </span>
+                                  </div>
                                 )}
                               </td>
 
                               {/* Substrate & Size */}
-                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                                <div style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.84rem' }}>
+                              <td style={{ padding: '10px 8px', verticalAlign: 'middle' }}>
+                                <div style={{ color: '#0f172a', fontWeight: '700', fontSize: '0.82rem' }}>
                                   {item.filmType || 'Film Substrate'}
                                 </div>
-                                <div style={{ fontSize: '0.76rem', color: '#64748b', fontWeight: '600' }}>
-                                  {item.micron ? `${item.micron} Mic` : '12 Mic'} | {item.widthMm ? `${item.widthMm} mm` : '460 mm'}
+                                <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: 2, lineHeight: 1.35 }}>
+                                  {item.micron ? `${item.micron} Mic` : '12 Mic'}
+                                  <span style={{ color: '#cbd5e1' }}> · </span>
+                                  {item.widthMm ? `${item.widthMm} mm` : '460 mm'}
                                 </div>
                               </td>
 
                               {/* SFG / FG Type */}
-                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                                <span style={{
-                                  fontSize: '0.74rem',
-                                  fontWeight: '800',
-                                  padding: '4px 10px',
-                                  borderRadius: '6px',
-                                  background: isFgType ? '#ecfdf5' : '#f5f3ff',
-                                  color: isFgType ? '#047857' : '#6d28d9',
-                                  border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`,
-                                  whiteSpace: 'nowrap',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}>
+                              <td style={{ padding: '10px 8px', verticalAlign: 'middle', minWidth: 0 }}>
+                                <span
+                                  title={item.sfgType || (isFgType ? 'Finished Goods' : 'Printed Rolls')}
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    fontWeight: '800',
+                                    padding: '3px 7px',
+                                    borderRadius: '6px',
+                                    background: isFgType ? '#ecfdf5' : '#f5f3ff',
+                                    color: isFgType ? '#047857' : '#6d28d9',
+                                    border: `1px solid ${isFgType ? '#a7f3d0' : '#ddd6fe'}`,
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    maxWidth: '100%',
+                                    display: 'inline-block',
+                                    verticalAlign: 'middle',
+                                    boxSizing: 'border-box'
+                                  }}
+                                >
                                   {item.sfgType || (isFgType ? 'Finished Goods' : 'Printed Rolls')}
                                 </span>
                               </td>
 
                               {/* Initial Net Weight */}
-                              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '10px 6px', textAlign: 'right', fontWeight: '600', color: '#334155', whiteSpace: 'nowrap', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>
                                 {net.toFixed(2)} kg
                               </td>
 
                               {/* Consumed / Dispatched Weight */}
-                              <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: '700', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '10px 6px', textAlign: 'right', fontWeight: '700', whiteSpace: 'nowrap', verticalAlign: 'middle', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>
                                 <div style={{ color: consumed > 0 ? '#c2410c' : '#94a3b8' }}>
                                   {consumed.toFixed(2)} kg
                                 </div>
@@ -2348,48 +2443,53 @@ export default function SFGStoreManagement({
                               </td>
 
                               {/* Available Balance */}
-                              <td style={{ padding: '12px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '10px 6px', textAlign: 'right', verticalAlign: 'middle' }}>
                                 <span style={{
-                                  fontSize: '0.9rem',
+                                  fontSize: '0.82rem',
                                   fontWeight: '800',
+                                  fontVariantNumeric: 'tabular-nums',
                                   color: item.status === 'Dispatched' ? '#047857' : (available > 0 ? '#15803d' : '#94a3b8'),
                                   background: item.status === 'Dispatched' ? '#ecfdf5' : (available > 0 ? '#f0fdf4' : '#f8fafc'),
                                   padding: '3px 8px',
                                   borderRadius: '6px',
                                   border: item.status === 'Dispatched' ? '1px solid #a7f3d0' : (available > 0 ? '1px solid #bbf7d0' : '1px solid #e2e8f0'),
-                                  display: 'inline-block'
+                                  display: 'inline-block',
+                                  whiteSpace: 'nowrap'
                                 }}>
                                   {item.status === 'Dispatched' ? '0.00 kg (Dispatched)' : `${available.toFixed(2)} kg`}
                                 </span>
                                 {Number(item.balanceKeptKg) > 0 && (
-                                  <div style={{ fontSize: '0.68rem', color: '#166534', fontWeight: '800', marginTop: '4px', maxWidth: '140px', whiteSpace: 'normal' }}>
+                                  <div style={{ fontSize: '0.68rem', color: '#166534', fontWeight: '800', marginTop: '4px', whiteSpace: 'normal' }}>
                                     Kept {Number(item.balanceKeptKg).toFixed(2)} kg · {item.balanceReason || 'in stock'}
                                   </div>
                                 )}
                                 {Number(item.balanceQcHoldKg) > 0 && (
-                                  <div style={{ fontSize: '0.68rem', color: '#991b1b', fontWeight: '800', marginTop: '4px', maxWidth: '140px', whiteSpace: 'normal' }}>
+                                  <div style={{ fontSize: '0.68rem', color: '#991b1b', fontWeight: '800', marginTop: '4px', whiteSpace: 'normal' }}>
                                     QC Hold {Number(item.balanceQcHoldKg).toFixed(2)} kg
                                   </div>
                                 )}
                               </td>
 
                               {/* Storage Bay */}
-                              <td style={{ padding: '12px 16px', color: '#475569', whiteSpace: 'nowrap', fontSize: '0.82rem', fontWeight: '600' }}>
-                                {item.storageBay || item.location || 'Bay A'}
+                              <td style={{ padding: '10px 8px', verticalAlign: 'middle', minWidth: 0 }}>
+                                <div title={bayLabel} style={{ color: '#475569', fontSize: '0.74rem', fontWeight: '600', lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  {bayLabel}
+                                </div>
                               </td>
 
                               {/* Status Badge */}
-                              <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                              <td style={{ padding: '10px 8px', verticalAlign: 'middle', overflow: 'hidden' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>
                                   <span style={{
-                                    padding: '3px 8px',
+                                    padding: '2px 8px',
                                     borderRadius: '12px',
-                                    fontSize: '0.72rem',
+                                    fontSize: '0.7rem',
                                     fontWeight: '800',
                                     background: statusBg,
                                     color: statusColor,
                                     border: `1px solid ${statusBorder}`,
-                                    whiteSpace: 'nowrap',
+                                    lineHeight: 1.3,
+                                    maxWidth: '100%',
                                     display: 'inline-block'
                                   }}>
                                     {item.status || 'In Stock (WIP)'}
@@ -2407,11 +2507,11 @@ export default function SFGStoreManagement({
                                     const isOverAged = ageInDays > threshold;
 
                                     return isOverAged ? (
-                                      <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                      <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, maxWidth: '100%', display: 'inline-block' }}>
                                         ⚠️ OVER-AGED ({ageInDays}d &gt; {threshold}d)
                                       </span>
                                     ) : (
-                                      <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.66rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                      <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.66rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, whiteSpace: 'nowrap', display: 'inline-block' }}>
                                         📜 FIFO ({ageInDays}d)
                                       </span>
                                     );
@@ -2420,8 +2520,8 @@ export default function SFGStoreManagement({
                               </td>
 
                               {/* Actions */}
-                              <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <td style={{ ...sfgStickyCell, padding: '8px', textAlign: 'center', verticalAlign: 'middle', borderBottom: hasRunRolls ? 'none' : '1px solid #f1f5f9' }}>
+                                <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', flexWrap: 'nowrap' }}>
                                   {storeUi.canConsume && (
                                   <button
                                     type="button"
@@ -2433,13 +2533,14 @@ export default function SFGStoreManagement({
                                       color: available > 0 ? '#ffffff' : '#94a3b8',
                                       border: 'none',
                                       borderRadius: '8px',
-                                      padding: '6px 12px',
-                                      fontSize: '0.78rem',
+                                      padding: '6px 10px',
+                                      fontSize: '0.76rem',
                                       fontWeight: '700',
                                       cursor: available > 0 ? 'pointer' : 'not-allowed',
                                       display: 'inline-flex',
                                       alignItems: 'center',
                                       gap: '4px',
+                                      whiteSpace: 'nowrap',
                                       boxShadow: available > 0 ? '0 2px 4px rgba(37, 99, 235, 0.2)' : 'none',
                                       transition: 'all 0.15s ease'
                                     }}
@@ -2453,14 +2554,17 @@ export default function SFGStoreManagement({
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); setViewHistoryItem(item); }}
                                       title="View Stock Consumption Log History"
+                                      aria-label="View Stock Consumption Log History"
                                       style={{
                                         background: '#f1f5f9',
                                         color: '#475569',
                                         border: '1px solid #cbd5e1',
                                         borderRadius: '8px',
-                                        padding: '6px 9px',
+                                        padding: '6px 8px',
                                         fontSize: '0.78rem',
-                                        cursor: 'pointer'
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center'
                                       }}
                                     >
                                       <HistoryIcon size={13} />
@@ -2470,6 +2574,51 @@ export default function SFGStoreManagement({
                               </td>
 
                             </tr>
+                            {hasRunRolls && (
+                              <tr>
+                                <td colSpan={10} style={{ padding: '0 12px 10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                  <div data-testid="sfg-run-output" style={{ display: 'flex', flexDirection: 'column', gap: 4, marginLeft: 2, padding: '6px 0 2px 12px', borderLeft: '2px solid #cbd5e1' }}>
+                                    {Array.isArray(item.childRolls) && item.childRolls.length > 0 && (
+                                      <div style={{ fontSize: '0.64rem', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase', color: '#64748b' }}>Output rolls</div>
+                                    )}
+                                    {Array.isArray(item.childRolls) && item.childRolls.map((roll) => (
+                                      <SfgRollLine
+                                        key={roll.barcodeId || roll.rollNo}
+                                        roll={roll}
+                                        kind="child"
+                                        onPrint={(child) => {
+                                          setSelectedRollForBarcodeModal(labelRoll(prepareStoreStickerRoll(child, inventoryRolls), {
+                                            jobName: item.jobName,
+                                            jobCode: item.jobCode,
+                                            orderId: item.orderId,
+                                            clientName: item.clientName,
+                                            filmType: item.filmType,
+                                            micron: item.micron,
+                                            widthMm: item.widthMm
+                                          }));
+                                        }}
+                                      />
+                                    ))}
+                                    {Array.isArray(item.runBalanceRolls) && item.runBalanceRolls.map((roll) => (
+                                      <SfgRollLine
+                                        key={roll.barcodeId}
+                                        roll={roll}
+                                        kind="balance"
+                                        onPrint={(balanceRoll) => {
+                                          setSelectedRollForBarcodeModal(labelRoll(prepareStoreStickerRoll({ ...balanceRoll, rollType: 'RAW_MATERIAL' }, inventoryRolls), {
+                                            jobName: item.jobName,
+                                            jobCode: item.jobCode,
+                                            orderId: item.orderId,
+                                            filmType: balanceRoll.filmType || item.filmType
+                                          }));
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                            </React.Fragment>
                           );
                         })}
                       </tbody>
