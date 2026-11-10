@@ -46,7 +46,9 @@ import {
   storedEngravingRate
 } from '../utils/cylinderCost';
 import { cylinderSkuTaken, nextCylinderSku, planBulkCylinderSkus } from '../utils/cylinderSku';
-import { allocateCylinderSkusFromServer, releaseCylinderSkuReservation } from '../services/supabaseDataService';
+import { allocateJobMasterIds } from '../utils/jobMasterId';
+import { skuWhenLinkingCylinder } from '../utils/jobMasterLink';
+import { allocateCylinderSkusFromServer, allocateJobMasterIdsFromServer, releaseCylinderSkuReservation } from '../services/supabaseDataService';
 import { cylinderIdentityKey, displayArtworkUrl } from '../utils/cylinderArtwork';
 import { findMatchingJobMaster } from '../utils/cylinderJobCardDraft';
 import ArtworkModal from './ArtworkModal';
@@ -169,7 +171,12 @@ export default function CylinderManagement({
       } else {
         const targetJm = (jobMasters || []).find(j => j.id === selectedExistingJmId);
         if (onUpdateCylinder) {
-          await onUpdateCylinder({ ...linkingCylinder, jobMasterId: selectedExistingJmId, sku: targetJm?.skuCode || linkingCylinder.sku });
+          await onUpdateCylinder({
+            ...linkingCylinder,
+            jobMasterId: selectedExistingJmId,
+            job_master_id: selectedExistingJmId,
+            sku: skuWhenLinkingCylinder(linkingCylinder, targetJm, cylinders)
+          });
         }
       }
     } catch (err) {
@@ -182,7 +189,7 @@ export default function CylinderManagement({
 
   const handleCreateNewJmAndLink = async () => {
     if (!linkingCylinder) return;
-    const newJmId = `JM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newJmId = (await allocateJobMasterIdsFromServer(1).catch(() => allocateJobMasterIds((jobMasters || []).map(j => j.id), 1)))[0];
     const newJm = {
       id: newJmId,
       skuCode: linkingCylinder.sku,
@@ -692,7 +699,15 @@ export default function CylinderManagement({
     }
 
     const structureSummary = layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ');
-    const nextJmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
+    let nextJmId = editingCylinder ? (editingCylinder.jobMasterId || '') : '';
+    if (!editingCylinder && createJobMaster) {
+      try {
+        const [issued] = await allocateJobMasterIdsFromServer(1);
+        nextJmId = issued;
+      } catch (err) {
+        nextJmId = allocateJobMasterIds((jobMasters || []).map(j => j.id), 1)[0];
+      }
+    }
 
     const existingLogs = Array.isArray(editingCylinder?.changelogs) ? editingCylinder.changelogs : [];
     const actionType = editingCylinder ? 'UPDATED' : 'CREATED';
@@ -710,7 +725,8 @@ export default function CylinderManagement({
       clientGroup: clientGroup.trim(),
       structure: structureSummary,
       layers,
-      jobMasterId: editingCylinder ? (editingCylinder.jobMasterId || editingCylinder.id) : nextJmId,
+      jobMasterId: editingCylinder ? (editingCylinder.jobMasterId || '') : (nextJmId || ''),
+      job_master_id: editingCylinder ? (editingCylinder.job_master_id || editingCylinder.jobMasterId || '') : (nextJmId || ''),
       colorsCount: parseInt(colorsCount) || 1,
       rate: storedEngravingRate(rate) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
       ratePerSqInch: storedEngravingRate(rate) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
@@ -1025,24 +1041,32 @@ export default function CylinderManagement({
       return { ...job, sku, skuAllocated: true };
     });
 
-    if (onBatchAddCylinders) {
-      try {
-        await onBatchAddCylinders(jobsToSave);
-      } catch (err) {
-        alert(`The cylinder import was not saved: ${err?.message || err}`);
-        return;
-      }
-    } else {
-      for (const job of jobsToSave) {
-        if (onAddCylinder) await onAddCylinder(job);
-      }
-    }
-
     if (bulkAutoCreateJobMasters) {
-      const createdJms = jobsToSave.map((job, idx) => {
-        const jmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101 + idx).padStart(3, '0')}`;
-        return {
-          id: jmId,
+      let jmIds = [];
+      try {
+        jmIds = await allocateJobMasterIdsFromServer(jobsToSave.length);
+      } catch (err) {
+        jmIds = allocateJobMasterIds((jobMasters || []).map(job => job.id), jobsToSave.length);
+      }
+      const linkedJobs = jobsToSave.map((job, idx) => ({
+        ...job,
+        jobMasterId: jmIds[idx],
+        job_master_id: jmIds[idx]
+      }));
+      if (onBatchAddCylinders) {
+        try {
+          await onBatchAddCylinders(linkedJobs);
+        } catch (err) {
+          alert(`The cylinder import was not saved: ${err?.message || err}`);
+          return;
+        }
+      } else {
+        for (const job of linkedJobs) {
+          if (onAddCylinder) await onAddCylinder(job);
+        }
+      }
+      const createdJms = linkedJobs.map((job) => ({
+          id: job.jobMasterId,
           skuCode: job.sku,
           jobName: job.jobName,
           clientName: job.clientGroup,
@@ -1059,13 +1083,23 @@ export default function CylinderManagement({
           utilisationLimit: job.utilisationLimit,
           artworkUrl: null,
           creationDate: new Date().toISOString().split('T')[0]
-        };
-      });
+      }));
 
       if (onBatchAddJobMasters) {
         onBatchAddJobMasters(createdJms);
       } else if (onAddJobMaster) {
         createdJms.forEach(jm => onAddJobMaster(jm));
+      }
+    } else if (onBatchAddCylinders) {
+      try {
+        await onBatchAddCylinders(jobsToSave);
+      } catch (err) {
+        alert(`The cylinder import was not saved: ${err?.message || err}`);
+        return;
+      }
+    } else {
+      for (const job of jobsToSave) {
+        if (onAddCylinder) await onAddCylinder(job);
       }
     }
 
@@ -1964,7 +1998,7 @@ export default function CylinderManagement({
                     </label>
                     {createJobMaster && (
                       <span className="badge badge-success" style={{ fontSize: '0.75rem', padding: '3px 8px' }}>
-                        Consequent ID: JM-2026-{String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}
+                        Consequent ID: {allocateJobMasterIds((jobMasters || []).map(job => job.id), 1)[0]}
                       </span>
                     )}
                   </div>

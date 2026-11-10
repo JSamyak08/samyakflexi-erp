@@ -64,7 +64,8 @@ test('the migration is later than 20261109160000 and does not add a unique index
   assert.ok('20261110120000' > '20261109160000');
   assert.doesNotMatch(migrationSql, /CREATE UNIQUE INDEX/i);
   assert.match(migrationSql, /allocate_cylinder_sku/);
-  assert.match(migrationSql, /Existing cylinder SKU codes cannot be changed/);
+  assert.match(migrationSql, /allocate_job_master_id/);
+  assert.doesNotMatch(migrationSql, /Existing cylinder SKU codes cannot be changed/);
 });
 
 async function database() {
@@ -77,6 +78,14 @@ async function database() {
       status text,
       rate_per_sq_inch numeric
     );
+    CREATE TABLE public.job_masters (
+      id text PRIMARY KEY,
+      sku_code text,
+      job_name text
+    );
+    INSERT INTO public.job_masters (id, sku_code, job_name) VALUES
+      ('JM-2026-551', 'SKU-CYL-495', 'Shared id'),
+      ('JM-2026-104', 'SKU-CYL-104', 'Earlier');
   `);
   for (const row of rows) {
     await db.query(
@@ -103,10 +112,15 @@ test('new duplicates are rejected, existing codes stay, and allocation skips tak
     () => db.query(`INSERT INTO public.cylinders (id, sku, job_name) VALUES ('spaced', ' SKU-CYL-518 ', 'Spaced')`),
     /already exists for another cylinder/i
   );
+  await db.query(`UPDATE public.cylinders SET sku = 'SKU-CYL-600' WHERE id = 'c'`);
+  const renamed = await db.query(`SELECT sku FROM public.cylinders WHERE id = 'c'`);
+  assert.equal(renamed.rows[0].sku, 'SKU-CYL-600');
   await assert.rejects(
-    () => db.query(`UPDATE public.cylinders SET sku = 'SKU-CYL-600' WHERE id = 'c'`),
-    /cannot be changed/i
+    () => db.query(`UPDATE public.cylinders SET sku = 'SKU-CYL-515' WHERE id = 'c'`),
+    /already exists for another cylinder/i
   );
+  const still = await db.query(`SELECT sku FROM public.cylinders WHERE id = 'c'`);
+  assert.equal(still.rows[0].sku, 'SKU-CYL-600');
 
   const first = await db.query(`SELECT public.allocate_cylinder_sku(1) AS issued`);
   const second = await db.query(`SELECT public.allocate_cylinder_sku(2) AS issued`);
@@ -121,12 +135,53 @@ test('new duplicates are rejected, existing codes stay, and allocation skips tak
   const afterInsert = await db.query(`SELECT public.allocate_cylinder_sku(1) AS issued`);
   assert.deepEqual(afterInsert.rows[0].issued, ['SKU-CYL-7275']);
 
-  const untouched = await db.query(`SELECT sku FROM public.cylinders WHERE id IN ('a','b','c','d') ORDER BY id`);
+  const untouched = await db.query(`SELECT sku FROM public.cylinders WHERE id IN ('a','b','d') ORDER BY id`);
   assert.deepEqual(untouched.rows.map((row) => row.sku), [
     'SKU-CYL-515',
     ' sku-cyl-517 ',
-    'SKU-CYL-518',
     'CYL-2026-999'
   ]);
+
+  const jm = await db.query(`SELECT public.allocate_job_master_id(2) AS issued`);
+  assert.deepEqual(jm.rows[0].issued, ['JM-2026-552', 'JM-2026-553']);
   await db.close();
+});
+
+test('job master ids continue after the highest JM-2026 number, not the row count', async () => {
+  const { allocateJobMasterIds } = await import('../src/utils/jobMasterId.js');
+  const ids = ['JM-2026-551', 'JM-2026-104', 'SIL/DOC/101', 'JM-2026-568'];
+  assert.deepEqual(allocateJobMasterIds(ids, 2), ['JM-2026-569', 'JM-2026-570']);
+  assert.deepEqual(allocateJobMasterIds(['JM-2026-010', 'JM-2026-011'], 1), ['JM-2026-012']);
+});
+
+test('job master sync does not rename another cylinder that shares an id or a name', async () => {
+  const {
+    cylindersLinkedToJobMaster,
+    skuAfterJobMasterSync,
+    skuWhenLinkingCylinder
+  } = await import('../src/utils/jobMasterLink.js');
+  const cylinders = [
+    { id: 'real', sku: 'SKU-CYL-495', jobName: 'Chocovalley', job_master_id: 'JM-2026-551' },
+    { id: 'other', sku: 'SKU-CYL-452', jobName: 'Other pouch', job_master_id: 'JM-2026-551', press_marks: { jobMasterId: 'JM-2026-999' } },
+    { id: 'marks-only', sku: 'SKU-CYL-492', jobName: 'Marks only', job_master_id: '', press_marks: { jobMasterId: 'JM-2026-551' } },
+    { id: 'name-only', sku: 'SKU-CYL-494', jobName: 'Chocovalley', job_master_id: 'JM-2026-100' },
+    { id: 'pointed', sku: 'CYL-2026-197', jobName: 'Black Light', job_master_id: '' }
+  ];
+  const jobMaster = { id: 'JM-2026-551', skuCode: 'SKU-CYL-495', jobName: 'Chocovalley', cylinderId: 'pointed' };
+  const linked = cylindersLinkedToJobMaster(cylinders, jobMaster).map((row) => row.id).sort();
+  assert.deepEqual(linked, ['marks-only', 'other', 'pointed', 'real']);
+  assert.equal(skuAfterJobMasterSync(cylinders[1]), 'SKU-CYL-452');
+  assert.equal(skuAfterJobMasterSync(cylinders[0]), 'SKU-CYL-495');
+  assert.equal(
+    skuWhenLinkingCylinder(cylinders[1], jobMaster, cylinders),
+    'SKU-CYL-452'
+  );
+  assert.equal(
+    skuWhenLinkingCylinder(
+      { id: 'fresh', sku: 'SKU-CYL-700', job_master_id: '' },
+      { id: 'JM-2026-800', skuCode: 'SKU-CYL-701' },
+      cylinders
+    ),
+    'SKU-CYL-701'
+  );
 });

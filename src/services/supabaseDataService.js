@@ -1349,6 +1349,17 @@ export async function allocateCylinderSkusFromServer(count = 1) {
   return issued.map((sku) => String(sku || '').trim()).filter(Boolean);
 }
 
+export async function allocateJobMasterIdsFromServer(count = 1) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  const requested = Math.max(1, Math.min(500, parseInt(count, 10) || 1));
+  const { data, error } = await supabase.rpc('allocate_job_master_id', { p_count: requested });
+  if (error) handleSupabaseError(error, 'allocate_job_master_id');
+  const issued = Array.isArray(data) ? data : (data ? [data] : []);
+  return issued.map((id) => String(id || '').trim()).filter(Boolean);
+}
+
 export async function releaseCylinderSkuReservation(sku) {
   if (!isSupabaseConfigured() || !sku) return;
   const { error } = await supabase.rpc('release_cylinder_sku', { p_sku: sku });
@@ -1414,6 +1425,7 @@ export async function fetchCylinders() {
         pouchOpenWidth: Number(c.pouch_open_width || pm.pouchOpenWidth) || 0,
         pouchHeight: Number(c.pouch_height || pm.pouchHeight) || 0,
         jobMasterId: c.job_master_id || pm.jobMasterId || '',
+        job_master_id: c.job_master_id || '',
         assignedPress: c.assigned_press || pm.assignedPress || '',
         silLogo: c.sil_logo !== undefined && c.sil_logo !== null ? c.sil_logo : (pm.silLogo !== undefined && pm.silLogo !== null ? pm.silLogo : ''),
         arcMark: c.arc_mark || pm.arcMark || 'Yes',
@@ -2773,7 +2785,7 @@ export async function saveJobMasterToSupabase(jobMaster) {
   }
   await ensureValidSession();
   
-  const id = jobMaster.id || `JM-2026-${Math.floor(100 + Math.random() * 900)}`;
+  const id = jobMaster.id || (await allocateJobMasterIdsFromServer(1))[0];
   const skuCode = jobMaster.skuCode || jobMaster.sku || '';
   const jobName = jobMaster.jobName || '';
   const clientName = jobMaster.clientName || '';

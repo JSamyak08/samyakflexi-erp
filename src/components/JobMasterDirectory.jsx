@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { formatPlantDate } from '../utils/dbDates';
 import SearchableSelect from './SearchableSelect';
 import TablePagination, { usePagination } from './TablePagination';
+import { allocateJobMasterIds } from '../utils/jobMasterId';
+import { skuWhenLinkingCylinder } from '../utils/jobMasterLink';
+import { allocateJobMasterIdsFromServer } from '../services/supabaseDataService';
 import { 
   FileCode, 
   Search, 
@@ -123,7 +126,12 @@ export default function JobMasterDirectory({
           await onUpdateJobMaster({ ...linkingJobMaster, cylinderSku: targetCyl?.sku || linkingJobMaster.skuCode, cylinderId: selectedExistingCylId });
         }
         if (onUpdateCylinder) {
-          await onUpdateCylinder({ ...targetCyl, jobMasterId: linkingJobMaster.id, sku: linkingJobMaster.skuCode || targetCyl.sku });
+          await onUpdateCylinder({
+            ...targetCyl,
+            jobMasterId: linkingJobMaster.id,
+            job_master_id: linkingJobMaster.id,
+            sku: skuWhenLinkingCylinder(targetCyl, linkingJobMaster, cylinders)
+          });
         }
       }
     } catch (err) {
@@ -136,7 +144,7 @@ export default function JobMasterDirectory({
 
   const handleCreateNewCylAndLink = async () => {
     if (!linkingJobMaster) return;
-    const newCylId = `CYL-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const newCylId = `CYL-${Date.now()}`;
     const newCyl = {
       id: newCylId,
       sku: linkingJobMaster.skuCode || `SKU-${Date.now().toString().slice(-4)}`,
@@ -367,7 +375,8 @@ export default function JobMasterDirectory({
       const cylinderCost = getVal('cylinderCost') || '₹ 0';
       const engravuresName = getVal('engravuresName') || '';
 
-      const id = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101 + idx).padStart(3, '0')}`;
+      const plannedIds = allocateJobMasterIds((jobMasters || []).map(job => job.id), bulkParsedRows.length);
+      const id = plannedIds[idx];
 
       return {
         id,
@@ -391,26 +400,31 @@ export default function JobMasterDirectory({
     });
   }, [bulkParsedRows, bulkHeaderMapping, jobMasters]);
 
-  const handleConfirmBulkUploadJobMasters = () => {
+  const handleConfirmBulkUploadJobMasters = async () => {
     if (bulkPreviewJobs.length === 0) {
       alert("No valid Job Masters to import.");
       return;
     }
 
+    let ids = [];
+    try {
+      ids = await allocateJobMasterIdsFromServer(bulkPreviewJobs.length);
+    } catch (err) {
+      ids = allocateJobMasterIds((jobMasters || []).map(job => job.id), bulkPreviewJobs.length);
+    }
+    const jobs = bulkPreviewJobs.map((job, idx) => ({ ...job, id: ids[idx] || job.id }));
+
     if (onBatchAddJobMasters) {
-      onBatchAddJobMasters(bulkPreviewJobs);
+      onBatchAddJobMasters(jobs);
     } else {
-      bulkPreviewJobs.forEach(job => {
+      jobs.forEach(job => {
         if (onAddJobMaster) onAddJobMaster(job);
       });
     }
 
-    // Auto-create consequent Rotogravure Cylinders if toggle enabled
     if (bulkAutoCreateCylinders) {
-      const createdCyls = bulkPreviewJobs.map((job, idx) => {
-        const cylId = `CYL-2026-${String((cylinders ? cylinders.length : 0) + 101 + idx).padStart(3, '0')}`;
-        return {
-          id: cylId,
+      const createdCyls = jobs.map((job, idx) => ({
+          id: `CYL-${Date.now()}-${idx}`,
           sku: job.skuCode,
           jobName: job.jobName,
           clientGroup: job.clientName,
@@ -427,8 +441,7 @@ export default function JobMasterDirectory({
           status: 'Active In-Use',
           dispatchedQty: 0,
           utilisationLimit: job.utilisationLimit || 10000
-        };
-      });
+      }));
 
       if (onBatchAddCylinders) {
         onBatchAddCylinders(createdCyls);
@@ -1063,7 +1076,13 @@ export default function JobMasterDirectory({
       return;
     }
 
-    const jobMasterId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101).padStart(3, '0')}`;
+    let jobMasterId = '';
+    try {
+      const [issued] = await allocateJobMasterIdsFromServer(1);
+      jobMasterId = issued;
+    } catch (err) {
+      jobMasterId = allocateJobMasterIds((jobMasters || []).map(job => job.id), 1)[0];
+    }
 
     const newJobMaster = {
       id: jobMasterId,
