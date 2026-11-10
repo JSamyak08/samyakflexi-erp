@@ -111,23 +111,184 @@ export function pelletConsumptionFromRow(row) {
   };
 }
 
+export const PELLET_FUEL_CATEGORY = 'Boiler Pellets / Fuel';
+export const CANONICAL_PELLET_ITEM_ID = 'INVT-PELLET-FUEL';
+export const CANONICAL_PELLET_ITEM_NAME = 'Boiler Pellet Fuel';
+
+const FILM_CATEGORY_KEYS = new Set(['', 'film', 'film substrates', 'lamination films']);
+
+function normPelletText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/µ/g, 'micron')
+    .replace(/[_/-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function pelletMeta(item) {
+  const meta = item?.metadata;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return {};
+  return meta;
+}
+
+export function pelletFuelBlob(item) {
+  if (!item || typeof item !== 'object') return '';
+  const meta = pelletMeta(item);
+  return normPelletText([
+    item.itemName,
+    item.item_name,
+    item.name,
+    item.category,
+    meta.category,
+    meta.itemName,
+    item.itemCode,
+    item.item_code,
+    meta.itemCode,
+    item.isPelletFuel === true || meta.isPelletFuel === true ? 'pellet' : ''
+  ].filter((part) => part !== undefined && part !== null && String(part).trim() !== '').join(' '));
+}
+
+function strongPelletScore(name, blob) {
+  let score = 0;
+  if (name.includes('pellet') || blob.includes('pellet')) score += 80;
+  if (blob.includes('biofuel') || blob.includes('bio fuel')) score += 50;
+  if (blob.includes('boiler fuel')) score += 50;
+  if (blob.includes('boiler pellet')) score += 10;
+  return score;
+}
+
+function similarPelletScore(name) {
+  if (name.includes('white coal')) return 12;
+  if (name.includes('briquette')) return 11;
+  if (name.includes('biomass')) return 10;
+  if (name.includes('rice husk') || name.includes('agro waste')) return 9;
+  return 0;
+}
+
+export function scorePelletInventoryItem(item) {
+  if (!item || typeof item !== 'object') return 0;
+  const name = normPelletText(item.itemName || item.item_name || item.name);
+  const blob = pelletFuelBlob(item);
+  const category = normPelletText(item.category || pelletMeta(item).category);
+  let score = strongPelletScore(name, blob);
+  if (item.isPelletFuel === true || pelletMeta(item).isPelletFuel === true) score += 100;
+  if (category.includes('boiler pellet')) score += 30;
+  if (score === 0) score = similarPelletScore(name);
+  if (item.isActive === false || item.is_active === false) score -= 500;
+  return score;
+}
+
+export function rankPelletInventoryItems(inventory) {
+  return (Array.isArray(inventory) ? inventory : [])
+    .map((item) => ({ item, score: scorePelletInventoryItem(item) }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const qty = (Number(b.item?.availableQtyKg ?? b.item?.stock_qty_kg) || 0)
+        - (Number(a.item?.availableQtyKg ?? a.item?.stock_qty_kg) || 0);
+      if (qty !== 0) return qty;
+      return String(a.item?.id || '').localeCompare(String(b.item?.id || ''));
+    });
+}
+
+/**
+ * The stock item a pellet GRN should increase.
+ * A clear pellet, biofuel, or boiler-fuel item wins. One similar name
+ * (white coal, briquette, biomass, rice husk) is used so a second item
+ * is not created. Several equally similar names are left for the operator
+ * to pick. Archived items are ignored.
+ */
 export function findPelletInventoryItem(inventory) {
-  const items = Array.isArray(inventory) ? inventory : [];
-  const matches = items.filter((item) => {
-    const blob = `${item?.itemName || ''} ${item?.category || ''} ${item?.itemCode || ''}`.toLowerCase();
-    return blob.includes('pellet') || blob.includes('biofuel') || blob.includes('boiler fuel');
-  });
-  matches.sort((a, b) => {
-    const score = (item) => {
-      const category = String(item?.category || '').toLowerCase();
-      const name = String(item?.itemName || '').toLowerCase();
-      if (name.includes('pellet')) return 0;
-      if (category.includes('pellet') || category.includes('fuel')) return 1;
-      return 2;
+  const ranked = rankPelletInventoryItems(inventory);
+  if (!ranked.length) return null;
+  if (ranked[0].score >= 20) return ranked[0].item;
+  const top = ranked[0].score;
+  const tied = ranked.filter((row) => row.score === top);
+  return tied.length === 1 ? tied[0].item : null;
+}
+
+export function ambiguousPelletInventoryItems(inventory) {
+  const ranked = rankPelletInventoryItems(inventory);
+  if (!ranked.length || ranked[0].score >= 20) return [];
+  const top = ranked[0].score;
+  const tied = ranked.filter((row) => row.score === top);
+  return tied.length > 1 ? tied.map((row) => row.item) : [];
+}
+
+export function pelletItemById(inventory, id) {
+  const key = String(id || '').trim();
+  if (!key) return null;
+  return (Array.isArray(inventory) ? inventory : []).find((item) => (
+    String(item?.id || '') === key || String(item?.itemCode || item?.item_code || '') === key
+  )) || null;
+}
+
+/**
+ * Film rows default to category "Film Substrates". Sanitizing those rows
+ * rewrites the name into a film code such as BOILER-1000-12 and the word
+ * "pellet" disappears, so the GRN screen thinks no fuel item exists.
+ * Pellet, biofuel, and boiler-fuel names keep the words the store typed.
+ */
+export function pelletNameShouldBePreserved(raw) {
+  if (!raw || typeof raw !== 'object') return false;
+  const name = normPelletText(raw.itemName || raw.item_name || raw.name);
+  const category = normPelletText(raw.category);
+  const code = normPelletText(raw.itemCode || raw.item_code);
+  const blob = normPelletText(`${name} ${category} ${code}`);
+  if (raw.isPelletFuel === true) return true;
+  if (strongPelletScore(name, blob) > 0) return true;
+  return FILM_CATEGORY_KEYS.has(category) && similarPelletScore(name) > 0;
+}
+
+export function resolvePelletCategory(rawCategory) {
+  const category = String(rawCategory || '').trim();
+  if (FILM_CATEGORY_KEYS.has(normPelletText(category))) return PELLET_FUEL_CATEGORY;
+  return category;
+}
+
+export function canonicalPelletInventoryItem() {
+  return {
+    id: CANONICAL_PELLET_ITEM_ID,
+    itemCode: CANONICAL_PELLET_ITEM_ID,
+    itemName: CANONICAL_PELLET_ITEM_NAME,
+    category: PELLET_FUEL_CATEGORY,
+    unit: 'Kg',
+    availableQtyKg: 0,
+    allocatedQtyKg: 0,
+    reorderLevelKg: 0,
+    unitPrice: 0,
+    location: 'Pellet Store',
+    preserveItemName: true,
+    isPelletFuel: true,
+    isActive: true
+  };
+}
+
+export function nextPelletStockQty(currentQty, delta) {
+  const next = (Number(currentQty) || 0) + (Number(delta) || 0);
+  return Math.round(Math.max(0, next) * 1000) / 1000;
+}
+
+/**
+ * A new receipt posts its full weight. A later edit of that same receipt
+ * posts only the change. An older receipt that never posted from this screen
+ * is left for QC, so approving it does not add the kilograms twice.
+ */
+export function pelletInventoryQtyDelta(previous, nextQty) {
+  const next = Number(nextQty) || 0;
+  if (!previous) return { delta: next, inventoryQtyPosted: true };
+  if (previous.inventoryQtyPosted === true) {
+    return {
+      delta: next - (Number(previous.inwardQtyKg) || 0),
+      inventoryQtyPosted: true
     };
-    return score(a) - score(b);
-  });
-  return matches[0] || null;
+  }
+  return { delta: 0, inventoryQtyPosted: false };
+}
+
+export function pelletReceiptAlreadyPosted(grn) {
+  return grn?.isPelletFuel === true && (grn?.inventoryQtyPosted === true || grn?.inventory_qty_posted === true);
 }
 
 export function buildPelletCompanionGrn(pellet, inventoryItem) {
@@ -157,7 +318,8 @@ export function buildPelletCompanionGrn(pellet, inventoryItem) {
     itemRemarks: pellet.remarks || '',
     notes: pellet.remarks || '',
     vehicleNo: pellet.vehicleNo || '',
-    isPelletFuel: true
+    isPelletFuel: true,
+    inventoryQtyPosted: pellet.inventoryQtyPosted === true
   };
   return {
     id: pellet.id,

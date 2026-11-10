@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { anyAssignedRole } from '../assignedRoles';
 import { canDecideGrnQc } from '../approvalAccess';
+import { pelletReceiptAlreadyPosted } from '../services/pelletFuel';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
 import { 
@@ -3649,7 +3650,7 @@ export default function InventoryManagement({
           }
         }
       }
-      if (isApproved && savedGrn?.stockPosted !== true && onSaveInventoryItem) {
+      if (isApproved && savedGrn?.stockPosted !== true && onSaveInventoryItem && !pelletReceiptAlreadyPosted(updatedGRN)) {
         const { saved } = applyQcApprovalStock(
           inventory,
           stockPosts.map((post) => ({ ...post, vendorName: updatedGRN.vendorName })),
@@ -3838,7 +3839,7 @@ export default function InventoryManagement({
     }
 
     // If Approved, add the verified kilograms to the existing ledger, not a new lot.
-    if (isApproved && savedGrn?.stockPosted !== true && (onSaveInventoryItem || onUpdateInventory)) {
+    if (isApproved && savedGrn?.stockPosted !== true && (onSaveInventoryItem || onUpdateInventory) && !pelletReceiptAlreadyPosted(updatedGRN)) {
       const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
       const { saved } = applyQcApprovalStock(inventory, [{
         stockItemId: updatedGRN.stockItemId,

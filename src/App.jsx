@@ -192,7 +192,7 @@ import {
   saveSystemSetting
 } from './services/supabaseDataService';
 import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
-import { buildPelletCompanionGrn, findPelletInventoryItem, fuelActorName } from './services/pelletFuel';
+import { buildPelletCompanionGrn, canonicalPelletInventoryItem, findPelletInventoryItem, fuelActorName, nextPelletStockQty, pelletInventoryQtyDelta, pelletItemById } from './services/pelletFuel';
 import { fetchSessionProfile, signOutUser, completeAuthRedirect } from './services/authService';
 import {
   PartialSaveError,
@@ -661,11 +661,49 @@ export default function App() {
     return allocatePelletGrnNumber(prefix);
   };
 
+  const postPelletInventoryDelta = async (inventoryItem, delta) => {
+    if (!inventoryItem?.id || !delta) return inventoryItem;
+    const next = sanitizeInventoryItem({
+      ...inventoryItem,
+      availableQtyKg: nextPelletStockQty(inventoryItem.availableQtyKg, delta),
+      preserveItemName: true,
+      isPelletFuel: true
+    });
+    await saveInventoryItemToSupabase(next);
+    setInventory((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const exists = list.some((row) => String(row.id) === String(next.id));
+      return exists
+        ? list.map((row) => (String(row.id) === String(next.id) ? { ...row, ...next } : row))
+        : [next, ...list];
+    });
+    return next;
+  };
+
+  const handleCreatePelletInventoryItem = async () => {
+    requireDatabaseConnection('create pellet fuel item');
+    const existing = findPelletInventoryItem(inventory);
+    if (existing) return existing;
+    const created = canonicalPelletInventoryItem();
+    const clean = sanitizeInventoryItem(created);
+    await saveInventoryItemToSupabase(clean);
+    setInventory((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      return [clean, ...list.filter((row) => String(row.id) !== String(clean.id))];
+    });
+    logAudit('CREATE', 'Pellet Fuel Stock Management', `Created stock item ${clean.itemCode} "${clean.itemName}" for boiler pellet GRNs`, clean.id);
+    return clean;
+  };
+
   const handleSavePelletInward = async (item) => {
     if (!item) return;
-    const inventoryItem = findPelletInventoryItem(inventory);
+    const inventoryItem = pelletItemById(inventory, item.stockItemId) || findPelletInventoryItem(inventory);
+    const previous = (pelletInwards || []).find((row) => String(row.id) === String(item.id));
+    const stockPost = pelletInventoryQtyDelta(previous, item.inwardQtyKg);
     const cleanItem = {
       ...item,
+      stockItemId: inventoryItem?.id || item.stockItemId,
+      inventoryQtyPosted: stockPost.inventoryQtyPosted,
       grnPrefix: getDocumentPrefixes().grnPrefix || 'SIL/GRN/26-27/',
       status: item.status || 'Pending QC',
       qcStatus: item.qcStatus || item.status || 'Pending QC'
@@ -682,13 +720,37 @@ export default function App() {
       const saved = await savePelletInwardWithGrn({ ...cleanItem, companionGrn });
       const savedPellet = saved?.pellet || { ...cleanItem, grnNo: companionGrn.grnNo };
       const savedGrn = sanitizeGRN(saved?.grn || companionGrn);
-      setPelletInwards(prev => [savedPellet, ...(prev || []).filter(i => String(i.id) !== String(savedPellet.id))]);
+      let postedItem = inventoryItem;
+      if (stockPost.delta !== 0) {
+        try {
+          postedItem = await postPelletInventoryDelta(inventoryItem, stockPost.delta);
+        } catch (stockError) {
+          const unmarked = { ...cleanItem, inventoryQtyPosted: false, grnNo: savedPellet.grnNo };
+          try {
+            await savePelletInwardWithGrn({
+              ...unmarked,
+              companionGrn: buildPelletCompanionGrn(unmarked, inventoryItem)
+            });
+          } catch (rollbackError) {
+            console.error('Pellet receipt flag was not cleared after the stock update failed:', rollbackError);
+          }
+          stockError.pelletGrnSaved = true;
+          alert(`GRN ${savedPellet.grnNo || cleanItem.grnNo} was saved, but the inventory quantity was not updated: ${stockError.message}`);
+          throw stockError;
+        }
+      }
+      const pelletForState = {
+        ...savedPellet,
+        inventoryQtyPosted: stockPost.inventoryQtyPosted,
+        stockItemId: postedItem?.id || savedPellet.stockItemId
+      };
+      setPelletInwards(prev => [pelletForState, ...(prev || []).filter(i => String(i.id) !== String(pelletForState.id))]);
       setGrns(prev => [savedGrn, ...(prev || []).filter(g => String(g.id) !== String(savedGrn.id) && String(g.grnNo) !== String(savedGrn.grnNo))]);
-      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${savedPellet.grnNo} - Inwarded ${savedPellet.inwardQtyKg} kg (Submitted to QC Approval Lab)`, savedPellet.id);
-      return savedPellet;
+      logAudit('Save Pellet Inward', 'Pellet Fuel Stock Management', `GRN ${pelletForState.grnNo} - Inwarded ${pelletForState.inwardQtyKg} kg (Submitted to QC Approval Lab)`, pelletForState.id);
+      return pelletForState;
     } catch (e) {
       console.error("Failed to save pellet inward to Supabase:", e);
-      alert(`Pellet inward was not saved: ${e.message}`);
+      if (!e?.pelletGrnSaved) alert(`Pellet inward was not saved: ${e.message}`);
       throw e;
     }
   };
@@ -706,6 +768,18 @@ export default function App() {
     } catch (e) {
       console.error("Failed to delete pellet inward from Supabase:", e);
       alert(`Pellet inward was not deleted: ${e.message}`);
+      return;
+    }
+    if (targetItem?.inventoryQtyPosted) {
+      const linked = pelletItemById(inventory, targetItem.stockItemId) || findPelletInventoryItem(inventory);
+      const removedQty = Number(targetItem.inwardQtyKg) || 0;
+      if (linked && removedQty > 0) {
+        try {
+          await postPelletInventoryDelta(linked, -removedQty);
+        } catch (stockError) {
+          alert(`The pellet GRN was deleted, but the inventory quantity was not reduced: ${stockError.message}`);
+        }
+      }
     }
   };
 
@@ -6766,6 +6840,8 @@ export default function App() {
             inventory={inventory}
             pelletUserName={fuelActorName(currentUser)}
             pelletLoadError={pelletLoadError}
+            pelletInventoryReady={isDataFetched}
+            onCreatePelletInventoryItem={handleCreatePelletInventoryItem}
             onAllocatePelletGrnNumber={handleAllocatePelletGrnNumber}
             pelletInwards={pelletInwards}
             pelletConsumptions={pelletConsumptions}
@@ -6787,7 +6863,9 @@ export default function App() {
             vendors={vendors}
             machines={machines}
             inventory={inventory}
+            inventoryReady={isDataFetched}
             loadError={pelletLoadError}
+            onCreatePelletInventoryItem={handleCreatePelletInventoryItem}
             onAllocatePelletGrnNumber={handleAllocatePelletGrnNumber}
             pelletInwards={pelletInwards}
             pelletConsumptions={pelletConsumptions}

@@ -102,6 +102,8 @@ export default function ConsumablesAndIndents({
   inventory = [],
   pelletUserName = '',
   pelletLoadError = '',
+  pelletInventoryReady = true,
+  onCreatePelletInventoryItem,
   onAllocatePelletGrnNumber,
   pelletInwards = [],
   pelletConsumptions = [],
@@ -983,7 +985,9 @@ export default function ConsumablesAndIndents({
           vendors={vendors}
           machines={machines}
           inventory={inventory}
+          inventoryReady={pelletInventoryReady}
           loadError={pelletLoadError}
+          onCreatePelletInventoryItem={onCreatePelletInventoryItem}
           onAllocatePelletGrnNumber={onAllocatePelletGrnNumber}
           pelletInwards={pelletInwards}
           pelletConsumptions={pelletConsumptions}
