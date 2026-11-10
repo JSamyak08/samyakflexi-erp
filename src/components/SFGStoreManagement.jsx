@@ -317,6 +317,7 @@ export default function SFGStoreManagement({
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
   const [viewHistoryItem, setViewHistoryItem] = useState(null);
   const [revertTarget, setRevertTarget] = useState(null);
+  const [revertWindowTip, setRevertWindowTip] = useState(null);
   useEffect(() => {
     if (!viewHistoryItem) return;
     const fresh = (sfgGoods || []).find((item) => item.id === viewHistoryItem.id || item.sfgBatchCode === viewHistoryItem.sfgBatchCode);
@@ -4738,15 +4739,33 @@ export default function SFGStoreManagement({
                           </button>
                         )}
                         {canRevertConsumption && !reverted && !windowOpen && (
-                          <button
-                            type="button"
-                            data-testid={`sfg-revert-${log.id}`}
-                            disabled
+                          <span
                             title={REVERT_WINDOW_CLOSED}
-                            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontWeight: 800, fontSize: '0.75rem', cursor: 'not-allowed' }}
+                            onMouseEnter={() => setRevertWindowTip(log.id)}
+                            onMouseLeave={() => setRevertWindowTip(null)}
+                            onFocus={() => setRevertWindowTip(log.id)}
+                            onBlur={() => setRevertWindowTip(null)}
+                            style={{ position: 'relative', display: 'inline-flex' }}
                           >
-                            Revert
-                          </button>
+                            <button
+                              type="button"
+                              data-testid={`sfg-revert-${log.id}`}
+                              disabled
+                              aria-describedby={revertWindowTip === log.id ? `revert-window-${log.id}` : undefined}
+                              style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontWeight: 800, fontSize: '0.75rem', cursor: 'not-allowed' }}
+                            >
+                              Revert
+                            </button>
+                            {revertWindowTip === log.id && (
+                              <span
+                                id={`revert-window-${log.id}`}
+                                role="tooltip"
+                                style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 5, width: 'max-content', background: '#0f172a', color: '#ffffff', fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.35, padding: '6px 8px', borderRadius: '6px', boxShadow: '0 8px 20px rgba(15, 23, 42, 0.25)', pointerEvents: 'none', whiteSpace: 'nowrap' }}
+                              >
+                                {REVERT_WINDOW_CLOSED}
+                              </span>
+                            )}
+                          </span>
                         )}
                       </td>
                     </tr>

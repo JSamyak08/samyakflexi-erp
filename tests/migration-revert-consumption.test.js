@@ -157,6 +157,7 @@ function history(logs) {
 test('migration is idempotent and keeps the revert function private to signed-in staff', async () => {
   const db = await database();
   await db.exec(migrationSql);
+  await db.exec(migrationSql);
   const grants = await db.query(`
     SELECT grantee FROM information_schema.routine_privileges
     WHERE routine_name = 'revert_sfg_consumption' AND grantee = 'anon'
