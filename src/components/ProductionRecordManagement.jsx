@@ -57,6 +57,8 @@ import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../se
 import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
 import { codesEqual } from '../utils/barcodeCode';
+import { orderForRecord, reconcileSlitDispatch } from '../utils/slitDispatchReconciliation';
+import SlitDispatchReconciliation, { SlitDispatchBadge } from './SlitDispatchReconciliation';
 import MeasureRangeHint from './MeasureRangeHint';
 import RollLineageSummary from './RollLineageSummary';
 import {
@@ -823,6 +825,8 @@ export default function ProductionRecordManagement({
   inventory = [],
   inventoryRolls = [],
   sfgGoods = [],
+  dispatchShipments = [],
+  deliveryChallans = [],
   jobMasters = [],
   cylinders = [],
   machines = [],
@@ -2205,6 +2209,47 @@ export default function ProductionRecordManagement({
     alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.${balanceRollNote}`);
     setActiveTab('list');
   };
+  const slitDispatchContext = useMemo(() => ({
+    sfgGoods,
+    inventoryRolls,
+    shipments: dispatchShipments,
+    deliveryChallans
+  }), [sfgGoods, inventoryRolls, dispatchShipments, deliveryChallans]);
+
+  const recordReconciliations = useMemo(() => {
+    const map = new Map();
+    (productionRecords || []).forEach((rec) => {
+      if (!rec?.id) return;
+      map.set(rec.id, reconcileSlitDispatch({
+        record: rec,
+        order: orderForRecord(rec, orders),
+        ...slitDispatchContext
+      }));
+    });
+    return map;
+  }, [productionRecords, orders, slitDispatchContext]);
+
+  const orderReconciliations = useMemo(() => {
+    const map = new Map();
+    (orders || []).forEach((order) => {
+      if (!order?.id) return;
+      map.set(order.id, reconcileSlitDispatch({
+        order,
+        ...slitDispatchContext
+      }));
+    });
+    return map;
+  }, [orders, slitDispatchContext]);
+
+  const selectedReconciliation = useMemo(() => {
+    if (!selectedRecord) return null;
+    return reconcileSlitDispatch({
+      record: selectedRecord,
+      order: orderForRecord(selectedRecord, orders),
+      ...slitDispatchContext
+    });
+  }, [selectedRecord, orders, slitDispatchContext]);
+
   const filteredRecords = productionRecords.filter(r => {
     if (!r) return false;
     const q = (searchTerm || '').trim().toLowerCase();
@@ -2608,6 +2653,9 @@ export default function ProductionRecordManagement({
                               🎨 {(ord.variants || []).length} Variants ({((ord.variants || []).map(v => v.variantName).join(', '))})
                             </span>
                           )}
+                          <div>
+                            <SlitDispatchBadge result={existingRecord ? recordReconciliations.get(existingRecord.id) : orderReconciliations.get(ord.id)} />
+                          </div>
                         </td>
                         <td style={{ fontSize: '0.8rem', color: '#334155' }}>
                           <code>{getSubstrateStructure(ord)}</code>
@@ -2772,6 +2820,9 @@ export default function ProductionRecordManagement({
                               🎨 {(rec.variants || linkedOrder?.variants || []).length} Variants
                             </span>
                           )}
+                          <div>
+                            <SlitDispatchBadge result={recordReconciliations.get(rec.id)} />
+                          </div>
                         </td>
                         <td>{rec.dateFilled}</td>
                         <td style={{ fontWeight: '600' }}>{actualQty > 0 ? (actualQty || 0).toLocaleString() : 0} kg</td>
@@ -2927,6 +2978,8 @@ export default function ProductionRecordManagement({
               ) : null}
             </div>
           </div>
+
+          <SlitDispatchReconciliation result={selectedReconciliation} />
 
           {/* Substrate Input Rolls & Actual Ink GSM Technical Analysis */}
           {(() => {
