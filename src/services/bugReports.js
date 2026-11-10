@@ -30,6 +30,7 @@ export function mapBugReport(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     resolvedAt: row.resolved_at,
+    resolvedBy: row.resolved_by || '',
   };
 }
 

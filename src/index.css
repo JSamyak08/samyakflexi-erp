@@ -2949,6 +2949,10 @@ div[style*="overflowX: 'auto'"] {
   font-size: 1.15rem;
 }
 
+.bug-reports-detail-head .bug-status {
+  margin-left: auto;
+}
+
 .bug-report-close,
 .bug-report-previews button {
   border: 0;
@@ -3200,8 +3204,100 @@ div[style*="overflowX: 'auto'"] {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 4px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
 }
+
+.bug-report-status-form label.bug-report-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #9a3412;
+}
+
+.bug-resolve-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.changelog-editor,
+.changelog-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.changelog-editor,
+.changelog-table-wrap {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.changelog-editor label,
+.changelog-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.changelog-editor input,
+.changelog-editor select,
+.changelog-filters input,
+.changelog-filters select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.changelog-editor-wide,
+.changelog-search {
+  grid-column: 1 / -1;
+}
+
+.changelog-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.changelog-table-wrap {
+  overflow-x: auto;
+  padding: 0;
+}
+
+.changelog-type {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.changelog-type-added { background: #dcfce7; color: #166534; }
+.changelog-type-removed { background: #f1f5f9; color: #475569; }
+.changelog-type-revised { background: #e0f2fe; color: #0369a1; }
+.changelog-type-bug-fixed { background: #ffedd5; color: #c2410c; }
 
 .sidebar.collapsed .sidebar-bug-wrap {
   padding: 0 4px 6px;

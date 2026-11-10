@@ -252,9 +252,8 @@ try {
   const link = await page.getByTestId('bug-report-link').getAttribute('href');
   record('admin opened the report and saw screenshots', images >= 1 && /^https?:\/\//.test(link || ''), `${images} images`);
   await shot(page, 'admin-02-report-open.png');
-  await page.getByTestId('bug-report-status').selectOption('In Progress');
   await page.getByTestId('bug-report-note').fill('Reproduced on the printing queue during QA.');
-  await page.getByTestId('bug-report-save-status').click();
+  await page.getByTestId('bug-mark-in-progress').click();
   await page.locator('.bug-reports-row.active .bug-status').filter({ hasText: 'In Progress' }).waitFor();
   record('admin changed the status', true);
   await shot(page, 'admin-03-status-changed.png');

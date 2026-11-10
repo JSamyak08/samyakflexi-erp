@@ -10,6 +10,8 @@ import {
   listBugReports,
   updateBugReportStatus,
 } from '../services/bugReports';
+import { saveChangelogEntry } from '../services/changelog';
+import { bugToChangelogEntry } from '../utils/changelog';
 
 function formatWhen(value) {
   if (!value) return '—';
@@ -40,8 +42,10 @@ export default function BugReportsScreen({ mode = 'mine', onAudit }) {
   const [shotError, setShotError] = useState('');
   const [status, setStatus] = useState('New');
   const [note, setNote] = useState('');
+  const [addToChangelog, setAddToChangelog] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
+  const [savedMessage, setSavedMessage] = useState('');
 
   async function load() {
     setLoading(true);
@@ -80,7 +84,9 @@ export default function BugReportsScreen({ mode = 'mine', onAudit }) {
     }
     setStatus(current.status || 'New');
     setNote(current.resolutionNote || '');
+    setAddToChangelog(false);
     setSaveError('');
+    setSavedMessage('');
     let cancelled = false;
     setShotError('');
     bugScreenshotUrls(current.screenshotPaths).then((urls) => {
@@ -95,16 +101,35 @@ export default function BugReportsScreen({ mode = 'mine', onAudit }) {
     };
   }, [selectedId]);
 
-  async function saveStatus(event) {
-    event.preventDefault();
-    if (!selected) return;
+  async function applyStatus(nextStatus) {
+    if (!selected || saving) return;
     setSaving(true);
     setSaveError('');
+    setSavedMessage('');
+    const previousStatus = selected.status;
     try {
-      const updated = await updateBugReportStatus(selected.id, status, note);
+      const updated = await updateBugReportStatus(selected.id, nextStatus, note);
       setRows((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
-      onAudit?.(updated, selected.status);
+      setStatus(updated.status || nextStatus);
+      setNote(updated.resolutionNote || '');
+      onAudit?.(updated, previousStatus);
       window.dispatchEvent(new CustomEvent('bug-reports-changed'));
+      if (nextStatus === 'Resolved' && addToChangelog) {
+        try {
+          await saveChangelogEntry(bugToChangelogEntry(updated, note));
+          setAddToChangelog(false);
+          setSavedMessage('Marked resolved and added to the changelog.');
+        } catch (err) {
+          setSaveError(`Status saved. The changelog entry was not added. ${messageFrom(err)}`);
+          return;
+        }
+      } else if (nextStatus === 'Resolved') {
+        setSavedMessage('Marked resolved.');
+      } else if (nextStatus === 'New' && (previousStatus === 'Resolved' || previousStatus === "Won't Fix")) {
+        setSavedMessage('Reopened.');
+      } else {
+        setSavedMessage('Status saved.');
+      }
     } catch (err) {
       setSaveError(messageFrom(err));
     } finally {
@@ -197,7 +222,62 @@ export default function BugReportsScreen({ mode = 'mine', onAudit }) {
                   <h2>{selected.title || 'Bug report'}</h2>
                   <p>{selected.reporterName} · {selected.reporterRole} · {formatWhen(selected.createdAt)}</p>
                 </div>
+                <span className={`bug-status bug-status-${selected.status.replace(/[^a-z]/gi, '').toLowerCase()}`}>{selected.status}</span>
               </div>
+              {(selected.resolutionNote || selected.resolvedAt) && !admin && (
+                <p className="bug-report-note" data-testid="bug-report-resolution">
+                  {selected.resolutionNote && <><strong>Resolution note.</strong> {selected.resolutionNote} </>}
+                  {selected.resolvedAt && <span>{selected.status} {formatWhen(selected.resolvedAt)}.</span>}
+                </p>
+              )}
+              {admin && (
+                <form className="bug-report-status-form" onSubmit={(event) => event.preventDefault()}>
+                  <p className="bug-report-hint">Change the status. Only an Admin can do this.</p>
+                  <label className="form-label" htmlFor="bug-report-note">Resolution note</label>
+                  <textarea
+                    id="bug-report-note"
+                    data-testid="bug-report-note"
+                    value={note}
+                    rows={3}
+                    onChange={(event) => setNote(event.target.value)}
+                    placeholder="Optional. What changed, or why this will not be fixed"
+                  />
+                  <label className="bug-report-check">
+                    <input
+                      type="checkbox"
+                      data-testid="bug-add-to-changelog"
+                      checked={addToChangelog}
+                      onChange={(event) => setAddToChangelog(event.target.checked)}
+                    />
+                    Add to changelog
+                  </label>
+                  {selected.resolvedAt && (
+                    <p className="bug-report-hint">Last closed {formatWhen(selected.resolvedAt)}.</p>
+                  )}
+                  {saveError && <p className="bug-report-field-error" role="alert">{saveError}</p>}
+                  {savedMessage && <p className="bug-report-hint" data-testid="bug-status-saved">{savedMessage}</p>}
+                  <div className="bug-resolve-actions">
+                    <button type="button" className="btn-primary" disabled={saving} data-testid="bug-mark-resolved" onClick={() => applyStatus('Resolved')}>
+                      {saving ? 'Saving…' : (status === 'Resolved' ? 'Save note' : 'Mark Resolved')}
+                    </button>
+                    {status !== 'In Progress' && (
+                      <button type="button" className="btn-secondary" disabled={saving} data-testid="bug-mark-in-progress" onClick={() => applyStatus('In Progress')}>
+                        In Progress
+                      </button>
+                    )}
+                    {status !== "Won't Fix" && (
+                      <button type="button" className="btn-secondary" disabled={saving} data-testid="bug-mark-wont-fix" onClick={() => applyStatus("Won't Fix")}>
+                        Won't Fix
+                      </button>
+                    )}
+                    {(status === 'Resolved' || status === "Won't Fix") && (
+                      <button type="button" className="btn-secondary" disabled={saving} data-testid="bug-reopen" onClick={() => applyStatus('New')}>
+                        Reopen
+                      </button>
+                    )}
+                  </div>
+                </form>
+              )}
               <p className="bug-report-description">{selected.description}</p>
               <p>
                 <a href={selected.pageUrl} target="_blank" rel="noreferrer" data-testid="bug-report-link">
@@ -221,30 +301,6 @@ export default function BugReportsScreen({ mode = 'mine', onAudit }) {
                     : <p key={shot.path} className="bug-report-hint">Screenshot unavailable</p>
                 ))}
               </div>
-              {selected.resolutionNote && !admin && (
-                <p className="bug-report-note"><strong>Resolution note.</strong> {selected.resolutionNote}</p>
-              )}
-              {admin && (
-                <form className="bug-report-status-form" onSubmit={saveStatus}>
-                  <label className="form-label" htmlFor="bug-report-status">Status</label>
-                  <select id="bug-report-status" data-testid="bug-report-status" value={status} onChange={(event) => setStatus(event.target.value)}>
-                    {BUG_STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
-                  <label className="form-label" htmlFor="bug-report-note">Resolution note</label>
-                  <textarea
-                    id="bug-report-note"
-                    data-testid="bug-report-note"
-                    value={note}
-                    rows={3}
-                    onChange={(event) => setNote(event.target.value)}
-                    placeholder="What changed, or why this will not be fixed"
-                  />
-                  {saveError && <p className="bug-report-field-error" role="alert">{saveError}</p>}
-                  <button type="submit" className="btn-primary" disabled={saving} data-testid="bug-report-save-status">
-                    {saving ? 'Saving…' : 'Save status'}
-                  </button>
-                </form>
-              )}
             </>
           )}
         </div>

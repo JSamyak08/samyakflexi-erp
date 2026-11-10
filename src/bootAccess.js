@@ -4,8 +4,9 @@ import { SFG_VIEW_ONLY_ROLES } from './sfgStoreAccess.js';
  * Which boot reads and browser caches a signed-in role may keep.
  * A user may have several plant roles. Access is the union of those roles.
  * Admin can open every module. user_management, audit_logs, and bug_reports
- * stay Admin-only, matching isTabAllowed. my_bug_reports is open to every
- * signed-in role, including Printing Operator and Shop Floor Operator.
+ * stay Admin-only, matching isTabAllowed. changelog is Admin and Production
+ * Manager only. my_bug_reports is open to every signed-in role, including
+ * Printing Operator and Shop Floor Operator.
  * Payroll tables stay with Admin and HR even when the employees flag is on
  * for another role, because that screen does not load them.
  */
@@ -30,6 +31,9 @@ function permissionOpensModule(permissions, moduleKey) {
 export function roleHasModule(matrix, roleOrRoles, moduleKey) {
   const roles = asRoleList(roleOrRoles);
   if (!roles.length || !moduleKey) return false;
+  if (moduleKey === 'changelog') {
+    return roles.includes('Admin') || roles.includes('Production Manager');
+  }
   if (roles.includes('Admin')) return true;
   if (moduleKey === 'my_bug_reports') return true;
   if (moduleKey === 'user_management' || moduleKey === 'audit_logs' || moduleKey === 'bug_reports') return false;
