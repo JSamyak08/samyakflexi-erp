@@ -1332,16 +1332,51 @@ export async function claimGrnEscalations(ids, claimedAt) {
 // 5. CYLINDERS
 // ============================================================================
 
+export function cylinderSkuConflict(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || error?.details || '').toLowerCase();
+  return code === '23505' || message.includes('already exists for another cylinder');
+}
+
+export async function allocateCylinderSkusFromServer(count = 1) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  const requested = Math.max(1, Math.min(500, parseInt(count, 10) || 1));
+  const { data, error } = await supabase.rpc('allocate_cylinder_sku', { p_count: requested });
+  if (error) handleSupabaseError(error, 'allocate_cylinder_sku');
+  const issued = Array.isArray(data) ? data : (data ? [data] : []);
+  return issued.map((sku) => String(sku || '').trim()).filter(Boolean);
+}
+
+export async function releaseCylinderSkuReservation(sku) {
+  if (!isSupabaseConfigured() || !sku) return;
+  const { error } = await supabase.rpc('release_cylinder_sku', { p_sku: sku });
+  if (error) handleSupabaseError(error, 'release_cylinder_sku');
+}
+
 export async function fetchCylinders() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
   }
   try {
-    const { data, error } = await supabase.from('cylinders').select('*').order('created_at', { ascending: false });
-    if (error) {
-      handleSupabaseError(error, 'cylinders');
+    const pageSize = 1000;
+    const data = [];
+    for (let from = 0; from < 50000; from += pageSize) {
+      const { data: batch, error } = await supabase
+        .from('cylinders')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) {
+        handleSupabaseError(error, 'cylinders');
+      }
+      const rows = Array.isArray(batch) ? batch : [];
+      data.push(...rows);
+      if (rows.length < pageSize) break;
     }
-    if (!data) return [];
+    if (data.length === 0) return [];
 
     return data.map(c => {
       const pm = c.press_marks || {};
@@ -1411,7 +1446,7 @@ export async function fetchCylinders() {
   }
 }
 
-export async function saveCylinderToSupabase(cyl) {
+export async function saveCylinderToSupabase(cyl, options = {}) {
   if (!isSupabaseConfigured() || !cyl) {
     throw new Error("Cannot save cylinder: Supabase database connection is not available.");
   }
@@ -1523,11 +1558,22 @@ export async function saveCylinderToSupabase(cyl) {
     changelogs: changelogsList
   };
 
+  const allocateOnConflict = options.allocateOnConflict ?? Boolean(cyl.skuAllocated);
   const { error: fullErr } = await supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
   if (fullErr) {
+    if (allocateOnConflict && !options._retried && cylinderSkuConflict(fullErr)) {
+      const [fresh] = await allocateCylinderSkusFromServer(1);
+      if (fresh && fresh !== cyl.sku) {
+        return saveCylinderToSupabase(
+          { ...cyl, sku: fresh, skuAllocated: false },
+          { allocateOnConflict: false, _retried: true }
+        );
+      }
+    }
     console.error('[cylinders] Save failed:', fullErr.message);
     handleSupabaseError(fullErr, 'cylinders');
   }
+  return cyl;
 }
 
 export async function saveCylinderBatchToSupabase(cylList) {
@@ -1536,9 +1582,11 @@ export async function saveCylinderBatchToSupabase(cylList) {
   }
   await ensureValidSession();
   console.log(`[cylinders] Bulk syncing ${cylList.length} cylinder set(s) to Supabase...`);
+  const saved = [];
   for (const cyl of cylList) {
-    await saveCylinderToSupabase(cyl);
+    saved.push(await saveCylinderToSupabase(cyl, { allocateOnConflict: Boolean(cyl.skuAllocated) }));
   }
+  return saved;
 }
 
 export async function deleteCylinderFromSupabase(cylinderId) {

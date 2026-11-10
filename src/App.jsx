@@ -3773,20 +3773,20 @@ export default function App() {
   const handleAddCylinder = async (newCyl) => {
     if (!newCyl) return;
     requireDatabaseConnection('add cylinder');
-    await saveCylinderToSupabase(newCyl);
-    const targetSku = (newCyl.sku || '').trim().toLowerCase();
-    const targetJobName = (newCyl.jobName || '').trim().toLowerCase();
+    const saved = await saveCylinderToSupabase(newCyl) || newCyl;
+    const targetSku = (saved.sku || '').trim().toLowerCase();
+    const targetJobName = (saved.jobName || '').trim().toLowerCase();
 
     setCylinders(prev => {
       const matchIndex = prev.findIndex(c =>
-        (newCyl.id && c.id === newCyl.id) ||
+        (saved.id && c.id === saved.id) ||
         (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku &&
           (!(c.jobName || '').trim() || !targetJobName || (c.jobName || '').trim().toLowerCase() === targetJobName))
       );
 
       if (matchIndex >= 0) {
         const existing = prev[matchIndex];
-        const updated = { ...existing, ...newCyl, id: existing.id || newCyl.id };
+        const updated = { ...existing, ...saved, id: existing.id || saved.id };
         const copy = [...prev];
         copy[matchIndex] = updated;
         return copy.filter((c, idx) => {
@@ -3798,12 +3798,13 @@ export default function App() {
           return true;
         });
       }
-      return [newCyl, ...prev];
+      return [saved, ...prev];
     });
 
-    logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
-    syncCylinderToOrderManagement(newCyl);
-    await syncCylinderToJobMaster(newCyl);
+    logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${saved.sku} for "${saved.jobName}"`, saved.id);
+    syncCylinderToOrderManagement(saved);
+    await syncCylinderToJobMaster(saved);
+    return saved;
   };
 
   const syncCylinderToJobMaster = async (cyl) => {
@@ -3982,14 +3983,14 @@ export default function App() {
   const handleBatchAddCylinders = async (newCylList) => {
     if (!Array.isArray(newCylList) || newCylList.length === 0) return;
     requireDatabaseConnection('batch add cylinders');
-    await saveCylinderBatchToSupabase(newCylList);
+    const savedList = await saveCylinderBatchToSupabase(newCylList) || newCylList;
     setCylinders(prev => {
       const map = new Map();
       (prev || []).forEach(c => {
         const k = cylinderIdentityKey(c);
         if (k) map.set(k, c);
       });
-      newCylList.forEach(c => {
+      savedList.forEach(c => {
         const k = cylinderIdentityKey(c);
         if (k) {
           const existing = map.get(k);
@@ -3999,8 +4000,8 @@ export default function App() {
       return Array.from(map.values());
     });
 
-    logAudit('CREATE', 'Cylinders', `Bulk uploaded ${newCylList.length} cylinder job(s) via CSV`, 'BULK_CSV');
-    for (const c of newCylList) {
+    logAudit('CREATE', 'Cylinders', `Bulk uploaded ${savedList.length} cylinder job(s) via CSV`, 'BULK_CSV');
+    for (const c of savedList) {
       await syncCylinderToJobMaster(c);
     }
   };

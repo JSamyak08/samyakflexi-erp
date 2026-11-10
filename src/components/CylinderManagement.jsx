@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { rawRoleNames, userHasAnyRole } from '../assignedRoles';
 import StorageImage from './StorageImage';
 import SearchableSelect from './SearchableSelect';
@@ -45,6 +45,8 @@ import {
   reconcileCylinderCosts,
   storedEngravingRate
 } from '../utils/cylinderCost';
+import { cylinderSkuTaken, nextCylinderSku, planBulkCylinderSkus } from '../utils/cylinderSku';
+import { allocateCylinderSkusFromServer, releaseCylinderSkuReservation } from '../services/supabaseDataService';
 import { cylinderIdentityKey, displayArtworkUrl } from '../utils/cylinderArtwork';
 import { findMatchingJobMaster } from '../utils/cylinderJobCardDraft';
 import ArtworkModal from './ArtworkModal';
@@ -237,6 +239,9 @@ export default function CylinderManagement({
 
   // Form Fields State
   const [sku, setSku] = useState('');
+  const [skuWasAllocated, setSkuWasAllocated] = useState(false);
+  const allocatedSkuRef = useRef('');
+  const allocatingRef = useRef(false);
   const [jobName, setJobName] = useState('');
   const [clientGroup, setClientGroup] = useState('');
   const [colorsCount, setColorsCount] = useState(6);
@@ -385,59 +390,45 @@ export default function CylinderManagement({
     }
   }, [circumferenceMm, faceLengthMm, rate, colorsCount, autoCalculateCost, calculatedCostPerCylinder, calculatedTotalSetCost]);
 
-  const getNextCylinderSku = (offset = 0) => {
-    let maxNum = 0;
-    const checkValue = (val) => {
-      if (!val) return;
-      const str = String(val).trim();
-      if (!str) return;
-      const matches = str.match(/\d+/g);
-      if (matches && matches.length > 0) {
-        let numToConsider = parseInt(matches[matches.length - 1], 10);
-        if (matches.length > 1 && numToConsider >= 2020 && numToConsider <= 2035) {
-          numToConsider = parseInt(matches[0], 10);
-        } else if (matches.length === 1 && numToConsider >= 2020 && numToConsider <= 2035) {
-          numToConsider = 0;
-        }
-
-        if (!isNaN(numToConsider) && numToConsider > maxNum) {
-          maxNum = numToConsider;
-        }
-      }
-    };
-
-    (cylinders || []).forEach(c => {
-      checkValue(c.sku);
-      checkValue(c.skuCode);
-      checkValue(c.cylinderSku);
-    });
-
-    (jobMasters || []).forEach(j => {
-      checkValue(j.cylinderSku);
-      checkValue(j.sku);
-      checkValue(j.skuCode);
-    });
-
-    const nextIndex = maxNum + 1 + offset;
-    return `SKU-CYL-${String(nextIndex).padStart(3, '0')}`;
-  };
-
   const isSkuDuplicate = useMemo(() => {
-    const code = (sku || '').trim().toLowerCase();
-    if (!code) return false;
-    return (cylinders || []).some(c => 
-      c.id !== editingCylinder?.id && 
-      ((c.sku || c.skuCode || '').toLowerCase() === code)
-    );
+    if (editingCylinder) return false;
+    return cylinderSkuTaken(sku, cylinders);
   }, [sku, cylinders, editingCylinder]);
 
-  const openAddModal = () => {
+  const rememberAllocatedSku = (code) => {
+    allocatedSkuRef.current = code || '';
+    setSkuWasAllocated(Boolean(code));
+    if (code) setSku(code);
+  };
+
+  const releaseUnsavedAllocation = async () => {
+    const reserved = allocatedSkuRef.current;
+    allocatedSkuRef.current = '';
+    setSkuWasAllocated(false);
+    if (!reserved) return;
+    try {
+      await releaseCylinderSkuReservation(reserved);
+    } catch (err) {
+      console.warn('[cylinders] Could not release unused SKU reservation:', err?.message || err);
+    }
+  };
+
+  const openAddModal = async () => {
     if (!canEditCylinders) {
       alert("⛔ Permission Denied: Only Admin and Plant Manager roles are authorized to create or edit Rotogravure Cylinder sets.");
       return;
     }
+    if (allocatingRef.current) return;
+    allocatingRef.current = true;
+    try {
+    const previous = allocatedSkuRef.current;
+    allocatedSkuRef.current = '';
+    if (previous) {
+      try { await releaseCylinderSkuReservation(previous); } catch (err) {
+        console.warn('[cylinders] Could not release the previous SKU reservation:', err?.message || err);
+      }
+    }
     setEditingCylinder(null);
-    setSku(getNextCylinderSku());
     setJobName('');
     setClientGroup('');
     setColorsCount(6);
@@ -469,6 +460,32 @@ export default function CylinderManagement({
     setTrackerLine('Yes');
     setSpecialInstructions('');
     setIsModalOpen(true);
+    try {
+      const [issued] = await allocateCylinderSkusFromServer(1);
+      if (issued) {
+        let used = false;
+        setSku((current) => {
+          if (String(current || '').trim()) return current;
+          used = true;
+          allocatedSkuRef.current = issued;
+          return issued;
+        });
+        if (used) setSkuWasAllocated(true);
+        else releaseCylinderSkuReservation(issued);
+      }
+    } catch (err) {
+      console.warn('[cylinders] Server SKU allocation is unavailable:', err?.message || err);
+      const fallback = nextCylinderSku(cylinders);
+      if (fallback) setSku(fallback);
+    }
+    } finally {
+      allocatingRef.current = false;
+    }
+  };
+
+  const closeCylinderModal = async () => {
+    if (!editingCylinder) await releaseUnsavedAllocation();
+    setIsModalOpen(false);
   };
 
   const openEditModal = (cyl) => {
@@ -487,6 +504,8 @@ export default function CylinderManagement({
 
     setEditingCylinder(cyl);
     setSku(cyl.sku || '');
+    setSkuWasAllocated(false);
+    allocatedSkuRef.current = '';
     setJobName(cyl.jobName || '');
     setClientGroup(cyl.clientGroup || matchedJM?.clientName || '');
     setColorsCount(cyl.colorsCount || matchedJM?.colorsCount || 6);
@@ -656,10 +675,16 @@ export default function CylinderManagement({
 
   const handleSaveCylinder = async (e) => {
     e.preventDefault();
-    if (!jobName.trim() || !sku.trim()) {
+    if (!jobName.trim() || !(editingCylinder ? editingCylinder.sku : sku).toString().trim()) {
       alert("SKU and Job Name are required!");
       return;
     }
+    if (!editingCylinder && isSkuDuplicate) {
+      alert(`SKU Code "${sku.trim()}" already exists for another cylinder set.`);
+      return;
+    }
+
+    const skuToSave = editingCylinder ? editingCylinder.sku : sku.trim();
 
     if (editingCylinder && editingCylinder.isLocked && !isAdminOrPlantManager) {
       alert("⛔ Permission Denied: This cylinder set is LOCKED. Only Admin and Plant Manager can save changes to locked cylinders.");
@@ -679,7 +704,8 @@ export default function CylinderManagement({
 
     const payload = {
       id: editingCylinder ? editingCylinder.id : Date.now(),
-      sku: sku.trim(),
+      sku: skuToSave,
+      skuAllocated: !editingCylinder && skuWasAllocated,
       jobName: jobName.trim(),
       clientGroup: clientGroup.trim(),
       structure: structureSummary,
@@ -715,21 +741,30 @@ export default function CylinderManagement({
       changelogs: updatedLogs
     };
 
+    let savedSku = skuToSave;
     try {
       if (editingCylinder) {
         if (onUpdateCylinder) await onUpdateCylinder(payload);
-      } else {
-        if (onAddCylinder) await onAddCylinder(payload);
+      } else if (onAddCylinder) {
+        const saved = await onAddCylinder(payload);
+        savedSku = saved?.sku || skuToSave;
       }
     } catch (err) {
       alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder set was not saved: ${err.message || err}`);
       return;
     }
 
+    const abandonedReservation = allocatedSkuRef.current;
+    allocatedSkuRef.current = '';
+    setSkuWasAllocated(false);
+    if (abandonedReservation && abandonedReservation !== savedSku) {
+      releaseCylinderSkuReservation(abandonedReservation).catch(() => {});
+    }
+
     if (!editingCylinder && createJobMaster && onAddJobMaster) {
       const newJobMaster = {
           id: nextJmId,
-          skuCode: sku.trim(),
+          skuCode: savedSku,
           jobName: jobName.trim(),
           clientName: clientGroup.trim() || 'Standard Client',
           structure: structureSummary,
@@ -739,7 +774,7 @@ export default function CylinderManagement({
           pouchOpenWidth: parseFloat(pouchOpenWidth) || 0,
           pouchHeight: parseFloat(pouchHeight) || 0,
           layers: layers,
-          cylinderSku: sku.trim(),
+          cylinderSku: savedSku,
           cylinderCost: formatInrAmount(cylinderCost),
           colorsCount: parseInt(colorsCount) || 6,
           engravuresName,
@@ -855,7 +890,7 @@ export default function CylinderManagement({
   const bulkPreviewJobs = useMemo(() => {
     if (!bulkParsedRows || bulkParsedRows.length === 0) return [];
 
-    return bulkParsedRows.map((row, idx) => {
+    const parsed = bulkParsedRows.map((row) => {
       const getValue = (key) => {
         const headerName = bulkHeaderMapping[key];
         if (!headerName) return '';
@@ -863,8 +898,11 @@ export default function CylinderManagement({
         if (headerIdx < 0 || headerIdx >= row.length) return '';
         return row[headerIdx] || '';
       };
+      return { row, getValue };
+    });
+    const skuPlan = planBulkCylinderSkus(parsed.map(({ getValue }) => getValue('sku')), cylinders);
 
-      const rawSku = getValue('sku');
+    return parsed.map(({ getValue }, idx) => {
       const rawJobName = getValue('jobName');
       const rawClient = getValue('clientGroup');
       const rawColors = getValue('colorsCount');
@@ -879,8 +917,9 @@ export default function CylinderManagement({
       const rawStatus = getValue('status');
       const rawPress = getValue('assignedPress');
       const rawStructure = getValue('structure');
+      const plan = skuPlan[idx] || { sku: '', generated: false, collision: true, message: 'SKU could not be planned.' };
 
-      const computedSku = rawSku || getNextCylinderSku(idx);
+      const computedSku = plan.sku;
       const computedJobName = rawJobName || `Bulk Job #${idx + 1}`;
       const computedClient = rawClient || 'Standard Client';
       const computedColors = parseInt(rawColors) || 6;
@@ -916,11 +955,14 @@ export default function CylinderManagement({
         });
       }
 
-      const isValid = Boolean(computedSku && computedJobName);
+      const isValid = Boolean(computedSku && computedJobName && !plan.collision);
 
       return {
         id: `CYL-BULK-${Date.now()}-${idx}`,
         sku: computedSku,
+        skuAllocated: plan.generated,
+        skuCollision: plan.collision,
+        skuMessage: plan.message,
         jobName: computedJobName,
         clientGroup: computedClient,
         colorsCount: computedColors,
@@ -949,25 +991,55 @@ export default function CylinderManagement({
         isValid
       };
     });
-  }, [bulkParsedRows, bulkParsedHeaders, bulkHeaderMapping, bulkCsvFileName, printingPresses]);
+  }, [bulkParsedRows, bulkParsedHeaders, bulkHeaderMapping, bulkCsvFileName, printingPresses, cylinders]);
 
-  const handleConfirmBulkUpload = () => {
-    if (bulkPreviewJobs.length === 0) {
-      alert("No valid jobs to import.");
+  const handleConfirmBulkUpload = async () => {
+    const ready = bulkPreviewJobs.filter(job => job.isValid);
+    const blocked = bulkPreviewJobs.filter(job => job.skuCollision);
+    if (ready.length === 0) {
+      alert(blocked.length
+        ? `No rows imported. ${blocked.length} SKU code(s) already exist and were not changed.`
+        : 'No valid jobs to import.');
       return;
     }
 
-    if (onBatchAddCylinders) {
-      onBatchAddCylinders(bulkPreviewJobs);
-    } else {
-      bulkPreviewJobs.forEach(job => {
-        if (onAddCylinder) onAddCylinder(job);
-      });
+    const generatedCount = ready.filter(job => job.skuAllocated).length;
+    let issued = [];
+    if (generatedCount > 0) {
+      try {
+        issued = await allocateCylinderSkusFromServer(generatedCount);
+      } catch (err) {
+        alert(`Could not allocate unique SKU codes: ${err?.message || err}`);
+        return;
+      }
+      if (issued.length < generatedCount) {
+        alert('The server did not return enough unique SKU codes. Nothing was imported.');
+        return;
+      }
     }
 
-    // Auto-create consequent Job Master entries if toggle enabled
+    let cursor = 0;
+    const jobsToSave = ready.map((job) => {
+      if (!job.skuAllocated) return job;
+      const sku = issued[cursor++] || job.sku;
+      return { ...job, sku, skuAllocated: true };
+    });
+
+    if (onBatchAddCylinders) {
+      try {
+        await onBatchAddCylinders(jobsToSave);
+      } catch (err) {
+        alert(`The cylinder import was not saved: ${err?.message || err}`);
+        return;
+      }
+    } else {
+      for (const job of jobsToSave) {
+        if (onAddCylinder) await onAddCylinder(job);
+      }
+    }
+
     if (bulkAutoCreateJobMasters) {
-      const createdJms = bulkPreviewJobs.map((job, idx) => {
+      const createdJms = jobsToSave.map((job, idx) => {
         const jmId = `JM-2026-${String((jobMasters ? jobMasters.length : 0) + 101 + idx).padStart(3, '0')}`;
         return {
           id: jmId,
@@ -998,7 +1070,10 @@ export default function CylinderManagement({
     }
 
     setIsBulkModalOpen(false);
-    alert(`✅ Bulk Upload Complete!\nSuccessfully imported ${bulkPreviewJobs.length} Rotogravure Cylinder set(s) into database.${bulkAutoCreateJobMasters ? ' Linked Job Master entries were also created.' : ''}\n\nNote: You can now manually upload Artwork Images for each job in the table.`);
+    const blockedNote = blocked.length
+      ? `\n${blocked.length} row(s) were skipped because their SKU already exists: ${blocked.map(job => job.sku).join(', ')}.`
+      : '';
+    alert(`✅ Bulk Upload Complete!\nSuccessfully imported ${jobsToSave.length} Rotogravure Cylinder set(s) into database.${blockedNote}${bulkAutoCreateJobMasters ? ' Linked Job Master entries were also created.' : ''}\n\nNote: You can now manually upload Artwork Images for each job in the table.`);
   };
 
   const uniqueCylinders = useMemo(() => {
@@ -1082,12 +1157,14 @@ export default function CylinderManagement({
                   className="btn-secondary" 
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: '700', cursor: 'pointer', padding: '8px 14px' }}
                   title="Bulk Upload Jobs from CSV file"
+                  data-testid="bulk-upload-cylinders"
                 >
                   <FileSpreadsheet size={16} style={{ color: '#047857' }} /> Bulk Upload Jobs (CSV)
                   <input 
                     type="file" 
                     accept=".csv,.txt" 
                     style={{ display: 'none' }} 
+                    data-testid="cylinder-csv-input"
                     onChange={handleCsvFileUpload} 
                   />
                 </label>
@@ -1095,7 +1172,7 @@ export default function CylinderManagement({
             )}
 
             {canEditCylinders ? (
-              <button className="btn-primary" onClick={openAddModal}>
+              <button className="btn-primary" data-testid="add-cylinder" onClick={openAddModal}>
                 <Plus size={16} /> Add New Cylinder Set
               </button>
             ) : (
@@ -1497,14 +1574,23 @@ export default function CylinderManagement({
                     {bulkPreviewJobs.map((job, idx) => (
                       <tr key={idx} style={{ background: job.isValid ? 'transparent' : '#fef2f2' }}>
                         <td>{idx + 1}</td>
-                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{job.sku}</td>
+                        <td style={{ fontWeight: '700', color: job.skuCollision ? '#dc2626' : 'var(--primary-brand)' }}>
+                          {job.sku}
+                          {job.skuMessage && (
+                            <div style={{ fontSize: '0.68rem', color: '#dc2626', fontWeight: '700' }}>{job.skuMessage}</div>
+                          )}
+                        </td>
                         <td style={{ fontWeight: '700' }}>{job.jobName}</td>
                         <td>{job.clientGroup}</td>
                         <td>🎨 {job.colorsCount} C</td>
                         <td>{job.faceLengthMm}L × {job.circumferenceMm}C mm</td>
                         <td style={{ fontWeight: '700' }}>{job.cylinderCost}</td>
                         <td>
-                          <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Ready to Import</span>
+                          {job.skuCollision ? (
+                            <span className="badge badge-warning" style={{ fontSize: '0.7rem' }}>SKU already exists</span>
+                          ) : (
+                            <span className="badge badge-success" style={{ fontSize: '0.7rem' }}>Ready to Import</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1520,8 +1606,8 @@ export default function CylinderManagement({
               </div>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsBulkModalOpen(false)}>Cancel</button>
-                <button type="button" className="btn-primary" onClick={handleConfirmBulkUpload}>
-                  <CheckCircle2 size={16} /> Confirm & Ingest {bulkPreviewJobs.length} Job(s)
+                <button type="button" className="btn-primary" data-testid="confirm-cylinder-csv" onClick={handleConfirmBulkUpload} disabled={bulkPreviewJobs.every(job => !job.isValid)}>
+                  <CheckCircle2 size={16} /> Confirm & Ingest {bulkPreviewJobs.filter(job => job.isValid).length} Job(s)
                 </button>
               </div>
             </div>
@@ -1592,7 +1678,7 @@ export default function CylinderManagement({
 
       {/* Add / Edit Cylinder Modal */}
       {isModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
+        <div className="modal-overlay" onClick={closeCylinderModal}>
           <div className="glass-card modal-content" style={{ width: '850px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
@@ -1603,7 +1689,7 @@ export default function CylinderManagement({
                   Configure cylinder technical parameters, substrate layers, cost calculations, and production tracking.
                 </p>
               </div>
-              <button type="button" className="btn-icon" onClick={() => setIsModalOpen(false)}>
+              <button type="button" className="btn-icon" onClick={closeCylinderModal}>
                 <X size={18} />
               </button>
             </div>
@@ -1623,7 +1709,15 @@ export default function CylinderManagement({
                       {!editingCylinder && (
                         <button 
                           type="button" 
-                          onClick={() => setSku(getNextCylinderSku())}
+                          onClick={async () => {
+                            await releaseUnsavedAllocation();
+                            try {
+                              const [issued] = await allocateCylinderSkusFromServer(1);
+                              if (issued) rememberAllocatedSku(issued);
+                            } catch (err) {
+                              alert(`Could not allocate the next SKU: ${err?.message || err}`);
+                            }
+                          }}
                           style={{ background: 'none', border: 'none', color: 'var(--primary-brand)', fontSize: '0.75rem', fontWeight: '700', cursor: 'pointer', padding: 0 }}
                           title="Generate Next Sequence Number"
                         >
@@ -1635,13 +1729,26 @@ export default function CylinderManagement({
                       type="text" 
                       className="form-control" 
                       required 
+                      data-testid="cylinder-sku"
                       value={sku} 
-                      onChange={e => setSku(e.target.value)} 
-                      style={isSkuDuplicate ? { borderColor: '#ef4444', background: '#fef2f2' } : {}}
+                      readOnly={Boolean(editingCylinder)}
+                      onChange={e => {
+                        const next = e.target.value;
+                        if (allocatedSkuRef.current && next.trim() !== allocatedSkuRef.current) {
+                          releaseUnsavedAllocation();
+                        }
+                        setSku(next);
+                      }} 
+                      style={isSkuDuplicate ? { borderColor: '#ef4444', background: '#fef2f2' } : (editingCylinder ? { background: '#f8fafc' } : {})}
                       placeholder="e.g. SKU-CYL-001"
                     />
+                    {editingCylinder && (
+                      <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                        This SKU is kept as stored. Existing codes are not renumbered.
+                      </div>
+                    )}
                     {isSkuDuplicate && (
-                      <div style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: '700', marginTop: '2px' }}>
+                      <div data-testid="cylinder-sku-error" style={{ fontSize: '0.72rem', color: '#dc2626', fontWeight: '700', marginTop: '2px' }}>
                         ⚠️ SKU Code "{sku}" already exists for another cylinder set.
                       </div>
                     )}
@@ -1765,6 +1872,7 @@ export default function CylinderManagement({
                           className="form-control" 
                           style={{ padding: '4px 8px', fontSize: '0.85rem', marginTop: '4px' }}
                           value={rate} 
+                          data-testid="cylinder-rate"
                           onChange={e => setRate(e.target.value)} 
                         />
                       </div>
@@ -1776,6 +1884,7 @@ export default function CylinderManagement({
                           className="form-control" 
                           style={{ padding: '4px 8px', fontSize: '0.85rem', marginTop: '4px', fontWeight: '700', color: '#047857' }}
                           value={costPerCylinder} 
+                          data-testid="cylinder-cost-per" 
                           onChange={e => {
                             setCostPerCylinder(e.target.value);
                             setAutoCalculateCost(false);
@@ -1790,6 +1899,7 @@ export default function CylinderManagement({
                           className="form-control" 
                           style={{ padding: '4px 8px', fontSize: '0.85rem', marginTop: '4px', fontWeight: '800', color: '#1e3a8a' }}
                           value={cylinderCost} 
+                          data-testid="cylinder-set-cost" 
                           onChange={e => {
                             setCylinderCost(e.target.value);
                             setAutoCalculateCost(false);
@@ -2015,8 +2125,8 @@ export default function CylinderManagement({
 
               {/* FOOTER ACTIONS */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '10px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">
+                <button type="button" className="btn-secondary" onClick={closeCylinderModal}>Cancel</button>
+                <button type="submit" className="btn-primary" data-testid="save-cylinder" disabled={!editingCylinder && isSkuDuplicate}>
                   <CheckCircle2 size={16} /> {editingCylinder ? 'Save Changes' : 'Save Cylinder Set'}
                 </button>
               </div>
