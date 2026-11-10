@@ -100,6 +100,8 @@ import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
 import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS, firstAllowedModule, nextModuleForDeniedTab, roleCanEditSfgStore } from './bootAccess';
 import { assignedRolesOf, hasOnlyRole, rawRoleNames, userHasRole } from './assignedRoles';
+import { canRevertConsumption } from './utils/revertConsumption';
+import ConsumptionRevertNotices from './components/ConsumptionRevertNotices';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
@@ -5001,6 +5003,21 @@ export default function App() {
     return packingResult;
   };
 
+  const refreshAfterConsumptionRevert = async () => {
+    const [goods, items, rolls, records, shipments] = await Promise.all([
+      fetchSFGGoodsFromSupabase().catch(() => null),
+      fetchInventory().catch(() => null),
+      fetchInventoryRolls().catch(() => null),
+      fetchProductionRecords().catch(() => null),
+      fetchDispatchShipments().catch(() => null)
+    ]);
+    if (Array.isArray(goods)) setSfgGoods(goods);
+    if (Array.isArray(items)) setInventory(items);
+    if (Array.isArray(rolls)) setInventoryRolls(rolls);
+    if (Array.isArray(records)) setProductionRecords(records);
+    if (Array.isArray(shipments)) setDispatchShipments(shipments);
+  };
+
   const handleDeleteSFGGood = async (sfgId) => {
     assertSfgStoreEdit();
     requireDatabaseConnection('delete SFG item');
@@ -5187,6 +5204,8 @@ export default function App() {
             <span className="sidebar-scan-kbd">Alt+B</span>
           </button>
         </div>
+
+        <ConsumptionRevertNotices currentUser={currentUser} />
 
         <div className="nav-links" onScroll={() => setNavTooltip(null)}>
           {(isTabAllowed('dashboard') || isTabAllowed('sales') || isTabAllowed('scrap_analytics')) && (
@@ -6721,7 +6740,9 @@ export default function App() {
             onSaveSFGGood={handleSaveSFGGood}
             onConsumeSFG={handleConsumeSFG}
             onDeleteSFGGood={handleDeleteSFGGood}
+            onConsumptionReverted={refreshAfterConsumptionRevert}
             canEditStore={roleCanEditSfgStore(rolePermissions, assignedRolesOf(currentUser))}
+            canRevertConsumption={canRevertConsumption(currentUser)}
           />
         )}
 
