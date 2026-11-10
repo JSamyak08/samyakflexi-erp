@@ -73,6 +73,7 @@ import {
   balanceSaveError,
   composeConsumeNotes,
   computeConsumeStockBalance,
+  consumeMassInputs,
   stageHasOutputSection,
   stageScrapKg
 } from '../utils/consumeMassBalance';
@@ -249,6 +250,7 @@ export default function SFGStoreManagement({
   const [adhesiveConsumedL2Kg, setAdhesiveConsumedL2Kg] = useState('');
   const [printingPlainSettingWastageKg, setPrintingPlainSettingWastageKg] = useState('');
   const [printingWastageKg, setPrintingWastageKg] = useState('');
+  const [inkSolidsKg, setInkSolidsKg] = useState('');
   const [slittingTrimScrapKg, setSlittingTrimScrapKg] = useState('');
   const [slittingSettingWastageKg, setSlittingSettingWastageKg] = useState('');
   const [pouchingScrapKg, setPouchingScrapKg] = useState('');
@@ -599,6 +601,7 @@ export default function SFGStoreManagement({
     setAdhesiveConsumedL2Kg('');
     setPrintingPlainSettingWastageKg('');
     setPrintingWastageKg('');
+    setInkSolidsKg('');
     setSlittingTrimScrapKg('');
     setSlittingSettingWastageKg('');
     setPouchingScrapKg('');
@@ -862,17 +865,44 @@ export default function SFGStoreManagement({
     const outputNetKg = stageHasOutputSection(targetProcess) && isOutputMade
       ? sumOutputNet(outputGrossKg, outputTareKg, extraOutputs)
       : 0;
-    return applyBalanceDisposition(computeConsumeStockBalance({
+    const substrateKg = targetProcess === 'Lamination (Pass 1)'
+      ? sumSubstrateConsumed(subConsumedKg, extraSubstrate2)
+      : targetProcess === 'Lamination (Pass 2)'
+        ? sumSubstrateConsumed(subConsumedKg, extraSubstrate3)
+        : 0;
+    const adhesiveKg = targetProcess === 'Lamination (Pass 1)'
+      ? (parseFloat(adhesiveConsumedL1Kg) || 0)
+      : targetProcess === 'Lamination (Pass 2)'
+        ? (parseFloat(adhesiveConsumedL2Kg) || 0)
+        : 0;
+    const massInputs = consumeMassInputs({
       processName: targetProcess,
-      consumedKg: parseFloat(consumedWeightKg) || 0,
+      primaryKg: parseFloat(consumedWeightKg) || 0,
+      substrateKg,
+      adhesiveKg,
+      inkSolidsKg,
+      zipperKg: zipperConsumedKg
+    });
+    const balance = applyBalanceDisposition(computeConsumeStockBalance({
+      processName: targetProcess,
+      consumedKg: massInputs.primaryKg,
+      addedInputKg: massInputs.addedInputKg,
       availableKg: available,
       scrapKg,
       outputNetKg
     }), balanceReason);
+    return { ...balance, inputLines: massInputs.lines };
   }, [
     selectedItemForConsume,
     targetProcess,
     consumedWeightKg,
+    subConsumedKg,
+    extraSubstrate2,
+    extraSubstrate3,
+    adhesiveConsumedL1Kg,
+    adhesiveConsumedL2Kg,
+    inkSolidsKg,
+    zipperConsumedKg,
     laminationPlainSubstrateWastageKg,
     laminationPlainSubstrateWastageL2Kg,
     laminateWastageKg,
@@ -1016,6 +1046,7 @@ export default function SFGStoreManagement({
         adhesiveConsumedL2Kg: parseFloat(adhesiveConsumedL2Kg) || 0,
         printingPlainSettingWastageKg: parseFloat(printingPlainSettingWastageKg) || 0,
         printingWastageKg: parseFloat(printingWastageKg) || 0,
+        inkSolidsKg: parseFloat(inkSolidsKg) || 0,
         slittingTrimScrapKg: parseFloat(slittingTrimScrapKg) || 0,
         slittingSettingWastageKg: parseFloat(slittingSettingWastageKg) || 0,
         slittingScrapKg: (parseFloat(slittingTrimScrapKg) || 0) + (parseFloat(slittingSettingWastageKg) || 0),
@@ -1089,7 +1120,11 @@ export default function SFGStoreManagement({
         consumedKg: parseFloat(qtyVal.toFixed(2)),
         remainingBalanceKg: parseFloat(newAvailableKg),
         ...(outputStage ? {
-          balanceKeptKg: consumeBalance.balanceKeptKg,
+          balanceKeptKg: Number(consumeBalance.lotKeptKg) || 0,
+          massBalanceKg: consumeBalance.balanceKeptKg,
+          massConsumedKg: consumeBalance.consumedKg,
+          addedInputKg: consumeBalance.addedInputKg,
+          unallocatedKg: consumeBalance.unallocatedKg || 0,
           scrapKg: consumeBalance.scrapKg,
           outputNetKg: consumeBalance.outputNetKg,
           stockDeductedKg: parseFloat(stockDeductedKg.toFixed(2)),
@@ -1161,7 +1196,8 @@ export default function SFGStoreManagement({
         ...(selectedItemForConsume.consumptionHistory || [])
       ];
 
-      const keptOnLot = outputStage && consumeBalance.balanceKeptKg > 0 && !consumeBalance.toQcHold;
+      const lotKeptKg = outputStage && !consumeBalance.negative ? (Number(consumeBalance.lotKeptKg) || 0) : 0;
+      const keptOnLot = outputStage && lotKeptKg > 0 && !consumeBalance.toQcHold;
       const updatedItem = {
         ...selectedItemForConsume,
         consumedKg: parseFloat(newConsumedKg),
@@ -1170,8 +1206,8 @@ export default function SFGStoreManagement({
         consumptionHistory: updatedConsumptionHistory,
         balanceReason: keptOnLot ? balanceReason : (outputStage && consumeBalance.toQcHold ? BALANCE_REASON_QC_HOLD : ''),
         balanceNote: keptOnLot && balanceReason === BALANCE_REASON_OTHER ? balanceNote.trim() : '',
-        balanceKeptKg: keptOnLot ? consumeBalance.balanceKeptKg : 0,
-        balanceQcHoldKg: outputStage && consumeBalance.toQcHold ? consumeBalance.balanceKeptKg : 0
+        balanceKeptKg: keptOnLot ? lotKeptKg : 0,
+        balanceQcHoldKg: outputStage && consumeBalance.toQcHold ? lotKeptKg : 0
       };
 
       let consumeWarning = null;
@@ -1189,7 +1225,7 @@ export default function SFGStoreManagement({
 
       if (outputStage && consumeBalance.toQcHold && consumeBalance.balanceKeptKg > 0) {
         const holdTagId = `QCHOLD-${Date.now().toString().slice(-6)}`;
-        const heldKg = parseFloat(Number(consumeBalance.balanceKeptKg).toFixed(2));
+        const heldKg = parseFloat(Number(consumeBalance.lotKeptKg).toFixed(2));
         const holdDetail = balanceReason === BALANCE_REASON_OTHER ? balanceNote.trim() : balanceReason;
         await persistQcHold([{
           id: holdTagId,
@@ -3769,7 +3805,7 @@ export default function SFGStoreManagement({
 
                         {/* Printing Pass 2 Scrap Inputs */}
                         {isPrintingPass2 && (
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '14px' }}>
                             <div>
                               <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '700', color: '#78350f', marginBottom: '4px' }}>
                                 Printing Plain Setting Wastage (kg)
@@ -3797,6 +3833,23 @@ export default function SFGStoreManagement({
                                 onChange={(e) => setPrintingWastageKg(e.target.value)}
                                 style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #fcd34d', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
                               />
+                            </div>
+                            <div>
+                              <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: '800', color: '#1d4ed8', marginBottom: '4px' }}>
+                                Ink solids on the roll (kg)
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                placeholder="0.00"
+                                value={inkSolidsKg}
+                                onChange={(e) => setInkSolidsKg(e.target.value)}
+                                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1.5px solid #93c5fd', fontSize: '0.85rem', fontWeight: '700', background: '#fff' }}
+                              />
+                              <div style={{ fontSize: '0.68rem', color: '#1e40af', marginTop: '4px', lineHeight: 1.35 }}>
+                                Dry ink that stays on the film. Solvent that evaporates is not included.
+                              </div>
                             </div>
                           </div>
                         )}
@@ -4187,7 +4240,7 @@ export default function SFGStoreManagement({
                   </span>
                 </div>
               )}
-              {consumeBalance.mode === 'output' && (parseFloat(consumedWeightKg) > 0 || consumeBalance.scrapKg > 0 || consumeBalance.outputNetKg > 0) && (
+              {consumeBalance.mode === 'output' && (parseFloat(consumedWeightKg) > 0 || consumeBalance.addedInputKg > 0 || consumeBalance.scrapKg > 0 || consumeBalance.outputNetKg > 0) && (
                 <div
                   data-testid="consume-mass-balance"
                   style={{
@@ -4201,6 +4254,12 @@ export default function SFGStoreManagement({
                   <div style={{ fontSize: '0.78rem', fontWeight: '800', color: consumeBalance.negative ? '#991b1b' : '#166534', marginBottom: '8px' }}>
                     MASS BALANCE
                   </div>
+                  {consumeBalance.addedInputKg > 0 && (consumeBalance.inputLines || []).filter((line) => line.kg > 0).map((line) => (
+                    <div key={line.key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#475569', marginBottom: '2px' }}>
+                      <span>{line.label}</span>
+                      <span style={{ fontWeight: '700' }}>{Number(line.kg).toFixed(2)} kg</span>
+                    </div>
+                  ))}
                   {[
                     ['Consumed', consumeBalance.consumedKg],
                     ['Scrap', consumeBalance.scrapKg],
@@ -4228,8 +4287,11 @@ export default function SFGStoreManagement({
                     <div style={{ marginTop: '12px' }}>
                       <div style={{ fontSize: '0.78rem', color: '#166534', marginBottom: '8px' }}>
                         {consumeBalance.toQcHold
-                          ? `${Number(consumeBalance.balanceKeptKg).toFixed(2)} kg moves to QC Hold. Good stock left on this lot: ${Number(consumeBalance.lotAvailableKg).toFixed(2)} kg.`
-                          : `${Number(consumeBalance.balanceKeptKg).toFixed(2)} kg stays on ${selectedItemForConsume?.sfgBatchCode || 'this lot'}${Number(consumeBalance.lotAvailableKg) !== Number(consumeBalance.balanceKeptKg) ? ` (lot available after: ${Number(consumeBalance.lotAvailableKg).toFixed(2)} kg)` : ''}.`}
+                          ? `${Number(consumeBalance.lotKeptKg).toFixed(2)} kg moves to QC Hold. Good stock left on this lot: ${Number(consumeBalance.lotAvailableKg).toFixed(2)} kg.`
+                          : `${Number(consumeBalance.lotKeptKg).toFixed(2)} kg stays on ${selectedItemForConsume?.sfgBatchCode || 'this lot'}${Number(consumeBalance.lotAvailableKg) !== Number(consumeBalance.lotKeptKg) ? ` (lot available after: ${Number(consumeBalance.lotAvailableKg).toFixed(2)} kg)` : ''}.`}
+                        {Number(consumeBalance.unallocatedKg) > 0
+                          ? ` ${Number(consumeBalance.unallocatedKg).toFixed(2)} kg of substrate, adhesive, ink, or zipper was weighed above the output and scrap. That weight is not added to this lot.`
+                          : ''}
                       </div>
                       <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
                         Reason for balance <span style={{ color: '#ef4444' }}>*</span>
