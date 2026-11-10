@@ -61,6 +61,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Bug,
+  ScrollText,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -86,6 +87,7 @@ import ScrapWastageAnalysis from './components/ScrapWastageAnalysis';
 import AuditLogsManagement from './components/AuditLogsManagement';
 import BugReportModal from './components/BugReportModal';
 import BugReportsScreen from './components/BugReportsScreen';
+import ChangelogScreen from './components/ChangelogScreen';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
@@ -5437,7 +5439,7 @@ export default function App() {
             </>
           )}
 
-          {(isTabAllowed('user_management') || isTabAllowed('supabase') || isTabAllowed('doc_settings') || userHasRole(currentUser, 'Admin')) && (
+          {(isTabAllowed('user_management') || isTabAllowed('supabase') || isTabAllowed('doc_settings') || isTabAllowed('changelog') || userHasRole(currentUser, 'Admin')) && (
             <>
               <div className="sidebar-section-header">System Admin</div>
 
@@ -5483,6 +5485,17 @@ export default function App() {
                     <SidebarCountBadge tone="nav-badge-warning" count={newBugCount} extra="New" />
                   )}
                 </SidebarNavItem>
+              )}
+
+              {isTabAllowed('changelog') && (
+                <SidebarNavItem
+                  active={activeTab === 'changelog'}
+                  onClick={() => handleTabChange('changelog')}
+                  color="#0f766e"
+                  icon={ScrollText}
+                  label="Changelog"
+                  testId="changelog-nav"
+                />
               )}
 
               {userHasRole(currentUser, 'Admin') && (
@@ -5615,6 +5628,7 @@ export default function App() {
               {moduleOpen && activeTab === 'doc_settings' && 'Letterhead Signature & Series Settings'}
               {moduleOpen && activeTab === 'bug_reports' && 'Bug Reports'}
               {moduleOpen && activeTab === 'my_bug_reports' && 'My Bug Reports'}
+              {moduleOpen && activeTab === 'changelog' && 'Changelog'}
             </h1>
 
 
@@ -6930,6 +6944,10 @@ export default function App() {
 
         {moduleOpen && activeTab === 'my_bug_reports' && (
           <BugReportsScreen mode="mine" />
+        )}
+
+        {moduleOpen && activeTab === 'changelog' && (
+          <ChangelogScreen canEdit={userHasRole(currentUser, 'Admin')} />
         )}
 
         {/* TAB: SYSTEM AUDIT LOGS (ADMIN ONLY) */}

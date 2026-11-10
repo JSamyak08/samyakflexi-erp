@@ -149,6 +149,7 @@ const CANONICAL = [
   ['/settings/email', 'doc_settings', 'email'],
   ['/settings/email-templates', 'doc_settings', 'email-templates'],
   ['/audit-logs', 'audit_logs', 'ledger'],
+  ['/changelog', 'changelog', 'list'],
   ['/bug-reports', 'bug_reports', 'list'],
   ['/my-bug-reports', 'my_bug_reports', 'list'],
 ];
@@ -610,7 +611,7 @@ test('canonical table covers every module that the sidebar can open', () => {
     'clients', 'printing_scheduler', 'production_records', 'sfg_store', 'cylinders',
     'purchase_orders', 'inventory', 'ink_management', 'material_indents', 'pellet_fuel', 'barcodes',
     'vendors', 'dispatch', 'employees', 'user_management', 'supabase', 'doc_settings', 'audit_logs',
-    'bug_reports', 'my_bug_reports',
+    'changelog', 'bug_reports', 'my_bug_reports',
   ]) {
     assert.ok(modules.has(key), key);
   }

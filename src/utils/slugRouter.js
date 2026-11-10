@@ -330,6 +330,12 @@ export const MODULES = [
     patterns: [{ section: 'ledger', segs: [], default: true }],
   },
   {
+    key: 'changelog',
+    path: '/changelog',
+    legacy: ['/changelog'],
+    patterns: [{ section: 'list', segs: [], default: true }],
+  },
+  {
     key: 'bug_reports',
     path: '/bug-reports',
     legacy: ['/bug-reports'],
