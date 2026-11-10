@@ -48,6 +48,15 @@ import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords } from '../services/businessRecords';
 import { findScrapForScan, legacyScrapBarcode, scrapScanCard } from '../utils/scrapIdentity';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
+import {
+  cameraChoices,
+  createBarcodeDetector,
+  detectBarcode,
+  mapCameraError,
+  openScanCamera,
+  readRememberedCameraId,
+  releaseMediaStream
+} from '../utils/scanCamera';
 
 /**
  * Universal Barcode & 2D QR Inspector Modal
@@ -88,19 +97,31 @@ export default function UniversalBarcodeScannerModal({
   const [cameraActive, setCameraActive] = useState(false);
   const [copied, setCopied] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [videoInputs, setVideoInputs] = useState([]);
+  const [activeDeviceId, setActiveDeviceId] = useState('');
+  const [streamGeneration, setStreamGeneration] = useState(0);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   
   const inputRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const requestRef = useRef(0);
+  const lastDetectedRef = useRef('');
+
+  const cameraStorage = () => {
+    try { return window.sessionStorage; } catch { return null; }
+  };
 
   const stopCamera = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
+    requestRef.current += 1;
+    releaseMediaStream(streamRef.current);
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    lastDetectedRef.current = '';
     setCameraActive(false);
+    setActiveDeviceId('');
+    setVideoInputs([]);
   }, []);
 
   // Auto focus input whenever modal opens
@@ -113,6 +134,7 @@ export default function UniversalBarcodeScannerModal({
       stopCamera();
       setBarcodeInput('');
       setActiveBarcode('');
+      setCameraError('');
     }
   }, [isOpen, stopCamera]);
 
@@ -141,28 +163,80 @@ export default function UniversalBarcodeScannerModal({
     };
   }, [stopCamera]);
 
-  const startCamera = async () => {
+  const startCamera = async (preferredDeviceId = '') => {
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
     setCameraError('');
+    releaseMediaStream(streamRef.current);
+    streamRef.current = null;
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCameraError('Camera access not supported on this device/browser.');
+      const opened = await openScanCamera({
+        mediaDevices: typeof navigator === 'undefined' ? undefined : navigator.mediaDevices,
+        preferredDeviceId,
+        storage: cameraStorage()
+      });
+      if (requestId !== requestRef.current) {
+        releaseMediaStream(opened.stream);
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
+      streamRef.current = opened.stream;
+      setActiveDeviceId(opened.deviceId || String(preferredDeviceId || '').trim());
       setCameraActive(true);
+      setStreamGeneration((generation) => generation + 1);
+      let choices = [];
+      try {
+        if (navigator.mediaDevices?.enumerateDevices) {
+          choices = cameraChoices(await navigator.mediaDevices.enumerateDevices());
+        }
+      } catch { choices = []; }
+      if (requestId !== requestRef.current) return;
+      setVideoInputs(choices);
     } catch (err) {
-      console.warn('Camera stream error:', err);
-      setCameraError(err.message || 'Unable to access camera. Ensure permissions are granted.');
+      if (requestId !== requestRef.current) return;
+      releaseMediaStream(streamRef.current);
+      streamRef.current = null;
       setCameraActive(false);
+      setVideoInputs([]);
+      setCameraError(mapCameraError(err));
     }
   };
+
+  useEffect(() => {
+    if (!cameraActive) return undefined;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return undefined;
+    video.srcObject = stream;
+    video.muted = true;
+    const playPromise = video.play?.();
+    if (playPromise && typeof playPromise.catch === 'function') playPromise.catch(() => {});
+    const detector = createBarcodeDetector();
+    let stopped = false;
+    let pending = '';
+    let timer = 0;
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const value = await detectBarcode(video, detector);
+        if (stopped) return;
+        if (value && value === pending && value !== lastDetectedRef.current) {
+          lastDetectedRef.current = value;
+          setBarcodeInput(value);
+          setActiveBarcode(value);
+        }
+        pending = value;
+      } catch {
+        pending = '';
+      }
+      if (!stopped) timer = window.setTimeout(tick, 350);
+    };
+    timer = window.setTimeout(tick, 300);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      if (video.srcObject === stream) video.srcObject = null;
+    };
+  }, [cameraActive, streamGeneration]);
 
   const handleSearchSubmit = (e) => {
     if (e) e.preventDefault();
@@ -179,6 +253,7 @@ export default function UniversalBarcodeScannerModal({
   };
 
   const handleClear = () => {
+    stopCamera();
     setBarcodeInput('');
     setActiveBarcode('');
     if (inputRef.current) inputRef.current.focus();
@@ -928,7 +1003,8 @@ export default function UniversalBarcodeScannerModal({
         padding: '16px'
       }}
     >
-      <div 
+      <div
+        data-scanner-modal="inspector"
         style={{
           background: '#ffffff',
           borderRadius: '16px',
@@ -998,7 +1074,12 @@ export default function UniversalBarcodeScannerModal({
           </div>
 
           <button
-            onClick={onClose}
+            type="button"
+            aria-label="Close scanner"
+            onClick={() => {
+              stopCamera();
+              onClose?.();
+            }}
             style={{
               background: 'transparent',
               border: 'none',
@@ -1085,7 +1166,7 @@ export default function UniversalBarcodeScannerModal({
 
             <button
               type="button"
-              onClick={cameraActive ? stopCamera : startCamera}
+              onClick={cameraActive ? stopCamera : () => startCamera(readRememberedCameraId(cameraStorage()))}
               className="btn-secondary"
               style={{
                 padding: '0 16px',
@@ -1117,9 +1198,13 @@ export default function UniversalBarcodeScannerModal({
                 alignItems: 'center'
               }}
             >
-              <video 
-                ref={videoRef} 
-                style={{ width: '100%', height: '220px', objectFit: 'cover' }} 
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                aria-label="Barcode camera preview"
+                style={{ width: '100%', height: '220px', objectFit: 'cover' }}
               />
               <div 
                 style={{
@@ -1143,9 +1228,45 @@ export default function UniversalBarcodeScannerModal({
             </div>
           )}
 
+          {cameraActive && videoInputs.length > 1 && (
+            <label
+              htmlFor="scan-camera-select"
+              style={{
+                marginTop: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.78rem',
+                fontWeight: '700',
+                color: '#334155'
+              }}
+            >
+              Switch camera
+              <select
+                id="scan-camera-select"
+                aria-label="Switch camera"
+                value={activeDeviceId}
+                onChange={(event) => startCamera(event.target.value)}
+                style={{
+                  flex: 1,
+                  padding: '6px 8px',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  color: '#0f172a',
+                  fontWeight: '600'
+                }}
+              >
+                {videoInputs.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
           {cameraError && (
-            <div style={{ marginTop: '8px', fontSize: '0.78rem', color: '#dc2626', fontWeight: '600' }}>
-              ⚠️ {cameraError}
+            <div role="alert" style={{ marginTop: '8px', fontSize: '0.78rem', color: '#dc2626', fontWeight: '600' }}>
+              {cameraError}
             </div>
           )}
         </div>
@@ -1564,7 +1685,10 @@ export default function UniversalBarcodeScannerModal({
             <button
               type="button"
               className="btn-primary"
-              onClick={onClose}
+              onClick={() => {
+                stopCamera();
+                onClose?.();
+              }}
               style={{
                 padding: '8px 18px',
                 fontSize: '0.82rem',
