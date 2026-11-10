@@ -466,20 +466,12 @@ export default function CylinderManagement({
     setSlittingMark('Yes');
     setTrackerLine('Yes');
     setSpecialInstructions('');
+    setSku('');
+    setSkuWasAllocated(false);
     setIsModalOpen(true);
     try {
       const [issued] = await allocateCylinderSkusFromServer(1);
-      if (issued) {
-        let used = false;
-        setSku((current) => {
-          if (String(current || '').trim()) return current;
-          used = true;
-          allocatedSkuRef.current = issued;
-          return issued;
-        });
-        if (used) setSkuWasAllocated(true);
-        else releaseCylinderSkuReservation(issued);
-      }
+      if (issued) rememberAllocatedSku(issued);
     } catch (err) {
       console.warn('[cylinders] Server SKU allocation is unavailable:', err?.message || err);
       const fallback = nextCylinderSku(cylinders);
