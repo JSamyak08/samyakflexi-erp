@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, 
   ZoomIn, 
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { isCorruptedArtworkUrl } from '../utils/safeStorage';
 import { openArtworkViewer, resolveReadableUrl } from '../services/supabaseStorageService';
+import { useModalDismiss } from './useModalDismiss';
 
 export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Artwork Preview', onReupload }) {
   const [zoom, setZoom] = useState(1);
@@ -22,6 +23,8 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imageError, setImageError] = useState(false);
   const [readableUrl, setReadableUrl] = useState('');
+  const shellRef = useRef(null);
+  useModalDismiss(shellRef, onClose, isOpen);
 
   useEffect(() => {
     let cancel = false;
@@ -120,7 +123,10 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
   };
 
   return (
-    <div 
+    <div
+      ref={shellRef}
+      data-modal-root=""
+      data-modal-backdrop=""
       style={{
         position: 'fixed',
         inset: 0,
@@ -130,9 +136,6 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
         display: 'flex',
         flexDirection: 'column',
         animation: 'fadeIn 0.15s ease-out'
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
       }}
     >
       {/* Top Navigation Bar */}
@@ -240,6 +243,7 @@ export default function ArtworkModal({ isOpen, onClose, artworkUrl, title = 'Art
               marginLeft: '8px'
             }}
             title="Close (Esc)"
+            data-modal-dismiss=""
           >
             <X size={18} />
           </button>

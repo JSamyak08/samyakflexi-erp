@@ -187,7 +187,9 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
                 </div>
               </div>
               <button 
-                type="button" 
+                type="button"
+                data-modal-dismiss=""
+                aria-label="Close"
                 onClick={() => setIsModalOpen(false)}
                 style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
               >

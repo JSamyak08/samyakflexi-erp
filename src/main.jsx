@@ -13,6 +13,11 @@ import './pdfA4.css'
 import App from './App.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { SuccessModalProvider } from './context/SuccessModalContext.jsx'
+import { installModalDismissGuard } from './utils/modalDismiss.js'
+
+if (typeof document !== 'undefined') {
+  installModalDismissGuard(document);
+}
 
 const container = document.getElementById("root");
 const root = createRoot(container, {

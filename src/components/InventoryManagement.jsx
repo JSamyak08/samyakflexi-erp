@@ -10391,7 +10391,10 @@ export default function InventoryManagement({
                                     onChange={e => setEditingBarcodeVal(e.target.value)}
                                     onKeyDown={e => {
                                       if (e.key === 'Enter') handleSaveCustomBarcode(tx.txId, editingBarcodeVal);
-                                      if (e.key === 'Escape') setEditingTxId(null);
+                                      if (e.key === 'Escape') {
+                                        e.stopPropagation();
+                                        setEditingTxId(null);
+                                      }
                                     }}
                                   />
                                   <button 

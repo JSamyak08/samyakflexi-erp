@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useModalDismiss } from './useModalDismiss';
 import { 
   ScanBarcode, 
   QrCode, 
@@ -104,6 +105,8 @@ export default function UniversalBarcodeScannerModal({
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   
   const inputRef = useRef(null);
+  const shellRef = useRef(null);
+  useModalDismiss(shellRef, onClose, isOpen);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const requestRef = useRef(0);
@@ -987,7 +990,10 @@ export default function UniversalBarcodeScannerModal({
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
+      ref={shellRef}
+      data-modal-root=""
+      data-modal-backdrop=""
       style={{
         position: 'fixed',
         top: 0,
@@ -1075,6 +1081,7 @@ export default function UniversalBarcodeScannerModal({
 
           <button
             type="button"
+            data-modal-dismiss=""
             aria-label="Close scanner"
             onClick={() => {
               stopCamera();
