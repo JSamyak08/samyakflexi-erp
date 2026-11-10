@@ -25,6 +25,7 @@ import {
 import { loggedInActorLabel } from './utils/recordedPerson';
 import { withReconciledCosts } from './utils/cylinderCost';
 import { artworkToApply, cylinderIdentityKey, isExplicitCylinderJobLink } from './utils/cylinderArtwork';
+import { cylindersLinkedToJobMaster, skuAfterJobMasterSync, skuWhenLinkingCylinder } from './utils/jobMasterLink';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -3773,20 +3774,20 @@ export default function App() {
   const handleAddCylinder = async (newCyl) => {
     if (!newCyl) return;
     requireDatabaseConnection('add cylinder');
-    await saveCylinderToSupabase(newCyl);
-    const targetSku = (newCyl.sku || '').trim().toLowerCase();
-    const targetJobName = (newCyl.jobName || '').trim().toLowerCase();
+    const saved = await saveCylinderToSupabase(newCyl) || newCyl;
+    const targetSku = (saved.sku || '').trim().toLowerCase();
+    const targetJobName = (saved.jobName || '').trim().toLowerCase();
 
     setCylinders(prev => {
       const matchIndex = prev.findIndex(c =>
-        (newCyl.id && c.id === newCyl.id) ||
+        (saved.id && c.id === saved.id) ||
         (targetSku && c.sku && c.sku.trim().toLowerCase() === targetSku &&
           (!(c.jobName || '').trim() || !targetJobName || (c.jobName || '').trim().toLowerCase() === targetJobName))
       );
 
       if (matchIndex >= 0) {
         const existing = prev[matchIndex];
-        const updated = { ...existing, ...newCyl, id: existing.id || newCyl.id };
+        const updated = { ...existing, ...saved, id: existing.id || saved.id };
         const copy = [...prev];
         copy[matchIndex] = updated;
         return copy.filter((c, idx) => {
@@ -3798,12 +3799,13 @@ export default function App() {
           return true;
         });
       }
-      return [newCyl, ...prev];
+      return [saved, ...prev];
     });
 
-    logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${newCyl.sku} for "${newCyl.jobName}"`, newCyl.id);
-    syncCylinderToOrderManagement(newCyl);
-    await syncCylinderToJobMaster(newCyl);
+    logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${saved.sku} for "${saved.jobName}"`, saved.id);
+    syncCylinderToOrderManagement(saved);
+    await syncCylinderToJobMaster(saved);
+    return saved;
   };
 
   const syncCylinderToJobMaster = async (cyl) => {
@@ -3889,24 +3891,7 @@ export default function App() {
 
   const syncJobMasterToCylinder = async (jobMaster) => {
     if (!jobMaster) return;
-    const targetJmId = jobMaster.id;
-    const targetSku = (jobMaster.skuCode || jobMaster.cylinderSku || jobMaster.sku || '').trim().toLowerCase();
-    const targetJobName = (jobMaster.jobName || '').trim().toLowerCase();
-
-    const cylindersWithThisName = (cylinders || []).filter(c =>
-      c && targetJobName && (c.jobName || '').trim().toLowerCase() === targetJobName
-    );
-    const matchedCylinders = (cylinders || []).filter(c => {
-      if (!c) return false;
-      if (targetJmId && (c.jobMasterId === targetJmId || c.job_master_id === targetJmId)) return true;
-      if (c.sku && targetSku && c.sku.trim().toLowerCase() === targetSku) {
-        const existingName = (c.jobName || '').trim().toLowerCase();
-        return !existingName || !targetJobName || existingName === targetJobName;
-      }
-      if (c.skuCode && targetSku && c.skuCode.trim().toLowerCase() === targetSku) return true;
-      if (cylindersWithThisName.length === 1 && cylindersWithThisName[0] === c) return true;
-      return false;
-    });
+    const matchedCylinders = cylindersLinkedToJobMaster(cylinders, jobMaster);
 
     if (matchedCylinders.length === 0) return;
 
@@ -3919,7 +3904,7 @@ export default function App() {
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
         : (jobMaster.structure || cyl.structure || '—');
       const explicitLink = isExplicitCylinderJobLink(
-        { ...cyl, jobMasterId: cyl.jobMasterId || targetJmId },
+        { ...cyl, jobMasterId: cyl.jobMasterId || jobMaster.id },
         jobMaster
       );
       const reconciled = withReconciledCosts({
@@ -3932,12 +3917,13 @@ export default function App() {
         rate: cyl.rate ?? cyl.ratePerSqInch
       });
       const syncedArtwork = artworkToApply({ source: jobMaster, target: cyl, explicit: explicitLink });
+      const keptSku = skuAfterJobMasterSync(cyl);
 
       const updatedCyl = {
         ...cyl,
-        jobMasterId: jobMaster.id,
-        job_master_id: jobMaster.id,
-        sku: jobMaster.skuCode || jobMaster.cylinderSku || cyl.sku,
+        jobMasterId: explicitLink ? jobMaster.id : (cyl.jobMasterId || cyl.job_master_id || ''),
+        job_master_id: explicitLink ? jobMaster.id : (cyl.job_master_id || ''),
+        sku: keptSku,
         jobName: jobMaster.jobName || cyl.jobName,
         clientGroup: jobMaster.clientName || cyl.clientGroup || cyl.clientName,
         structure: derivedStructure,
@@ -3982,14 +3968,14 @@ export default function App() {
   const handleBatchAddCylinders = async (newCylList) => {
     if (!Array.isArray(newCylList) || newCylList.length === 0) return;
     requireDatabaseConnection('batch add cylinders');
-    await saveCylinderBatchToSupabase(newCylList);
+    const savedList = await saveCylinderBatchToSupabase(newCylList) || newCylList;
     setCylinders(prev => {
       const map = new Map();
       (prev || []).forEach(c => {
         const k = cylinderIdentityKey(c);
         if (k) map.set(k, c);
       });
-      newCylList.forEach(c => {
+      savedList.forEach(c => {
         const k = cylinderIdentityKey(c);
         if (k) {
           const existing = map.get(k);
@@ -3999,8 +3985,8 @@ export default function App() {
       return Array.from(map.values());
     });
 
-    logAudit('CREATE', 'Cylinders', `Bulk uploaded ${newCylList.length} cylinder job(s) via CSV`, 'BULK_CSV');
-    for (const c of newCylList) {
+    logAudit('CREATE', 'Cylinders', `Bulk uploaded ${savedList.length} cylinder job(s) via CSV`, 'BULK_CSV');
+    for (const c of savedList) {
       await syncCylinderToJobMaster(c);
     }
   };
@@ -4426,7 +4412,7 @@ export default function App() {
         ...targetCyl,
         jobMasterId: jobMasterId,
         job_master_id: jobMasterId,
-        sku: targetJm?.skuCode || targetCyl.sku
+        sku: skuWhenLinkingCylinder(targetCyl, targetJm, cylinders)
       };
       await handleUpdateCylinder(updatedCyl);
     }

@@ -1038,7 +1038,7 @@ export default function SalesManagement({
         effectiveJobMaster = existingJM;
         if (!effectiveJobMaster) {
           effectiveJobMaster = {
-            id: item.jobMasterId || `JM-2026-${Math.floor(100 + Math.random() * 900)}`,
+            id: item.jobMasterId || undefined,
             skuCode: `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
             jobName: item.jobTitle || 'Custom Flexible Packaging Job',
             clientName: qtn.clientName,
