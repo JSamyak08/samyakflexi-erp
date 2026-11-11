@@ -83,7 +83,17 @@ import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIde
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
-import { getItemAgeInDays, getCategoryAgeingThreshold } from '../utils/fifoUtils';
+import {
+  acceptNewerBarcodeChoice,
+  fifoAgeForBarcode,
+  fifoMaterialKey,
+  formatConsumedFifoLabel,
+  formatFifoAgeLabel,
+  getCategoryAgeingThreshold,
+  newerBarcodeWarning,
+  openBarcodeIsOverAged,
+  rollsByBarcode
+} from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { supabase } from '../services/supabaseClient';
 import { fetchPayloadRecords, fetchScrapStoreItems, replacePayloadRecords, upsertPayloadRecords, describeSaveError } from '../services/businessRecords';
@@ -656,6 +666,13 @@ export default function SFGStoreManagement({
       const archived = item && (item.isActive === false || item.is_active === false);
       const isNotCurrentRoll = (r.barcodeId || r.id) !== (selectedItemForConsume?.sfgBatchCode || selectedItemForConsume?.id);
       return avail > 0 && !retired && !archived && isNotCurrentRoll;
+    }).sort((a, b) => {
+      const map = rollsByBarcode(inventoryRolls);
+      const ao = fifoAgeForBarcode(a, { rollsByCode: map }).origin;
+      const bo = fifoAgeForBarcode(b, { rollsByCode: map }).origin;
+      const am = ao ? ao.getTime() : Number.MAX_SAFE_INTEGER;
+      const bm = bo ? bo.getTime() : Number.MAX_SAFE_INTEGER;
+      return am - bm;
     });
   }, [inventoryRolls, inventory, selectedItemForConsume]);
 
@@ -714,14 +731,22 @@ export default function SFGStoreManagement({
   };
 
   const handleSelectSubRoll = (rollId) => {
-    setSelectedSubRollId(rollId);
     if (!rollId) {
+      setSelectedSubRollId('');
       setSubBarcode('');
       setSubFilmType('');
       setSubInitialKg('');
       return;
     }
     const match = availableSubstrateRolls.find(r => (r.barcodeId || r.id) === rollId);
+    if (match) {
+      const choice = acceptNewerBarcodeChoice(match, availableSubstrateRolls, {
+        rollsByCode: rollsByBarcode(inventoryRolls),
+        enforce: ageingSettings.enforceFifoStrictly !== false
+      });
+      if (!choice.ok) return;
+    }
+    setSelectedSubRollId(rollId);
     if (match) {
       setSubBarcode(match.barcodeId || match.id);
       const filmDesc = `${match.filmType || match.itemName || 'Substrate Film'}${match.micron ? ` (${match.micron}µm` : ''}${match.widthMm ? ` × ${match.widthMm}mm)` : (match.micron ? ')' : '')}`;
@@ -1031,6 +1056,11 @@ export default function SFGStoreManagement({
       setFormError(`Consumed weight (${qtyVal} kg) cannot exceed current available balance (${currentAvailable.toFixed(2)} kg).`);
       return;
     }
+
+    const olderSfg = acceptNewerBarcodeChoice(selectedItemForConsume, allSfgItems, {
+      enforce: ageingSettings.enforceFifoStrictly !== false
+    });
+    if (!olderSfg.ok) return;
 
     const balanceError = balanceSaveError(consumeBalance, { reason: balanceReason, note: balanceNote });
     if (balanceError) {
@@ -2504,18 +2534,32 @@ export default function SFGStoreManagement({
 
                                   {(() => {
                                     const catName = isFgType ? "Finished Goods (FG)" : "Semi-Finished Goods (SFG)";
-                                    const ageInDays = getItemAgeInDays(item);
+                                    const fifo = fifoAgeForBarcode(item);
                                     const threshold = getCategoryAgeingThreshold(catName, ageingSettings);
-                                    const isOverAged = ageInDays > threshold;
+                                    const isOverAged = openBarcodeIsOverAged(fifo, catName, ageingSettings);
+                                    const fifoLabel = formatFifoAgeLabel(fifo);
+                                    const earlierSlices = fifo.display?.frozen && fifo.consumed.length > 1
+                                      ? fifo.consumed.slice(0, -1)
+                                      : (fifo.balanceQty > 0 ? fifo.consumed : []);
 
-                                    return isOverAged ? (
-                                      <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, maxWidth: '100%', display: 'inline-block' }}>
-                                        ⚠️ OVER-AGED ({ageInDays}d &gt; {threshold}d)
-                                      </span>
-                                    ) : (
-                                      <span style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.66rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, whiteSpace: 'nowrap', display: 'inline-block' }}>
-                                        📜 FIFO ({ageInDays}d)
-                                      </span>
+                                    return (
+                                      <>
+                                        {fifoLabel && (
+                                          <span data-testid="sfg-fifo-age" style={{ background: fifo.display?.frozen ? '#f8fafc' : '#f0f9ff', color: fifo.display?.frozen ? '#475569' : '#0369a1', border: `1px solid ${fifo.display?.frozen ? '#cbd5e1' : '#bae6fd'}`, fontSize: '0.66rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, whiteSpace: 'nowrap', display: 'inline-block' }}>
+                                            📜 {fifoLabel}
+                                          </span>
+                                        )}
+                                        {earlierSlices.map((slice) => (
+                                          <span key={slice.id || slice.consumedAt?.toISOString()} data-testid="sfg-fifo-consumed" style={{ background: '#fff7ed', color: '#9a3412', border: '1px solid #fed7aa', fontSize: '0.64rem', fontWeight: '700', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, display: 'inline-block' }}>
+                                            {formatConsumedFifoLabel(slice)}
+                                          </span>
+                                        ))}
+                                        {isOverAged && (
+                                          <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', lineHeight: 1.3, maxWidth: '100%', display: 'inline-block' }}>
+                                            ⚠️ OVER-AGED ({fifo.display.ageDays}d &gt; {threshold}d)
+                                          </span>
+                                        )}
+                                      </>
                                     );
                                   })()}
                                 </div>
@@ -3304,6 +3348,9 @@ export default function SFGStoreManagement({
                   <div>
                     <span style={{ color: '#64748b', fontSize: '0.75rem' }}>BATCH BARCODE:</span>
                     <div style={{ fontFamily: 'monospace', fontWeight: '700', color: '#2563eb' }}>{selectedItemForConsume.sfgBatchCode}</div>
+                    <div data-testid="sfg-consume-fifo" style={{ marginTop: '4px', fontSize: '0.75rem', fontWeight: '800', color: '#0369a1' }}>
+                      {formatFifoAgeLabel(fifoAgeForBarcode(selectedItemForConsume))}
+                    </div>
                   </div>
                   <div>
                     <span style={{ color: '#64748b', fontSize: '0.75rem' }}>SUBSTRATE & SIZE:</span>
@@ -3316,6 +3363,15 @@ export default function SFGStoreManagement({
                     <div style={{ fontWeight: '600', color: '#334155' }}>{selectedItemForConsume.storageBay || 'Bay A'}</div>
                   </div>
                 </div>
+                {(() => {
+                  const older = newerBarcodeWarning(selectedItemForConsume, allSfgItems);
+                  if (!older) return null;
+                  return (
+                    <div data-testid="sfg-fifo-warning" style={{ marginTop: '12px', background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', fontWeight: '700' }}>
+                      {older.message} You can still consume this newer barcode.
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Live Weight Balance Calculation Card */}
@@ -3663,11 +3719,24 @@ export default function SFGStoreManagement({
                               style={{ width: '100%', fontSize: '0.85rem' }}
                             >
                               <option value="">-- Choose from available inventory or enter manually below --</option>
-                              {availableSubstrateRolls.map(r => (
+                              {availableSubstrateRolls.map(r => {
+                                const map = rollsByBarcode(inventoryRolls);
+                                const fifo = fifoAgeForBarcode(r, { rollsByCode: map });
+                                const oldest = availableSubstrateRolls.find((candidate) => (
+                                  fifoMaterialKey(candidate) === fifoMaterialKey(r)
+                                ));
+                                const prefer = oldest && (oldest.barcodeId || oldest.id) === (r.barcodeId || r.id)
+                                  && availableSubstrateRolls.some((candidate) => (
+                                    fifoMaterialKey(candidate) === fifoMaterialKey(r)
+                                    && (candidate.barcodeId || candidate.id) !== (r.barcodeId || r.id)
+                                  ));
+                                const cue = prefer ? 'FIFO CONSUME FIRST · ' : '';
+                                return (
                                 <option key={r.barcodeId || r.id} value={r.barcodeId || r.id}>
-                                  {r.barcodeId || r.id} • {r.filmType || r.itemName || 'Film'} ({r.micron || '-'}µ × {r.widthMm || '-'}mm) • Avail: {Number(r.availableWeightKg ?? r.netWeightKg ?? 0).toFixed(1)} kg
+                                  {cue}{r.barcodeId || r.id} • {r.filmType || r.itemName || 'Film'} ({r.micron || '-'}µ × {r.widthMm || '-'}mm) • Avail: {Number(r.availableWeightKg ?? r.netWeightKg ?? 0).toFixed(1)} kg • {formatFifoAgeLabel(fifo)}
                                 </option>
-                              ))}
+                                );
+                              })}
                             </SearchableSelect>
                           </div>
 
@@ -4599,6 +4668,7 @@ export default function SFGStoreManagement({
                     <th style={{ padding: '10px 12px' }}>Date & Time</th>
                     <th style={{ padding: '10px 12px' }}>Target Process</th>
                     <th style={{ padding: '10px 12px', textAlign: 'right' }}>Consumed (kg)</th>
+                    <th style={{ padding: '10px 12px' }}>FIFO age</th>
                     <th style={{ padding: '10px 12px', textAlign: 'right' }}>Balance (kg)</th>
                     <th style={{ padding: '10px 12px' }}>Operator</th>
                     <th style={{ padding: '10px 12px' }}>Notes</th>
@@ -4615,6 +4685,18 @@ export default function SFGStoreManagement({
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: '#c2410c' }}>
                         {log.consumedKg} kg
+                      </td>
+                      <td style={{ padding: '10px 12px', fontWeight: '700', color: '#9a3412', fontSize: '0.75rem' }} data-testid="sfg-history-fifo">
+                        {Number(log.consumedKg) > 0
+                          ? formatConsumedFifoLabel({
+                            qty: Number(log.consumedKg),
+                            ageDays: fifoAgeForBarcode({
+                              ...viewHistoryItem,
+                              availableKg: 0,
+                              consumptionHistory: [log]
+                            }).consumed[0]?.ageDays
+                          })
+                          : 'Balance continues'}
                       </td>
                       <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '800', color: '#15803d' }}>
                         {log.remainingBalanceKg} kg
