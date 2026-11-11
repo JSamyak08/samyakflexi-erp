@@ -65,29 +65,31 @@ export function isExactAdminRole(role) {
   return rawRoleNames(role).some((name) => name.toLowerCase() === 'admin');
 }
 
-// Matches salary_advances RLS: Admin, or HR & Payroll Manager.
-// Plant, director, and owner are not approvers.
-export function canApproveSalaryAdvanceRole(role, { anonymous = false } = {}) {
-  if (anonymous) return true;
-  return rawRoleNames(role).some((name) => {
-    const roleStr = name.toLowerCase();
-    return roleStr === 'admin' || roleStr.includes('hr');
-  });
+// Employee Management decisions. Approve, reject, revert, disbursal,
+// recovery, and payroll authorization are Admin only. A missing user is
+// not an approver. HR may still request an advance.
+export function canDecideEmployeeAuthorization(user, { anonymous = false } = {}) {
+  if (anonymous) return false;
+  return isExactAdminRole(user);
 }
 
-// The action cell. An unsettled sibling blocks a new request and a
-// non-admin approval. It does not block disbursal of a row that is
-// already Approved, including an Admin policy override.
+export function canApproveSalaryAdvanceRole(role, options) {
+  return canDecideEmployeeAuthorization(role, options);
+}
+
+// The action cell. A requested advance waits for Admin. An unsettled
+// sibling still requires the Admin policy override. Disbursal and
+// recovery are the same Admin authorization, not data entry.
 export function salaryAdvancePrimaryAction(adv, advances, role, { anonymous = false } = {}) {
   if (!adv) return 'history';
-  const canApprove = canApproveSalaryAdvanceRole(role, { anonymous });
+  const canDecide = canDecideEmployeeAuthorization(role, { anonymous });
   const other = findUnsettledAdvance(advances, adv.employeeId, adv.id);
-  if ((adv.status === 'Requested' || adv.status === 'Pending Approval') && canApprove) {
-    if (other && !isExactAdminRole(role)) return 'awaiting-admin';
+  if (adv.status === 'Requested' || adv.status === 'Pending Approval') {
+    if (!canDecide) return 'awaiting-admin';
     return other ? 'approve-override' : 'approve';
   }
-  if (adv.status === 'Approved' && canApprove) return 'disburse';
-  if ((adv.status === 'Disbursed' || adv.status === 'Approved & Disbursed') && advanceRemainingBalance(adv) > 0) {
+  if (adv.status === 'Approved' && canDecide) return 'disburse';
+  if ((adv.status === 'Disbursed' || adv.status === 'Approved & Disbursed') && advanceRemainingBalance(adv) > 0 && canDecide) {
     return 'recover';
   }
   return 'history';

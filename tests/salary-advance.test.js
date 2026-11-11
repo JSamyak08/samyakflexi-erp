@@ -6,6 +6,7 @@ import {
   buildApprovedSalaryAdvance,
   buildDisbursedSalaryAdvance,
   canApproveSalaryAdvanceRole,
+  canDecideEmployeeAuthorization,
   findUnsettledAdvance,
   isExactAdminRole,
   isPayrollRecoverableAdvance,
@@ -71,18 +72,22 @@ test('an open request or approval blocks another advance, a settled loan does no
   assert.equal(isPayrollRecoverableAdvance({ status: 'Approved', remainingBalance: 40 }), false);
 });
 
-test('only the Admin role may override, and only HR or Admin may approve', () => {
+test('only an Admin may approve, disburse, or recover a salary advance', () => {
   assert.equal(isExactAdminRole('Admin'), true);
   assert.equal(isExactAdminRole(' admin '), true);
   assert.equal(isExactAdminRole('HR & Payroll Manager'), false);
   assert.equal(isExactAdminRole('Plant Manager'), false);
   assert.equal(isExactAdminRole('Director'), false);
   assert.equal(isExactAdminRole('Owner'), false);
+  assert.equal(canDecideEmployeeAuthorization('Admin'), true);
+  assert.equal(canDecideEmployeeAuthorization({ role: 'Store Manager', assigned_roles: ['Admin'] }), true);
+  assert.equal(canDecideEmployeeAuthorization({ role: 'Store Manager', assigned_roles: ['HR & Payroll Manager'] }), false);
   assert.equal(canApproveSalaryAdvanceRole('Admin'), true);
-  assert.equal(canApproveSalaryAdvanceRole('HR & Payroll Manager'), true);
+  assert.equal(canApproveSalaryAdvanceRole('HR & Payroll Manager'), false);
   assert.equal(canApproveSalaryAdvanceRole('Plant Manager'), false);
+  assert.equal(canApproveSalaryAdvanceRole('Store Manager'), false);
   assert.equal(canApproveSalaryAdvanceRole('Director'), false);
-  assert.equal(canApproveSalaryAdvanceRole('', { anonymous: true }), true);
+  assert.equal(canApproveSalaryAdvanceRole('', { anonymous: true }), false);
 });
 
 test('the advance screen does not approve and disburse in one step', () => {
@@ -120,6 +125,7 @@ test('an approved advance offers Disburse even when another advance is unsettled
   const open = [sibling, requested];
   assert.equal(salaryAdvancePrimaryAction(requested, open, 'Admin'), 'approve-override');
   assert.equal(salaryAdvancePrimaryAction(requested, open, 'HR & Payroll Manager'), 'awaiting-admin');
+  assert.equal(salaryAdvancePrimaryAction(requested, open, 'Store Manager'), 'awaiting-admin');
 
   const approved = buildApprovedSalaryAdvance(requested, {
     withOverride: true,
@@ -129,7 +135,8 @@ test('an approved advance offers Disburse even when another advance is unsettled
   });
   assert.equal(approved.status, 'Approved');
   assert.equal(salaryAdvancePrimaryAction(approved, [sibling, approved], 'Admin'), 'disburse');
-  assert.equal(salaryAdvancePrimaryAction(approved, [sibling, approved], 'HR & Payroll Manager'), 'disburse');
+  assert.equal(salaryAdvancePrimaryAction(approved, [sibling, approved], 'HR & Payroll Manager'), 'history');
+  assert.equal(salaryAdvancePrimaryAction(approved, [sibling, approved], 'Store Manager'), 'history');
 
   const plain = buildApprovedSalaryAdvance({ ...requested, id: 'ADV-LONE', employeeId: 'EMP-1' }, {
     withOverride: false,
@@ -137,8 +144,12 @@ test('an approved advance offers Disburse even when another advance is unsettled
     approvedDate: '2026-10-24',
   });
   assert.equal(plain.policyOverride, false);
-  assert.equal(salaryAdvancePrimaryAction(plain, [plain], 'HR & Payroll Manager'), 'disburse');
+  assert.equal(salaryAdvancePrimaryAction(plain, [plain], 'HR & Payroll Manager'), 'history');
   assert.equal(salaryAdvancePrimaryAction(plain, [plain], 'Admin'), 'disburse');
+  const disbursed = { ...plain, status: 'Disbursed', remainingBalance: 4000 };
+  assert.equal(salaryAdvancePrimaryAction(disbursed, [disbursed], 'Admin'), 'recover');
+  assert.equal(salaryAdvancePrimaryAction(disbursed, [disbursed], 'HR & Payroll Manager'), 'history');
+  assert.equal(salaryAdvancePrimaryAction(disbursed, [disbursed], 'Plant Manager'), 'history');
 });
 
 test('disbursing sends status Disbursed and a rejected save is not swallowed', async () => {

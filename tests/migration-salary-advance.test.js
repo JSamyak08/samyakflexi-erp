@@ -442,7 +442,7 @@ test('screen upsert approves and disburses a normal advance and an override adva
       actorName: 'Browser Name',
       approvedDate: '2026-10-24',
     });
-    assert.equal(salaryAdvancePrimaryAction(normalRequest, [normalRequest], 'HR & Payroll Manager'), 'approve');
+    assert.equal(salaryAdvancePrimaryAction(normalRequest, [normalRequest], 'HR & Payroll Manager'), 'awaiting-admin');
     await upsertAdvance(db, normalApproved);
     const normalRow = await db.query(`
       SELECT status, policy_override, approved_by, payment_reference
@@ -456,7 +456,7 @@ test('screen upsert approves and disburses a normal advance and an override adva
       { ...normalApproved, status: 'Approved', policyOverride: false },
       [{ ...normalApproved, status: 'Approved' }],
       'HR & Payroll Manager',
-    ), 'disburse');
+    ), 'history');
     assert.equal(salaryAdvancePrimaryAction(
       { ...normalApproved, status: 'Approved', policyOverride: false },
       [{ ...normalApproved, status: 'Approved' }],
@@ -535,7 +535,7 @@ test('screen upsert approves and disburses a normal advance and an override adva
       policyOverrideAt: storedOverrideAt,
     };
     assert.equal(salaryAdvancePrimaryAction(approvedForUi, [sibling, approvedForUi], 'Admin'), 'disburse');
-    assert.equal(salaryAdvancePrimaryAction(approvedForUi, [sibling, approvedForUi], 'HR & Payroll Manager'), 'disburse');
+    assert.equal(salaryAdvancePrimaryAction(approvedForUi, [sibling, approvedForUi], 'HR & Payroll Manager'), 'history');
 
     await upsertAdvance(db, {
       ...approvedForUi,
