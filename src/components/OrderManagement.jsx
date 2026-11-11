@@ -2508,7 +2508,7 @@ export default function OrderManagement({
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '85px' }}>Micron (µ)</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '125px' }}>Width (mm)</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '125px' }}>Gross Required (Kg)</th>
-                                    <th style={{ whiteSpace: 'nowrap', minWidth: '220px' }}>Stock Check & Reservation</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '220px' }}>Stock Check</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '130px', color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '170px' }}>Preferred Vendor</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>PO Status</th>
@@ -2585,20 +2585,20 @@ export default function OrderManagement({
                                           </div>
                                         </td>
 
-                                        {/* Stock Check & Reservation Status */}
+                                        {/* On-hand coverage for the purchase balance. This does not hold stock. */}
                                         <td>
                                           {stockInfo?.isFullyAvailable ? (
                                             <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d', whiteSpace: 'nowrap' }}>
                                               <strong>✅ {stockInfo.reservedKg ?? 0} kg / {stockInfo.reqQty ?? req.qtyKg ?? 0} kg in stock</strong>
                                               <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                                Fully Reserved for Order (No PO Required)
+                                                Fully covered by on-hand stock (No PO Required)
                                               </div>
                                             </div>
                                           ) : stockInfo?.isPartiallyAvailable ? (
                                             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857', whiteSpace: 'nowrap' }}>
                                               <strong>🟢 {stockInfo.reservedKg ?? 0} kg out of {stockInfo.reqQty ?? req.qtyKg ?? 0} kg available</strong>
                                               <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                                {stockInfo.reservedKg ?? 0} kg Reserved for Order
+                                                {stockInfo.reservedKg ?? 0} kg covered by on-hand stock
                                               </div>
                                             </div>
                                           ) : (
@@ -2753,7 +2753,7 @@ export default function OrderManagement({
               <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #10b981' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: '#047857', letterSpacing: '0.04em' }}>
-                    In-Stock & Reserved
+                    Covered by on-hand stock
                   </span>
                   <PackageCheck size={18} style={{ color: '#10b981' }} />
                 </div>
@@ -3038,20 +3038,20 @@ export default function OrderManagement({
                               </div>
                             </td>
 
-                            {/* Stock Check & Reservation */}
+                            {/* On-hand coverage for the purchase balance. This does not hold stock. */}
                             <td>
                               {stockInfo?.isFullyAvailable ? (
                                 <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
                                   <strong>✅ {stockInfo.reservedKg ?? 0} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                    Fully Reserved (No PO Required)
+                                    Fully covered by on-hand stock (No PO Required)
                                   </div>
                                 </div>
                               ) : stockInfo?.isPartiallyAvailable ? (
                                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
                                   <strong>🟢 {stockInfo.reservedKg ?? 0} / {stockInfo.reqQty ?? req.qtyKg ?? 0} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                    {stockInfo.reservedKg ?? 0} kg Reserved • <strong>{stockInfo.balanceKg ?? 0} kg Shortage</strong>
+                                    {stockInfo.reservedKg ?? 0} kg covered by on-hand stock • <strong>{stockInfo.balanceKg ?? 0} kg Shortage</strong>
                                   </div>
                                 </div>
                               ) : (

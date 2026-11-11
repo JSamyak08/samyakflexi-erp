@@ -60,6 +60,8 @@ import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationD
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
 import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
+import { requirementAgainstOrders } from '../utils/orderRequirementAgainstStock';
+import RequirementAgainstOrdersDialog from './RequirementAgainstOrdersDialog';
 import { isInventoryItemActive } from '../services/inventoryArchive';
 import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
 import {
@@ -103,7 +105,6 @@ import {
   PACKAGING_MATERIAL_TYPES,
   isMetalloceneEligibleFilm,
   METALLOCENE_OPTIONS,
-  calculateOrderStockReservations,
   parseStandardDate
 } from '../factoryStore';
 import { codeKey, codeKeyFrom, codeStartsWith, codesEqual, textFrom } from '../utils/barcodeCode';
@@ -312,7 +313,8 @@ export default function InventoryManagement({
   cylinders = [],
   onUpdateCylinder,
   onUpdateOrder,
-  onInwardQcDeleted
+  onInwardQcDeleted,
+  sfgGoods = []
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -452,71 +454,6 @@ export default function InventoryManagement({
     });
   }, [safeInventory]);
 
-  // Live pool of stock reservations across all active customer orders
-  const stockReservations = useMemo(() => {
-    return calculateOrderStockReservations(orders, safeInventory, jobMasters);
-  }, [orders, safeInventory, jobMasters]);
-
-  const getItemReservations = (targetItem) => {
-    if (!targetItem || !stockReservations?.pool) return { totalReservedKg: 0, remainingStockKg: 0, reservations: [] };
-    const ids = targetItem.allInventoryIds || [targetItem.id];
-    let totalReservedKg = 0;
-    const seenReqKeys = new Set();
-    const reservations = [];
-
-    // 1. Direct ID match
-    ids.forEach(id => {
-      const entry = stockReservations.pool[String(id)];
-      if (entry) {
-        (entry.reservations || []).forEach(res => {
-          const key = `${res.orderId}_${res.reqId}`;
-          if (!seenReqKeys.has(key)) {
-            seenReqKeys.add(key);
-            reservations.push(res);
-            totalReservedKg += res.reservedKg || 0;
-          }
-        });
-      }
-    });
-
-    // 2. Spec / item matching fallback
-    const targetFilm = ((targetItem.filmType || targetItem.itemName || '')).trim().toLowerCase();
-    const targetMicron = parseFloat(targetItem.micron);
-    const targetWidth = parseFloat(targetItem.widthMm);
-
-    Object.values(stockReservations.pool).forEach(entry => {
-      if (!entry || !entry.item) return;
-      const inv = entry.item;
-      if (ids.some(id => String(id) === String(inv.id))) return;
-
-      const invFilm = (inv.filmType || inv.itemName || '').trim().toLowerCase();
-      const invMicron = parseFloat(inv.micron);
-      const invWidth = parseFloat(inv.widthMm);
-
-      const filmMatch = targetFilm && invFilm && (targetFilm === invFilm || targetFilm.includes(invFilm) || invFilm.includes(targetFilm));
-      const micronMatch = (isNaN(targetMicron) && isNaN(invMicron)) || targetMicron === invMicron;
-      const widthMatch = (isNaN(targetWidth) && isNaN(invWidth)) || targetWidth === invWidth;
-
-      if (filmMatch && micronMatch && widthMatch) {
-        (entry.reservations || []).forEach(res => {
-          const key = `${res.orderId}_${res.reqId}`;
-          if (!seenReqKeys.has(key)) {
-            seenReqKeys.add(key);
-            reservations.push(res);
-            totalReservedKg += res.reservedKg || 0;
-          }
-        });
-      }
-    });
-
-    const grossStock = Number(targetItem.availableQtyKg ?? 0);
-    const remainingStockKg = Math.max(0, Number((grossStock - totalReservedKg).toFixed(2)));
-    return {
-      totalReservedKg: Number(totalReservedKg.toFixed(2)),
-      remainingStockKg,
-      reservations
-    };
-  };
 
   // Calculate items exceeding category ageing limits
   const overAgedItemsCount = useMemo(() => {
@@ -555,6 +492,8 @@ export default function InventoryManagement({
   const [qcNotesInput, setQcNotesInput] = useState('');
   const [selectedItemForPurchaseHistory, setSelectedItemForPurchaseHistory] = useState(null);
   const [rollLedgerEntries, setRollLedgerEntries] = useState([]);
+  const [consumptionIssues, setConsumptionIssues] = useState([]);
+  const [requirementItem, setRequirementItem] = useState(null);
 
   useEffect(() => {
     const item = selectedItemForPurchaseHistory;
@@ -575,6 +514,27 @@ export default function InventoryManagement({
       });
     return () => { cancelled = true; };
   }, [selectedItemForPurchaseHistory]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pageSize = 1000;
+      const rows = [];
+      for (let from = 0; from <= 20000; from += pageSize) {
+        const { data, error } = await supabase
+          .from('inventory_ledger_entries')
+          .select('id, entry_kind, order_id, production_record_id, stock_item_id, qty_kg, consumed_kg, film_type, micron, width_mm, item_name, job_name, barcode')
+          .eq('entry_kind', 'issue')
+          .range(from, from + pageSize - 1);
+        if (cancelled || error) return;
+        const batch = data || [];
+        rows.push(...batch);
+        if (batch.length < pageSize) break;
+      }
+      if (!cancelled) setConsumptionIssues(rows.map(mapRollLedgerRow).filter(Boolean));
+    })().catch(() => {});
+    return () => { cancelled = true; };
+  }, [productionRecords?.length, storeIssueTransactions?.length]);
 
   // QC Inward Inspection Editable Parameters state
   const [qcEditFilmType, setQcEditFilmType] = useState('');
@@ -787,7 +747,39 @@ export default function InventoryManagement({
 
   const [stockLedgerAdjustments, setStockLedgerAdjustments] = useState([]);
 
-  const effectiveStoreIssueTransactions = storeIssueTransactions || [];
+  const effectiveStoreIssueTransactions = useMemo(
+    () => storeIssueTransactions || [],
+    [storeIssueTransactions]
+  );
+
+  const requirementByItemId = useMemo(() => {
+    const map = new Map();
+    (groupedInventory || []).forEach((item) => {
+      map.set(String(item.id), requirementAgainstOrders({
+        item,
+        orders,
+        jobMasters,
+        productionRecords,
+        storeIssues: effectiveStoreIssueTransactions,
+        rollLedgerEntries: consumptionIssues,
+        sfgGoods
+      }));
+    });
+    return map;
+  }, [groupedInventory, orders, jobMasters, productionRecords, effectiveStoreIssueTransactions, consumptionIssues, sfgGoods]);
+
+  const requirementSummaryFor = (item) => {
+    if (!item) return { rows: [], totalKg: 0 };
+    return requirementByItemId.get(String(item.id)) || requirementAgainstOrders({
+      item,
+      orders,
+      jobMasters,
+      productionRecords,
+      storeIssues: effectiveStoreIssueTransactions,
+      rollLedgerEntries: consumptionIssues,
+      sfgGoods
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -5745,10 +5737,8 @@ export default function InventoryManagement({
                   // Pending QC matching for this item
                   const pendingQcQty = pendingQcKgForItem(item, safeGrns);
 
-                  const itemResInfo = getItemReservations(item);
-                  const allocatedForOrders = itemResInfo.totalReservedKg;
-                  const effectiveAllocated = Number(((item.allocatedQtyKg || 0) + allocatedForOrders).toFixed(2));
-                  const usableFreeStock = Math.max(0, Number(((item.availableQtyKg || 0) - allocatedForOrders).toFixed(2)));
+                  const requirementSummary = requirementSummaryFor(item);
+                  const allocatedQty = Number(item.allocatedQtyKg || 0);
 
                   const rowIds = stockItemIds(item);
                   const rowSelected = rowIds.length > 0 && rowIds.every((id) => selectedStockIds.has(id));
@@ -5814,12 +5804,17 @@ export default function InventoryManagement({
                       <td style={{ fontSize: '0.85rem' }}>
                         {isFilm ? `${item.micron} Micron × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
                       </td>
-                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: (usableFreeStock ?? 0) === 0 ? (availQty === 0 && (pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}>
-                        {(usableFreeStock ?? 0).toLocaleString()} {unitStr}
-                        {(allocatedForOrders ?? 0) > 0 && (
-                          <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
-                            On-hand: {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
-                          </div>
+                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: availQty === 0 ? ((pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}>
+                        {(availQty ?? 0).toLocaleString()} {unitStr}
+                        {(requirementSummary.totalKg ?? 0) > 0 && (
+                          <button
+                            type="button"
+                            data-testid={`requirement-against-orders-${item.id}`}
+                            onClick={() => setRequirementItem(item)}
+                            style={{ display: 'block', marginTop: '4px', padding: '2px 6px', fontSize: '0.7rem', fontWeight: '700', color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '4px', cursor: 'pointer', textAlign: 'left' }}
+                          >
+                            Requirement Against Orders: {(requirementSummary.totalKg ?? 0).toLocaleString()} {unitStr}
+                          </button>
                         )}
                         {(pendingQcQty ?? 0) > 0 && (
                           <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: '700', marginTop: '2px', background: '#fef3c7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #fde68a', display: 'inline-block' }}>
@@ -5834,12 +5829,7 @@ export default function InventoryManagement({
                         ₹{itemValuation > 0 ? (itemValuation || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                       </td>
                       <td style={{ color: 'var(--text-secondary)' }}>
-                        {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}
-                        {(allocatedForOrders ?? 0) > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #86efac', display: 'inline-block', whiteSpace: 'nowrap' }}>
-                            🔒 {(allocatedForOrders ?? 0).toLocaleString()} {unitStr} Reserved
-                          </div>
-                        )}
+                        {(allocatedQty ?? 0).toLocaleString()} {unitStr}
                       </td>
                       <td>{item.location}</td>
                       <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -9805,34 +9795,7 @@ export default function InventoryManagement({
             };
           });
 
-        // 4b. Gather Active Customer Order Stock Reservations
-        const ledgerResInfo = getItemReservations(item);
-        const orderResTxLines = (ledgerResInfo.reservations || []).map((res, rIdx) => {
-          const txId = `RES_${res.orderId}_${res.reqId || rIdx}`;
-          const rate = itemActualUnitPrice;
-          const isFully = res.isFullyReserved;
-          const orderDate = res.order?.created_at ? parseStandardDate(res.order.created_at) : (res.order?.targetDeliveryDate || new Date().toISOString().split('T')[0]);
-          return {
-            txId,
-            category: 'reservation',
-            type: isFully ? '🔒 Reserved (Order PO Not Req)' : '🔒 Reserved for Order',
-            date: orderDate,
-            refNo: res.order?.orderId || res.order?.id || res.orderId,
-            subRef: res.order?.jobName || res.req?.filmType || 'Active Order Commitment',
-            partyName: res.order?.clientName || res.order?.customer || 'Customer Order',
-            subParty: `Target Delivery: ${res.order?.targetDeliveryDate || 'Scheduled'}`,
-            inwardQtyKg: 0,
-            outwardQtyKg: res.reservedKg,
-            adjQtyKg: 0,
-            ratePerKg: rate,
-            unitPrice: rate,
-            totalValue: res.reservedKg * rate,
-            barcode: `RES-${(res.order?.orderId || res.orderId || '').replace(/[^a-zA-Z0-9]/g, '')}`,
-            batchNo: item.lastBatch || 'Reserved Stock',
-            status: isFully ? 'Fully Reserved (No PO Required)' : 'Partially Reserved',
-            notes: `Gross Required: ${res.grossReqKg} kg | Reserved: ${res.reservedKg} kg | Balance PO: ${res.balanceKg} kg`
-          };
-        });
+        const orderRequirement = requirementSummaryFor(item);
 
         const rollByBarcode = new Map((inventoryRolls || []).map((roll) => [
           String(roll.barcodeId || roll.id || '').trim().toLowerCase(),
@@ -9947,7 +9910,7 @@ export default function InventoryManagement({
           return new Date(dStr).getTime() || 0;
         };
 
-        const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines]
+        const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines]
           .filter((tx) => !findRetiredBarcode(deletedBarcodes, tx.barcode));
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
 
@@ -9962,8 +9925,6 @@ export default function InventoryManagement({
               runningStock += tx.inwardQtyKg;
             }
           } else if (tx.category === 'usage') {
-            runningStock -= tx.outwardQtyKg;
-          } else if (tx.category === 'reservation') {
             runningStock -= tx.outwardQtyKg;
           } else if (tx.category === 'reconciliation') {
             runningStock += tx.adjQtyKg;
@@ -10016,7 +9977,6 @@ export default function InventoryManagement({
 
         const totalConsumedJobQty = jobUsageLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0) + storeIssueLines.filter(tx => tx.category === 'usage').reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const totalReconciliationAdjQty = adjLines.reduce((sum, tx) => sum + tx.adjQtyKg, 0);
-        const totalReservedOrdersQty = orderResTxLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const netAvailableBalance = Math.max(0, runningStock);
 
         return (
@@ -10157,16 +10117,17 @@ export default function InventoryManagement({
                   <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600' }}>
                     Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/{unitStr}
                   </div>
-                  {totalReservedOrdersQty > 0 && (
-                    <div style={{ fontSize: '0.72rem', color: '#166534', fontWeight: '700', marginTop: '4px', background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', border: '1px solid #86efac' }}>
-                      🔒 {(totalReservedOrdersQty ?? 0).toLocaleString()} {unitStr} Reserved for Active Orders
-                    </div>
-                  )}
-                  {totalReservedOrdersQty > 0 && (
-                    <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
-                      Gross On-hand: {(item.availableQtyKg || 0).toLocaleString()} {unitStr}
-                    </div>
-                  )}
+                  <button
+                    type="button"
+                    data-testid="requirement-against-orders"
+                    onClick={() => setRequirementItem(item)}
+                    style={{ display: 'block', width: '100%', marginTop: '6px', padding: '6px 8px', textAlign: 'left', background: '#eff6ff', color: '#1e3a8a', border: '1px solid #bfdbfe', borderRadius: '6px', cursor: 'pointer' }}
+                  >
+                    <span style={{ display: 'block', fontSize: '0.72rem', fontWeight: '800' }}>Requirement Against Orders</span>
+                    <span style={{ display: 'block', fontSize: '0.95rem', fontWeight: '800', marginTop: '2px' }}>
+                      {(orderRequirement.totalKg ?? 0).toLocaleString()} {unitStr}
+                    </span>
+                  </button>
                 </div>
               </div>
 
@@ -10239,16 +10200,6 @@ export default function InventoryManagement({
                   >
                     ⚖️ Audit Adj ({adjLines.length})
                   </button>
-
-                  {orderResTxLines.length > 0 && (
-                    <button 
-                      className={`btn-secondary`}
-                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'reservation' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'reservation' ? '700' : '500', color: ledgerFilterTab === 'reservation' ? '#15803d' : 'var(--text-secondary)' }}
-                      onClick={() => setLedgerFilterTab('reservation')}
-                    >
-                      🔒 Order Reservations ({orderResTxLines.length})
-                    </button>
-                  )}
                 </div>
 
               </div>
@@ -10281,7 +10232,7 @@ export default function InventoryManagement({
                       paginatedLedgerItems.map((tx, idx) => {
                         const isEditingThisBarcode = editingTxId === tx.txId;
                         return (
-                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.isRejected ? '#fef2f2' : (tx.category === 'reservation' ? '#f0fdf4' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent')))) }}>
+                          <tr key={tx.txId || idx} style={{ background: tx.isPendingQC ? '#fffbeb' : (tx.isRejected ? '#fef2f2' : (tx.category === 'reconciliation' ? '#f0f9ff' : (tx.category === 'usage' ? '#fff5f5' : 'transparent'))) }}>
                             <td style={{ fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{formatPlantDateTime(tx.date)}</td>
                             
                             {/* Category Badge */}
@@ -10315,25 +10266,6 @@ export default function InventoryManagement({
                                   {tx.type || '📤 Job Usage'}
                                 </span>
                               )}
-                              {tx.category === 'reservation' && (
-                                <span 
-                                  className="badge" 
-                                  style={{ 
-                                    fontSize: '0.72rem', 
-                                    background: '#dcfce7', 
-                                    color: '#15803d', 
-                                    border: '1px solid #86efac', 
-                                    fontWeight: '700',
-                                    padding: '3px 8px',
-                                    borderRadius: '6px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px'
-                                  }}
-                                >
-                                  {tx.type || '🔒 Order Reservation'}
-                                </span>
-                              )}
                               {tx.category === 'reconciliation' && (
                                 <span className="badge badge-warning" style={{ fontSize: '0.72rem', background: '#e0f2fe', color: '#0369a1' }}>
                                   {tx.type || '⚖️ Physical Audit'}
@@ -10343,7 +10275,7 @@ export default function InventoryManagement({
 
                             {/* Ref Doc / Job */}
                             <td>
-                              <div style={{ fontWeight: '700', color: tx.category === 'reservation' ? '#15803d' : (tx.category === 'usage' ? '#991b1b' : '#2563eb') }}>
+                              <div style={{ fontWeight: '700', color: tx.category === 'usage' ? '#991b1b' : '#2563eb' }}>
                                 {tx.refNo}
                               </div>
                               {tx.jobLink?.label && (
@@ -10566,14 +10498,9 @@ export default function InventoryManagement({
                               ) : '-'}
                             </td>
 
-                            {/* Job Usage / Reservation Qty */}
+                            {/* Job Usage / Issue Qty */}
                             <td style={{ fontWeight: '700' }}>
-                              {tx.category === 'reservation' ? (
-                                <div>
-                                  <span style={{ color: '#15803d' }}>- {(tx.outwardQtyKg ?? 0).toLocaleString()} {unitStr}</span>
-                                  <span style={{ display: 'block', fontSize: '0.68rem', color: '#166534', fontWeight: '600' }}>🔒 Reserved</span>
-                                </div>
-                              ) : tx.outwardQtyKg > 0 ? (
+                              {tx.outwardQtyKg > 0 ? (
                                 <span style={{ color: '#dc2626' }}>- {(tx.outwardQtyKg ?? 0).toLocaleString()} {unitStr}</span>
                               ) : (
                                 <span style={{ color: 'var(--text-muted)' }}>-</span>
@@ -10948,6 +10875,15 @@ export default function InventoryManagement({
             </div>
           </div>
         </div>
+      )}
+      {requirementItem && (
+        <RequirementAgainstOrdersDialog
+          itemLabel={requirementItem.itemName || requirementItem.filmType || 'Stock item'}
+          itemCode={requirementItem.itemCode || requirementItem.id || ''}
+          unit={requirementItem.unit || 'kg'}
+          summary={requirementSummaryFor(requirementItem)}
+          onClose={() => setRequirementItem(null)}
+        />
       )}
       </div>
     </div>

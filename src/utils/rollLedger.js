@@ -31,7 +31,9 @@ export function mapRollLedgerRow(row) {
     stockItemId: row.stock_item_id || row.stockItemId || '',
     occurredAt: row.occurred_at || row.occurredAt || null,
     itemName: row.item_name || row.itemName || '',
-    filmType: row.film_type || row.filmType || ''
+    filmType: row.film_type || row.filmType || '',
+    micron: row.micron ?? null,
+    widthMm: row.width_mm ?? row.widthMm ?? null
   };
 }
 

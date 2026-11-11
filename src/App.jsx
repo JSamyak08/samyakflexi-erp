@@ -6653,6 +6653,7 @@ export default function App() {
             users={users}
             productionRecords={productionRecords}
             storeIssueTransactions={storeIssueTransactions}
+            sfgGoods={sfgGoods}
             onStoreIssueReturn={handleStoreIssueReturn}
             onAddGRN={handleAddGRN}
             onUpdateGRN={handleUpdateGRN}
