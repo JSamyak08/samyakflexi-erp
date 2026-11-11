@@ -27,14 +27,6 @@ export default function RevertConsumptionModal({ batch, log, onClose, onReverted
     };
   }, [batch, log?.id]);
 
-  useEffect(() => {
-    const onKey = (event) => {
-      if (event.key === 'Escape' && !saving) onClose?.();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, saving]);
-
   const blocks = Array.isArray(plan?.blocks) ? plan.blocks : [];
   const lines = Array.isArray(plan?.lines) ? plan.lines : [];
   const blocked = Boolean(loadError) || blocks.length > 0 || plan?.ok === false;
@@ -56,6 +48,8 @@ export default function RevertConsumptionModal({ batch, log, onClose, onReverted
   return (
     <div
       role="presentation"
+      data-modal-root=""
+      data-modal-backdrop=""
       style={{
         position: 'fixed',
         inset: 0,
@@ -90,6 +84,7 @@ export default function RevertConsumptionModal({ batch, log, onClose, onReverted
           <button
             type="button"
             data-testid="sfg-revert-close"
+            data-modal-dismiss={saving ? 'false' : ''}
             aria-label="Close"
             onClick={() => { if (!saving) onClose?.(); }}
             style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
@@ -132,6 +127,7 @@ export default function RevertConsumptionModal({ batch, log, onClose, onReverted
         <div style={{ padding: '14px 20px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
           <button
             type="button"
+            data-modal-dismiss={saving ? 'false' : ''}
             onClick={() => { if (!saving) onClose?.(); }}
             style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: 700, cursor: 'pointer' }}
           >
