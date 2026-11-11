@@ -537,7 +537,8 @@ export default function SFGStoreManagement({
             jobName: roll.jobName || roll.itemName || 'SFG Printed Roll',
             jobCode: roll.jobCode || roll.orderId || 'N/A',
             clientName: roll.customerName || roll.clientName || '',
-            sfgType: rollType === 'FINISHED_GOODS' ? 'Finished Goods (FG)' : 'Printed Rolls',
+            sfgType: roll.sfgType || (rollType === 'FINISHED_GOODS' ? 'Finished Goods (FG)' : 'Printed Rolls'),
+            parentSfgBatchCode: roll.parentSfgBatchCode || '',
             filmType: roll.filmType || 'PET',
             widthMm: roll.widthMm || 460,
             micron: roll.micron || 12,
@@ -2004,6 +2005,7 @@ export default function SFGStoreManagement({
               <option value="all">All Stock Types (SFG & FG)</option>
               <optgroup label="Semi-Finished Goods (SFG)">
                 <option value="Printed Rolls">Printed Rolls (SFG)</option>
+                <option value="Laminated / Processed Rolls">Laminated / Processed Rolls</option>
                 <option value="Laminated Rolls (First Pass) for Roll Form">Laminated Rolls (First Pass) - Roll</option>
                 <option value="Laminated Rolls (First Pass) for Pouch Form">Laminated Rolls (First Pass) - Pouch</option>
                 <option value="Laminated Rolls (Second Pass) for Pouch Form">Laminated Rolls (Second Pass) - Pouch</option>
