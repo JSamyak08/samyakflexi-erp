@@ -1,0 +1,248 @@
+/*
+ * Dispatch packing list only.
+ * pdfA4.css sets every #printable-packing-list descendant to
+ * height: auto and max-height: none so a long table can flow.
+ * That rule outranks the shared 36px logo class unless the image alt
+ * contains "Logo", and it collapses an empty checkbox or signature
+ * spacer into a hairline. These selectors include a class, so they win.
+ */
+
+#printable-packing-list .pl-doc-meta {
+  margin-top: 2px;
+  font-size: 8.5pt;
+  text-align: right;
+}
+
+#printable-packing-list .pl-job-banner {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12pt;
+}
+
+#printable-packing-list .pl-check {
+  display: inline-block;
+  width: 3.4mm;
+  height: 3.4mm;
+  box-sizing: border-box;
+  border: 1.1pt solid #111;
+  border-radius: 0.4mm;
+  background: #fff;
+  vertical-align: middle;
+  line-height: 0;
+  font-size: 0;
+  overflow: hidden;
+}
+
+#printable-packing-list .pl-sign-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6mm;
+  margin-top: 8mm;
+}
+
+#printable-packing-list .pl-sign-card {
+  min-height: 32mm;
+  border: 1px solid #111;
+  padding: 3mm 3mm 2.5mm;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+#printable-packing-list .pl-sign-line {
+  border-top: 1px solid #111;
+  padding-top: 1.5mm;
+  font-size: 8pt;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.25;
+}
+
+#printable-packing-list table.pl-rolls {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin: 0 0 4mm;
+  font-size: 8pt;
+}
+
+#printable-packing-list table.pl-rolls th,
+#printable-packing-list table.pl-rolls td {
+  border: 1px solid #111;
+  padding: 1.2mm 1.4mm;
+  vertical-align: middle;
+}
+
+#printable-packing-list table.pl-rolls thead th {
+  background: #e8eef4;
+  color: #0f172a;
+  font-size: 7.5pt;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.2;
+}
+
+#printable-packing-list .pl-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+#printable-packing-list .pl-center {
+  text-align: center;
+  white-space: nowrap;
+}
+
+#printable-packing-list .pl-barcode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+@media print {
+  #printable-packing-list img.samyak-logo-img {
+    height: 36px !important;
+    max-height: 36px !important;
+    width: auto !important;
+    max-width: 188px !important;
+    margin: 0 0 2px !important;
+    object-fit: contain !important;
+    object-position: left center !important;
+    display: block !important;
+  }
+
+  #printable-packing-list .letterhead-header {
+    display: flex !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 12px !important;
+    height: auto !important;
+    max-height: none !important;
+    padding-bottom: 2mm !important;
+    margin-bottom: 3mm !important;
+  }
+
+  #printable-packing-list .letterhead-doc-title,
+  #printable-packing-list .letterhead-doc-title h2,
+  #printable-packing-list .doc-ref-no,
+  #printable-packing-list .pl-doc-meta {
+    text-align: right !important;
+    height: auto !important;
+  }
+
+  #printable-packing-list .pl-doc-meta {
+    font-size: 8pt !important;
+    margin-top: 1mm !important;
+  }
+
+  #printable-packing-list .pl-job-banner {
+    text-transform: none !important;
+    text-align: center !important;
+    font-size: 12pt !important;
+    font-weight: 800 !important;
+    letter-spacing: 0 !important;
+    line-height: 1.2 !important;
+    border: 1px solid #111 !important;
+    background: #f1f5f9 !important;
+    padding: 1.5mm 2mm !important;
+    margin: 0 0 3mm !important;
+  }
+
+  #printable-packing-list .address-grid-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+
+  #printable-packing-list table.pl-rolls {
+    table-layout: fixed !important;
+    width: 100% !important;
+    margin: 0 0 3mm !important;
+  }
+
+  #printable-packing-list table.pl-rolls th,
+  #printable-packing-list table.pl-rolls td {
+    border: 1px solid #111 !important;
+    padding: 1.1mm 1.3mm !important;
+    font-size: 8pt !important;
+    line-height: 1.25 !important;
+    height: auto !important;
+    vertical-align: middle !important;
+  }
+
+  #printable-packing-list table.pl-rolls thead th {
+    background: #e8eef4 !important;
+    color: #0f172a !important;
+    font-size: 7.5pt !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+  }
+
+  #printable-packing-list .pl-num {
+    text-align: right !important;
+    white-space: nowrap !important;
+  }
+
+  #printable-packing-list .pl-center {
+    text-align: center !important;
+    white-space: nowrap !important;
+  }
+
+  #printable-packing-list .pl-check {
+    display: inline-block !important;
+    width: 3.4mm !important;
+    height: 3.4mm !important;
+    min-width: 3.4mm !important;
+    min-height: 3.4mm !important;
+    max-width: 3.4mm !important;
+    max-height: 3.4mm !important;
+    border: 1.1pt solid #111 !important;
+    border-radius: 0.4mm !important;
+    background: #fff !important;
+    box-sizing: border-box !important;
+    vertical-align: middle !important;
+    line-height: 0 !important;
+    font-size: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  #printable-packing-list .pl-sign-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr 1fr !important;
+    gap: 6mm !important;
+    margin-top: 8mm !important;
+    padding-top: 0 !important;
+    height: auto !important;
+    max-height: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #printable-packing-list .pl-sign-card {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-end !important;
+    min-height: 32mm !important;
+    height: auto !important;
+    max-height: none !important;
+    border: 1px solid #111 !important;
+    padding: 3mm 3mm 2.5mm !important;
+    box-sizing: border-box !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  #printable-packing-list .pl-sign-line {
+    border-top: 1px solid #111 !important;
+    padding-top: 1.5mm !important;
+    margin-top: 0 !important;
+    font-size: 8pt !important;
+    font-weight: 700 !important;
+    text-align: center !important;
+    line-height: 1.25 !important;
+    height: auto !important;
+  }
+}
