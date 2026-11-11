@@ -29,7 +29,11 @@ const PATCH_KEYS = [
   'printingPlainSettingWastageKg',
   'printingWastageKg',
   'excessFilmWastageKg',
-  'storageBay'
+  'storageBay',
+  'holdReason',
+  'holdNote',
+  'printedUsable',
+  'outputSegmentId'
 ];
 
 export function buildPrintRunPatch(fields) {
@@ -54,13 +58,20 @@ export function applyPrintRunResult(order, result) {
   const current = order || {};
   const saved = result || {};
   const printingStatus = saved.printingStatus || current.printingStatus || null;
+  const held = String(printingStatus || '').trim().toLowerCase() === 'hold on printing';
   const printingStartTime = Object.prototype.hasOwnProperty.call(saved, 'printingStartTime')
     ? saved.printingStartTime
     : (current.printingStartTime ?? null);
   const printingEndTime = Object.prototype.hasOwnProperty.call(saved, 'printingEndTime')
     ? saved.printingEndTime
     : (current.printingEndTime ?? null);
-  const isPrintingCompleted = saved.isPrintingCompleted === true || printingStatus === 'Completed';
+  const isPrintingCompleted = !held && (saved.isPrintingCompleted === true || printingStatus === 'Completed');
+  const printHoldHistory = Array.isArray(saved.printHoldHistory)
+    ? saved.printHoldHistory
+    : (Array.isArray(current.printHoldHistory) ? current.printHoldHistory : (current.jobDetails?.printHoldHistory || []));
+  const holdReason = Object.prototype.hasOwnProperty.call(saved, 'holdReason')
+    ? (saved.holdReason || '')
+    : (current.holdReason || current.jobDetails?.holdReason || '');
   const closeMode = closeModeFromResult(current, saved);
   const inputRollsList = Object.prototype.hasOwnProperty.call(saved, 'inputRollsList')
     ? saved.inputRollsList
@@ -82,6 +93,8 @@ export function applyPrintRunResult(order, result) {
     inkGsmInSpeed: saved.inkGsmInSpeed ?? current.inkGsmInSpeed,
     printingNotes: saved.printingNotes ?? current.printingNotes,
     inputRollsList,
+    printHoldHistory,
+    holdReason,
     nextProcess,
     balanceRolls: Array.isArray(saved.balanceRolls) ? saved.balanceRolls : (current.balanceRolls || []),
     printedRolls: Object.prototype.hasOwnProperty.call(saved, 'printedRolls')
@@ -103,7 +116,9 @@ export function applyPrintRunResult(order, result) {
       inkGsmInSpeed: saved.inkGsmInSpeed ?? current.jobDetails?.inkGsmInSpeed,
       printingNotes: saved.printingNotes ?? current.jobDetails?.printingNotes,
       nextProcess,
-      closeMode
+      closeMode,
+      printHoldHistory,
+      holdReason
     }
   };
 }

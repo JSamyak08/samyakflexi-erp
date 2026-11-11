@@ -55,6 +55,7 @@ export default function PrintRunCompletionSummary({
   balanceRolls = [],
   consumedRolls = [],
   outputRecorded = true,
+  notice = '',
   onPrint,
   onClose
 }) {
@@ -93,6 +94,12 @@ export default function PrintRunCompletionSummary({
             <X size={18} />
           </button>
         </div>
+
+        {notice && (
+          <div style={{ marginTop: '14px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', borderRadius: '10px', padding: '10px 12px', fontSize: '0.84rem', fontWeight: '700' }}>
+            {notice}
+          </div>
+        )}
 
         {!outputRecorded && (
           <div style={{ marginTop: '14px', background: '#fff7ed', border: '1px solid #fed7aa', color: '#9a3412', borderRadius: '10px', padding: '10px 12px', fontSize: '0.84rem', fontWeight: '700' }}>
