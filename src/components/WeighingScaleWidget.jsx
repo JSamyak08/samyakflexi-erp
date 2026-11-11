@@ -88,7 +88,8 @@ export default function WeighingScaleWidget({ onCaptureWeight }) {
       weighingScaleService.stopSimulation();
       showToast('Simulation stopped');
     } else {
-      weighingScaleService.startSimulation(parseFloat(customSimWeight) || 245.5);
+      const parsed = parseFloat(customSimWeight);
+      weighingScaleService.startSimulation(Number.isFinite(parsed) ? parsed : 245.5);
       showToast('🔬 Test Scale Simulation Active');
     }
   };
