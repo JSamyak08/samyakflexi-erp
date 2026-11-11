@@ -1237,7 +1237,10 @@ export async function saveGRNToSupabase(grn) {
     stockItemId: clean.stockItemId || '',
     masterItemId: clean.masterItemId || '',
     lineItems: lines,
-    rolls: rollLinks
+    rolls: rollLinks,
+    // The database adds approved kilograms in this same save. The caller
+    // must not add them again. Older databases ignore the flag.
+    postStockOnApproval: true
   };
 
   console.log('[GRNs] Saving GRN and its lines:', payload.grnNo || payload.id, lines.length);
@@ -1253,7 +1256,9 @@ export async function saveGRNToSupabase(grn) {
     ...clean,
     id: savedId,
     grnNo: savedNo,
-    lineItems: stampLineIds(savedId, lines)
+    lineItems: stampLineIds(savedId, lines),
+    stockPosted: saved.stockPosted === true,
+    posts: Array.isArray(saved.posts) ? saved.posts : []
   };
 }
 

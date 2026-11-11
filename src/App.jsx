@@ -3481,8 +3481,25 @@ export default function App() {
 
   const handleUpdateGRN = async (updatedGRN) => {
     requireDatabaseConnection('update GRN');
-    await saveGRNToSupabase(updatedGRN);
+    const saved = await saveGRNToSupabase(updatedGRN);
     setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo || String(g.id) === String(updatedGRN.id) ? updatedGRN : g));
+    if (saved?.stockPosted && Array.isArray(saved.posts) && saved.posts.length > 0) {
+      const postedById = new Map();
+      saved.posts.forEach((post) => {
+        if (post?.itemId) postedById.set(String(post.itemId), post);
+      });
+      setInventory((prev) => prev.map((item) => {
+        const post = postedById.get(String(item.id));
+        if (!post || post.stockQtyKg === undefined || post.stockQtyKg === null) return item;
+        const qty = Number(post.stockQtyKg);
+        return {
+          ...item,
+          availableQtyKg: Number.isFinite(qty) ? qty : item.availableQtyKg,
+          lastBatch: post.batchNo || item.lastBatch,
+          lastVendor: post.vendorName || item.lastVendor
+        };
+      }));
+    }
 
     // Sync QC status back to pelletInwards if it is a pellet fuel GRN
     if (updatedGRN.category === 'Boiler Pellets / Fuel' || updatedGRN.isPelletFuel || (updatedGRN.grnNo && String(updatedGRN.grnNo).includes('PEL'))) {
@@ -3506,6 +3523,7 @@ export default function App() {
     }
 
     logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
+    return saved;
   };
 
   const handleInwardQcDeleted = (result) => {
