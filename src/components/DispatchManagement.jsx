@@ -4341,7 +4341,7 @@ export default function DispatchManagement({
 
       {/* MODAL 10: CONFIRMATION POP-UP BEFORE GENERATION */}
       {pendingDocConfirmation && (
-        <div style={{
+        <div data-modal-root="" data-modal-backdrop="" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -4505,6 +4505,7 @@ export default function DispatchManagement({
             }}>
               <button
                 type="button"
+                data-modal-dismiss=""
                 onClick={() => setPendingDocConfirmation(null)}
                 style={{
                   padding: '10px 20px',

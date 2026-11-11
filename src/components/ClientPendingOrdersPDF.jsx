@@ -24,7 +24,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
   };
 
   return (
-    <div style={{
+    <div data-modal-root="" data-modal-backdrop="" style={{
       position: 'fixed',
       top: 0,
       left: 0,
@@ -55,6 +55,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
         <button
           type="button"
           className="btn-secondary"
+          data-modal-dismiss=""
           style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600' }}
           onClick={onClose}
         >

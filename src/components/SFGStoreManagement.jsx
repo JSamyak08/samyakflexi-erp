@@ -2901,7 +2901,7 @@ export default function SFGStoreManagement({
       {/* MODAL: APPROVE & MOVE TO STORE                                       */}
       {/* ==================================================================== */}
       {storeUi.canMove && selectedQcItemForApprove && (
-        <div style={{
+        <div data-modal-root="" data-modal-backdrop="" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -2942,6 +2942,7 @@ export default function SFGStoreManagement({
               </div>
               <button
                 type="button"
+                data-modal-dismiss=""
                 onClick={() => setSelectedQcItemForApprove(null)}
                 style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
               >
@@ -3054,7 +3055,7 @@ export default function SFGStoreManagement({
       {/* MODAL: SEND TO SCRAP                                                 */}
       {/* ==================================================================== */}
       {storeUi.canScrap && selectedQcItemForScrap && (
-        <div style={{
+        <div data-modal-root="" data-modal-backdrop="" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -3095,6 +3096,7 @@ export default function SFGStoreManagement({
               </div>
               <button
                 type="button"
+                data-modal-dismiss=""
                 onClick={() => setSelectedQcItemForScrap(null)}
                 style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
               >
@@ -3227,7 +3229,7 @@ export default function SFGStoreManagement({
       {/* MODAL: CONSUME SFG FOR DOWNSTREAM PROCESSING                         */}
       {/* ==================================================================== */}
       {storeUi.canConsume && selectedItemForConsume && (
-        <div style={{
+        <div data-modal-root="" data-modal-backdrop="" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -3274,6 +3276,7 @@ export default function SFGStoreManagement({
               </div>
               <button
                 type="button"
+                data-modal-dismiss=""
                 onClick={() => setSelectedItemForConsume(null)}
                 style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
               >
@@ -4538,7 +4541,7 @@ export default function SFGStoreManagement({
       {/* MODAL: VIEW SFG CONSUMPTION HISTORY LOGS                              */}
       {/* ==================================================================== */}
       {viewHistoryItem && (
-        <div style={{
+        <div data-modal-root="" data-modal-backdrop="" style={{
           position: 'fixed',
           top: 0,
           left: 0,
@@ -4579,6 +4582,7 @@ export default function SFGStoreManagement({
               </div>
               <button
                 type="button"
+                data-modal-dismiss=""
                 onClick={() => setViewHistoryItem(null)}
                 style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer' }}
               >
