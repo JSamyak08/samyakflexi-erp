@@ -340,3 +340,231 @@ export function buildPelletCompanionGrn(pellet, inventoryItem) {
     isPelletFuel: true
   };
 }
+
+/** Exact Inward GRN category. Receipts in this category use the pellet fuel stock book. */
+export const BOILER_FUEL_WOOD_PELLETS_CATEGORY = 'Boiler Fuel - Wood Pellets';
+
+const FILM_OR_INK_CATEGORIES = new Set([
+  'Film Substrates',
+  'Film',
+  'Lamination Films',
+  'Printing Inks'
+]);
+
+export function isBoilerFuelWoodPelletCategory(category) {
+  return String(category || '').trim() === BOILER_FUEL_WOOD_PELLETS_CATEGORY;
+}
+
+/** Picking a stock item must not replace this category with the item's own category. */
+export function grnCategoryAfterStockPick(currentCategory, itemCategory) {
+  if (isBoilerFuelWoodPelletCategory(currentCategory)) return BOILER_FUEL_WOOD_PELLETS_CATEGORY;
+  const next = String(itemCategory || '').trim();
+  return next || String(currentCategory || '').trim();
+}
+
+export function grnTouchesWoodPelletCategory(grn) {
+  if (!grn || typeof grn !== 'object') return false;
+  if (isBoilerFuelWoodPelletCategory(grn.category)) return true;
+  const lines = Array.isArray(grn.lineItems) ? grn.lineItems : [];
+  return lines.some((line) => isBoilerFuelWoodPelletCategory(line?.category));
+}
+
+/**
+ * A stock row the wood-pellet receipt may link to.
+ * A film or ink SKU is never accepted, even when its name contains "pellet".
+ */
+export function isPelletStockItem(item) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.isActive === false || item.is_active === false || item.archived === true) return false;
+  const category = String(item.category || '').trim();
+  if (FILM_OR_INK_CATEGORIES.has(category)) return false;
+  if (isBoilerFuelWoodPelletCategory(category)) return true;
+  const blob = `${item.itemName || ''} ${category} ${item.itemCode || ''}`.toLowerCase();
+  return blob.includes('pellet') || blob.includes('biofuel') || blob.includes('boiler fuel');
+}
+
+function findStockRow(inventory, id) {
+  const key = String(id || '').trim();
+  if (!key) return null;
+  return (Array.isArray(inventory) ? inventory : []).find((item) => (
+    String(item?.id) === key || String(item?.itemCode || '') === key
+  )) || null;
+}
+
+function grnIsVoid(grn) {
+  const blob = `${grn?.status || ''} ${grn?.qcStatus || ''}`.toLowerCase();
+  return blob.includes('cancel') || blob.includes('delet');
+}
+
+function roundMoney(qty, rate) {
+  return Math.round((Number(qty) || 0) * (Number(rate) || 0) * 100) / 100;
+}
+
+function receiptQty(grn) {
+  const header = Number(grn?.netWeightKg ?? grn?.receivedQtyKg);
+  if (header > 0) return Math.round(header * 100) / 100;
+  const lines = Array.isArray(grn?.lineItems) ? grn.lineItems : [];
+  const sum = lines.reduce((total, line) => total + (Number(line?.netWeightKg ?? line?.receivedQtyKg) || 0), 0);
+  return Math.round(sum * 100) / 100;
+}
+
+function receiptRate(grn) {
+  const direct = Number(grn?.purchaseRatePerKg ?? grn?.purchaseRate ?? grn?.unitPrice);
+  if (direct > 0) return direct;
+  const line = (Array.isArray(grn?.lineItems) ? grn.lineItems : [])
+    .find((item) => Number(item?.purchaseRate ?? item?.purchaseRatePerKg) > 0);
+  return Number(line?.purchaseRate ?? line?.purchaseRatePerKg) || 0;
+}
+
+/** Film, ink, and every other current category still post into inventory on QC approval. */
+export function grnPostsInventoryOnApproval(grn) {
+  return !grnTouchesWoodPelletCategory(grn);
+}
+
+/**
+ * How a main Inward GRN meets the pellet fuel stock book.
+ * skip: not this category.
+ * block: this category, but the pellet item is missing or the pick is a film/ink SKU.
+ * post: one pellet_inwards row, and no inventory-ledger kilograms.
+ * drop: the receipt was cancelled or deleted, so that one row leaves the book.
+ */
+export function planWoodPelletGrnPost(grn, inventory) {
+  if (!grnTouchesWoodPelletCategory(grn)) return { action: 'skip' };
+
+  const lines = Array.isArray(grn.lineItems) ? grn.lineItems : [];
+  const pelletLines = lines.filter((line) => isBoilerFuelWoodPelletCategory(line?.category));
+  const otherLines = lines.filter((line) => line && !isBoilerFuelWoodPelletCategory(line.category));
+  if (pelletLines.length > 0 && otherLines.length > 0) {
+    return {
+      action: 'block',
+      message: 'Boiler Fuel - Wood Pellets has to be its own goods receipt. Save film, ink, and other items on a separate GRN so those kilograms stay on their own ledgers.'
+    };
+  }
+
+  if (grnIsVoid(grn)) return { action: 'drop' };
+
+  const selected = findStockRow(inventory, grn.stockItemId || grn.masterItemId);
+  if (selected && !isPelletStockItem(selected)) {
+    const label = selected.itemName || selected.itemCode || selected.id;
+    return {
+      action: 'block',
+      message: `This receipt is Boiler Fuel - Wood Pellets. "${label}" is not the pellet fuel item, so the kilograms were not posted. Pick or create the pellet fuel stock item and save again.`
+    };
+  }
+  if ((grn.stockItemId || grn.masterItemId) && !selected) {
+    return {
+      action: 'block',
+      message: `Stock item ${grn.stockItemId || grn.masterItemId} is not in inventory. Pick or create the pellet fuel item. This receipt was not attached to a film SKU.`
+    };
+  }
+
+  const pelletItem = selected && isPelletStockItem(selected) ? selected : null;
+  if (!pelletItem) {
+    const named = (Array.isArray(inventory) ? inventory : []).filter((item) => isPelletStockItem(item));
+    if (named.length === 0) {
+      return {
+        action: 'block',
+        message: 'No pellet fuel item is in inventory. Create the pellet item, then pick it on this GRN. The receipt was not saved and was not attached to a film SKU.'
+      };
+    }
+    const names = named.slice(0, 5).map((item) => item.itemName || item.itemCode || item.id).join(', ');
+    return {
+      action: 'block',
+      message: `Pick the pellet fuel stock item before saving Boiler Fuel - Wood Pellets (${names}). This receipt was not attached to a film SKU.`
+    };
+  }
+
+  const qty = receiptQty(grn);
+  if (!(qty > 0)) {
+    return { action: 'block', message: 'Enter the wood pellet weight in kilograms before saving this GRN.' };
+  }
+  const rate = receiptRate(grn);
+  if (!(rate > 0)) {
+    return {
+      action: 'block',
+      message: 'Enter a purchase rate per kg greater than zero. Wood pellet cost is stored on the pellet fuel stock book.'
+    };
+  }
+
+  const stockId = String(pelletItem.id);
+  const shapedLines = lines.map((line) => ({
+    ...line,
+    category: BOILER_FUEL_WOOD_PELLETS_CATEGORY,
+    stockItemId: stockId,
+    masterItemId: stockId,
+    unit: line.unit || 'Kg'
+  }));
+  const shaped = {
+    ...grn,
+    isPelletFuel: true,
+    category: BOILER_FUEL_WOOD_PELLETS_CATEGORY,
+    stockItemId: stockId,
+    masterItemId: stockId,
+    unit: grn.unit || 'Kg',
+    itemName: String(grn.itemName || '').trim() || pelletItem.itemName,
+    lineItems: shapedLines.length > 0 ? shapedLines : grn.lineItems,
+    postStockOnApproval: false
+  };
+  const pellet = {
+    id: String(shaped.id || shaped.grnNo),
+    grnNo: shaped.grnNo || shaped.id,
+    inwardDate: String(shaped.receivedDate || '').slice(0, 10),
+    vendorId: shaped.vendorId || '',
+    vendorName: shaped.vendorName || '',
+    invoiceNo: shaped.invoiceNo || '',
+    inwardQtyKg: qty,
+    unitCostPerKg: rate,
+    totalAmount: roundMoney(qty, rate),
+    storageLocation: shaped.storeLocation || shaped.location || pelletItem.location || '',
+    vehicleNo: shaped.vehicleNo || '',
+    receivedBy: shaped.storeManager || shaped.receivedBy || '',
+    stockItemId: stockId,
+    status: shaped.status || 'Pending QC Approval',
+    qcStatus: shaped.qcStatus || shaped.status || 'Pending QC Approval',
+    qcNotes: shaped.qcNotes || '',
+    remarks: shaped.remarks || shaped.itemRemarks || '',
+    category: BOILER_FUEL_WOOD_PELLETS_CATEGORY,
+    source: 'inward-grn'
+  };
+
+  return {
+    action: 'post',
+    stockItem: pelletItem,
+    pellet,
+    grn: shaped,
+    skipInventoryLedger: true,
+    skipRollLedger: true
+  };
+}
+
+/** Keep one pellet row per receipt. A second save updates that row instead of adding kilograms again. */
+export function pelletRowForGrn(existingRows, pellet) {
+  const rows = Array.isArray(existingRows) ? existingRows : [];
+  const byId = rows.find((row) => String(row?.id) === String(pellet?.id));
+  if (byId) return { ...byId, ...pellet, id: byId.id };
+  const byNo = rows.find((row) => pellet?.grnNo && String(row?.grnNo) === String(pellet.grnNo));
+  if (byNo) return { ...byNo, ...pellet, id: byNo.id, grnNo: byNo.grnNo };
+  return pellet;
+}
+
+export function woodPelletDropIds(grn, existingRows) {
+  const ids = new Set();
+  if (grn?.id) ids.add(String(grn.id));
+  if (grn?.grnNo && String(grn.grnNo) !== String(grn.id)) ids.add(String(grn.grnNo));
+  (existingRows || []).forEach((row) => {
+    if (!row?.id) return;
+    const sameId = String(row.id) === String(grn?.id);
+    const sameNo = grn?.grnNo && String(row.grnNo) === String(grn.grnNo);
+    if (sameId || sameNo) ids.add(String(row.id));
+  });
+  return [...ids];
+}
+
+export function woodPelletBookAction(grn, inventory, existingRows) {
+  const plan = planWoodPelletGrnPost(grn, inventory);
+  if (plan.action === 'drop') {
+    return { action: 'drop', ids: woodPelletDropIds(grn, existingRows) };
+  }
+  if (plan.action !== 'post') return plan;
+  return { ...plan, pellet: pelletRowForGrn(existingRows, plan.pellet) };
+}

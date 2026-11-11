@@ -192,7 +192,7 @@ import {
   saveSystemSetting
 } from './services/supabaseDataService';
 import { attendanceMatchesEmployeeDate } from './services/employeeAttendance';
-import { buildPelletCompanionGrn, canonicalPelletInventoryItem, findPelletInventoryItem, fuelActorName, nextPelletStockQty, pelletInventoryQtyDelta, pelletItemById } from './services/pelletFuel';
+import { buildPelletCompanionGrn, canonicalPelletInventoryItem, findPelletInventoryItem, fuelActorName, nextPelletStockQty, pelletInventoryQtyDelta, pelletItemById, woodPelletBookAction } from './services/pelletFuel';
 import { fetchSessionProfile, signOutUser, completeAuthRedirect } from './services/authService';
 import {
   PartialSaveError,
@@ -3593,11 +3593,63 @@ export default function App() {
     logAudit('DELETE', 'Vendors', `Deleted vendor directory entry ${vendorId}`, vendorId);
   };
 
+  const rememberPelletInward = (record) => {
+    if (!record) return;
+    setPelletInwards((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const id = String(record.id);
+      const grnNo = String(record.grnNo || '');
+      return [record, ...list.filter((row) => String(row.id) !== id && (!grnNo || String(row.grnNo || '') !== grnNo))];
+    });
+  };
+
+  const dropPelletInwards = async (ids) => {
+    const unique = [...new Set((ids || []).map((id) => String(id || '')).filter(Boolean))];
+    for (const id of unique) {
+      await deletePelletInwardFromSupabase(id);
+    }
+    const dropIds = new Set(unique);
+    setPelletInwards((prev) => (prev || []).filter((row) => !dropIds.has(String(row.id))));
+  };
+
+  const commitWoodPelletBook = async (decision) => {
+    if (!decision || decision.action === 'skip' || decision.action === 'block') return;
+    if (decision.action === 'drop') {
+      await dropPelletInwards(decision.ids);
+      return;
+    }
+    if (decision.action === 'post') {
+      await savePelletInwardToSupabase(decision.pellet);
+      rememberPelletInward(decision.pellet);
+    }
+  };
+
   const handleAddGRN = async (newGRN) => {
     requireDatabaseConnection('create GRN');
-    const saved = await saveGRNToSupabase(newGRN);
-    const stored = { ...newGRN, ...(saved || {}), lineItems: saved?.lineItems || newGRN.lineItems };
+    const decision = woodPelletBookAction(newGRN, inventory, pelletInwards);
+    if (decision.action === 'block') {
+      alert(decision.message);
+      throw new Error(decision.message);
+    }
+    const payload = decision.action === 'post' ? decision.grn : newGRN;
+    const saved = await saveGRNToSupabase(payload);
+    const stored = { ...payload, ...(saved || {}), lineItems: saved?.lineItems || payload.lineItems };
     setGrns(prev => [stored, ...prev.filter(g => g.grnNo !== stored.grnNo && String(g.id) !== String(stored.id))]);
+    if (decision.action === 'post') {
+      const pellet = {
+        ...decision.pellet,
+        id: String(stored.id || decision.pellet.id),
+        grnNo: stored.grnNo || decision.pellet.grnNo
+      };
+      try {
+        await savePelletInwardToSupabase(pellet);
+        rememberPelletInward(pellet);
+      } catch (error) {
+        const message = `GRN ${stored.grnNo} was saved, but Pellet Fuel Stock Management was not updated: ${error.message}`;
+        alert(message);
+        throw new Error(message);
+      }
+    }
     const lineCount = Array.isArray(stored.lineItems) ? stored.lineItems.length : 1;
     const auditText = lineCount > 1
       ? `Issued GRN ${stored.grnNo} for ${lineCount} items ("${stored.itemName}", ${stored.receivedQtyKg || stored.netWeightKg} kg) from ${stored.vendorName}`
@@ -3608,8 +3660,15 @@ export default function App() {
 
   const handleUpdateGRN = async (updatedGRN) => {
     requireDatabaseConnection('update GRN');
-    const saved = await saveGRNToSupabase(updatedGRN);
-    setGrns(prev => prev.map(g => g.grnNo === updatedGRN.grnNo || String(g.id) === String(updatedGRN.id) ? updatedGRN : g));
+    const decision = woodPelletBookAction(updatedGRN, inventory, pelletInwards);
+    if (decision.action === 'block') {
+      alert(decision.message);
+      throw new Error(decision.message);
+    }
+    const payload = decision.action === 'post' ? decision.grn : updatedGRN;
+    const saved = await saveGRNToSupabase(payload);
+    const stored = { ...payload, ...(saved || {}), lineItems: saved?.lineItems || payload.lineItems };
+    setGrns(prev => prev.map(g => g.grnNo === stored.grnNo || String(g.id) === String(stored.id) ? stored : g));
     if (saved?.stockPosted && Array.isArray(saved.posts) && saved.posts.length > 0) {
       const postedById = new Map();
       saved.posts.forEach((post) => {
@@ -3628,13 +3687,33 @@ export default function App() {
       }));
     }
 
-    // Sync QC status back to pelletInwards if it is a pellet fuel GRN
-    if (updatedGRN.category === 'Boiler Pellets / Fuel' || updatedGRN.isPelletFuel || (updatedGRN.grnNo && String(updatedGRN.grnNo).includes('PEL'))) {
+    if (decision.action === 'post') {
+      const pellet = {
+        ...decision.pellet,
+        id: String(stored.id || decision.pellet.id),
+        grnNo: stored.grnNo || decision.pellet.grnNo,
+        status: stored.status,
+        qcStatus: stored.qcStatus || stored.status,
+        qcNotes: stored.qcNotes || decision.pellet.qcNotes || ''
+      };
+      try {
+        await writeWithRetry(() => savePelletInwardToSupabase(pellet));
+        rememberPelletInward(pellet);
+      } catch (error) {
+        throw new Error(`GRN ${stored.grnNo} was saved, but Pellet Fuel Stock Management was not updated: ${error.message}`);
+      }
+    } else if (decision.action === 'drop') {
+      try {
+        await dropPelletInwards(decision.ids);
+      } catch (error) {
+        throw new Error(`GRN ${stored.grnNo} was saved, but the pellet fuel inward was not removed: ${error.message}`);
+      }
+    } else if (stored.category === 'Boiler Pellets / Fuel' || stored.isPelletFuel || (stored.grnNo && String(stored.grnNo).includes('PEL'))) {
       const pelletFailures = [];
       const savedPellets = [];
       for (const pellet of pelletInwards || []) {
-        if (pellet.grnNo !== updatedGRN.grnNo && String(pellet.id) !== String(updatedGRN.id)) continue;
-        const updatedPellet = { ...pellet, status: updatedGRN.status, qcStatus: updatedGRN.status, qcNotes: updatedGRN.qcNotes };
+        if (pellet.grnNo !== stored.grnNo && String(pellet.id) !== String(stored.id)) continue;
+        const updatedPellet = { ...pellet, status: stored.status, qcStatus: stored.status, qcNotes: stored.qcNotes };
         try {
           await writeWithRetry(() => savePelletInwardToSupabase(updatedPellet));
           savedPellets.push(updatedPellet);
@@ -3646,15 +3725,16 @@ export default function App() {
         const savedIds = new Set(savedPellets.map(p => String(p.id)));
         setPelletInwards(prev => prev.map(p => savedIds.has(String(p.id)) ? savedPellets.find(s => String(s.id) === String(p.id)) : p));
       }
-      assertAllSaved(`GRN ${updatedGRN.grnNo} was saved, but the pellet stock status was not.`, pelletFailures);
+      assertAllSaved(`GRN ${stored.grnNo} was saved, but the pellet stock status was not.`, pelletFailures);
     }
 
-    logAudit('UPDATE', 'GRN Inward', `Updated GRN ${updatedGRN.grnNo} status to "${updatedGRN.status}"`, updatedGRN.grnNo);
-    return saved;
+    logAudit('UPDATE', 'GRN Inward', `Updated GRN ${stored.grnNo} status to "${stored.status}"`, stored.grnNo);
+    return { ...saved, ...stored, stockPosted: saved?.stockPosted === true, posts: saved?.posts || [] };
   };
 
   const handleInwardQcDeleted = (result) => {
     if (!result) return;
+    const previous = (grns || []).find((grn) => String(grn.id) === String(result.id) || String(grn.grnNo) === String(result.grnNo));
     setGrns((prev) => prev.map((grn) => {
       const same = String(grn.id) === String(result.id) || String(grn.grnNo) === String(result.grnNo);
       if (!same) return grn;
@@ -3674,6 +3754,18 @@ export default function App() {
         if (!voided.has(code)) return roll;
         return { ...roll, status: 'Void', qcStatus: 'Void', availableWeightKg: 0 };
       }));
+    }
+    if (previous) {
+      const decision = woodPelletBookAction(
+        { ...previous, status: 'Deleted', qcStatus: 'Deleted' },
+        inventory,
+        pelletInwards
+      );
+      if (decision.action === 'drop') {
+        commitWoodPelletBook(decision).catch((error) => {
+          alert(`GRN ${result.grnNo || previous.grnNo} is deleted, but pellet fuel stock was not removed: ${error.message}`);
+        });
+      }
     }
   };
 
