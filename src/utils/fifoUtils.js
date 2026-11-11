@@ -143,3 +143,24 @@ export function sortBatchesByFifo(batches = []) {
     fifoBadge: index === 0 ? '🌟 FIFO CONSUME FIRST (Oldest Batch)' : null
   }));
 }
+
+export {
+  acceptNewerBarcodeChoice,
+  ageDaysBetween,
+  barcodeCode,
+  barcodeOriginDate,
+  balanceParentCode,
+  buildRollFifoIndex,
+  consumptionEventsFromHistory,
+  eventsForRawBarcode,
+  fifosForItemIds,
+  fifoAgeForBarcode,
+  fifoMaterialKey,
+  formatConsumedFifoLabel,
+  formatFifoAgeLabel,
+  isBalanceBarcode,
+  isFifoConsumeFirst,
+  newerBarcodeWarning,
+  openBarcodeIsOverAged,
+  rollsByBarcode
+} from './barcodeFifo.js';
