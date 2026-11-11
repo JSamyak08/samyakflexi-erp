@@ -202,7 +202,8 @@ import {
   assertAllSaved
 } from './services/guardedWrite';
 import { createDirectoryUser, updateDirectoryUser, deleteDirectoryUser } from './services/adminUserService';
-import { buildChildStockRecords, saveConsumeChildRolls } from './services/consumeChildRolls';
+import { saveConsumeChildRolls } from './services/consumeChildRolls';
+import { persistConsumeOutputsBeforeStock } from './services/consumeOutputFirst';
 import { isFinishedGoodsStock } from './utils/finishedGoods';
 import { planJobWastage } from './utils/jobWastage';
 import {
@@ -4586,6 +4587,32 @@ export default function App() {
   const handleConsumeSFG = async (updatedSfgItem, logEntry) => {
     assertSfgStoreEdit();
     requireDatabaseConnection('consume SFG item');
+    // The output roll is one transaction and it lands before any deduction.
+    // A failure here leaves the printed lot and Substrate 2 untouched, so
+    // submitting the same consume again cannot post that film twice.
+    let outputPersistence = { outputRolls: [], records: [] };
+    try {
+      outputPersistence = await persistConsumeOutputsBeforeStock({
+        parentItem: updatedSfgItem,
+        logEntry,
+        saveOutputs: (records) => writeWithRetry(() => saveConsumeChildRolls(records))
+      });
+    } catch (error) {
+      const detail = error?.message || 'The output roll was not saved.';
+      throw new Error(`Output roll was not saved, so this consumption was not applied and Substrate 2 was not deducted. ${detail}`);
+    }
+    if (outputPersistence.records.length > 0) {
+      const savedBatches = new Set(outputPersistence.records.map((record) => record.sfg.sfgBatchCode));
+      const savedBarcodes = new Set(outputPersistence.records.map((record) => record.roll.barcodeId));
+      setSfgGoods((prev) => [
+        ...outputPersistence.records.map((record) => record.sfg),
+        ...prev.filter((item) => !savedBatches.has(item.sfgBatchCode))
+      ]);
+      setInventoryRolls((prev) => [
+        ...outputPersistence.records.map((record) => record.roll),
+        ...prev.filter((roll) => !savedBarcodes.has(roll.barcodeId || roll.id))
+      ]);
+    }
     await writeWithRetry(() => saveSFGGoodToSupabase(updatedSfgItem));
     const followUpFailures = [];
 
@@ -4700,108 +4727,16 @@ export default function App() {
     const targetOrderId = updatedSfgItem.orderId || logEntry.orderId;
     const targetJobName = (updatedSfgItem.jobName || logEntry.jobName || '').trim().toLowerCase();
 
-    // 5. Create and persist new SFG or FG Output Roll if produced
+    // 5. Output rolls were written before this consumption. Record the same
+    // barcodes on the production record. Do not insert them again.
     const outRoll = logEntry.outputRoll;
     let createdOutputBarcode = null;
     const isFG = outRoll?.outputType === 'FG' || logEntry.targetProcess === 'Slitting & Rewinding' || logEntry.targetProcess === 'Pouching / Bag Making';
-
-    if (outRoll && Number(outRoll.netWeightKg) > 0) {
-      createdOutputBarcode = outRoll.barcode || `${isFG ? 'FG' : (outRoll.outputType || 'SFG')}-BC-${targetOrderId || Date.now()}-${Date.now().toString().slice(-4)}`;
-      const outputNetKg = Number(outRoll.netWeightKg) || 0;
-      const outputGrossKg = Number(outRoll.grossWeightKg) || outputNetKg;
-      const outputTareKg = Number(outRoll.tareWeightKg) || 0;
-
-      const newSfgGoodItem = {
-        id: createdOutputBarcode,
-        sfgBatchCode: createdOutputBarcode,
-        sfgType: isFG ? 'Finished Goods (FG)' : 'Laminated / Processed Rolls',
-        category: isFG ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
-        rollType: isFG ? 'FG' : 'SFG',
-        orderId: targetOrderId,
-        jobCode: updatedSfgItem.jobCode || '',
-        jobName: updatedSfgItem.jobName || 'Untitled Job',
-        clientName: updatedSfgItem.clientName || '',
-        filmType: updatedSfgItem.filmType || '',
-        micron: updatedSfgItem.micron || 0,
-        widthMm: updatedSfgItem.widthMm || 0,
-        totalGrossKg: outputGrossKg,
-        totalNetKg: outputNetKg,
-        consumedKg: 0,
-        availableKg: outputNetKg,
-        dispatchedKg: 0,
-        pouchCount: Number(logEntry.pouchCount) || Number(outRoll.pouchCount) || 0,
-        rollsCount: 1,
-        machineName: logEntry.targetMachine || '',
-        operatorName: logEntry.operatorName || '',
-        shift: logEntry.shift || '',
-        storageBay: outRoll.storageBay || (isFG ? 'FG Warehouse' : 'Bay A'),
-        productionDate: logEntry.date || new Date().toISOString().split('T')[0],
-        status: isFG ? 'Ready for Dispatch' : 'In Stock (WIP)',
-        notes: isFG ? `Finished Goods derived from ${logEntry.targetProcess} of ${updatedSfgItem.sfgBatchCode}` : `Produced from ${logEntry.targetProcess} of ${updatedSfgItem.sfgBatchCode}`,
-        consumptionHistory: []
-      };
-
-      const newInventoryRoll = {
-        id: createdOutputBarcode,
-        barcodeId: createdOutputBarcode,
-        rollType: isFG ? 'FINISHED_GOODS' : 'SEMI_FINISHED_GOODS',
-        category: isFG ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
-        jobName: updatedSfgItem.jobName || 'Untitled Job',
-        jobCode: updatedSfgItem.jobCode || '',
-        orderId: targetOrderId || '',
-        clientName: updatedSfgItem.clientName || '',
-        customerName: updatedSfgItem.clientName || '',
-        filmType: updatedSfgItem.filmType || '',
-        micron: updatedSfgItem.micron || 0,
-        widthMm: updatedSfgItem.widthMm || 0,
-        grossWeightKg: outputGrossKg,
-        tareWeightKg: outputTareKg,
-        netWeightKg: outputNetKg,
-        availableWeightKg: outputNetKg,
-        dispatchedKg: 0,
-        pouchCount: Number(logEntry.pouchCount) || Number(outRoll.pouchCount) || 0,
-        machineName: logEntry.targetMachine || '',
-        operatorName: logEntry.operatorName || '',
-        shift: logEntry.shift || '',
-        locationBay: outRoll.storageBay || (isFG ? 'FG Warehouse' : 'Bay A'),
-        status: isFG ? 'Ready for Dispatch' : 'In Stock (SFG)',
-        sfgType: isFG ? 'Finished Goods (FG)' : 'Laminated Rolls',
-        remarks: isFG ? `Finished Goods derived from ${logEntry.targetProcess}` : `Produced from ${logEntry.targetProcess}`,
-        inwardDatetime: new Date().toISOString(),
-        productionDate: logEntry.date || new Date().toISOString().split('T')[0]
-      };
-
-      try {
-        await writeWithRetry(() => saveSFGGoodToSupabase(newSfgGoodItem));
-        setSfgGoods(prev => [newSfgGoodItem, ...prev]);
-      } catch (e) {
-        followUpFailures.push({ label: `output roll ${createdOutputBarcode} in sfg_goods`, error: e });
-      }
-
-      try {
-        await writeWithRetry(() => saveInventoryRollToSupabase(newInventoryRoll));
-        setInventoryRolls(prev => [newInventoryRoll, ...prev]);
-      } catch (e) {
-        followUpFailures.push({ label: `output roll ${createdOutputBarcode} in inventory rolls`, error: e });
-      }
-    }
-
     const multiOutputs = Array.isArray(logEntry.outputRolls) && logEntry.outputRolls.length > 1
       ? logEntry.outputRolls
       : null;
-    if (multiOutputs) {
-      try {
-        const childRecords = buildChildStockRecords({
-          parentItem: updatedSfgItem,
-          logEntry,
-          outputRolls: multiOutputs
-        });
-        await writeWithRetry(() => saveConsumeChildRolls(childRecords));
-        setSfgGoods(prev => [...childRecords.map((record) => record.sfg), ...prev]);
-        setInventoryRolls(prev => [...childRecords.map((record) => record.roll), ...prev]);
-      } catch (e) {
-        followUpFailures.push({ label: `child output rolls (${multiOutputs.length})`, error: e });
-      }
+    if (!multiOutputs && outRoll && Number(outRoll.netWeightKg) > 0) {
+      createdOutputBarcode = outRoll.barcode || outputPersistence.outputRolls[0]?.barcode || null;
     }
 
     // 6. Sync to Job's Production Record (Pre-fill Stage Quantities & Scrap Wastage)

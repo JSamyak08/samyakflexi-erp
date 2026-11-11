@@ -2197,6 +2197,7 @@ export async function fetchInventoryRolls() {
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
       status: r.status || 'In Stock',
+      sfgType: r.sfg_type || meta.sfgType || '',
       filmType: r.film_type || meta.filmType || '',
       bulkUploadFingerprint: meta.bulkUploadFingerprint || '',
       ...(meta.parentSfgBatchCode ? { parentSfgBatchCode: meta.parentSfgBatchCode } : {})
