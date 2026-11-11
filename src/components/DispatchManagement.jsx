@@ -44,13 +44,17 @@ import {
   formatGainLossKg,
   formatGainLossPct,
   gainLossForShipment,
+  isKgUnit,
   isOpenPackingList,
+  round2,
   listConsumptions,
   packedNetKgFromItems,
   packingListStatus,
   PACKING_STATUS_FINALISED,
   PACKING_STATUS_OPEN
 } from '../utils/dispatchPacking';
+import { resolvePackingRollWeight } from '../utils/packingRollWeight';
+import weighingScaleService from '../services/weighingScaleService';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from '../utils/finishedGoods';
 import { getCompanyProfile } from '../services/companyProfile';
@@ -232,6 +236,7 @@ export default function DispatchManagement({
   const [pktPackingStatus, setPktPackingStatus] = useState(PACKING_STATUS_FINALISED);
   const [pktConsumptions, setPktConsumptions] = useState([]);
   const [selectedFgRollForWeighing, setSelectedFgRollForWeighing] = useState(null);
+  const [scaleFollowKg, setScaleFollowKg] = useState(null);
 
   // Available Finished Goods (FG) in store for the selected production job
   const availableFgGoodsForJob = useMemo(() => {
@@ -247,6 +252,34 @@ export default function DispatchManagement({
       return jobMatch && isFinishedGoodsStock(item) && hasAvail;
     });
   }, [sfgGoods, pktJobName, orders]);
+
+  // Follow the connected scale so the Net Qty field and Add button cannot
+  // stay on a stale 0 while the header is showing a live kilogram reading.
+  useEffect(() => {
+    if (!isPackingModalOpen) {
+      setScaleFollowKg(null);
+      return undefined;
+    }
+    const applyLiveScale = (status) => {
+      const live = Number(status?.netWeight);
+      const following = Boolean(status?.isConnected) && isKgUnit(pktUom) && Number.isFinite(live);
+      if (!following) {
+        setScaleFollowKg(null);
+        return;
+      }
+      const next = round2(Math.max(0, live));
+      setScaleFollowKg((prev) => (prev === next ? prev : next));
+      setCurrentPktNetWeight((prev) => (Number(prev) === next ? prev : next));
+    };
+    return weighingScaleService.subscribe(applyLiveScale);
+  }, [isPackingModalOpen, pktUom]);
+
+  const pendingPackingWeight = resolvePackingRollWeight({
+    fieldNetKg: scaleFollowKg ?? currentPktNetWeight,
+    tareKg: pktCoreWeight,
+    unit: pktUom,
+    scaleStatus: weighingScaleService.getStatus()
+  });
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
@@ -1481,9 +1514,15 @@ export default function DispatchManagement({
       return;
     }
 
-    const netW = Number(currentPktNetWeight) >= 0 ? Number(currentPktNetWeight) : 0;
-    const tareW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 0;
-    const grossW = Number((netW + tareW).toFixed(2));
+    const weights = resolvePackingRollWeight({
+      fieldNetKg: currentPktNetWeight,
+      tareKg: pktCoreWeight,
+      unit: pktUom,
+      scaleStatus: weighingScaleService.getStatus()
+    });
+    const netW = weights.netKg;
+    const tareW = weights.tareKg;
+    const grossW = weights.grossKg;
     const sourceFg = selectedFgRollForWeighing;
     if (sourceFg && !isFinishedGoodsStock(sourceFg)) {
       alert('Only finished goods can be added to a dispatch. SFG and WIP stay in the SFG store.');
@@ -1545,6 +1584,12 @@ export default function DispatchManagement({
     }
 
     const coreW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 4.5;
+    const weighedNow = resolvePackingRollWeight({
+      fieldNetKg: currentPktNetWeight,
+      tareKg: coreW,
+      unit: pktUom,
+      scaleStatus: weighingScaleService.getStatus()
+    });
     const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
     const hasConsumptions = pktConsumptions.length > 0;
     const finalise = !hasConsumptions || e.nativeEvent?.submitter?.dataset?.finalise === 'true';
@@ -1558,9 +1603,9 @@ export default function DispatchManagement({
         barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-1`,
         jobName: pktJobName,
         substrateSpec: matchedOrder?.structure || 'Flexible Laminate',
-        coreWeightKg: coreW,
-        netWeightKg: Number(currentPktNetWeight) || 0,
-        grossWeightKg: Number(((Number(currentPktNetWeight) || 0) + coreW).toFixed(2)),
+        coreWeightKg: weighedNow.tareKg,
+        netWeightKg: weighedNow.netKg,
+        grossWeightKg: weighedNow.grossKg,
         coreSize: '3 Inch',
         unit: pktUom || 'Kg'
       }
@@ -4112,8 +4157,13 @@ export default function DispatchManagement({
                       step="0.01"
                       min="0"
                       className="form-control"
-                      value={currentPktNetWeight}
-                      onChange={e => setCurrentPktNetWeight(parseFloat(e.target.value) || 0)}
+                      value={pendingPackingWeight.source === 'scale' ? pendingPackingWeight.netKg : currentPktNetWeight}
+                      onChange={e => {
+                        if (pendingPackingWeight.source === 'scale') return;
+                        setCurrentPktNetWeight(parseFloat(e.target.value) || 0);
+                      }}
+                      readOnly={pendingPackingWeight.source === 'scale'}
+                      title={pendingPackingWeight.source === 'scale' ? 'Live net weight from the connected scale' : 'Type the net weight when the scale is offline'}
                     />
                     <WeighingScaleCaptureButton
                       onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 0)}
@@ -4226,7 +4276,7 @@ export default function DispatchManagement({
                     style={{ fontSize: '0.75rem', padding: '5px 12px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '800' }}
                     onClick={() => handleAddRollToPackingList()}
                   >
-                    + Add Roll / Box ({currentPktNetWeight} {pktUom} Net / {(currentPktNetWeight + Number(pktCoreWeight || 0)).toFixed(1)} Kg Gross)
+                    + Add Roll / Box ({pendingPackingWeight.netKg} {pktUom} Net / {pendingPackingWeight.grossKg.toFixed(1)} Kg Gross)
                   </button>
                 </div>
 
@@ -4333,7 +4383,10 @@ export default function DispatchManagement({
           autoPrint={true}
           onRecordNext={() => {
             setSelectedRollForBarcodeModal(null);
-            setCurrentPktNetWeight(0);
+            const status = weighingScaleService.getStatus();
+            if (!(status.isConnected && isKgUnit(pktUom))) {
+              setCurrentPktNetWeight(0);
+            }
           }}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
