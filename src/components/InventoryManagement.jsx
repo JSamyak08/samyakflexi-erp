@@ -58,7 +58,7 @@ import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/ema
 import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
-import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
+import { grnInwardLedgerEntries, ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
 import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
@@ -3575,8 +3575,9 @@ export default function InventoryManagement({
         : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.');
       updatedGRN.inspectedBy = inspectorName;
       updatedGRN.qcVerifiedAt = new Date().toISOString();
+      let savedGrn = null;
       try {
-        if (onUpdateGRN) await onUpdateGRN(updatedGRN);
+        if (onUpdateGRN) savedGrn = await onUpdateGRN(updatedGRN);
       } catch (err) {
         alert(`GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
         return;
@@ -3603,11 +3604,13 @@ export default function InventoryManagement({
         try {
           await onUpdateInventoryRolls(updatedRolls);
         } catch (err) {
-          alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved.\n\n${err.message || err}`);
-          return;
+          if (savedGrn?.stockPosted !== true) {
+            alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved.\n\n${err.message || err}`);
+            return;
+          }
         }
       }
-      if (isApproved && onSaveInventoryItem) {
+      if (isApproved && savedGrn?.stockPosted !== true && onSaveInventoryItem) {
         const { saved } = applyQcApprovalStock(
           inventory,
           stockPosts.map((post) => ({ ...post, vendorName: updatedGRN.vendorName })),
@@ -3699,9 +3702,10 @@ export default function InventoryManagement({
       qcVarianceLog: hasVariances ? qcVariances : (qcInspectingGRN.qcVarianceLog || null)
     };
 
+    let savedGrn = null;
     try {
       if (onUpdateGRN) {
-        await onUpdateGRN(updatedGRN);
+        savedGrn = await onUpdateGRN(updatedGRN);
       }
     } catch (err) {
       alert(err?.name === 'PartialSaveError'
@@ -3758,8 +3762,10 @@ export default function InventoryManagement({
           for (const roll of updatedRollsList) await onAddRoll(roll);
         }
       } catch (err) {
-        alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved. Those rolls are not shown as changed.\n\n${err.message || err}`);
-        return;
+        if (savedGrn?.stockPosted !== true) {
+          alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved. Those rolls are not shown as changed.\n\n${err.message || err}`);
+          return;
+        }
       }
     }
 
@@ -3793,7 +3799,7 @@ export default function InventoryManagement({
     }
 
     // If Approved, add the verified kilograms to the existing ledger, not a new lot.
-    if (isApproved && (onSaveInventoryItem || onUpdateInventory)) {
+    if (isApproved && savedGrn?.stockPosted !== true && (onSaveInventoryItem || onUpdateInventory)) {
       const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
       const { saved } = applyQcApprovalStock(inventory, [{
         stockItemId: updatedGRN.stockItemId,
@@ -9561,43 +9567,42 @@ export default function InventoryManagement({
         const isItemMatch = (candidate) => itemLink(candidate).include;
         const fallbackRate = itemActualUnitPrice || (DEFAULT_DAILY_RATES[item.filmType] || 0);
 
-        // 1. Gather Inward Receipts (GRNs)
-        const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item) && !isGrnDeleted(g));
-        const inwardTxLines = matchingGRNs.map(g => {
-          const txId = `GRN_${g.grnNo || g.id}`;
-          const isApproved = g.status === 'Approved' || g.qcStatus === 'Approved';
-          const isRejected = g.status === 'Rejected' || g.qcStatus === 'Rejected' || g.status === 'QC Hold' || g.qcStatus === 'QC Hold' || g.location === 'QC Hold Store';
-          const isPending = !isApproved && !isRejected;
+        // 1. Gather Inward Receipts (GRNs). Each line of a multi-line receipt
+        // is its own inward, on that line's item, under that line's barcodes.
+        const inwardTxLines = (grns || []).filter((g) => !isGrnDeleted(g)).flatMap((g) => {
+          const entries = grnInwardLedgerEntries(g, item, inventoryRolls);
+          return entries.map((entry) => {
+          const txId = `GRN_${g.grnNo || g.id}_${entry.lineId || entry.lineNo}`;
+          const isApproved = entry.decision === 'approved';
+          const isRejected = entry.decision === 'rejected';
+          const isPending = entry.decision === 'pending';
 
-          const rate = ledgerRowRate(g, itemActualUnitPrice || (DEFAULT_DAILY_RATES[g.filmType] || 0));
-          const qty = g.netWeightKg || 0;
-          // Find actual child rolls associated with this GRN
-          const matchingRolls = (inventoryRolls || []).filter(r => 
-            ((r.grnNo && g.grnNo && r.grnNo === g.grnNo) ||
-            (r.grn_no && g.grnNo && r.grn_no === g.grnNo) ||
-            (r.grnNo && g.id && r.grnNo === g.id))
-            && rollBelongsOnItemLedger(r, item).include
-            && !findRetiredBarcode(deletedBarcodes, r.barcodeId || r.barcode || r.id)
-          );
+          const rate = entry.rate > 0
+            ? entry.rate
+            : ledgerRowRate(g, itemActualUnitPrice || (DEFAULT_DAILY_RATES[g.filmType] || 0));
+          const qty = entry.qty || 0;
+          const entryCodes = String(entry.barcode || '').split(',').map((code) => code.trim()).filter(Boolean);
+          const matchingRolls = (inventoryRolls || []).filter((roll) => (
+            entryCodes.includes(String(roll.barcodeId || roll.barcode || roll.id || '').trim())
+            && !findRetiredBarcode(deletedBarcodes, roll.barcodeId || roll.barcode || roll.id)
+          ));
 
           let resolvedBarcode = '';
           if (customBarcodesMap[txId]) {
             resolvedBarcode = customBarcodesMap[txId];
-          } else if (matchingRolls.length > 0) {
-            resolvedBarcode = matchingRolls.map(r => r.barcodeId || r.id).filter(Boolean).join(', ');
-          } else if (Array.isArray(g.itemsBreakdown) && g.itemsBreakdown.some(b => b.barcodeId)) {
-            resolvedBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
-          } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
+          } else if (entry.barcode) {
+            resolvedBarcode = entry.barcode;
+          } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0 && entries.length === 1) {
             resolvedBarcode = g.barcodes.join(', ');
-          } else if (codeStartsWith(g.barcodeId, 'RM-BC') || codeStartsWith(g.barcodeId, 'CON-BC')) {
+          } else if (entries.length === 1 && (codeStartsWith(g.barcodeId, 'RM-BC') || codeStartsWith(g.barcodeId, 'CON-BC'))) {
             resolvedBarcode = textFrom(g.barcodeId);
-          } else {
+          } else if (entries.length === 1) {
             const isFilmGRN = (g.category || 'Film Substrates') === 'Film Substrates';
             const specSuffix = isFilmGRN && g.widthMm && g.widthMm !== '-' ? `-${g.micron || '12'}M${g.widthMm}W` : '';
             resolvedBarcode = `${isFilmGRN ? 'RM-BC' : 'CON-BC'}-${g.grnNo || g.id}${specSuffix}`;
           }
 
-          const grnRemark = g.itemRemarks || g.remarks || g.notes || '';
+          const grnRemark = entry.remarks || g.itemRemarks || g.remarks || g.notes || '';
           const rollRemarksStr = matchingRolls.map(r => r.itemRemarks || r.remarks || r.notes).filter(Boolean).join('; ');
           const finalRemark = (grnRemark || rollRemarksStr || '').trim();
 
@@ -9611,6 +9616,7 @@ export default function InventoryManagement({
             statusStr = 'QC Hold Store';
           }
 
+          const lineLabel = entry.lineCount > 1 ? `Line ${entry.lineNo}: ${entry.itemName}` : '';
           return {
             txId,
             category: 'inward',
@@ -9619,7 +9625,7 @@ export default function InventoryManagement({
             isRejected: isRejected,
             date: g.receivedDate || g.created_at || new Date().toISOString().split('T')[0],
             refNo: g.grnNo,
-            subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
+            subRef: [g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt', lineLabel].filter(Boolean).join(' · '),
             partyName: g.vendorName || item.lastVendor || 'Supplier',
             subParty: g.invoiceNo ? `Inv: ${g.invoiceNo}` : 'Vendor Receipt',
             inwardQtyKg: qty,
@@ -9629,23 +9635,23 @@ export default function InventoryManagement({
             unitPrice: rate,
             totalValue: qty * rate,
             barcode: resolvedBarcode,
-            batchNo: g.batchNo || `GRN-${g.grnNo}`,
+            batchNo: entry.batchNo || g.batchNo || `GRN-${g.grnNo}`,
             invoiceNo: g.invoiceNo || '',
             status: statusStr,
             itemRemarks: finalRemark,
             remarks: finalRemark,
-            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`,
-            legacy: itemLink(g).legacy
+            notes: `${entry.rollCount || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`,
+            legacy: entry.legacy
           };
+          });
         });
 
         // 1b. Ensure sub-items / inward lots with distinct inward dates appear in inwardTxLines
         if (item.subItems && item.subItems.length > 0) {
           item.subItems.forEach(sub => {
-            const alreadyIncluded = matchingGRNs.some(g => 
-              (g.stockItemId && String(g.stockItemId) === String(sub.id)) || 
-              (g.itemId && String(g.itemId) === String(sub.id))
-            );
+            const alreadyIncluded = (grns || []).some((g) => (
+              !isGrnDeleted(g) && grnInwardLedgerEntries(g, sub, inventoryRolls).length > 0
+            ));
             if (!alreadyIncluded && sub.availableQtyKg > 0) {
               const txId = `INVT_LOT_${sub.id}`;
               const oldestDate = getItemInwardDate(sub, safeGrns, inventoryRolls);

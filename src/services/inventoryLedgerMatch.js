@@ -131,3 +131,132 @@ export function rollBelongsOnItemLedger(roll, item) {
     itemName: roll.itemName ?? roll.item_name
   }, item);
 }
+
+function decisionBlob(grn) {
+  return `${grn?.status || ''} ${grn?.qcStatus || grn?.qc_status || ''}`.toLowerCase();
+}
+
+/**
+ * approved: usable stock.
+ * rejected: QC hold / rejected, not usable stock.
+ * pending: still in the lab.
+ * deleted: the receipt is gone and must not appear.
+ */
+export function grnQcDecision(grn) {
+  const blob = decisionBlob(grn);
+  if (blob.includes('delet')) return 'deleted';
+  if (blob.includes('hold') || blob.includes('reject')) return 'rejected';
+  if (blob.includes('approved') && !blob.includes('pending')) return 'approved';
+  return 'pending';
+}
+
+function positive(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function linePointers(line) {
+  return ledgerItemPointers({
+    stockItemId: line?.stockItemId ?? line?.stock_item_id,
+    masterItemId: line?.masterItemId ?? line?.master_item_id,
+    itemId: line?.itemId ?? line?.item_id,
+    itemCode: line?.itemCode ?? line?.item_code,
+    itemName: line?.itemName ?? line?.item_name
+  });
+}
+
+function lineQty(line, grn, soleLine) {
+  const own = positive(line?.netWeightKg ?? line?.net_weight_kg);
+  if (own > 0) return own;
+  if (!soleLine) return 0;
+  return positive(grn?.netWeightKg ?? grn?.receivedQtyKg ?? grn?.received_qty_kg);
+}
+
+function pushCode(codes, value) {
+  const text = String(value || '').trim();
+  if (!text || codes.includes(text)) return;
+  codes.push(text);
+}
+
+function barcodesForLine(line, grn, rolls) {
+  const wanted = [];
+  (line?.rolls || []).forEach((roll) => pushCode(wanted, roll?.barcodeId || roll?.barcode_id || roll?.barcode));
+  const wantedSet = new Set(wanted);
+  const grnKeys = new Set([grn?.id, grn?.grnNo, grn?.grn_number].filter(Boolean).map((value) => String(value)));
+  const matched = (rolls || []).filter((roll) => {
+    const code = String(roll?.barcodeId || roll?.barcode || roll?.id || '').trim();
+    const lineId = String(roll?.grnLineItemId || roll?.grn_line_item_id || '');
+    const gid = String(roll?.grnId || roll?.grn_id || roll?.grnNo || roll?.grn_no || '');
+    if (wantedSet.size > 0) return wantedSet.has(code) || (line?.id && lineId === String(line.id));
+    return Boolean(gid) && grnKeys.has(gid) && (!line?.id || !lineId || lineId === String(line.id));
+  });
+  const codes = [];
+  matched.forEach((roll) => pushCode(codes, roll?.barcodeId || roll?.barcode || roll?.id));
+  wanted.forEach((code) => pushCode(codes, code));
+  const listedRolls = Number(line?.rollsReceived ?? line?.rolls_received) || 0;
+  return {
+    barcode: codes.join(', '),
+    rollCount: matched.length || wanted.length || listedRolls
+  };
+}
+
+/**
+ * One ledger row per receipt line that belongs to this item.
+ * A multi-line GRN is not one lump on the first line's item: each line's
+ * kilograms and inward barcodes stay on that line's stock item.
+ * Rejected and QC-hold lines are returned so the ledger can show them,
+ * and they do not add usable stock. A deleted receipt returns nothing.
+ */
+export function grnInwardLedgerEntries(grn, item, rolls = []) {
+  if (!grn || !item) return [];
+  const decision = grnQcDecision(grn);
+  if (decision === 'deleted') return [];
+  const stored = Array.isArray(grn.lineItems) ? grn.lineItems.filter(Boolean) : [];
+  const selected = [];
+  if (stored.length > 1) {
+    stored.forEach((line) => {
+      if (ledgerRowLink(line, item).include) selected.push({ line, legacy: ledgerRowLink(line, item).legacy });
+    });
+  } else if (stored.length === 1) {
+    const line = stored[0];
+    const link = ledgerRowLink(line, item);
+    const header = ledgerRowLink(grn, item);
+    if (link.include || (linePointers(line).length === 0 && header.include)) {
+      selected.push({ line, legacy: link.include ? link.legacy : header.legacy });
+    }
+  } else if (ledgerRowLink(grn, item).include) {
+    selected.push({
+      line: {
+        id: `${grn.id || grn.grnNo || 'GRN'}-L1`,
+        lineNo: 1,
+        itemName: grn.itemName,
+        netWeightKg: grn.netWeightKg ?? grn.receivedQtyKg,
+        batchNo: grn.batchNo,
+        purchaseRate: grn.purchaseRatePerKg ?? grn.purchaseRate ?? grn.unitPrice,
+        rolls: Array.isArray(grn.itemsBreakdown) ? grn.itemsBreakdown : [],
+        remarks: grn.itemRemarks || grn.remarks || ''
+      },
+      legacy: ledgerRowLink(grn, item).legacy
+    });
+  }
+
+  return selected.map(({ line, legacy }) => {
+    const codes = barcodesForLine(line, grn, rolls);
+    const rate = positive(line.purchaseRate ?? line.purchaseRatePerKg ?? line.purchase_rate ?? line.unitPrice);
+    return {
+      lineId: line.id || '',
+      lineNo: Number(line.lineNo ?? line.line_no) || 1,
+      lineCount: Math.max(stored.length, 1),
+      itemName: line.itemName || line.item_name || grn.itemName || '',
+      qty: lineQty(line, grn, stored.length <= 1),
+      barcode: codes.barcode,
+      rollCount: codes.rollCount,
+      batchNo: line.batchNo || line.batch_no || grn.batchNo || '',
+      rate,
+      remarks: line.remarks || line.itemRemarks || '',
+      decision,
+      addsUsableStock: decision === 'approved',
+      legacy: Boolean(legacy)
+    };
+  }).filter((entry) => entry.qty > 0 || entry.barcode);
+}
