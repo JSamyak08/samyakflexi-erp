@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Printer, X, Tag, ChevronLeft, ChevronRight, QrCode, ArrowRight } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
+import { useModalDismiss } from './useModalDismiss';
 import QRCode2D from './QRCode2D';
 import {
   printThermalBarcodeLabels,
@@ -12,14 +13,16 @@ import {
 } from '../utils/thermalBarcodePrinter';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
-export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose }) {
+export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose, variant = '' }) {
   const rollList = rollsEligibleForBarcodeLabel(Array.isArray(rolls)
     ? rolls
     : (Array.isArray(roll) ? roll : (roll ? [roll] : [])));
+  const reprint = variant === 'reprint';
 
   const [activeIndex, setActiveIndex] = useState(0);
-
+  const rootRef = useRef(null);
   const letterhead = loadLetterhead();
+  useModalDismiss(rootRef, onClose, !letterhead?.error);
   if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
   const COMPANY_DETAILS = letterhead.company;
 
@@ -42,10 +45,10 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     });
   };
 
-  // Keyboard shortcuts: Enter for 'Record Next', Cmd/Ctrl+P for clean thermal print
+  // Enter records the next inward roll. A reprint does not. Ctrl/Cmd+P prints.
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Enter') {
+      if (!reprint && e.key === 'Enter') {
         e.preventDefault();
         handleRecordNext();
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
@@ -55,7 +58,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onRecordNext, onClose, rollList, COMPANY_DETAILS, inventory, inks]);
+  }, [reprint, onRecordNext, onClose, rollList, COMPANY_DETAILS, inventory, inks]);
 
   // Auto-trigger instant isolated iframe thermal print command when requested
   useEffect(() => {
@@ -269,7 +272,12 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
   if (rollList.length === 0) return null;
 
   return (
-    <div className="modal-overlay barcode-printer-modal-root" style={{ zIndex: 3000 }} onClick={onClose}>
+    <div
+      ref={rootRef}
+      className="modal-overlay barcode-printer-modal-root"
+      data-testid={reprint ? 'barcode-reprint-preview' : undefined}
+      style={{ zIndex: 3000 }}
+    >
       <style>{`
         @media print {
           .barcode-printer-modal-root,
@@ -335,15 +343,18 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         {/* Footer Print Actions */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            {rollList.length > 1 ? `Will print all ${rollList.length} stickers (1 sticker per 4×4 page)` : 'Press Enter to Record Next Roll'}
+            {reprint
+              ? 'Reprint only. This barcode is not changed and stock is not updated.'
+              : (rollList.length > 1 ? `Will print all ${rollList.length} stickers (1 sticker per 4×4 page)` : 'Press Enter to Record Next Roll')}
           </div>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button type="button" className="btn-secondary" onClick={onClose}>
               Close
             </button>
-            <button type="button" className="btn-secondary" onClick={handlePrint} style={{ background: '#f8fafc', color: '#1e293b' }}>
-              <Printer size={16} /> Re-Print ({rollList.length})
+            <button type="button" className="btn-secondary" data-testid={reprint ? 'barcode-reprint-print' : undefined} onClick={handlePrint} style={{ background: '#f8fafc', color: '#1e293b' }}>
+              <Printer size={16} /> {reprint ? 'Print' : `Re-Print (${rollList.length})`}
             </button>
+            {!reprint && (
             <button 
               type="button" 
               className="btn-primary" 
@@ -352,6 +363,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
             >
               <ArrowRight size={16} /> Record Next Roll (Enter ↵)
             </button>
+            )}
           </div>
         </div>
       </div>

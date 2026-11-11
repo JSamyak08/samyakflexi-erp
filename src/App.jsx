@@ -6835,6 +6835,7 @@ export default function App() {
             productionRecords={productionRecords}
             cylinders={cylinders}
             pelletInwards={pelletInwards}
+            inks={inks}
           />
         )}
 
