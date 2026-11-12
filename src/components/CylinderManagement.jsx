@@ -49,6 +49,7 @@ import { cylinderSkuTaken, nextCylinderSku, planBulkCylinderSkus } from '../util
 import { allocateJobMasterIds } from '../utils/jobMasterId';
 import { skuWhenLinkingCylinder } from '../utils/jobMasterLink';
 import { allocateCylinderSkusFromServer, allocateJobMasterIdsFromServer, releaseCylinderSkuReservation } from '../services/supabaseDataService';
+import { reportBackgroundFailure } from '../utils/backgroundFailure';
 import { cylinderIdentityKey, displayArtworkUrl } from '../utils/cylinderArtwork';
 import { findMatchingJobMaster } from '../utils/cylinderJobCardDraft';
 import ArtworkModal from './ArtworkModal';
@@ -416,7 +417,7 @@ export default function CylinderManagement({
     try {
       await releaseCylinderSkuReservation(reserved);
     } catch (err) {
-      console.warn('[cylinders] Could not release unused SKU reservation:', err?.message || err);
+      reportBackgroundFailure(err, 'A cylinder code reservation was not released');
     }
   };
 
@@ -432,7 +433,7 @@ export default function CylinderManagement({
     allocatedSkuRef.current = '';
     if (previous) {
       try { await releaseCylinderSkuReservation(previous); } catch (err) {
-        console.warn('[cylinders] Could not release the previous SKU reservation:', err?.message || err);
+        reportBackgroundFailure(err, 'A cylinder code reservation was not released');
       }
     }
     setEditingCylinder(null);
@@ -766,7 +767,9 @@ export default function CylinderManagement({
     allocatedSkuRef.current = '';
     setSkuWasAllocated(false);
     if (abandonedReservation && abandonedReservation !== savedSku) {
-      releaseCylinderSkuReservation(abandonedReservation).catch(() => {});
+      releaseCylinderSkuReservation(abandonedReservation).catch((error) => {
+        reportBackgroundFailure(error, 'A cylinder code reservation was not released');
+      });
     }
 
     if (!editingCylinder && createJobMaster && onAddJobMaster) {

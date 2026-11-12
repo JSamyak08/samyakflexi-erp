@@ -28,6 +28,7 @@ import {
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import OrderConfirmationRegister from './OrderConfirmationRegister';
 import { notifyOrderPunched } from '../services/emailService';
+import { allocateOrderIdFromServer } from '../services/supabaseDataService';
 import { 
   getProcessingRates, 
   saveProcessingRates, 
@@ -563,7 +564,13 @@ export default function JobPunchingForm({
         }))
       : [];
 
-    const orderId = getNextDocRefNumber('order');
+    let orderId;
+    try {
+      orderId = await allocateOrderIdFromServer();
+    } catch (err) {
+      alert(`An order number was not issued: ${err.message || err}`);
+      return;
+    }
     const ocnNumber = getNextDocRefNumber('ocn');
 
     const newOrder = {

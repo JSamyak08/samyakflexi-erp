@@ -53,6 +53,7 @@ import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
 import { deadlineFieldsFromRow } from '../utils/orderDeadlineReminder';
 import { closeColumnsForOrderSave, closeDetail, explicitCloseMode, statusForOrderSave } from '../utils/orderCloseWrite';
+import { reportBackgroundFailure } from '../utils/backgroundFailure';
 export { sanitizeGRN };
 
 /**
@@ -235,12 +236,28 @@ export async function fetchOrders() {
 }
 
 
-export async function saveOrderToSupabase(order) {
+export function orderDuplicateMessage(orderId) {
+  return `Order ${orderId} already exists. It was not overwritten.`;
+}
+
+function isDuplicateOrderError(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || error?.details || '').toLowerCase();
+  return code === '23505' || message.includes('duplicate key') || message.includes('orders_pkey');
+}
+
+const ORDER_SCHEMA_FALLBACK = /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|job_master_id|schema cache/i;
+
+export async function saveOrderToSupabase(order, options = {}) {
+  const mode = options.mode === 'insert' ? 'insert' : 'update';
   if (!isSupabaseConfigured() || !order) {
     throw new Error("Cannot save order: Supabase database connection is not available.");
   }
+  if (!order.id) {
+    throw new Error('Cannot save order: the order number is missing.');
+  }
   await ensureValidSession();
-  console.log(`[ORDERS][DB WRITE] UPSERT orderId=${order.id}`);
+  console.log(`[ORDERS][DB WRITE] ${mode.toUpperCase()} orderId=${order.id}`);
   const parsedTarget = parseStandardDate(order.targetDeliveryDate || order.deliveryDate);
   const targetDateVal = parsedTarget ? parsedTarget.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
@@ -350,11 +367,29 @@ export async function saveOrderToSupabase(order) {
     over_dispatch_warning: jobDetails.overDispatchWarning,
     job_master_id: jobDetails.jobMasterId || null
   };
-  let { error: fullErr } = await supabase.from('orders').upsert(writeRow, { onConflict: 'id' });
-  if (fullErr && /closed_by|close_mode|close_reason|closed_at|over_dispatch_warning|job_master_id|schema cache/i.test(fullErr.message || '')) {
-    ({ error: fullErr } = await supabase.from('orders').upsert(fullPayload, { onConflict: 'id' }));
+  const writeOrder = (row) => {
+    const query = mode === 'insert'
+      ? supabase.from('orders').insert(row)
+      : supabase.from('orders').update(row).eq('id', order.id);
+    return query.select('id');
+  };
+  let { data: written, error: fullErr } = await writeOrder(writeRow);
+  if (fullErr && ORDER_SCHEMA_FALLBACK.test(fullErr.message || '')) {
+    ({ data: written, error: fullErr } = await writeOrder(fullPayload));
+  }
+  if (fullErr && mode === 'insert' && isDuplicateOrderError(fullErr)) {
+    const duplicate = new Error(orderDuplicateMessage(order.id));
+    duplicate.code = '23505';
+    throw duplicate;
   }
   if (fullErr) handleSupabaseError(fullErr, 'orders');
+  if (!Array.isArray(written) || written.length === 0) {
+    throw new Error(
+      mode === 'insert'
+        ? `Order ${order.id} was not created.`
+        : `Order ${order.id} was not updated.`
+    );
+  }
   console.log(`[ORDERS][DB WRITE] Successfully saved orderId=${order.id}.`);
 }
 
@@ -1354,6 +1389,27 @@ export async function allocateCylinderSkusFromServer(count = 1) {
   if (error) handleSupabaseError(error, 'allocate_cylinder_sku');
   const issued = Array.isArray(data) ? data : (data ? [data] : []);
   return issued.map((sku) => String(sku || '').trim()).filter(Boolean);
+}
+
+export async function allocateOrderIdsFromServer(count = 1) {
+  if (!isSupabaseConfigured()) {
+    throw new Error("Supabase is not configured.");
+  }
+  const requested = Math.max(1, Math.min(500, parseInt(count, 10) || 1));
+  const { data, error } = await supabase.rpc('allocate_order_id', { p_count: requested });
+  if (error) handleSupabaseError(error, 'allocate_order_id');
+  const issued = Array.isArray(data) ? data : (data ? [data] : []);
+  const ids = issued.map((id) => String(id || '').trim()).filter(Boolean);
+  if (ids.length < requested) {
+    throw new Error('The database did not return an order number.');
+  }
+  return ids;
+}
+
+export async function allocateOrderIdFromServer() {
+  const [id] = await allocateOrderIdsFromServer(1);
+  if (!id) throw new Error('The database did not return an order number.');
+  return id;
 }
 
 export async function allocateJobMasterIdsFromServer(count = 1) {
@@ -4671,11 +4727,11 @@ export async function saveOrderConfirmation(ocn) {
 
       const { error } = await supabase.from('order_confirmations').upsert(row, { onConflict: 'id' });
       if (error) {
-        console.warn('[order_confirmations upsert error]', error.message || error);
-        saveSystemSetting('samyak_cache_order_confirmations', existingList).catch(() => {});
+        throw new Error(error.message || 'The order confirmation was not saved.');
       }
     } catch (err) {
-      console.warn('[saveOrderConfirmation] remote save failed:', err);
+      reportBackgroundFailure(err, 'The order confirmation was not saved', { toast: false });
+      throw err;
     }
   }
 
@@ -4725,9 +4781,11 @@ export async function saveOrderConfirmationAmendment(ocnIdOrOptions, amendmentPa
         ocnNumber: saved.ocnNumber,
         ocnId: saved.id
       };
-      saveOrderToSupabase(orderPatch).catch(e => console.warn('[sync order amendment error]', e));
-    } catch (e) {
-      console.warn('[sync order amendment]', e);
+      saveOrderToSupabase(orderPatch).catch((error) => {
+        reportBackgroundFailure(error, 'The order was not updated from the OCN amendment');
+      });
+    } catch (error) {
+      reportBackgroundFailure(error, 'The order was not updated from the OCN amendment');
     }
   }
 
@@ -4742,10 +4800,11 @@ export async function deleteOrderConfirmation(ocnId) {
   cacheOrderConfirmations(list);
 
   if (isSupabaseConfigured()) {
-    try {
-      await supabase.from('order_confirmations').delete().eq('id', ocnId);
-    } catch (e) {
-      console.warn('[deleteOrderConfirmation]', e);
+    const { error } = await supabase.from('order_confirmations').delete().eq('id', ocnId);
+    if (error) {
+      const failure = new Error(error.message || 'The order confirmation was not deleted.');
+      reportBackgroundFailure(failure, 'The order confirmation was not deleted', { toast: false });
+      throw failure;
     }
   }
   return true;

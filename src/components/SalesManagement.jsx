@@ -43,7 +43,8 @@ import { generateDocRefNumber, getNextDocRefNumber } from '../services/settingsS
 import { 
   fetchSalesQuotations, 
   saveSalesQuotationToSupabase, 
-  deleteSalesQuotationFromSupabase 
+  deleteSalesQuotationFromSupabase,
+  allocateOrderIdFromServer
 } from '../services/supabaseDataService';
 
 // Standard Material Formats for Flexible Packaging & Cylinders
@@ -927,11 +928,18 @@ export default function SalesManagement({
     const qtn = ocnConvertModalQtn;
     const ocnNo = ocnDocRefNo || getNextDocRefNumber('ocn');
 
-    let createdOrderIds = [];
+    const createdOrderIds = [];
 
-    ocnConvertFormData.forEach((item, itemIdx) => {
+    for (let itemIdx = 0; itemIdx < ocnConvertFormData.length; itemIdx += 1) {
+      const item = ocnConvertFormData[itemIdx];
       const isCylinderQuote = item.isCylinderOrder || item.materialFormat === 'Rotogravure Cylinder';
-      const orderId = getNextDocRefNumber('order');
+      let orderId;
+      try {
+        orderId = await allocateOrderIdFromServer();
+      } catch (err) {
+        alert(`An order number was not issued: ${err.message || err}`);
+        return;
+      }
       createdOrderIds.push(orderId);
 
       const printWidthMm = parseFloat(item.printWidthMm) || 1000;
@@ -1110,9 +1118,13 @@ export default function SalesManagement({
       };
 
       if (onAddOrder) {
-        onAddOrder(newOrder);
+        try {
+          await onAddOrder(newOrder);
+        } catch {
+          return;
+        }
       }
-    });
+    }
 
     // Update Quotation Status
     let updatedTarget = null;

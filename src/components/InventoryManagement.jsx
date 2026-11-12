@@ -71,7 +71,7 @@ import {
 import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
 import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
-import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
+import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, allocateOrderIdFromServer, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
 import { grnInwardLedgerEntries, ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
@@ -1065,7 +1065,15 @@ export default function InventoryManagement({
     }
 
     const matchedOrder = (orders || []).find(o => o.jobName === dispatchJobName);
-    const orderId = matchedOrder ? matchedOrder.id : getNextDocRefNumber('order');
+    let orderId = matchedOrder ? matchedOrder.id : '';
+    if (!matchedOrder) {
+      try {
+        orderId = await allocateOrderIdFromServer();
+      } catch (err) {
+        alert(`An order number was not issued: ${err.message || err}`);
+        return;
+      }
+    }
 
     const totalNetWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
     const totalGrossWeight = dispatchRollsList.reduce((sum, r) => sum + (parseFloat(r.grossWeightKg) || 0), 0);

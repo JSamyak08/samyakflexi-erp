@@ -138,6 +138,8 @@ import {
   ORDER_CLOSE_TOLERANCE_SETTING
 } from './utils/orderAutoClose';
 import { alertOrderSaveError } from './utils/alertOnce';
+import { recordsAfterDataLoad } from './utils/loadedRecords';
+import { reportBackgroundFailure } from './utils/backgroundFailure';
 import { applyPrintRunResult, holdPrintRun, recordPrintRun, restartHeldPrintRun } from './services/printRun';
 import { isActivePrintRun, parseActivePrintRunConflict } from './utils/printRunConflict';
 import { canHoldPrintJob, isHeldPrintJob } from './utils/printHold';
@@ -156,7 +158,7 @@ import { isSupabaseConfigured, checkSupabaseConnection, withTimeout } from './se
 import { cancelQcOverdueEscalationDigest } from './services/qcEscalationDigest';
 import { publishPrintingDeadlineDigest } from './services/printingDeadlineDigest';
 import { 
-  fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase,
+  fetchOrders, saveOrderToSupabase, deleteOrderFromSupabase, allocateOrderIdFromServer,
   fetchVendors, saveVendorToSupabase, deleteVendorFromSupabase,
   fetchInventory, saveInventoryItemToSupabase, saveInventoryBatchToSupabase, deleteInventoryItemFromSupabase, archiveInventoryItemsFromSupabase, reactivateInventoryItemsFromSupabase, writeOffInventoryItemsFromSupabase, sanitizeInventoryItem,
   fetchGRNs, saveGRNToSupabase, deleteGRNFromSupabase, sanitizeGRN,
@@ -235,97 +237,6 @@ import {
   clearImportedLocalKeys
 } from './services/businessRecords';
 import './index.css';
-
-// ============================================================================
-// PERMANENT BOOT-TIME PURGE: Strip all legacy seed/dummy data from storage.
-// These IDs were seeded during development and must NEVER appear in production.
-// ============================================================================
-const DUMMY_ORDER_IDS = new Set([
-  'ORD-2026-089', 'ORD-2026-090', 'ORD-2026-091', 'ORD-2026-092',
-  'ORD-2026-648'
-]);
-const DUMMY_PROD_IDS = new Set([
-  'PROD-REC-089', 'PROD-REC-090', 'PROD-REC-091', 'PROD-REC-092',
-  'REC-2026-089', 'REC-2026-090', 'REC-2026-091', 'REC-2026-092'
-]);
-// Known seed inventory IDs (INV-001 to INV-011, etc.)
-const DUMMY_INV_IDS = new Set([
-  'INV-001','INV-002','INV-003','INV-004','INV-005','INV-006',
-  'INV-007','INV-008','INV-009','INV-010','INV-011'
-]);
-// Known seed GRN numbers
-const DUMMY_GRN_IDS = new Set([
-  'GRN-2026-104','GRN-2026-105','GRN-2026-098','GRN-2026-089','GRN-2026-072'
-]);
-// Known seed vendor IDs
-const DUMMY_VENDOR_IDS = new Set([
-  'VND-001','VND-002','VND-003','VND-004','VND-005','VND-006','VND-007','VND-008'
-]);
-// Known seed employee, attendance, and advance IDs
-const DUMMY_EMP_IDS = new Set([
-  'EMP-001', 'EMP-002', 'EMP-003', 'EMP-004', 'EMP-005', 'EMP-006'
-]);
-const DUMMY_ATT_IDS = new Set([
-  'ATT-20260827-EMP001', 'ATT-20260827-EMP002', 'ATT-20260827-EMP003',
-  'ATT-20260827-EMP004', 'ATT-20260827-EMP005'
-]);
-const DUMMY_ADV_IDS = new Set([
-  'ADV-2026-001', 'ADV-2026-002'
-]);
-
-const DUMMY_KEYWORDS = ['Chocolate Bites', 'Aadi Chemtrade', 'ISS-176883652985', 'CON-BC-20260816-533'];
-
-/**
- * Returns true if any id field of the item matches a known dummy seed ID or dummy keyword.
- */
-function isDummyRecord(item) {
-  if (!item || typeof item !== 'object') return false;
-  try {
-    const itemStr = JSON.stringify(item);
-    if (DUMMY_KEYWORDS.some(kw => itemStr.includes(kw))) return true;
-  } catch (e) {}
-  const id = String(item.id || item.grnNo || item.itemCode || '');
-  if (DUMMY_ORDER_IDS.has(id)) return true;
-  if (DUMMY_PROD_IDS.has(id)) return true;
-  if (DUMMY_INV_IDS.has(id)) return true;
-  if (DUMMY_GRN_IDS.has(item.grnNo || '')) return true;
-  if (DUMMY_VENDOR_IDS.has(id)) return true;
-  if (DUMMY_EMP_IDS.has(id)) return true;
-  if (DUMMY_ATT_IDS.has(id)) return true;
-  if (DUMMY_ADV_IDS.has(id)) return true;
-  if (item.employeeId && DUMMY_EMP_IDS.has(String(item.employeeId))) return true;
-  // Also check orderId / jobId references
-  if (item.orderId && DUMMY_ORDER_IDS.has(item.orderId)) return true;
-  if (item.jobId && DUMMY_ORDER_IDS.has(item.jobId)) return true;
-  return false;
-}
-
-/**
- * Strips dummy seed records from a data array by matching known IDs.
- */
-function stripDummyRecords(arr, idFields = ['id', 'orderId', 'jobId']) {
-  if (!Array.isArray(arr)) return arr;
-  return arr.filter(item => !isDummyRecord(item));
-}
-
-/**
- * One-time boot cleanup: purges dummy IDs from ALL localStorage keys.
- * Runs synchronously before any React state initializes.
- */
-// ============================================================================
-// SAFE BOOT-TIME CLEANUP: Purge legacy mock development seeds only.
-// Ensures user data, issued POs, adjustments, and operational caches are preserved.
-// ============================================================================
-(function purgeLegacyMockData() {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  const legacyMockKeys = [
-    'dummy_data', 'mock_orders', 'seed_inventory', 'test_dummy_cylinders'
-  ];
-  for (const k of legacyMockKeys) {
-    try { localStorage.removeItem(k); } catch (e) {}
-  }
-})();
-
 
 // Immediately sanitize localStorage on boot
 initSafeStorage();
@@ -1526,7 +1437,7 @@ export default function App() {
 
         // Hydrate Orders
         if (Array.isArray(supaOrders)) {
-          const cleanOrders = stripDummyRecords(supaOrders).filter(
+          const cleanOrders = recordsAfterDataLoad(supaOrders).filter(
             o => o && o.id && !deletedOrderIdsRef.current.has(o.id)
           );
           setOrders(cleanOrders);
@@ -1541,68 +1452,63 @@ export default function App() {
           );
           if (runningInDb) setPressActiveRunningJob(runningInDb);
 
-          supaOrders.filter(isDummyRecord).forEach(d => deleteOrderFromSupabase(d.id).catch(console.warn));
         }
         setOrdersLoading(false);
 
         // Hydrate Job Masters
         if (Array.isArray(supaJobMasters)) {
-          const cleanJM = stripDummyRecords(supaJobMasters);
+          const cleanJM = recordsAfterDataLoad(supaJobMasters);
           setJobMasters(cleanJM);
           remember('job_masters', 'samyak_cache_job_masters', cleanJM);
-          supaJobMasters.filter(isDummyRecord).forEach(d => deleteJobMasterFromSupabase(d.id).catch(console.warn));
         }
 
         // Hydrate Inventory
         if (Array.isArray(supaInv)) {
-          const cleanInv = stripDummyRecords(supaInv).map(sanitizeInventoryItem);
+          const cleanInv = recordsAfterDataLoad(supaInv).map(sanitizeInventoryItem);
           setInventory(cleanInv);
           remember('inventory', 'samyak_cache_inventory', cleanInv);
           cleanInv.forEach(item => {
             if (item && item.itemName && (item.itemName.includes('|||') || item.itemName.startsWith('{'))) {
-              saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch(console.warn);
+              saveInventoryItemToSupabase(sanitizeInventoryItem(item)).catch((error) => {
+                reportBackgroundFailure(error, 'An inventory row was not rewritten while loading');
+              });
             }
           });
-          supaInv.filter(isDummyRecord).forEach(d => deleteInventoryItemFromSupabase(d.id, 'Removed dummy inventory row').catch(console.warn));
         }
 
         // Hydrate Cylinders
         if (Array.isArray(supaCyls)) {
-          const cleanCyls = stripDummyRecords(supaCyls);
+          const cleanCyls = recordsAfterDataLoad(supaCyls);
           setCylinders(cleanCyls);
           remember('cylinders', 'samyak_cache_cylinders', cleanCyls);
-          supaCyls.filter(isDummyRecord).forEach(d => deleteCylinderFromSupabase(d.id).catch(console.warn));
         }
 
         // Hydrate Vendors
         if (Array.isArray(supaVendors)) {
-          const cleanVendors = stripDummyRecords(supaVendors);
+          const cleanVendors = recordsAfterDataLoad(supaVendors);
           setVendors(cleanVendors);
           remember('vendors', 'samyak_cache_vendors', cleanVendors);
-          supaVendors.filter(isDummyRecord).forEach(d => deleteVendorFromSupabase(d.id).catch(console.warn));
         }
 
         // Hydrate Clients
         if (Array.isArray(supaClients)) {
-          const cleanClients = stripDummyRecords(supaClients);
+          const cleanClients = recordsAfterDataLoad(supaClients);
           setClients(cleanClients);
           remember('clients', 'samyak_cache_clients', cleanClients);
-          supaClients.filter(isDummyRecord).forEach(d => deleteClientFromSupabase(d.id).catch(console.warn));
         }
 
         // Hydrate Machines
         if (Array.isArray(supaMachines)) {
-          const cleanMachines = stripDummyRecords(supaMachines);
+          const cleanMachines = recordsAfterDataLoad(supaMachines);
           setMachines(cleanMachines);
           remember('printing_scheduler', 'samyak_cache_printing_machines', cleanMachines);
         }
 
         // Hydrate Schedules
         if (Array.isArray(supaSchedules)) {
-          const cleanSchedules = stripDummyRecords(supaSchedules);
+          const cleanSchedules = recordsAfterDataLoad(supaSchedules);
           setSchedules(cleanSchedules);
           remember('printing_scheduler', 'samyak_cache_production_schedules', cleanSchedules);
-          supaSchedules.filter(isDummyRecord).forEach(d => deleteProductionScheduleFromSupabase(d.id).catch(console.warn));
         }
 
         // UNBLOCK UI: User can now interact with core views while background stages finish
@@ -1649,19 +1555,17 @@ export default function App() {
         if (!isMounted) return;
 
         if (Array.isArray(supaGRNs)) {
-          const cleanGRNs = stripDummyRecords(supaGRNs).map(sanitizeGRN);
+          const cleanGRNs = recordsAfterDataLoad(supaGRNs).map(sanitizeGRN);
           setGrns(cleanGRNs);
           remember('inventory', 'samyak_cache_grns', cleanGRNs);
-          supaGRNs.filter(isDummyRecord).forEach(d => deleteGRNFromSupabase(d.id || d.grnNo).catch(console.warn));
           // GRNs loading, including when Inventory opens, must not send mail.
           // The QC-overdue list is shown on that page and emailed only from its button.
         }
 
         if (Array.isArray(supaProd)) {
-          const cleanProd = stripDummyRecords(supaProd);
+          const cleanProd = recordsAfterDataLoad(supaProd);
           setProductionRecords(cleanProd);
           remember('production_records', 'samyak_cache_production_records', cleanProd);
-          supaProd.filter(isDummyRecord).forEach(d => deleteProductionRecordFromSupabase(d.id).catch(console.warn));
         }
 
         if (Array.isArray(supaUsers) && supaUsers.length > 0) {
@@ -1670,20 +1574,19 @@ export default function App() {
         }
 
         if (Array.isArray(supaSheets)) {
-          const cleanSheets = stripDummyRecords(supaSheets);
+          const cleanSheets = recordsAfterDataLoad(supaSheets);
           setJobDataSheets(cleanSheets);
           remember('job_masters', 'samyak_cache_job_datasheets', cleanSheets);
-          supaSheets.filter(isDummyRecord).forEach(d => deleteJobDataSheetFromSupabase(d.id).catch(console.warn));
         }
 
         if (Array.isArray(supaRolls)) {
-          const cleanRolls = stripDummyRecords(supaRolls);
+          const cleanRolls = recordsAfterDataLoad(supaRolls);
           setInventoryRolls(cleanRolls);
           remember('inventory', 'samyak_cache_inventory_rolls', cleanRolls);
         }
 
         if (Array.isArray(supaShipments)) {
-          const cleanShip = stripDummyRecords(supaShipments);
+          const cleanShip = recordsAfterDataLoad(supaShipments);
           setDispatchShipments(cleanShip);
           loadedShipments = cleanShip;
           remember('dispatch', 'samyak_cache_dispatch_shipments', cleanShip);
@@ -1695,21 +1598,21 @@ export default function App() {
         }
 
         if (Array.isArray(supaSFG)) {
-          const cleanSFG = stripDummyRecords(supaSFG);
+          const cleanSFG = recordsAfterDataLoad(supaSFG);
           setSfgGoods(cleanSFG);
           loadedSfg = cleanSFG;
           remember('sfg_store', 'samyak_cache_sfg_goods', cleanSFG);
         }
 
         if (Array.isArray(supaDCs)) {
-          const cleanDCs = stripDummyRecords(supaDCs);
+          const cleanDCs = recordsAfterDataLoad(supaDCs);
           setDeliveryChallans(cleanDCs);
           loadedChallans = cleanDCs;
           remember('dispatch', 'samyak_cache_delivery_challans', cleanDCs);
         }
 
         if (Array.isArray(supaCoAs)) {
-          const cleanCoAs = stripDummyRecords(supaCoAs);
+          const cleanCoAs = recordsAfterDataLoad(supaCoAs);
           setCertificateOfAnalyses(cleanCoAs);
           remember('production_records', 'samyak_cache_certificate_of_analyses', cleanCoAs);
         }
@@ -1730,13 +1633,13 @@ export default function App() {
         }
 
         if (Array.isArray(supaPOs)) {
-          const cleanPOs = stripDummyRecords(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
+          const cleanPOs = recordsAfterDataLoad(supaPOs).map(sanitizePurchaseOrder).filter(Boolean);
           setPurchaseOrders(cleanPOs);
           remember('purchase_orders', 'samyak_cache_purchase_orders', cleanPOs);
         }
 
         if (Array.isArray(supaOcns)) {
-          const cleanOcns = stripDummyRecords(supaOcns);
+          const cleanOcns = recordsAfterDataLoad(supaOcns);
           setOcns(cleanOcns);
           remember('job_punching', 'samyak_cache_order_confirmations', cleanOcns);
           syncOcnCounterWithRecords(cleanOcns);
@@ -1780,18 +1683,17 @@ export default function App() {
         if (!hrAllowed) {
           clearHrCache();
         } else if (Array.isArray(supaEmployees)) {
-          const cleanEmps = stripDummyRecords(supaEmployees);
+          const cleanEmps = recordsAfterDataLoad(supaEmployees);
           setEmployees(cleanEmps);
           safeLocalStorageSet('samyak_cache_employees', cleanEmps);
-          supaEmployees.filter(isDummyRecord).forEach(d => deleteEmployeeFromSupabase(d.id).catch(console.warn));
         }
 
         if (hrAllowed && Array.isArray(supaAttendance)) {
-          const cleanAtt = stripDummyRecords(supaAttendance);
+          const cleanAtt = recordsAfterDataLoad(supaAttendance);
           setEmployeeAttendance(prev => {
             const map = new Map();
-            cleanAtt.forEach(a => { if (a && a.id && !isDummyRecord(a)) map.set(a.id, a); });
-            (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+            cleanAtt.forEach(a => { if (a && a.id) map.set(a.id, a); });
+            (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
             const merged = Array.from(map.values());
             safeLocalStorageSet('samyak_cache_employee_attendance', merged);
             return merged;
@@ -1799,11 +1701,11 @@ export default function App() {
         }
 
         if (hrAllowed && Array.isArray(supaAdvances)) {
-          const cleanAdv = stripDummyRecords(supaAdvances);
+          const cleanAdv = recordsAfterDataLoad(supaAdvances);
           setSalaryAdvances(prev => {
             const map = new Map();
-            cleanAdv.forEach(adv => { if (adv && adv.id && !isDummyRecord(adv)) map.set(adv.id, adv); });
-            (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+            cleanAdv.forEach(adv => { if (adv && adv.id) map.set(adv.id, adv); });
+            (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
             const merged = Array.from(map.values());
             safeLocalStorageSet('samyak_cache_salary_advances', merged);
             return merged;
@@ -1811,11 +1713,11 @@ export default function App() {
         }
 
         if (hrAllowed && Array.isArray(supaPayments)) {
-          const cleanPay = stripDummyRecords(supaPayments);
+          const cleanPay = recordsAfterDataLoad(supaPayments);
           setSalaryPayments(prev => {
             const map = new Map();
-            cleanPay.forEach(pay => { if (pay && pay.id && !isDummyRecord(pay)) map.set(pay.id, pay); });
-            (prev || []).forEach(p => { if (p && p.id && !isDummyRecord(p) && !map.has(p.id)) map.set(p.id, p); });
+            cleanPay.forEach(pay => { if (pay && pay.id) map.set(pay.id, pay); });
+            (prev || []).forEach(p => { if (p && p.id && !map.has(p.id)) map.set(p.id, p); });
             const merged = Array.from(map.values());
             safeLocalStorageSet('samyak_cache_salary_payments', merged);
             return merged;
@@ -1886,7 +1788,7 @@ export default function App() {
         if (Array.isArray(indentRows)) setIndents(indentRows);
         if (Array.isArray(issueRows)) setMachineIssues(issueRows);
         if (Array.isArray(consumableRows)) setConsumables(consumableRows);
-        if (Array.isArray(storeRows)) setStoreIssueTransactions(stripDummyRecords(storeRows));
+        if (Array.isArray(storeRows)) setStoreIssueTransactions(recordsAfterDataLoad(storeRows));
         if (pressBoard) {
           setPressQueueOrder(Array.isArray(pressBoard.queueOrder) ? pressBoard.queueOrder : []);
           setPressMachineAssignments(pressBoard.machineAssignments || {});
@@ -1925,7 +1827,7 @@ export default function App() {
             remember('orders', 'samyak_cache_orders', nextOrders);
           }
         } catch (closeErr) {
-          console.error('[Orders][auto-close]', closeErr);
+          reportBackgroundFailure(closeErr, 'An order was not auto-closed while loading');
         }
         console.log('[Supabase Load] All 3 stages completed successfully!');
       } catch (err) {
@@ -1990,84 +1892,84 @@ export default function App() {
           if (table === 'orders') {
             const data = await fetchOrders();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data).filter(o => o && o.id && !deletedOrderIdsRef.current.has(o.id));
+              const clean = recordsAfterDataLoad(data).filter(o => o && o.id && !deletedOrderIdsRef.current.has(o.id));
               setOrders(clean);
               safeLocalStorageSet('samyak_cache_orders', clean);
             }
           } else if (table === 'inventory') {
             const data = await fetchInventory();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data).map(sanitizeInventoryItem);
+              const clean = recordsAfterDataLoad(data).map(sanitizeInventoryItem);
               setInventory(clean);
               safeLocalStorageSet('samyak_cache_inventory', clean);
             }
           } else if (table === 'cylinders') {
             const data = await fetchCylinders();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setCylinders(clean);
               safeLocalStorageSet('samyak_cache_cylinders', clean);
             }
           } else if (table === 'production_records') {
             const data = await fetchProductionRecords();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setProductionRecords(clean);
               safeLocalStorageSet('samyak_cache_production_records', clean);
             }
           } else if (table === 'grns') {
             const data = await fetchGRNs();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data).map(sanitizeGRN);
+              const clean = recordsAfterDataLoad(data).map(sanitizeGRN);
               setGrns(clean);
               safeLocalStorageSet('samyak_cache_grns', clean);
             }
           } else if (table === 'job_masters') {
             const data = await fetchJobMasters();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setJobMasters(clean);
               safeLocalStorageSet('samyak_cache_job_masters', clean);
             }
           } else if (table === 'employees' && canReadPayroll(assignedRolesOf(sessionProfile || currentUser))) {
             const data = await fetchEmployeesFromSupabase();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setEmployees(clean);
               safeLocalStorageSet('samyak_cache_employees', clean);
             }
           } else if (table === 'employee_attendance' && canReadPayroll(assignedRolesOf(sessionProfile || currentUser))) {
             const data = await fetchEmployeeAttendanceFromSupabase();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setEmployeeAttendance(clean);
               safeLocalStorageSet('samyak_cache_employee_attendance', clean);
             }
           } else if (table === 'salary_advances' && canReadPayroll(assignedRolesOf(sessionProfile || currentUser))) {
             const data = await fetchSalaryAdvancesFromSupabase();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setSalaryAdvances(clean);
               safeLocalStorageSet('samyak_cache_salary_advances', clean);
             }
           } else if (table === 'delivery_challans') {
             const data = await fetchDeliveryChallansFromSupabase();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setDeliveryChallans(clean);
               safeLocalStorageSet('samyak_cache_delivery_challans', clean);
             }
           } else if (table === 'purchase_orders') {
             const data = await fetchPurchaseOrders();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data).map(sanitizePurchaseOrder).filter(Boolean);
+              const clean = recordsAfterDataLoad(data).map(sanitizePurchaseOrder).filter(Boolean);
               setPurchaseOrders(clean);
               safeLocalStorageSet('samyak_cache_purchase_orders', clean);
             }
           } else if (table === 'order_confirmations') {
             const data = await fetchOrderConfirmations();
             if (Array.isArray(data)) {
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setOcns(clean);
               safeLocalStorageSet('samyak_cache_order_confirmations', clean);
               syncOcnCounterWithRecords(clean);
@@ -2921,13 +2823,14 @@ export default function App() {
   const handleAddOrder = async (newOrder) => {
     console.log(`[ORDERS][CREATE] Starting orderId=${newOrder?.id}`);
     try {
-      await saveOrderToSupabase(newOrder);
-      console.log(`[ORDERS][DB WRITE] UPSERT orderId=${newOrder?.id} successful`);
+      await saveOrderToSupabase(newOrder, { mode: 'insert' });
+      console.log(`[ORDERS][DB WRITE] INSERT orderId=${newOrder?.id} successful`);
       setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
       await logAudit('CREATE', 'Orders', `Punched job order ${newOrder.id} - "${newOrder.jobName}" for client "${newOrder.clientName}" (${newOrder.orderQtyKg} kg)`, newOrder.id);
     } catch (err) {
       console.error('[ORDERS][CREATE] Failed to create order in Supabase:', err);
       alert(`Failed to save order ${newOrder?.id} to Supabase database: ${err.message || err}`);
+      reportBackgroundFailure(err, `Order ${newOrder?.id} was not created`, { toast: false });
       throw err;
     }
   };
@@ -2977,7 +2880,9 @@ export default function App() {
             jobName: updatedOrder.jobName || s.jobName,
             clientName: updatedOrder.clientName || s.clientName
           };
-          saveProductionScheduleToSupabase(nextSched).catch(e => console.warn('Could not sync schedule for updated order:', e));
+          saveProductionScheduleToSupabase(nextSched).catch((error) => {
+            reportBackgroundFailure(error, `The schedule for order ${updatedOrder.id} was not saved`);
+          });
           return nextSched;
         }
         return s;
@@ -3884,7 +3789,7 @@ export default function App() {
     logAudit('DELETE', 'Job Data Sheets', `Deleted job datasheet ${sheetId}`, sheetId);
   };
 
-  const syncCylinderToOrderManagement = (cyl) => {
+  const syncCylinderToOrderManagement = async (cyl) => {
     if (!cyl) return;
     const isEngraving = (cyl.status || '').toLowerCase().includes('engraving');
     if (!isEngraving) return;
@@ -3898,8 +3803,15 @@ export default function App() {
     );
 
     if (!existingOrder) {
+      let orderId;
+      try {
+        orderId = await allocateOrderIdFromServer();
+      } catch (err) {
+        alert(`An order number was not issued: ${err.message || err}`);
+        reportBackgroundFailure(err, 'A cylinder order number was not issued', { toast: false });
+        return;
+      }
       const ocnNo = getNextDocRefNumber('ocn');
-      const orderId = getNextDocRefNumber('order');
       const numericCost = parseFloat(String(cyl.cylinderCost || '').replace(/[^0-9.]/g, '')) || 35000;
       
       const cylOrder = {
@@ -3935,7 +3847,11 @@ export default function App() {
         calculationDetails: null
       };
 
-      handleAddOrder(cylOrder);
+      try {
+        await handleAddOrder(cylOrder);
+      } catch {
+        // handleAddOrder already shows the error.
+      }
     }
   };
 
@@ -3971,7 +3887,7 @@ export default function App() {
     });
 
     logAudit('CREATE', 'Cylinders', `Saved rotogravure cylinder ${saved.sku} for "${saved.jobName}"`, saved.id);
-    syncCylinderToOrderManagement(saved);
+    await syncCylinderToOrderManagement(saved);
     await syncCylinderToJobMaster(saved);
     return saved;
   };
@@ -4191,7 +4107,7 @@ export default function App() {
     });
 
     logAudit('UPDATE', 'Cylinders', `Updated rotogravure cylinder ${updatedCyl.sku} for "${updatedCyl.jobName}"`, updatedCyl.id);
-    syncCylinderToOrderManagement(updatedCyl);
+    await syncCylinderToOrderManagement(updatedCyl);
     await syncCylinderToJobMaster(updatedCyl);
   };
 
@@ -4266,7 +4182,9 @@ export default function App() {
         : `Created client dispatch shipment ${shipmentToSave.id} for "${shipmentToSave.clientName}"`,
       shipmentToSave.id
     );
-    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
+    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => {
+      reportBackgroundFailure(err, 'An order was not auto-closed');
+    });
 
     // 1. Reduce dispatched FG quantities from sfgGoods (FG Store)
     const shipmentItems = Array.isArray(shipmentToSave.items) ? shipmentToSave.items : [];
@@ -4370,7 +4288,9 @@ export default function App() {
     const nextShipments = dispatchShipments.filter(s => String(s.dispatchId || s.id) !== String(id));
     setDispatchShipments(nextShipments);
     logAudit('DELETE', 'Dispatch', `Deleted Packing List / Dispatch Shipment ${id}`, id);
-    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
+    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => {
+      reportBackgroundFailure(err, 'An order was not auto-closed');
+    });
   };
 
   const handleSaveDeliveryChallan = async (newDc) => {
@@ -4379,7 +4299,9 @@ export default function App() {
     const nextChallans = [newDc, ...deliveryChallans.filter(d => d.id !== newDc.id)];
     setDeliveryChallans(nextChallans);
     logAudit('CREATE', 'Dispatch', `Issued Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
-    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
+    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => {
+      reportBackgroundFailure(err, 'An order was not auto-closed');
+    });
   };
 
   const handleDeleteDeliveryChallan = async (id) => {
@@ -4388,7 +4310,9 @@ export default function App() {
     const nextChallans = deliveryChallans.filter(d => d.id !== id);
     setDeliveryChallans(nextChallans);
     logAudit('DELETE', 'Dispatch', `Deleted Delivery Challan ${id}`, id);
-    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => console.error('[Orders][auto-close]', err));
+    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => {
+      reportBackgroundFailure(err, 'An order was not auto-closed');
+    });
   };
 
   const handleSaveCoA = async (newCoa) => {
@@ -6658,7 +6582,7 @@ export default function App() {
             onRefreshOcns={async () => {
               const data = await fetchOrderConfirmations();
               if (!Array.isArray(data)) return;
-              const clean = stripDummyRecords(data);
+              const clean = recordsAfterDataLoad(data);
               setOcns(clean);
               safeLocalStorageSet('samyak_cache_order_confirmations', clean);
               syncOcnCounterWithRecords(clean);

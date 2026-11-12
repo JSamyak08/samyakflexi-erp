@@ -36,6 +36,7 @@ export const DEFAULT_AGEING_SETTINGS = {
 };
 
 import { compressImageDataUrl, safeLocalStorageSet } from '../utils/safeStorage.js';
+import { reportBackgroundFailure } from '../utils/backgroundFailure.js';
 import { saveSystemSetting, fetchSystemSetting, saveEmailSettingsToSupabase, saveEmailTemplatesToSupabase, fetchFilmSubstratesFromSupabase, saveFilmSubstratesToSupabase } from './supabaseDataService.js';
 import {
   cacheCompanyProfile,
@@ -301,14 +302,14 @@ export function generateDocRefNumber(type, customNumber) {
  * Get next document reference number AND increment counter in settings
  */
 export function getNextDocRefNumber(type) {
+  if (type === 'order') {
+    throw new Error('Order numbers are issued by the database (allocate_order_id). They are not taken from this browser.');
+  }
   const config = getDocumentPrefixes();
   let num = 101;
   let key = '';
   
-  if (type === 'order') {
-    num = config.orderCounter || 101;
-    key = 'orderCounter';
-  } else if (type === 'po') {
+  if (type === 'po') {
     num = config.poCounter || 246;
     key = 'poCounter';
   } else if (type === 'ocn') {
@@ -376,7 +377,9 @@ export function syncOcnCounterWithRecords(ocnList = []) {
   if (maxSeq > (Number(config.ocnCounter) || 108)) {
     const next = { ...config, ocnCounter: maxSeq };
     cacheJson(PREFIX_STORAGE_KEY, next);
-    saveDocumentPrefixes(next).catch(() => {});
+    saveDocumentPrefixes(next).catch((error) => {
+      reportBackgroundFailure(error, 'The OCN number series was not saved');
+    });
   }
 }
 
