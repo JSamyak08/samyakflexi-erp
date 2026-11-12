@@ -1239,7 +1239,10 @@ export async function saveGRNToSupabase(grn) {
     stockItemId: clean.stockItemId || '',
     masterItemId: clean.masterItemId || '',
     lineItems: lines,
-    rolls: rollLinks
+    rolls: rollLinks,
+    // The database adds approved kilograms in this same save. The caller
+    // must not add them again. Older databases ignore the flag.
+    postStockOnApproval: true
   };
 
   console.log('[GRNs] Saving GRN and its lines:', payload.grnNo || payload.id, lines.length);
@@ -1255,7 +1258,9 @@ export async function saveGRNToSupabase(grn) {
     ...clean,
     id: savedId,
     grnNo: savedNo,
-    lineItems: stampLineIds(savedId, lines)
+    lineItems: stampLineIds(savedId, lines),
+    stockPosted: saved.stockPosted === true,
+    posts: Array.isArray(saved.posts) ? saved.posts : []
   };
 }
 
@@ -2194,8 +2199,11 @@ export async function fetchInventoryRolls() {
       stationId: r.station_id || '',
       locationBay: r.location_bay || '',
       status: r.status || 'In Stock',
+      sfgType: r.sfg_type || meta.sfgType || '',
       filmType: r.film_type || meta.filmType || '',
       bulkUploadFingerprint: meta.bulkUploadFingerprint || '',
+      parentBarcodeId: meta.parentBarcodeId || meta.parentBarcode || '',
+      creatingOrderId: meta.orderId || meta.creatingOrderId || '',
       ...(meta.parentSfgBatchCode ? { parentSfgBatchCode: meta.parentSfgBatchCode } : {})
     };
     });
@@ -2342,7 +2350,15 @@ export async function saveInventoryRollToSupabase(roll) {
       ...(roll.coreWeightKg !== undefined && roll.coreWeightKg !== null ? { coreWeightKg: Number(roll.coreWeightKg) || 0 } : {}),
       ...(roll.filmType && roll.filmType !== '-' ? { filmType: roll.filmType } : {}),
       ...(roll.bulkUploadFingerprint ? { bulkUploadFingerprint: roll.bulkUploadFingerprint } : {}),
-      ...(roll.parentSfgBatchCode ? { parentSfgBatchCode: roll.parentSfgBatchCode } : {})
+      ...(roll.parentSfgBatchCode ? { parentSfgBatchCode: roll.parentSfgBatchCode } : {}),
+      ...(String(roll.parentBarcodeId || roll.metadata?.parentBarcodeId || roll.metadata?.parentBarcode || '').trim()
+        ? { parentBarcodeId: String(roll.parentBarcodeId || roll.metadata?.parentBarcodeId || roll.metadata?.parentBarcode).trim() }
+        : {}),
+      ...(String(roll.creatingOrderId || roll.metadata?.orderId || roll.metadata?.creatingOrderId || '').trim()
+        ? { orderId: String(roll.creatingOrderId || roll.metadata?.orderId || roll.metadata?.creatingOrderId).trim() }
+        : {}),
+      ...(String(roll.metadata?.stage || '').trim() ? { stage: String(roll.metadata.stage).trim() } : {}),
+      ...(roll.metadata?.balanceRoll === true ? { balanceRoll: true } : {})
     }
   };
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);
@@ -3786,7 +3802,7 @@ export async function fetchSFGGoodsFromSupabase() {
         } : {}),
         isPrintedLot: Boolean(extra.isPrintedLot) || String(item.sfg_batch_code || '').startsWith('SFG-LOT-'),
         childRolls: Array.isArray(extra.childRolls) ? extra.childRolls : [],
-        runBalanceRolls: Array.isArray(extra.runBalanceRolls) ? extra.runBalanceRolls : [],
+        ...(Array.isArray(extra.runBalanceRolls) ? { runBalanceRolls: extra.runBalanceRolls } : {}),
         runConsumedRolls: Array.isArray(extra.runConsumedRolls) ? extra.runConsumedRolls : [],
         inputBarcodeIds: Array.isArray(extra.inputBarcodeIds) ? extra.inputBarcodeIds : [],
         printedAllocations: Array.isArray(extra.printedAllocations) ? extra.printedAllocations : [],

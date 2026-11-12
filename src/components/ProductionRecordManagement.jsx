@@ -54,9 +54,10 @@ import {
 import TablePagination, { usePagination } from './TablePagination';
 import { supabase } from '../services/supabaseClient';
 import { fetchScrapDisposals, saveScrapDisposal, describeSaveError } from '../services/businessRecords';
-import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS } from '../services/settingsService';
+import { getMaterialCostSettings, fetchMaterialCostSettingsFromSupabase, DEFAULT_MATERIAL_COST_SETTINGS, getInventoryAgeingSettings } from '../services/settingsService';
 import { roundToTwo, formatUpToTwoDecimals, formatCurrency, formatQty } from '../utils/numberHelpers';
 import { codesEqual } from '../utils/barcodeCode';
+import { acceptNewerBarcodeChoice, rollsByBarcode } from '../utils/fifoUtils';
 import MeasureRangeHint from './MeasureRangeHint';
 import RollLineageSummary from './RollLineageSummary';
 import {
@@ -3991,6 +3992,14 @@ export default function ProductionRecordManagement({
                                 );
 
                                 if (rollMatch) {
+                                  const choice = acceptNewerBarcodeChoice(rollMatch, inventoryRolls, {
+                                    rollsByCode: rollsByBarcode(inventoryRolls),
+                                    enforce: getInventoryAgeingSettings().enforceFifoStrictly !== false
+                                  });
+                                  if (!choice.ok) {
+                                    updateMaterialRow(m.id, 'barcode', '');
+                                    return;
+                                  }
                                   const scannedWeight = finiteNumber(rollMatch.availableWeightKg ?? rollMatch.netWeightKg);
                                   if (scannedWeight === null || scannedWeight <= 0) {
                                     updateMaterialRow(m.id, 'issueQtyKg', '');

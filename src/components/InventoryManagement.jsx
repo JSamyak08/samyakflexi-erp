@@ -53,12 +53,26 @@ import SearchableSelect from './SearchableSelect';
 import GrnPoSuggestion from './GrnPoSuggestion';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, getDocumentPrefixes } from '../services/settingsService';
-import { getItemAgeInDays, getCategoryAgeingThreshold, isItemOverAged, sortInventoryByFifo, sortBatchesByFifo, getItemInwardDate, parseDateFlexible } from '../utils/fifoUtils';
+import {
+  acceptNewerBarcodeChoice,
+  barcodeCode,
+  buildRollFifoIndex,
+  fifosForItemIds,
+  formatConsumedFifoLabel,
+  formatFifoAgeLabel,
+  getItemInwardDate,
+  parseDateFlexible,
+  isFifoConsumeFirst,
+  openBarcodeIsOverAged,
+  rollsByBarcode,
+  sortBatchesByFifo,
+  sortInventoryByFifo
+} from '../utils/fifoUtils';
 import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/emailService';
 import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
-import { ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
+import { grnInwardLedgerEntries, ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
 import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
@@ -518,10 +532,26 @@ export default function InventoryManagement({
     };
   };
 
-  // Calculate items exceeding category ageing limits
+  // One FIFO clock per barcode. The stock row does not get a single SKU age.
+  const rollFifoIndex = useMemo(
+    () => buildRollFifoIndex(inventoryRolls || [], { issues: storeIssueTransactions || [] }),
+    [inventoryRolls, storeIssueTransactions]
+  );
+
+  // Open barcodes past their category storage limit. Fully consumed barcodes are already cleared.
   const overAgedItemsCount = useMemo(() => {
-    return safeInventory.filter(item => isItemOverAged(item, ageingSettings, safeGrns, inventoryRolls)).length;
-  }, [safeInventory, ageingSettings, safeGrns, inventoryRolls]);
+    const rawIds = new Set((safeInventory || []).map((item) => String(item.id)));
+    let count = 0;
+    (inventoryRolls || []).forEach((roll) => {
+      if (!rawIds.has(String(roll.itemId || ''))) return;
+      const fifo = rollFifoIndex.get(barcodeCode(roll).toLowerCase());
+      const category = roll.category && roll.category !== 'Raw Material (RM)'
+        ? roll.category
+        : 'Film Substrates';
+      if (openBarcodeIsOverAged(fifo, category, ageingSettings)) count += 1;
+    });
+    return count;
+  }, [safeInventory, inventoryRolls, rollFifoIndex, ageingSettings]);
 
 
 
@@ -3575,8 +3605,9 @@ export default function InventoryManagement({
         : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.');
       updatedGRN.inspectedBy = inspectorName;
       updatedGRN.qcVerifiedAt = new Date().toISOString();
+      let savedGrn = null;
       try {
-        if (onUpdateGRN) await onUpdateGRN(updatedGRN);
+        if (onUpdateGRN) savedGrn = await onUpdateGRN(updatedGRN);
       } catch (err) {
         alert(`GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
         return;
@@ -3603,11 +3634,13 @@ export default function InventoryManagement({
         try {
           await onUpdateInventoryRolls(updatedRolls);
         } catch (err) {
-          alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved.\n\n${err.message || err}`);
-          return;
+          if (savedGrn?.stockPosted !== true) {
+            alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved.\n\n${err.message || err}`);
+            return;
+          }
         }
       }
-      if (isApproved && onSaveInventoryItem) {
+      if (isApproved && savedGrn?.stockPosted !== true && onSaveInventoryItem) {
         const { saved } = applyQcApprovalStock(
           inventory,
           stockPosts.map((post) => ({ ...post, vendorName: updatedGRN.vendorName })),
@@ -3699,9 +3732,10 @@ export default function InventoryManagement({
       qcVarianceLog: hasVariances ? qcVariances : (qcInspectingGRN.qcVarianceLog || null)
     };
 
+    let savedGrn = null;
     try {
       if (onUpdateGRN) {
-        await onUpdateGRN(updatedGRN);
+        savedGrn = await onUpdateGRN(updatedGRN);
       }
     } catch (err) {
       alert(err?.name === 'PartialSaveError'
@@ -3758,8 +3792,10 @@ export default function InventoryManagement({
           for (const roll of updatedRollsList) await onAddRoll(roll);
         }
       } catch (err) {
-        alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved. Those rolls are not shown as changed.\n\n${err.message || err}`);
-        return;
+        if (savedGrn?.stockPosted !== true) {
+          alert(`GRN ${updatedGRN.grnNo} was updated, but the roll barcodes were NOT saved. Those rolls are not shown as changed.\n\n${err.message || err}`);
+          return;
+        }
       }
     }
 
@@ -3793,7 +3829,7 @@ export default function InventoryManagement({
     }
 
     // If Approved, add the verified kilograms to the existing ledger, not a new lot.
-    if (isApproved && (onSaveInventoryItem || onUpdateInventory)) {
+    if (isApproved && savedGrn?.stockPosted !== true && (onSaveInventoryItem || onUpdateInventory)) {
       const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
       const { saved } = applyQcApprovalStock(inventory, [{
         stockItemId: updatedGRN.stockItemId,
@@ -4240,6 +4276,17 @@ export default function InventoryManagement({
       return;
     }
 
+    if (issueType === 'issue') {
+      const chosenRoll = (inventoryRolls || []).find((roll) => barcodeCode(roll).toLowerCase() === String(finalBarcode || '').trim().toLowerCase());
+      if (chosenRoll) {
+        const choice = acceptNewerBarcodeChoice(chosenRoll, inventoryRolls, {
+          rollsByCode: rollsByBarcode(inventoryRolls),
+          enforce: ageingSettings.enforceFifoStrictly !== false
+        });
+        if (!choice.ok) return;
+      }
+    }
+
     const maxAvail = scannedItemDetails?.availableQty ?? (itemToIssue.availableQtyKg || 0);
     if (issueType === 'issue' && maxAvail < qty) {
       alert(`Insufficient available stock! Only ${maxAvail} ${unitStr} available in this batch/roll.`);
@@ -4603,7 +4650,8 @@ export default function InventoryManagement({
     // 1. Category / Over-Aged Filter
     if (stockCategoryFilter && stockCategoryFilter !== 'ALL') {
       if (stockCategoryFilter === 'OVERAGED') {
-        const hasOverAged = (i.subItems || [i]).some(sub => isItemOverAged(sub, ageingSettings, safeGrns, inventoryRolls));
+        const rows = fifosForItemIds(i.allInventoryIds || [i.id], inventoryRolls, rollFifoIndex);
+        const hasOverAged = rows.some(({ roll, fifo }) => openBarcodeIsOverAged(fifo, i.category || roll.category, ageingSettings));
         if (!hasOverAged) return false;
       } else if (stockCategoryFilter !== 'ARCHIVED') {
         const itemCat = i.category || 'Film Substrates';
@@ -5561,10 +5609,10 @@ export default function InventoryManagement({
                 </div>
                 <div>
                   <h4 style={{ fontSize: '0.95rem', fontWeight: '800', color: '#991b1b', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    ⚠️ Inventory Ageing Warning Alert ({overAgedItemsCount} Item{overAgedItemsCount === 1 ? '' : 's'} Over-Aged)
+                    ⚠️ Inventory Ageing Warning Alert ({overAgedItemsCount} barcode{overAgedItemsCount === 1 ? '' : 's'} over-aged)
                   </h4>
                   <p style={{ fontSize: '0.82rem', color: '#7f1d1d', margin: '2px 0 0' }}>
-                    {overAgedItemsCount} stock item(s) have exceeded their category-wise maximum storage age limit. All older stock must be issued and consumed first per FIFO policy.
+                    {overAgedItemsCount} barcode(s) still in stock have exceeded their category storage age. Clear the older barcode of that material before a fresher one.
                   </p>
                 </div>
               </div>
@@ -5574,7 +5622,7 @@ export default function InventoryManagement({
                 style={{ background: '#dc2626', color: '#ffffff', border: 'none', fontWeight: '800', fontSize: '0.78rem', padding: '6px 14px', borderRadius: '6px', cursor: 'pointer' }}
                 onClick={() => setStockCategoryFilter(prev => prev === 'OVERAGED' ? 'ALL' : 'OVERAGED')}
               >
-                {stockCategoryFilter === 'OVERAGED' ? 'Show All Stock Items' : `⚠️ Filter ${overAgedItemsCount} Over-Aged Item(s)`}
+                {stockCategoryFilter === 'OVERAGED' ? 'Show All Stock Items' : `⚠️ Filter ${overAgedItemsCount} over-aged barcode(s)`}
               </button>
             </div>
           )}
@@ -5607,7 +5655,7 @@ export default function InventoryManagement({
                   <option value="ARCHIVED">Archived stock items</option>
                   {overAgedItemsCount > 0 && (
                     <option value="OVERAGED" style={{ color: '#dc2626', fontWeight: '800' }}>
-                      ⚠️ Over-Aged Stock Items ({overAgedItemsCount})
+                      ⚠️ Over-aged barcodes ({overAgedItemsCount})
                     </option>
                   )}
                   <option value="Film Substrates">Film Substrates (PET, LDPE, BOPP)</option>
@@ -5736,11 +5784,8 @@ export default function InventoryManagement({
                   const itemValuation = availQty * rate;
                   const subGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || '-';
 
-                  const oldestDate = getItemInwardDate(item, safeGrns, inventoryRolls);
-                  const ageInDays = getItemAgeInDays(item, safeGrns, inventoryRolls);
-                  const isOverAged = isItemOverAged(item, ageingSettings, safeGrns, inventoryRolls);
-                  const catThreshold = getCategoryAgeingThreshold(item.category, ageingSettings);
-                  const formattedInwardDate = oldestDate ? oldestDate.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+                  const barcodeFifos = fifosForItemIds(item.allInventoryIds || [item.id], inventoryRolls, rollFifoIndex);
+                  const isOverAged = barcodeFifos.some(({ roll, fifo }) => openBarcodeIsOverAged(fifo, item.category || roll.category, ageingSettings));
 
                   // Pending QC matching for this item
                   const pendingQcQty = pendingQcKgForItem(item, safeGrns);
@@ -5799,6 +5844,34 @@ export default function InventoryManagement({
                         )}
                         {item.itemCode && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.itemCode}</div>
+                        )}
+                        {barcodeFifos.length > 0 && (
+                          <div data-testid="stock-barcode-fifo" style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            {barcodeFifos.slice(0, 8).map(({ roll, fifo }) => {
+                              const code = barcodeCode(roll);
+                              const label = formatFifoAgeLabel(fifo);
+                              const prefer = isFifoConsumeFirst({ roll, fifo }, barcodeFifos);
+                              const slices = fifo.balanceQty > 0
+                                ? fifo.consumed
+                                : (fifo.consumed.length > 1 ? fifo.consumed.slice(0, -1) : []);
+                              return (
+                                <div key={code} data-testid="barcode-fifo-line" style={{ fontSize: '0.68rem', fontWeight: '700', color: '#0f172a', lineHeight: 1.35 }}>
+                                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{code}</span>
+                                  {prefer && <span style={{ marginLeft: '4px', color: '#0369a1' }}>FIFO consume first</span>}
+                                  {label && (
+                                    <span style={{ marginLeft: '4px', color: fifo.display?.frozen ? '#64748b' : '#0369a1' }}>{label}</span>
+                                  )}
+                                  <span style={{ marginLeft: '4px', color: '#64748b' }}>{Number(fifo.balanceQty || 0).toFixed(2)} kg left</span>
+                                  {slices.map((slice) => (
+                                    <span key={slice.id || String(slice.consumedAt)} style={{ marginLeft: '4px', color: '#9a3412' }}>{formatConsumedFifoLabel(slice)}</span>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                            {barcodeFifos.length > 8 && (
+                              <div style={{ fontSize: '0.68rem', color: '#64748b' }}>+{barcodeFifos.length - 8} more barcodes</div>
+                            )}
+                          </div>
                         )}
                       </td>
                       <td>
@@ -5889,20 +5962,11 @@ export default function InventoryManagement({
                           </div>
                         )}
 
-                        {/* Ageing & FIFO Badge */}
-                        {isOverAged ? (
+                        {isOverAged && (
                           <div style={{ marginTop: '4px' }}>
-                            <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }} title={`Oldest Inward Date: ${formattedInwardDate || 'N/A'}`}>
-                              ⚠️ OVER-AGED ({ageInDays}d &gt; {catThreshold}d)
+                            <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }}>
+                              Has an over-aged barcode
                             </span>
-                            {formattedInwardDate && <div style={{ fontSize: '0.65rem', color: '#991b1b', fontWeight: '700', marginTop: '1px' }}>Inward: {formattedInwardDate}</div>}
-                          </div>
-                        ) : (
-                          <div style={{ marginTop: '4px' }}>
-                            <span className="badge" style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.68rem', fontWeight: '700', padding: '2px 6px', display: 'inline-block' }} title={`Oldest Inward Date: ${formattedInwardDate || 'N/A'}`}>
-                              📜 FIFO Stock ({ageInDays === 0 ? 'Recd Today' : `${ageInDays}d Old`})
-                            </span>
-                            {formattedInwardDate && <div style={{ fontSize: '0.65rem', color: '#0369a1', fontWeight: '600', marginTop: '1px' }}>Inward: {formattedInwardDate}</div>}
                           </div>
                         )}
                       </td>
@@ -8919,6 +8983,27 @@ export default function InventoryManagement({
                   </div>
                 </div>
 
+                {(() => {
+                  const chosenRoll = (inventoryRolls || []).find((roll) => barcodeCode(roll).toLowerCase() === String(scannedItemDetails.barcodeId || '').trim().toLowerCase());
+                  if (!chosenRoll) return null;
+                  const fifo = rollFifoIndex.get(barcodeCode(chosenRoll).toLowerCase());
+                  const label = formatFifoAgeLabel(fifo);
+                  const choice = acceptNewerBarcodeChoice(chosenRoll, inventoryRolls, {
+                    rollsByCode: rollsByBarcode(inventoryRolls),
+                    enforce: false
+                  });
+                  return (
+                    <div data-testid="issue-barcode-fifo" style={{ marginTop: '8px', fontSize: '0.78rem', fontWeight: '700', color: '#0369a1' }}>
+                      {label}
+                      {choice.warning && (
+                        <div data-testid="issue-fifo-warning" style={{ marginTop: '4px', color: '#9a3412' }}>
+                          {choice.warning.message} You can still issue this newer barcode.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '0.76rem', color: '#475569', flexWrap: 'wrap', gap: '6px' }}>
                   <span>
                     Available in Scanned Roll/Batch: <strong style={{ color: '#047857', fontSize: '0.85rem' }}>{scannedItemDetails.availableQty} {scannedItemDetails.unit || 'Kg'}</strong>
@@ -9561,43 +9646,42 @@ export default function InventoryManagement({
         const isItemMatch = (candidate) => itemLink(candidate).include;
         const fallbackRate = itemActualUnitPrice || (DEFAULT_DAILY_RATES[item.filmType] || 0);
 
-        // 1. Gather Inward Receipts (GRNs)
-        const matchingGRNs = (grns || []).filter(g => isItemMatch(g, item) && !isGrnDeleted(g));
-        const inwardTxLines = matchingGRNs.map(g => {
-          const txId = `GRN_${g.grnNo || g.id}`;
-          const isApproved = g.status === 'Approved' || g.qcStatus === 'Approved';
-          const isRejected = g.status === 'Rejected' || g.qcStatus === 'Rejected' || g.status === 'QC Hold' || g.qcStatus === 'QC Hold' || g.location === 'QC Hold Store';
-          const isPending = !isApproved && !isRejected;
+        // 1. Gather Inward Receipts (GRNs). Each line of a multi-line receipt
+        // is its own inward, on that line's item, under that line's barcodes.
+        const inwardTxLines = (grns || []).filter((g) => !isGrnDeleted(g)).flatMap((g) => {
+          const entries = grnInwardLedgerEntries(g, item, inventoryRolls);
+          return entries.map((entry) => {
+          const txId = `GRN_${g.grnNo || g.id}_${entry.lineId || entry.lineNo}`;
+          const isApproved = entry.decision === 'approved';
+          const isRejected = entry.decision === 'rejected';
+          const isPending = entry.decision === 'pending';
 
-          const rate = ledgerRowRate(g, itemActualUnitPrice || (DEFAULT_DAILY_RATES[g.filmType] || 0));
-          const qty = g.netWeightKg || 0;
-          // Find actual child rolls associated with this GRN
-          const matchingRolls = (inventoryRolls || []).filter(r => 
-            ((r.grnNo && g.grnNo && r.grnNo === g.grnNo) ||
-            (r.grn_no && g.grnNo && r.grn_no === g.grnNo) ||
-            (r.grnNo && g.id && r.grnNo === g.id))
-            && rollBelongsOnItemLedger(r, item).include
-            && !findRetiredBarcode(deletedBarcodes, r.barcodeId || r.barcode || r.id)
-          );
+          const rate = entry.rate > 0
+            ? entry.rate
+            : ledgerRowRate(g, itemActualUnitPrice || (DEFAULT_DAILY_RATES[g.filmType] || 0));
+          const qty = entry.qty || 0;
+          const entryCodes = String(entry.barcode || '').split(',').map((code) => code.trim()).filter(Boolean);
+          const matchingRolls = (inventoryRolls || []).filter((roll) => (
+            entryCodes.includes(String(roll.barcodeId || roll.barcode || roll.id || '').trim())
+            && !findRetiredBarcode(deletedBarcodes, roll.barcodeId || roll.barcode || roll.id)
+          ));
 
           let resolvedBarcode = '';
           if (customBarcodesMap[txId]) {
             resolvedBarcode = customBarcodesMap[txId];
-          } else if (matchingRolls.length > 0) {
-            resolvedBarcode = matchingRolls.map(r => r.barcodeId || r.id).filter(Boolean).join(', ');
-          } else if (Array.isArray(g.itemsBreakdown) && g.itemsBreakdown.some(b => b.barcodeId)) {
-            resolvedBarcode = g.itemsBreakdown.map(b => b.barcodeId).filter(Boolean).join(', ');
-          } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0) {
+          } else if (entry.barcode) {
+            resolvedBarcode = entry.barcode;
+          } else if (Array.isArray(g.barcodes) && g.barcodes.length > 0 && entries.length === 1) {
             resolvedBarcode = g.barcodes.join(', ');
-          } else if (codeStartsWith(g.barcodeId, 'RM-BC') || codeStartsWith(g.barcodeId, 'CON-BC')) {
+          } else if (entries.length === 1 && (codeStartsWith(g.barcodeId, 'RM-BC') || codeStartsWith(g.barcodeId, 'CON-BC'))) {
             resolvedBarcode = textFrom(g.barcodeId);
-          } else {
+          } else if (entries.length === 1) {
             const isFilmGRN = (g.category || 'Film Substrates') === 'Film Substrates';
             const specSuffix = isFilmGRN && g.widthMm && g.widthMm !== '-' ? `-${g.micron || '12'}M${g.widthMm}W` : '';
             resolvedBarcode = `${isFilmGRN ? 'RM-BC' : 'CON-BC'}-${g.grnNo || g.id}${specSuffix}`;
           }
 
-          const grnRemark = g.itemRemarks || g.remarks || g.notes || '';
+          const grnRemark = entry.remarks || g.itemRemarks || g.remarks || g.notes || '';
           const rollRemarksStr = matchingRolls.map(r => r.itemRemarks || r.remarks || r.notes).filter(Boolean).join('; ');
           const finalRemark = (grnRemark || rollRemarksStr || '').trim();
 
@@ -9611,6 +9695,7 @@ export default function InventoryManagement({
             statusStr = 'QC Hold Store';
           }
 
+          const lineLabel = entry.lineCount > 1 ? `Line ${entry.lineNo}: ${entry.itemName}` : '';
           return {
             txId,
             category: 'inward',
@@ -9619,7 +9704,7 @@ export default function InventoryManagement({
             isRejected: isRejected,
             date: g.receivedDate || g.created_at || new Date().toISOString().split('T')[0],
             refNo: g.grnNo,
-            subRef: g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt',
+            subRef: [g.poNumber ? `PO: ${g.poNumber}` : 'Direct Receipt', lineLabel].filter(Boolean).join(' · '),
             partyName: g.vendorName || item.lastVendor || 'Supplier',
             subParty: g.invoiceNo ? `Inv: ${g.invoiceNo}` : 'Vendor Receipt',
             inwardQtyKg: qty,
@@ -9629,23 +9714,23 @@ export default function InventoryManagement({
             unitPrice: rate,
             totalValue: qty * rate,
             barcode: resolvedBarcode,
-            batchNo: g.batchNo || `GRN-${g.grnNo}`,
+            batchNo: entry.batchNo || g.batchNo || `GRN-${g.grnNo}`,
             invoiceNo: g.invoiceNo || '',
             status: statusStr,
             itemRemarks: finalRemark,
             remarks: finalRemark,
-            notes: `${g.rollsReceived || matchingRolls.length || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`,
-            legacy: itemLink(g).legacy
+            notes: `${entry.rollCount || 1} pkg/roll(s) | Barcode: ${resolvedBarcode}${finalRemark ? ` | Remark: ${finalRemark}` : ''}`,
+            legacy: entry.legacy
           };
+          });
         });
 
         // 1b. Ensure sub-items / inward lots with distinct inward dates appear in inwardTxLines
         if (item.subItems && item.subItems.length > 0) {
           item.subItems.forEach(sub => {
-            const alreadyIncluded = matchingGRNs.some(g => 
-              (g.stockItemId && String(g.stockItemId) === String(sub.id)) || 
-              (g.itemId && String(g.itemId) === String(sub.id))
-            );
+            const alreadyIncluded = (grns || []).some((g) => (
+              !isGrnDeleted(g) && grnInwardLedgerEntries(g, sub, inventoryRolls).length > 0
+            ));
             if (!alreadyIncluded && sub.availableQtyKg > 0) {
               const txId = `INVT_LOT_${sub.id}`;
               const oldestDate = getItemInwardDate(sub, safeGrns, inventoryRolls);

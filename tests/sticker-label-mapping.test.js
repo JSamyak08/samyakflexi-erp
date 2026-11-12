@@ -178,7 +178,12 @@ test('a store item whose real unit is pieces stays in pieces and has no length l
 
 test('completed-job history uses the inventory roll weight and meters, including a balance roll', () => {
   const summary = completionForOrder({
-    order: { id: 'ORD-9', jobName: 'Tashibo Love Inner', actualMetersPrinted: 0 },
+    order: {
+      id: 'ORD-9',
+      jobName: 'Tashibo Love Inner',
+      actualMetersPrinted: 0,
+      inputRollsList: [{ barcodeId: 'RM-9', consumedWeightKg: 80, initialWeightKg: 94.2 }]
+    },
     sfgGoods: [],
     inventoryRolls: [
       {
@@ -193,16 +198,23 @@ test('completed-job history uses the inventory roll weight and meters, including
       },
       {
         barcodeId: 'RM-9-BAL',
+        orderId: 'ORD-LATER',
+        rollType: 'RAW_MATERIAL',
+        netWeightKg: 14.2,
+        metadata: { parentBarcodeId: 'RM-9', orderId: 'ORD-9', balanceRoll: true }
+      },
+      {
+        barcodeId: 'RM-OLD-BAL',
         orderId: 'ORD-9',
         rollType: 'RAW_MATERIAL',
-        netWeightKg: 14.2
+        netWeightKg: 9
       }
     ]
   });
   assert.equal(summary.printedRolls[0].netWeightKg, 127.4);
   assert.equal(summary.printedRolls[0].lengthMeters, 5600);
   assert.equal(summary.printedRolls[0].grossWeightKg, 128);
-  assert.equal(summary.balanceRolls[0].barcodeId, 'RM-9-BAL');
+  assert.deepEqual(summary.balanceRolls.map((roll) => roll.barcodeId), ['RM-9-BAL']);
   assert.equal(summary.balanceRolls[0].lengthMeters, null);
 
   const printed = stickerOf(labelRoll(summary.printedRolls[0], summary));

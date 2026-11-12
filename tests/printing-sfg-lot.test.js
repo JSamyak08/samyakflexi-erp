@@ -56,6 +56,15 @@ test('child roll barcodes stay traceable and are omitted from the stock sum', ()
   ];
   assert.equal(isPrintedLotChild({ barcodeId: 'SFG-BC-1' }, rows), true);
   assert.equal(isPrintedLotChild({ barcodeId: 'SFG-BC-2', parentSfgBatchCode: 'SFG-LOT-ORD-1' }, rows), true);
-  const visible = omitPrintedLotChildren(rows);
-  assert.deepEqual(visible.map((row) => row.sfgBatchCode || row.barcodeId), ['SFG-LOT-ORD-1', 'SFG-OLD']);
+  const laminated = {
+    sfgBatchCode: 'SFG-BC-LAM-1',
+    sfgType: 'Laminated / Processed Rolls',
+    rollType: 'SFG',
+    parentSfgBatchCode: 'SFG-LOT-ORD-1',
+    totalNetKg: 271,
+    availableKg: 271
+  };
+  assert.equal(isPrintedLotChild(laminated, rows), false);
+  const visible = omitPrintedLotChildren([...rows, laminated]);
+  assert.deepEqual(visible.map((row) => row.sfgBatchCode || row.barcodeId), ['SFG-LOT-ORD-1', 'SFG-OLD', 'SFG-BC-LAM-1']);
 });

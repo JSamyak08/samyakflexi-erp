@@ -92,6 +92,8 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import PrintRunCompletionSummary from './PrintRunCompletionSummary';
 import { printingSfgLotCode } from '../utils/printingSfgLot';
+import { acceptNewerBarcodeChoice, rollsByBarcode } from '../utils/fifoUtils';
+import { getInventoryAgeingSettings } from '../services/settingsService';
 import { balanceRollMeterErrors, completionForOrder, lengthForPrintedRoll, printedRollBarcode, printedRollMeterErrors, withEnteredBalanceMeters } from '../utils/printRunCompletion';
 import {
   PRINT_HOLD_REASONS,
@@ -392,6 +394,7 @@ export default function ProductionScheduler({
   const [outputRollsList, setOutputRollsList] = useState([
     { id: 'roll-1', rollNo: 1, netWeightKg: '' }
   ]);
+  const [fifoPickNote, setFifoPickNote] = useState('');
   const [inputRollsList, setInputRollsList] = useState([
     { id: 'in-roll-1', barcodeId: '', filmType: '', micron: '', widthMm: '', initialWeightKg: '', consumedWeightKg: '' }
   ]);
@@ -998,6 +1001,8 @@ export default function ProductionScheduler({
   const saveProgressRef = useRef(onSavePrintProgress);
   saveProgressRef.current = onSavePrintProgress;
   const progressState = useRef({ timer: null, pending: null, inflight: false });
+  const activeRunRef = useRef(activeRunningJob);
+  activeRunRef.current = activeRunningJob;
 
   const cancelPrintProgress = () => {
     const state = progressState.current;
@@ -1012,6 +1017,11 @@ export default function ProductionScheduler({
     const job = state.pending;
     state.pending = null;
     if (!job) return;
+    const latest = activeRunRef.current;
+    if (!latest || latest.id !== job.id || !isActivePrintRun(latest)) {
+      setIsAutosavingRolls(false);
+      return;
+    }
     const save = saveProgressRef.current;
     if (!save) return;
     state.inflight = true;
@@ -1035,9 +1045,23 @@ export default function ProductionScheduler({
     if (progressState.current.timer) clearTimeout(progressState.current.timer);
   }, []);
 
+  useEffect(() => {
+    if (activeRunningJob && isActivePrintRun(activeRunningJob)) return undefined;
+    const state = progressState.current;
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    state.pending = null;
+    return undefined;
+  }, [activeRunningJob]);
+
   const handleAutosaveInputRolls = (updatedList) => {
     setInputRollsList(updatedList);
-    if (!activeRunningJob) return;
+    if (!activeRunningJob || !isActivePrintRun(activeRunningJob)) {
+      setIsAutosavingRolls(false);
+      return;
+    }
     setIsAutosavingRolls(true);
     const updatedJob = {
       ...activeRunningJob,
@@ -1065,8 +1089,17 @@ export default function ProductionScheduler({
       );
 
       if (matched) {
+        const choice = acceptNewerBarcodeChoice(matched, inventoryRolls, {
+          rollsByCode: rollsByBarcode(inventoryRolls),
+          enforce: getInventoryAgeingSettings().enforceFifoStrictly !== false
+        });
+        if (!choice.ok) return;
+        setFifoPickNote(choice.warning
+          ? `${choice.warning.message} You can still run this newer barcode.`
+          : '');
         updatedList = inputRollsList.map((r, i) => i === index ? scannedInputRoll(r, matched, bId, inventory) : r);
       } else {
+        setFifoPickNote('');
         updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
       }
     }
@@ -2922,6 +2955,11 @@ export default function ProductionScheduler({
                             gap: '10px'
                           }}
                         >
+                          {fifoPickNote && (
+                            <div data-testid="print-fifo-warning" style={{ background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', borderRadius: '8px', padding: '8px 10px', fontSize: '0.78rem', fontWeight: '700' }}>
+                              {fifoPickNote}
+                            </div>
+                          )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <span style={{ background: '#0284c7', color: '#ffffff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem' }}>

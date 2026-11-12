@@ -60,16 +60,75 @@ function normalizeList(rows) {
   return list;
 }
 
-function balanceFromStock(order, inventoryRolls) {
+function rollMeta(roll) {
+  const meta = roll?.metadata;
+  return meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : {};
+}
+
+/** Order that created the balance roll. Issuing a roll rewrites order_id, so that column is not used. */
+function creatingOrderId(roll) {
+  const meta = rollMeta(roll);
+  return text(roll?.creatingOrderId || meta.orderId || meta.creatingOrderId);
+}
+
+function parentBarcodeOf(roll) {
+  const meta = rollMeta(roll);
+  return text(roll?.parentBarcodeId || roll?.parentBarcode || meta.parentBarcodeId || meta.parentBarcode);
+}
+
+function balanceStatusBlocked(roll) {
+  const status = text(roll?.status).toLowerCase().replace(/[_-]+/g, ' ');
+  return status === 'reversed' || status === 'void' || status === 'voided';
+}
+
+function explicitAvailableKg(roll) {
+  if (!roll || typeof roll !== 'object') return null;
+  if (roll.availableWeightKg !== undefined && roll.availableWeightKg !== null && roll.availableWeightKg !== '') {
+    return finite(roll.availableWeightKg);
+  }
+  if (roll.availableKg !== undefined && roll.availableKg !== null && roll.availableKg !== '') {
+    return finite(roll.availableKg);
+  }
+  return null;
+}
+
+function savedArray(source, key) {
+  if (!source || typeof source !== 'object') return null;
+  if (!Object.prototype.hasOwnProperty.call(source, key)) return null;
+  return Array.isArray(source[key]) ? source[key] : null;
+}
+
+/**
+ * Legacy runs have no saved balance list. A leftover is the child whose
+ * metadata names this order and one of this run's input barcodes as parent.
+ * The run's own input, including a -BAL roll it consumed, is never a balance.
+ */
+function inferBalanceRolls(order, inventoryRolls) {
+  const orderId = text(order?.id).toLowerCase();
+  const inputs = new Set(
+    (order?.inputRollsList || []).map((roll) => rollBarcode(roll).toLowerCase()).filter(Boolean)
+  );
   const found = [];
-  (order?.inputRollsList || []).forEach((roll) => {
-    const parent = rollBarcode(roll);
-    if (!parent) return;
-    const barcodeId = parent.endsWith('-BAL') ? parent : `${parent}-BAL`;
-    const match = (inventoryRolls || []).find((item) => rollBarcode(item).toLowerCase() === barcodeId.toLowerCase());
-    found.push(match ? { ...match, barcodeId } : { barcodeId, netWeightKg: null });
+  (inventoryRolls || []).forEach((item) => {
+    const code = rollBarcode(item);
+    if (!code || !code.toUpperCase().endsWith('-BAL')) return;
+    if (inputs.has(code.toLowerCase())) return;
+    if (balanceStatusBlocked(item)) return;
+    const parent = parentBarcodeOf(item).toLowerCase();
+    const creator = creatingOrderId(item).toLowerCase();
+    if (!orderId || !parent || !creator) return;
+    if (creator !== orderId || !inputs.has(parent)) return;
+    const available = explicitAvailableKg(item);
+    const weight = available !== null ? available : finite(item?.netWeightKg ?? item?.balanceKg);
+    if (weight === null || weight <= 0) return;
+    found.push({
+      ...item,
+      barcodeId: code,
+      netWeightKg: weight,
+      availableWeightKg: weight
+    });
   });
-  return normalizeList(found.filter((row) => row.netWeightKg));
+  return normalizeList(found);
 }
 
 function sameOrder(roll, orderId) {
@@ -83,13 +142,6 @@ function printedFromInventory(orderId, inventoryRolls) {
     if (!code || code.endsWith('-BAL')) return false;
     const type = text(roll.rollType).toUpperCase();
     return type === 'SEMI_FINISHED_GOODS' || type === 'SFG' || code.startsWith('SFG-');
-  }));
-}
-
-function balanceFromInventory(orderId, inventoryRolls) {
-  return normalizeList((inventoryRolls || []).filter((roll) => {
-    const code = rollBarcode(roll);
-    return code.endsWith('-BAL') && sameOrder(roll, orderId);
   }));
 }
 
@@ -133,13 +185,16 @@ export function completionForOrder({ order, sfgGoods, inventoryRolls } = {}) {
   let printedRolls = normalizeList(order?.printedRolls);
   if (!printedRolls.length) printedRolls = normalizeList(lot?.childRolls);
   if (!printedRolls.length) printedRolls = printedFromInventory(orderId, inventoryRolls);
-  let balanceRolls = normalizeList(order?.balanceRolls);
-  if (!balanceRolls.length) balanceRolls = normalizeList(lot?.runBalanceRolls);
-  if (!balanceRolls.length) balanceRolls = balanceFromStock(order, inventoryRolls);
-  if (!balanceRolls.length) balanceRolls = balanceFromInventory(orderId, inventoryRolls);
+  const lotBalance = savedArray(lot, 'runBalanceRolls');
+  const orderBalance = savedArray(order, 'balanceRolls');
+  let balanceRolls = lotBalance !== null
+    ? normalizeList(lotBalance)
+    : (orderBalance !== null ? normalizeList(orderBalance) : inferBalanceRolls(order, inventoryRolls));
   let consumedRolls = normalizeList(order?.consumedRolls);
   if (!consumedRolls.length) consumedRolls = normalizeList(lot?.runConsumedRolls);
   if (!consumedRolls.length) consumedRolls = consumedFromInputs(order?.inputRollsList);
+  const consumedIds = new Set(consumedRolls.map((roll) => text(roll.barcodeId).toLowerCase()).filter(Boolean));
+  balanceRolls = balanceRolls.filter((roll) => !consumedIds.has(text(roll.barcodeId).toLowerCase()));
   const jobMeters = finite(order?.actualMetersPrinted);
   const lotMeters = finite(lot?.totalMeters);
   const meters = jobMeters !== null && jobMeters > 0 ? jobMeters : (lotMeters !== null && lotMeters > 0 ? lotMeters : null);

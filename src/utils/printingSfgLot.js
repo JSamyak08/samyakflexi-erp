@@ -103,12 +103,30 @@ export function printedLotChildCodes(sfgGoods) {
   return codes;
 }
 
+function rollText(roll) {
+  return `${roll?.sfgType || ''} ${roll?.category || ''} ${roll?.rollType || ''} ${roll?.outputType || ''}`.toLowerCase();
+}
+
+/**
+ * A lamination or finished-goods roll names the printed lot as its parent so
+ * the consume can be traced. That parent link is not the printed roll itself.
+ * Hiding every such row removes the laminated output from the store.
+ */
+export function isDownstreamProcessOutput(roll) {
+  const described = rollText(roll);
+  if (/laminat|processed|finished goods|finished_goods/.test(described)) return true;
+  const code = String(roll?.sfgBatchCode || roll?.barcodeId || roll?.barcode || roll?.id || '').trim();
+  return /^FG-/i.test(code);
+}
+
 export function isPrintedLotChild(roll, sfgGoods) {
   const barcode = String(roll?.barcodeId || roll?.id || roll?.sfgBatchCode || '').trim();
+  if (barcode && printedLotChildCodes(sfgGoods).has(barcode)) return true;
+  if (isDownstreamProcessOutput(roll)) return false;
   const parent = String(roll?.parentSfgBatchCode || '').trim();
   const lots = (sfgGoods || []).filter((item) => isReusablePrintedLot(item));
   if (parent && lots.some((item) => item.sfgBatchCode === parent)) return true;
-  return Boolean(barcode) && printedLotChildCodes(sfgGoods).has(barcode);
+  return false;
 }
 
 /** Stock rows that would double-count a lot's child barcodes. The lot itself stays. */
