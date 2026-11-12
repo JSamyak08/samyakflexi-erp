@@ -139,7 +139,7 @@ import {
 } from './utils/orderAutoClose';
 import { alertOrderSaveError } from './utils/alertOnce';
 import { applyPrintRunResult, recordPrintRun } from './services/printRun';
-import { parseActivePrintRunConflict } from './utils/printRunConflict';
+import { isActivePrintRun, parseActivePrintRunConflict } from './utils/printRunConflict';
 import { canViewPrintRunAnalytics } from './utils/printRunAccess';
 import {
   applyDispatchPackingConsumption,
@@ -3027,7 +3027,7 @@ export default function App() {
 
   // Handlers for Starting and Ending Printing Jobs from Scheduler
   const handleSavePrintProgress = async (job) => {
-    if (!job?.id) return;
+    if (!job?.id || !isActivePrintRun(job)) return;
     try {
       const saved = await recordPrintRun(job.id, 'progress', {
         inputRollsList: job.inputRollsList || [],

@@ -975,12 +975,19 @@ export default function ProductionScheduler({
   const saveProgressRef = useRef(onSavePrintProgress);
   saveProgressRef.current = onSavePrintProgress;
   const progressState = useRef({ timer: null, pending: null, inflight: false });
+  const activeRunRef = useRef(activeRunningJob);
+  activeRunRef.current = activeRunningJob;
 
   const flushPrintProgress = () => {
     const state = progressState.current;
     const job = state.pending;
     state.pending = null;
     if (!job) return;
+    const latest = activeRunRef.current;
+    if (!latest || latest.id !== job.id || !isActivePrintRun(latest)) {
+      setIsAutosavingRolls(false);
+      return;
+    }
     const save = saveProgressRef.current;
     if (!save) return;
     state.inflight = true;
@@ -1004,9 +1011,23 @@ export default function ProductionScheduler({
     if (progressState.current.timer) clearTimeout(progressState.current.timer);
   }, []);
 
+  useEffect(() => {
+    if (activeRunningJob && isActivePrintRun(activeRunningJob)) return undefined;
+    const state = progressState.current;
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+    }
+    state.pending = null;
+    return undefined;
+  }, [activeRunningJob]);
+
   const handleAutosaveInputRolls = (updatedList) => {
     setInputRollsList(updatedList);
-    if (!activeRunningJob) return;
+    if (!activeRunningJob || !isActivePrintRun(activeRunningJob)) {
+      setIsAutosavingRolls(false);
+      return;
+    }
     setIsAutosavingRolls(true);
     const updatedJob = {
       ...activeRunningJob,
