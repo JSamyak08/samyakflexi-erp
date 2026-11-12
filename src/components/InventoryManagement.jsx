@@ -301,6 +301,7 @@ export default function InventoryManagement({
   indents = [],
   inks = [],
   jobMasters = [],
+  clients = [],
   machines = [],
   currentUser = null,
   users = [],
@@ -5088,7 +5089,13 @@ export default function InventoryManagement({
 
       {/* Dispatch Packing List PDF Modal */}
       {selectedDispatchForPackingList && (
-        <DispatchPackingListPDF shipment={selectedDispatchForPackingList} onClose={() => setSelectedDispatchForPackingList(null)} />
+        <DispatchPackingListPDF
+          shipment={selectedDispatchForPackingList}
+          clients={clients}
+          orders={orders}
+          jobMasters={jobMasters}
+          onClose={() => setSelectedDispatchForPackingList(null)}
+        />
       )}
 
       <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>

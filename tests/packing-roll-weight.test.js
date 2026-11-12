@@ -97,7 +97,7 @@ test('a piece count is not replaced by the kilogram reading', () => {
 
 test('the packing list Add Roll handler reads the scale instead of only the field', () => {
   const source = fs.readFileSync(new URL('../src/components/DispatchManagement.jsx', import.meta.url), 'utf8');
-  const addStart = source.indexOf('const handleAddRollToPackingList');
+  const addStart = source.indexOf('const createPackingRoll');
   const addEnd = source.indexOf('const handleLoadFgToScale4');
   assert.ok(addStart > 0 && addEnd > addStart);
   const addFn = source.slice(addStart, addEnd);

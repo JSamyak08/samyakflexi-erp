@@ -6675,6 +6675,7 @@ export default function App() {
             indents={indents}
             inks={inks}
             jobMasters={jobMasters}
+            clients={clients}
             machines={machines}
             currentUser={currentUser}
             users={users}

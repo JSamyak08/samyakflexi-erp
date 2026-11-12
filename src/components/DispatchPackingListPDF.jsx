@@ -29,13 +29,19 @@ function LoadCheck({ label }) {
   );
 }
 
-export default function DispatchPackingListPDF({ shipment, onClose }) {
+export default function DispatchPackingListPDF({
+  shipment,
+  clients = [],
+  orders = [],
+  jobMasters = [],
+  onClose,
+}) {
   const letterhead = loadLetterhead();
   if (!shipment) return null;
   if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
   const COMPANY_DETAILS = letterhead.company;
   const logoUrl = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
-  const model = buildPackingListPrintModel(shipment);
+  const model = buildPackingListPrintModel(shipment, { clients, orders, jobMasters });
   const rollLabel = `${model.rollCount} ROLL${model.rollCount === 1 ? '' : 'S'}`;
 
   return (
@@ -101,7 +107,9 @@ export default function DispatchPackingListPDF({ shipment, onClose }) {
                   {model.customer.name ? (
                     <div className="address-box-title">{toTitleCase(model.customer.name)}</div>
                   ) : null}
-                  <DetailLine value={model.customer.address} />
+                  <DetailLine label="Address" value={model.customer.address} />
+                  <DetailLine label="Email" value={model.customer.email} />
+                  <DetailLine label="Mobile" value={model.customer.mobile} />
                   <DetailLine label="GSTIN" value={model.customer.gstin} strong />
                   <DetailLine label="Order Ref" value={model.customer.orderId} strong />
                   <DetailLine label="Customer PO #" value={model.customer.poNo} strong />

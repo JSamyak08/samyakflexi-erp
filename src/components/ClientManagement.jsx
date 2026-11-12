@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Search, Building2, Phone, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon, Printer, FileText } from 'lucide-react';
+import { Plus, Search, Building2, Phone, Mail, MapPin, Briefcase, ChevronRight, Package, Layers, X, Edit, Trash2, AlertTriangle, ExternalLink, IndianRupee, Image as ImageIcon, Printer, FileText } from 'lucide-react';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import StorageImage from './StorageImage';
 import ArtworkModal from './ArtworkModal';
@@ -8,6 +8,25 @@ import { pushSlugState } from '../utils/slugRouter';
 import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
 import { reconcileCylinderCosts } from '../utils/cylinderCost';
 import { displayArtworkUrl } from '../utils/cylinderArtwork';
+import { isOptionalClientEmail } from '../utils/clientEmail';
+
+function ClientEmailField({ email, onChange }) {
+  return (
+    <div className="form-group">
+      <label htmlFor="client-directory-email">Email</label>
+      <input
+        id="client-directory-email"
+        type="email"
+        className="form-control"
+        inputMode="email"
+        autoComplete="email"
+        placeholder="name@company.com"
+        value={email}
+        onChange={e => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
 
 export default function ClientManagement({ urlParams = {}, clients = [], orders = [], cylinders = [], jobMasters = [], onAddClient, onUpdateClient, onDeleteClient }) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,6 +55,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
   const [paymentTerms, setPaymentTerms] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
 
   const filteredClients = useMemo(() => {
     if (!clients) return [];
@@ -68,6 +88,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       setPaymentTerms(client.paymentTerms || '');
       setContactPerson(client.contactPerson || '');
       setPhone(client.phone || '');
+      setEmail(client.email || '');
     } else {
       setEditingClient(null);
       setName('');
@@ -76,12 +97,18 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       setPaymentTerms('');
       setContactPerson('');
       setPhone('');
+      setEmail('');
     }
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!isOptionalClientEmail(trimmedEmail)) {
+      alert('Enter a valid email address, or leave Email blank.');
+      return;
+    }
     const newClient = {
       id: editingClient ? editingClient.id : `CLI-${Math.floor(100 + Math.random() * 900)}`,
       name,
@@ -89,7 +116,8 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
       address,
       paymentTerms,
       contactPerson,
-      phone
+      phone,
+      email: trimmedEmail
     };
 
     try {
@@ -181,6 +209,9 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                 </span>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   <Phone size={16} /> {selectedClient.contactPerson || 'N/A'} ({selectedClient.phone || 'No Phone'})
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <Mail size={16} /> {selectedClient.email || 'No Email'}
                 </span>
               </div>
               <div style={{ marginTop: '12px', display: 'flex', gap: '10px' }}>
@@ -410,6 +441,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                     <input type="text" className="form-control" value={phone} onChange={e => setPhone(e.target.value)} />
                   </div>
                 </div>
+                <ClientEmailField email={email} onChange={setEmail} />
                 <div className="form-group">
                   <label>Payment Terms</label>
                   <input type="text" className="form-control" placeholder="e.g. 30 Days Credit" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />
@@ -603,6 +635,7 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
                   <input type="text" className="form-control" value={phone} onChange={e => setPhone(e.target.value)} />
                 </div>
               </div>
+              <ClientEmailField email={email} onChange={setEmail} />
               <div className="form-group">
                 <label>Payment Terms</label>
                 <input type="text" className="form-control" placeholder="e.g. 30 Days Credit" value={paymentTerms} onChange={e => setPaymentTerms(e.target.value)} />

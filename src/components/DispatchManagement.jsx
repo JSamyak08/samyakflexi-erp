@@ -54,6 +54,14 @@ import {
   PACKING_STATUS_OPEN
 } from '../utils/dispatchPacking';
 import { resolvePackingRollWeight } from '../utils/packingRollWeight';
+import {
+  displayRollNumber,
+  matchPackingOrder,
+  nextBarcodeSuffix,
+  resolvePackingSubstrate,
+  substrateForPrint,
+  substrateToStore,
+} from '../utils/packingListPrint';
 import weighingScaleService from '../services/weighingScaleService';
 import { formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
 import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from '../utils/finishedGoods';
@@ -1436,7 +1444,7 @@ export default function DispatchManagement({
   };
 
   const openPackingListForWeighing = (shipment) => {
-    const matchedOrder = (orders || []).find((order) => order.jobName === shipment.jobName || order.id === shipment.orderId);
+    const matchedOrder = matchPackingOrder(orders, { orderId: shipment.orderId, jobName: shipment.jobName });
     setPktInternalId(shipment.id || `DISP-PL-${shipment.dispatchId}`);
     setPktDispatchId(shipment.dispatchId || '');
     setPktOrderId(shipment.orderId && shipment.orderId !== 'N/A' ? shipment.orderId : (matchedOrder?.id || ''));
@@ -1477,25 +1485,33 @@ export default function DispatchManagement({
     setIsDcModalOpen(true);
   };
 
-  const handleAddRollToPackingList = (directFgItem = null) => {
-    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+  const createPackingRoll = (existingRolls, directFgItem = null) => {
+    const matchedOrder = matchPackingOrder(orders, { orderId: pktOrderId, jobName: pktJobName });
     const orderId = matchedOrder?.id || 'N/A';
-    const nextRollNo = pktRollsList.length + 1;
+    const suffix = nextBarcodeSuffix(existingRolls);
+    const filmType = directFgItem ? directFgItem.filmType : selectedFgRollForWeighing?.filmType;
+    const substrateSpec = resolvePackingSubstrate({
+      orders,
+      jobMasters,
+      orderId: pktOrderId,
+      jobName: pktJobName,
+      filmType,
+    });
 
     if (directFgItem) {
-      if (!isFinishedGoodsStock(directFgItem)) return;
+      if (!isFinishedGoodsStock(directFgItem)) return null;
       const netW = Number(directFgItem.availableKg ?? directFgItem.totalNetKg) || 0;
       const tareW = Number(directFgItem.tareWeightKg) || Number(pktCoreWeight) || 0;
       const grossW = Number(directFgItem.totalGrossKg) || Number((netW + tareW).toFixed(2));
 
-      const newRollItem = {
-        rollNo: nextRollNo,
-        barcodeId: directFgItem.sfgBatchCode || `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
+      return {
+        rollNo: suffix,
+        barcodeId: directFgItem.sfgBatchCode || `FG-DISP-${Date.now().toString().slice(-6)}-${suffix}`,
         sourceFgId: directFgItem.id,
         sourceFgBarcode: directFgItem.sfgBatchCode,
         jobName: pktJobName || directFgItem.jobName || 'Finished Goods Job',
         orderId: orderId,
-        substrateSpec: matchedOrder?.structure || directFgItem.filmType || 'Flexible Laminate',
+        substrateSpec,
         coreWeightKg: tareW,
         tareWeightKg: tareW,
         netWeightKg: netW,
@@ -1509,9 +1525,6 @@ export default function DispatchManagement({
         hideBranding: pktHideBranding,
         rollType: 'FG_DISPATCH'
       };
-      setPktRollsList(prev => [...prev, newRollItem]);
-      setSelectedRollForBarcodeModal(newRollItem);
-      return;
     }
 
     const weights = resolvePackingRollWeight({
@@ -1526,17 +1539,17 @@ export default function DispatchManagement({
     const sourceFg = selectedFgRollForWeighing;
     if (sourceFg && !isFinishedGoodsStock(sourceFg)) {
       alert('Only finished goods can be added to a dispatch. SFG and WIP stay in the SFG store.');
-      return;
+      return null;
     }
 
-    const newRollItem = {
-      rollNo: nextRollNo,
-      barcodeId: sourceFg?.sfgBatchCode || `FG-DISP-${Date.now().toString().slice(-6)}-${nextRollNo}`,
+    return {
+      rollNo: suffix,
+      barcodeId: sourceFg?.sfgBatchCode || `FG-DISP-${Date.now().toString().slice(-6)}-${suffix}`,
       sourceFgId: sourceFg?.id,
       sourceFgBarcode: sourceFg?.sfgBatchCode,
       jobName: pktJobName || 'Finished Goods Job',
       orderId: orderId,
-      substrateSpec: matchedOrder?.structure || sourceFg?.filmType || 'Flexible Laminate',
+      substrateSpec,
       coreWeightKg: tareW,
       tareWeightKg: tareW,
       netWeightKg: netW,
@@ -1550,11 +1563,14 @@ export default function DispatchManagement({
       hideBranding: pktHideBranding,
       rollType: 'FG_DISPATCH'
     };
-    setPktRollsList(prev => [...prev, newRollItem]);
+  };
 
-    // IMMEDIATELY OPEN STICKER (2x4) PRINTER MODAL FOR THIS ROLL/BOX FOR INSTANT PRINTING & PASTING
+  const handleAddRollToPackingList = (directFgItem = null) => {
+    const newRollItem = createPackingRoll(pktRollsList, directFgItem);
+    if (!newRollItem) return;
+    setPktRollsList(prev => [...prev, newRollItem]);
     setSelectedRollForBarcodeModal(newRollItem);
-    setSelectedFgRollForWeighing(null);
+    if (!directFgItem) setSelectedFgRollForWeighing(null);
   };
 
   const handleLoadFgToScale4 = (fg) => {
@@ -1565,15 +1581,24 @@ export default function DispatchManagement({
   };
 
   const handleAddAllAvailableFgToPackingList = () => {
+    let existing = pktRollsList;
+    const added = [];
     availableFgGoodsForJob.forEach(fg => {
-      const alreadyAdded = pktRollsList.some(r => 
-        (r.sourceFgBarcode && r.sourceFgBarcode === fg.sfgBatchCode) || 
+      const alreadyAdded = existing.some(r =>
+        (r.sourceFgBarcode && r.sourceFgBarcode === fg.sfgBatchCode) ||
         r.barcodeId === fg.sfgBatchCode
       );
       if (!alreadyAdded) {
-        handleAddRollToPackingList(fg);
+        const roll = createPackingRoll(existing, fg);
+        if (roll) {
+          added.push(roll);
+          existing = [...existing, roll];
+        }
       }
     });
+    if (!added.length) return;
+    setPktRollsList(existing);
+    setSelectedRollForBarcodeModal(added[added.length - 1]);
   };
 
   const handleSavePackingListSubmit = (e) => {
@@ -1590,19 +1615,26 @@ export default function DispatchManagement({
       unit: pktUom,
       scaleStatus: weighingScaleService.getStatus()
     });
-    const matchedOrder = (orders || []).find(o => o.jobName === pktJobName);
+    const matchedOrder = matchPackingOrder(orders, { orderId: pktOrderId, jobName: pktJobName });
     const hasConsumptions = pktConsumptions.length > 0;
     const finalise = !hasConsumptions || e.nativeEvent?.submitter?.dataset?.finalise === 'true';
     if (finalise && !String(pktVehicleNo || '').trim()) {
       alert('Vehicle number is required to finalise the packing list.');
       return;
     }
-    const rollsToSave = pktRollsList.length > 0 ? pktRollsList : (hasConsumptions ? [] : [
+    const substrateContext = {
+      orders,
+      jobMasters,
+      orderId: pktOrderId,
+      jobName: pktJobName,
+    };
+    const emptySuffix = nextBarcodeSuffix([]);
+    const rawRolls = pktRollsList.length > 0 ? pktRollsList : (hasConsumptions ? [] : [
       {
-        rollNo: 1,
-        barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-1`,
+        rollNo: emptySuffix,
+        barcodeId: `FG-DISP-${Date.now().toString().slice(-6)}-${emptySuffix}`,
         jobName: pktJobName,
-        substrateSpec: matchedOrder?.structure || 'Flexible Laminate',
+        substrateSpec: '',
         coreWeightKg: weighedNow.tareKg,
         netWeightKg: weighedNow.netKg,
         grossWeightKg: weighedNow.grossKg,
@@ -1610,6 +1642,10 @@ export default function DispatchManagement({
         unit: pktUom || 'Kg'
       }
     ]);
+    const rollsToSave = rawRolls.map((roll) => ({
+      ...roll,
+      substrateSpec: substrateToStore(roll, substrateContext),
+    }));
 
     const summedNet = rollsToSave.reduce((sum, r) => sum + (Number(r.netWeightKg) || 0), 0);
     const totalNetWeightKg = hasConsumptions ? packedNetKgFromItems(rollsToSave) : summedNet;
@@ -1675,9 +1711,9 @@ export default function DispatchManagement({
         ...(hasConsumptions ? [{ label: 'FG consumed into Dispatch Packing', value: `${consumedKg.toFixed(2)} Kg` }] : []),
         ...(hasConsumptions && isAdmin ? [{ label: 'Gain / loss vs consumed FG', value: `${formatGainLossKg(liveGain.differenceKg)} (${formatGainLossPct(liveGain.differencePct)})` }] : [])
       ],
-      items: rollsToSave.map(roll => ({
-        col1: `Reel #${roll.rollNo} (${roll.barcodeId})`,
-        col2: roll.substrateSpec || 'Laminated Film',
+      items: rollsToSave.map((roll, index) => ({
+        col1: `Reel #${displayRollNumber(index)} (${roll.barcodeId})`,
+        col2: roll.substrateSpec || '',
         col3: `Net: ${roll.netWeightKg} Kg`,
         col4: `Gross: ${roll.grossWeightKg} Kg`
       })),
@@ -4084,7 +4120,8 @@ export default function DispatchManagement({
                     onChange={e => {
                       const jName = e.target.value;
                       setPktJobName(jName);
-                      const matchedOrder = (orders || []).find(o => o.jobName === jName);
+                      const matchedOrder = matchPackingOrder(orders, { jobName: jName });
+                      setPktOrderId(matchedOrder?.id || '');
                       if (matchedOrder) {
                         setPktClientName(matchedOrder.clientName || matchedOrder.customerName || '');
                         if (matchedOrder.poNo) setPktPoNo(matchedOrder.poNo);
@@ -4300,9 +4337,13 @@ export default function DispatchManagement({
                     <tbody>
                       {pktRollsList.map((r, i) => (
                         <tr key={i}>
-                          <td style={{ fontWeight: '700' }}>{r.rollNo}</td>
+                          <td style={{ fontWeight: '700' }}>{displayRollNumber(i)}</td>
                           <td style={{ fontFamily: 'monospace', color: '#2563eb' }}>{r.barcodeId}</td>
-                          <td>{r.substrateSpec}</td>
+                          <td>{substrateForPrint(r, {
+                            jobMasters,
+                            jobName: r.jobName || pktJobName,
+                            order: matchPackingOrder(orders, { orderId: r.orderId || pktOrderId, jobName: r.jobName || pktJobName }),
+                          })}</td>
                           <td style={{ textAlign: 'center' }}>{r.tareWeightKg !== undefined ? r.tareWeightKg : r.coreWeightKg} kg</td>
                           <td style={{ fontWeight: '700', color: '#1e293b', textAlign: 'right' }}>{r.grossWeightKg} kg</td>
                           <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{r.netWeightKg} {r.unit || pktUom}</td>
@@ -4370,9 +4411,12 @@ export default function DispatchManagement({
 
       {/* MODAL 8: PACKING LIST PDF PREVIEW */}
       {selectedDispatchForPackingList && (
-        <DispatchPackingListPDF 
-          shipment={selectedDispatchForPackingList} 
-          onClose={() => setSelectedDispatchForPackingList(null)} 
+        <DispatchPackingListPDF
+          shipment={selectedDispatchForPackingList}
+          clients={clients}
+          orders={orders}
+          jobMasters={jobMasters}
+          onClose={() => setSelectedDispatchForPackingList(null)}
         />
       )}
 
