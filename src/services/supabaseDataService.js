@@ -15,6 +15,7 @@ import { assignedRolesOf, primaryRole } from '../assignedRoles';
 import { mapInkMasterToRow, mapInkRowToMaster, readHsnCode } from '../utils/inkHsn';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { storedEngravingRate, withReconciledCosts } from '../utils/cylinderCost';
+import { clientEmailForSave } from '../utils/clientEmail';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -542,7 +543,8 @@ export async function fetchClients() {
       address: c.address,
       paymentTerms: c.payment_terms,
       contactPerson: c.contact_person,
-      phone: c.phone
+      phone: c.phone,
+      email: c.email || ''
     }));
   } catch (err) {
     console.error("Error fetching clients from Supabase:", err);
@@ -564,7 +566,8 @@ export async function saveClientToSupabase(client) {
     address: client.address || '',
     payment_terms: client.paymentTerms || '',
     contact_person: client.contactPerson || '',
-    phone: client.phone || ''
+    phone: client.phone || '',
+    email: clientEmailForSave(client.email)
   }, { onConflict: 'id' });
 
   if (error) {
