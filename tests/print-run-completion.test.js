@@ -211,6 +211,25 @@ test('inferred balance rolls skip reversed, void, and zero-kg rows and use avail
   assert.equal(summary.balanceRolls[0].netWeightKg, 8.5);
 });
 
+test('a legacy balance roll without parent and creating-order metadata is not inferred', () => {
+  const summary = completionForOrder({
+    order: {
+      id: 'ORD-OLD',
+      inputRollsList: [{ barcodeId: 'RM-OLD', consumedWeightKg: 10, initialWeightKg: 24.2 }]
+    },
+    sfgGoods: [],
+    inventoryRolls: [{
+      barcodeId: 'RM-OLD-BAL',
+      orderId: 'ORD-OLD',
+      rollType: 'RAW_MATERIAL',
+      status: 'In Stock (RM)',
+      netWeightKg: 14.2,
+      availableWeightKg: 14.2
+    }]
+  });
+  assert.deepEqual(summary.balanceRolls, []);
+});
+
 test('partial consumption infers only the new balance roll, not the input that was used', () => {
   const summary = completionForOrder({
     order: {
