@@ -138,8 +138,9 @@ import {
   ORDER_CLOSE_TOLERANCE_SETTING
 } from './utils/orderAutoClose';
 import { alertOrderSaveError } from './utils/alertOnce';
-import { applyPrintRunResult, recordPrintRun } from './services/printRun';
+import { applyPrintRunResult, holdPrintRun, recordPrintRun, restartHeldPrintRun } from './services/printRun';
 import { isActivePrintRun, parseActivePrintRunConflict } from './utils/printRunConflict';
+import { canHoldPrintJob, isHeldPrintJob } from './utils/printHold';
 import { canViewPrintRunAnalytics } from './utils/printRunAccess';
 import {
   applyDispatchPackingConsumption,
@@ -3027,7 +3028,7 @@ export default function App() {
 
   // Handlers for Starting and Ending Printing Jobs from Scheduler
   const handleSavePrintProgress = async (job) => {
-    if (!job?.id || !isActivePrintRun(job)) return;
+    if (!job?.id || !isActivePrintRun(job) || isHeldPrintJob(job)) return;
     try {
       const saved = await recordPrintRun(job.id, 'progress', {
         inputRollsList: job.inputRollsList || [],
@@ -3146,6 +3147,152 @@ export default function App() {
     logAudit('UPDATE', 'Printing Scheduler', `Started printing job for "${order.jobName}" (${order.id}) on machine ${machineId || 'Rotogravure Press'}`, order.id);
   };
 
+  const rememberPrintHoldStock = (order, saved) => {
+    const printed = Array.isArray(saved?.printedRolls) ? saved.printedRolls : [];
+    const balances = Array.isArray(saved?.balanceRolls) ? saved.balanceRolls : [];
+    if (printed.length) {
+      const lotCode = printingSfgLotCode(order.id);
+      const addedKg = printed.reduce((sum, roll) => sum + (Number(roll.netWeightKg) || 0), 0);
+      setSfgGoods((prev) => {
+        const existing = (prev || []).find((item) => item?.sfgBatchCode === lotCode);
+        const lot = existing ? {
+          ...existing,
+          totalNetKg: (Number(existing.totalNetKg) || 0) + addedKg,
+          availableKg: (Number(existing.availableKg) || 0) + addedKg,
+          totalMeters: finiteNumber(saved.actualMetersPrinted) ?? existing.totalMeters,
+          childRolls: [...(existing.childRolls || []), ...printed]
+        } : {
+          id: lotCode,
+          sfgBatchCode: lotCode,
+          sfgType: 'Printed Rolls',
+          orderId: order.id,
+          jobName: order.jobName,
+          jobCode: order.jobCode || order.id,
+          clientName: order.clientName || order.customerName || '',
+          totalNetKg: addedKg,
+          availableKg: addedKg,
+          consumedKg: 0,
+          totalMeters: finiteNumber(saved.actualMetersPrinted) || 0,
+          childRolls: printed,
+          status: 'In Stock (WIP)'
+        };
+        return [lot, ...(prev || []).filter((item) => item?.sfgBatchCode !== lotCode)];
+      });
+      setInventoryRolls((prev) => [
+        ...printed.map((roll) => ({
+          ...roll,
+          id: roll.barcodeId,
+          rollType: 'SEMI_FINISHED_GOODS',
+          status: 'In Stock (SFG)'
+        })),
+        ...(prev || []).filter((roll) => !printed.some((printedRoll) => (printedRoll.barcodeId || printedRoll.id) === (roll.barcodeId || roll.id)))
+      ]);
+    }
+    if (balances.length) {
+      setInventoryRolls((prev) => [
+        ...balances.map((roll) => ({
+          ...roll,
+          id: roll.barcodeId || roll.id,
+          rollType: 'RAW_MATERIAL',
+          status: 'In Stock (RM)',
+          netWeightKg: roll.netWeightKg,
+          availableWeightKg: roll.netWeightKg ?? roll.availableWeightKg
+        })),
+        ...(prev || []).filter((roll) => !balances.some((balance) => (balance.barcodeId || balance.id) === (roll.barcodeId || roll.id)))
+      ]);
+    }
+  };
+
+  const handleHoldPrintingJob = async (order, holdData) => {
+    const saved = await holdPrintRun(order.id, {
+      machineId: order.machineId || null,
+      holdReason: holdData.reason,
+      holdNote: holdData.note || '',
+      printedUsable: holdData.usable === true,
+      actualMetersPrinted: holdData.meters,
+      printedOutputKg: holdData.printedKg,
+      inputRollsList: holdData.inputRollsList || [],
+      outputRolls: holdData.outputRolls || [],
+      jobCode: order.jobCode || '',
+      clientName: order.clientName || order.customerName || '',
+      operatorName: holdData.operatorName || '',
+      shift: holdData.shift || '',
+      machineName: holdData.machineName || '',
+      filmType: holdData.filmType || order.printFilmType || order.filmType || '',
+      micron: holdData.micron ?? order.micron ?? null,
+      widthMm: holdData.widthMm ?? order.printWidthMm ?? order.widthMm ?? null,
+      storageBay: holdData.storageBay || ''
+    });
+    const updatedOrder = applyPrintRunResult({
+      ...order,
+      printingStatus: 'Hold on Printing',
+      isPrintingCompleted: false
+    }, saved);
+    setOrders((prev) => prev.map((item) => (item.id === updatedOrder.id ? updatedOrder : item)));
+    await handleActiveRunningJobChange(null);
+    rememberPrintHoldStock(order, saved);
+    const existingRec = productionRecords.find((record) => record.orderId === order.id || record.id === order.id);
+    if (existingRec) {
+      await handleSaveProductionRecord({
+        ...existingRec,
+        printingStatus: 'Hold on Printing',
+        printingEndTime: saved.printingEndTime || new Date().toISOString(),
+        actualMetersPrinted: finiteNumber(saved.actualMetersPrinted) ?? existingRec.actualMetersPrinted,
+        printedOutputKg: finiteNumber(saved.printedOutputKg) ?? existingRec.printedOutputKg,
+        stages: {
+          ...(existingRec.stages || {}),
+          printing: {
+            ...(existingRec.stages?.printing || {}),
+            status: 'Hold on Printing',
+            endTime: saved.printingEndTime || new Date().toISOString()
+          }
+        }
+      });
+    }
+    logAudit('UPDATE', 'Printing Scheduler', `Held printing job "${order.jobName}" (${order.id}): ${holdData.reason}. Usable: ${holdData.usable ? 'yes' : 'no'}.`, order.id);
+    let consumptionWarnings = [];
+    try {
+      consumptionWarnings = await fetchRollConsumptionExceptions({ orderId: order.id });
+    } catch {
+      consumptionWarnings = [];
+    }
+    return { ...saved, consumptionWarnings };
+  };
+
+  const handleRestartHeldPrint = async (order, machineId) => {
+    const saved = await restartHeldPrintRun(order.id, { machineId });
+    const updatedOrder = applyPrintRunResult({
+      ...order,
+      printingStatus: 'In Production',
+      isPrintingCompleted: false,
+      printingEndTime: null,
+      machineId
+    }, saved);
+    setOrders((prev) => prev.map((item) => (item.id === updatedOrder.id ? updatedOrder : item)));
+    await handleActiveRunningJobChange(updatedOrder);
+    const existingRec = productionRecords.find((record) => record.orderId === order.id || record.id === order.id);
+    if (existingRec) {
+      await handleSaveProductionRecord({
+        ...existingRec,
+        status: 'In Production',
+        printingStatus: 'In Production',
+        printingStartTime: saved.printingStartTime,
+        printingEndTime: null,
+        stages: {
+          ...(existingRec.stages || {}),
+          printing: {
+            ...(existingRec.stages?.printing || {}),
+            status: 'In Production',
+            startTime: saved.printingStartTime,
+            endTime: null
+          }
+        }
+      });
+    }
+    logAudit('UPDATE', 'Printing Scheduler', `Restarted held printing job "${order.jobName}" (${order.id}) on machine ${machineId}.`, order.id);
+    return updatedOrder;
+  };
+
   const handleEndPrintingJob = async (order, endParam1, endParam2, endParam3) => {
     let endData = {};
     let endTime = null;
@@ -3262,13 +3409,13 @@ export default function App() {
       printingEndTime: endIso,
       printingDurationMinutes: computedDurationMinutes,
       printingDurationFormatted: durationFormatted,
-      qtyFirstPassL1: printedOutputKg > 0 ? printedOutputKg : finiteNumber(baseRecord.qtyFirstPassL1),
-      totalProductionQtyKg: printedOutputKg > 0 ? printedOutputKg : (baseRecord.totalProductionQtyKg || 0),
-      grossProductionKg: printedOutputKg > 0 ? printedOutputKg : (baseRecord.grossProductionKg || 0),
-      actualMetersPrinted: finiteNumber(endData.actualMetersPrinted) ?? finiteNumber(order.targetMeters) ?? finiteNumber(baseRecord.actualMetersPrinted),
+      qtyFirstPassL1: (finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg) > 0 ? (finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg) : finiteNumber(baseRecord.qtyFirstPassL1),
+      totalProductionQtyKg: (finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg) > 0 ? (finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg) : (baseRecord.totalProductionQtyKg || 0),
+      grossProductionKg: (finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg) > 0 ? (finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg) : (baseRecord.grossProductionKg || 0),
+      actualMetersPrinted: finiteNumber(updatedOrder.actualMetersPrinted) ?? finiteNumber(endData.actualMetersPrinted) ?? finiteNumber(order.targetMeters) ?? finiteNumber(baseRecord.actualMetersPrinted),
       inkGsmInSpeed,
-      printedOutputKg,
-      inputRollsList: endData.inputRollsList || baseRecord.inputRollsList || [],
+      printedOutputKg: finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg,
+      inputRollsList: updatedOrder.inputRollsList || endData.inputRollsList || baseRecord.inputRollsList || [],
       rollsBreakdown: endData.rollsBreakdown || baseRecord.rollsBreakdown || [],
         outputRolls: endData.rollsBreakdown || baseRecord.outputRolls || [],
         materialsList: baseRecord.materialsList || [],
@@ -3413,7 +3560,7 @@ export default function App() {
       }));
     }
 
-    logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
+    logAudit('UPDATE', 'Printing Scheduler', `Ended printing job for "${order.jobName}" (${order.id}). Meters: ${finiteNumber(updatedOrder.actualMetersPrinted) ?? actualMetersPrinted}m, Ink GSM: ${inkGsmInSpeed}, Output: ${finiteNumber(updatedOrder.printedOutputKg) ?? printedOutputKg}kg, Duration: ${durationFormatted}`, order.id);
     let consumptionWarnings = [];
     try {
       consumptionWarnings = await fetchRollConsumptionExceptions({ orderId: order.id });
@@ -5774,6 +5921,9 @@ export default function App() {
               onDeleteSchedule={handleDeleteSchedule}
               onUpdateOrder={handleUpdateOrder}
               onStartJob={handleStartPrintingJob}
+              onHoldJob={handleHoldPrintingJob}
+              onRestartHeldJob={handleRestartHeldPrint}
+              canHoldPrint={canHoldPrintJob(currentUser, rolePermissions)}
               onEndJob={handleEndPrintingJob}
               onAddRoll={handleAddRoll}
               onSaveInventoryItem={handleSaveInventoryItem}
@@ -6843,6 +6993,9 @@ export default function App() {
             onDeleteSchedule={handleDeleteSchedule}
             onUpdateOrder={handleUpdateOrder}
             onStartJob={handleStartPrintingJob}
+            onHoldJob={handleHoldPrintingJob}
+            onRestartHeldJob={handleRestartHeldPrint}
+            canHoldPrint={canHoldPrintJob(currentUser, rolePermissions)}
             onEndJob={handleEndPrintingJob}
             onAddRoll={handleAddRoll}
             onSaveInventoryItem={handleSaveInventoryItem}

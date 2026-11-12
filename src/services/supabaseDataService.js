@@ -184,6 +184,8 @@ export async function fetchOrders() {
         actualMetersPrinted,
         printedOutputKg,
         isPrintingCompleted,
+        printHoldHistory: Array.isArray(jd.printHoldHistory) ? jd.printHoldHistory : [],
+        holdReason: jd.holdReason || '',
         wastagePct: Number(o.wastage_percentage) || Number(jd.wastagePct) || Number(jd.calculationDetails?.wastagePct) || 5,
         wastageKg: Number(jd.wastageKg) || Number(jd.calculationDetails?.wastageKg) || 0,
         structure: jd.structure || ((Array.isArray(layerList) && layerList.length > 0) ? layerList.filter(Boolean).map(l => `${l.filmType || ''} ${l.micron || ''}µ`).join(' / ') : '—'),

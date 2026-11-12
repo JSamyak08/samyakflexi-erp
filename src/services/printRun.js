@@ -46,6 +46,32 @@ export async function recordPrintRun(orderId, action, fields) {
   return data || {};
 }
 
+/** Hold a running press job. The database posts SFG or QC Hold and the balance roll. */
+export async function holdPrintRun(orderId, fields) {
+  if (!orderId) throw new Error('Order is missing.');
+  await ensureValidSession();
+  const patch = buildPrintRunPatch(fields);
+  const { data, error } = await supabase.rpc('hold_print_run', {
+    p_order_id: orderId,
+    p_patch: patch
+  });
+  if (error) throw rpcFailure(error, 'The print job was not held.');
+  return data || {};
+}
+
+/** Start a fresh run on a job that is Hold on Printing. */
+export async function restartHeldPrintRun(orderId, fields) {
+  if (!orderId) throw new Error('Order is missing.');
+  await ensureValidSession();
+  const patch = buildPrintRunPatch(fields);
+  const { data, error } = await supabase.rpc('restart_held_print_run', {
+    p_order_id: orderId,
+    p_patch: patch
+  });
+  if (error) throw rpcFailure(error, 'The held print job was not restarted.');
+  return data || {};
+}
+
 /**
  * Run and idle history for one IST window.
  * The database rejects every role except Admin, Plant Manager, and Production Manager.

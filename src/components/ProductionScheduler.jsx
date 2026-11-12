@@ -64,6 +64,7 @@ import {
   Lock as LockIcon,
   Sparkles,
   StopCircle,
+  PauseCircle,
   Eye,
   RefreshCw,
   Tag,
@@ -94,6 +95,15 @@ import { printingSfgLotCode } from '../utils/printingSfgLot';
 import { acceptNewerBarcodeChoice, rollsByBarcode } from '../utils/fifoUtils';
 import { getInventoryAgeingSettings } from '../services/settingsService';
 import { balanceRollMeterErrors, completionForOrder, lengthForPrintedRoll, printedRollBarcode, printedRollMeterErrors, withEnteredBalanceMeters } from '../utils/printRunCompletion';
+import {
+  PRINT_HOLD_REASONS,
+  PRINT_HOLD_OTHER,
+  balancePrintPrompt,
+  holdHistoryOf,
+  isHeldPrintJob,
+  isPressPrintingCompleted,
+  validatePrintHold
+} from '../utils/printHold';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
@@ -246,6 +256,9 @@ export default function ProductionScheduler({
   onUpdateOrder,
   onSavePrintProgress,
   onStartJob,
+  onHoldJob,
+  onRestartHeldJob,
+  canHoldPrint = false,
   onEndJob,
   onReorderQueue,
   onMachineAssignmentChange,
@@ -388,6 +401,19 @@ export default function ProductionScheduler({
   const [selectedRollsForAutoPrint, setSelectedRollsForAutoPrint] = useState(null);
   const [completionSummary, setCompletionSummary] = useState(null);
   const [isSubmittingEndJob, setIsSubmittingEndJob] = useState(false);
+  const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
+  const [holdTargetOrder, setHoldTargetOrder] = useState(null);
+  const [holdReason, setHoldReason] = useState('');
+  const [holdNote, setHoldNote] = useState('');
+  const [holdMeters, setHoldMeters] = useState('');
+  const [holdPrintedKg, setHoldPrintedKg] = useState('');
+  const [holdUsable, setHoldUsable] = useState('');
+  const [holdRolls, setHoldRolls] = useState([]);
+  const [isSubmittingHold, setIsSubmittingHold] = useState(false);
+  const [isRestartModalOpen, setIsRestartModalOpen] = useState(false);
+  const [restartTargetOrder, setRestartTargetOrder] = useState(null);
+  const [restartMachineId, setRestartMachineId] = useState('');
+  const [isSubmittingRestart, setIsSubmittingRestart] = useState(false);
   const [isAutosavingRolls, setIsAutosavingRolls] = useState(false);
   const [lastAutosavedTime, setLastAutosavedTime] = useState(null);
 
@@ -665,11 +691,11 @@ export default function ProductionScheduler({
       // A press run is the order's own open print, not a sibling production record that shares a job code.
       const isCurrentlyInProduction = isActivePrintRun(order);
 
-      const isPrintingCompleted = Boolean(
-        printingEndTime || 
-        order.printingStatus === 'Completed' || 
-        matchingProdRecord?.stages?.printing?.status === 'Completed'
-      );
+      const isPrintingCompleted = isPressPrintingCompleted({
+        ...order,
+        printingEndTime,
+        printingStatus: order.printingStatus
+      }, matchingProdRecord);
 
       return {
         ...order,
@@ -978,6 +1004,14 @@ export default function ProductionScheduler({
   const activeRunRef = useRef(activeRunningJob);
   activeRunRef.current = activeRunningJob;
 
+  const cancelPrintProgress = () => {
+    const state = progressState.current;
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = null;
+    state.pending = null;
+    setIsAutosavingRolls(false);
+  };
+
   const flushPrintProgress = () => {
     const state = progressState.current;
     const job = state.pending;
@@ -1115,6 +1149,130 @@ export default function ProductionScheduler({
       setInputRollsList(prev => prev.map((r, i) => i === index ? scannedInputRoll(r, matched, bId, inventory) : r));
     } else {
       setInputRollsList(prev => prev.map((r, i) => i === index ? { ...r, barcodeId: bId } : r));
+    }
+  };
+
+  const openHoldModal = (order) => {
+    cancelPrintProgress();
+    const rolls = (Array.isArray(order?.inputRollsList) && order.inputRollsList.length
+      ? order.inputRollsList
+      : inputRollsList
+    ).map((roll) => ({ ...roll }));
+    setHoldTargetOrder(order);
+    setHoldReason('');
+    setHoldNote('');
+    setHoldMeters('');
+    setHoldPrintedKg('');
+    setHoldUsable('');
+    setHoldRolls(rolls.length ? rolls : [{
+      id: `hold-roll-${Date.now()}`,
+      barcodeId: '',
+      filmType: '',
+      initialWeightKg: '',
+      consumedWeightKg: '',
+      balanceLengthMeters: ''
+    }]);
+    setIsHoldModalOpen(true);
+  };
+
+  const handleConfirmHold = async () => {
+    if (!holdTargetOrder || isSubmittingHold) return;
+    const check = validatePrintHold({
+      reason: holdReason,
+      note: holdNote,
+      meters: holdMeters,
+      printedKg: holdPrintedKg,
+      usable: holdUsable === 'yes' ? true : holdUsable === 'no' ? false : undefined,
+      inputRolls: holdRolls
+    });
+    if (!check.ok) {
+      alert(check.error);
+      return;
+    }
+    setIsSubmittingHold(true);
+    cancelPrintProgress();
+    try {
+      const press = rotogravureMachines.find((machine) => machine.id === holdTargetOrder.machineId);
+      const rollsForSave = holdRolls.map((roll) => linkInputRoll(roll, inventoryRolls, inventory));
+      const kg = check.value.printedKg;
+      const result = await onHoldJob(holdTargetOrder, {
+        ...check.value,
+        inputRollsList: rollsForSave,
+        outputRolls: check.value.usable ? [{
+          netWeightKg: kg,
+          lengthMeters: check.value.meters,
+          filmType: rollsForSave[0]?.filmType || holdTargetOrder.printFilmType || ''
+        }] : [],
+        operatorName: currentUser?.fullName || currentUser?.username || '',
+        machineName: press?.name || '',
+        filmType: rollsForSave[0]?.filmType || holdTargetOrder.printFilmType || '',
+        micron: finiteNumber(rollsForSave[0]?.micron) ?? holdTargetOrder.micron,
+        widthMm: finiteNumber(rollsForSave[0]?.widthMm) ?? holdTargetOrder.widthMm,
+        storageBay: 'SFG Store (Pre-Lamination)'
+      });
+      const balanceRolls = Array.isArray(result?.balanceRolls) ? result.balanceRolls : [];
+      const printedRolls = Array.isArray(result?.printedRolls) ? result.printedRolls : [];
+      const warnings = Array.isArray(result?.consumptionWarnings) ? result.consumptionWarnings : [];
+      if (warnings.length) {
+        alert(`Some film rolls were not posted to the item ledger:\n${warnings.map((warning) => `• ${warning.barcode}: ${warning.reason}`).join('\n')}`);
+      }
+      setIsHoldModalOpen(false);
+      setHoldTargetOrder(null);
+      setActiveRunningJob(null);
+      setCompletionSummary({
+        jobName: holdTargetOrder.jobName,
+        jobCode: holdTargetOrder.jobCode || holdTargetOrder.id,
+        orderId: holdTargetOrder.id,
+        clientName: holdTargetOrder.clientName || holdTargetOrder.customerName || '',
+        filmType: rollsForSave[0]?.filmType || '',
+        meters: check.value.meters,
+        printedRolls: rollsEligibleForBarcodeLabel(printedRolls),
+        balanceRolls: rollsEligibleForBarcodeLabel(withEnteredBalanceMeters(balanceRolls, rollsForSave)),
+        consumedRolls: rollsForSave,
+        outputRecorded: true,
+        notice: check.value.usable
+          ? 'Printed rolls were saved to the SFG store. Print the balance-roll tag below.'
+          : `Printed quantity was saved to the QC Hold Store (${check.value.reason}). Print the balance-roll tag below.`
+      });
+    } catch (err) {
+      if (!err?.alreadyAlerted) alert(err?.message || 'The print job was not held.');
+    } finally {
+      setIsSubmittingHold(false);
+    }
+  };
+
+  const openRestartModal = (order) => {
+    const same = order.machineId || rotogravureMachines[0]?.id || '';
+    const sameFree = !findActivePrintConflict(orders, { orderId: order.id, machineId: same });
+    const fallback = rotogravureMachines.find((machine) => !findActivePrintConflict(orders, { orderId: order.id, machineId: machine.id }));
+    setRestartTargetOrder(order);
+    setRestartMachineId(sameFree ? same : (fallback?.id || same));
+    setIsRestartModalOpen(true);
+  };
+
+  const handleConfirmRestart = async () => {
+    if (!restartTargetOrder || isSubmittingRestart) return;
+    if (!restartMachineId) {
+      alert('Choose a printing machine.');
+      return;
+    }
+    const conflict = findActivePrintConflict(orders, { orderId: restartTargetOrder.id, machineId: restartMachineId });
+    if (conflict) {
+      setPrintRunBlock(conflict);
+      return;
+    }
+    setIsSubmittingRestart(true);
+    try {
+      const started = await onRestartHeldJob(restartTargetOrder, restartMachineId);
+      setIsRestartModalOpen(false);
+      setRestartTargetOrder(null);
+      if (started) openActiveRunModal(started, 'restart');
+    } catch (err) {
+      const parsed = parseActivePrintRunConflict(err);
+      if (parsed) setPrintRunBlock(parsed);
+      else if (!err?.alreadyAlerted) alert(err?.message || 'The held print job was not restarted.');
+    } finally {
+      setIsSubmittingRestart(false);
     }
   };
 
@@ -1849,6 +2007,16 @@ export default function ProductionScheduler({
                     {readyQueueOrders.find(o => o.isCurrentlyInProduction)?.jobName}
                   </div>
                 </div>
+                {canHoldPrint && (
+                  <button
+                    type="button"
+                    data-testid="hold-active-run-banner"
+                    style={{ background: '#b45309', color: '#ffffff', fontWeight: '900', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                    onClick={() => openHoldModal(readyQueueOrders.find((order) => order.isCurrentlyInProduction))}
+                  >
+                    <PauseCircle size={16} /> Hold Job
+                  </button>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -2022,6 +2190,10 @@ export default function ProductionScheduler({
                             <span className="badge" style={{ background: '#2563eb', color: '#ffffff', fontSize: '0.7rem', fontWeight: '900', letterSpacing: '0.5px' }}>
                               ⚡ IN PRODUCTION
                             </span>
+                          ) : isHeldPrintJob(order) ? (
+                            <span className="badge" data-testid="hold-on-printing-tag" style={{ background: '#ffedd5', color: '#9a3412', fontSize: '0.7rem', fontWeight: '900' }}>
+                              Hold on Printing{order.holdReason ? ` — ${order.holdReason}` : ''}
+                            </span>
                           ) : order.isOverdue ? (
                             <span className="badge badge-danger" style={{ fontSize: '0.7rem', fontWeight: '900' }}>
                               OVERDUE
@@ -2048,6 +2220,20 @@ export default function ProductionScheduler({
                         <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                           <Building2 size={13} /> {order.clientName || 'Direct Client'}
                         </div>
+                        {holdHistoryOf(order).length > 0 && (
+                          <div data-testid="print-hold-history" style={{ marginTop: '8px', fontSize: '0.75rem', color: '#7c2d12', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: '8px', padding: '8px 10px' }}>
+                            {holdHistoryOf(order).map((entry, index) => (
+                              <div key={`${entry.heldAt || index}-${entry.reason || index}`} style={{ marginTop: index ? '6px' : 0 }}>
+                                <strong>{entry.reason || 'Hold'}</strong>
+                                {entry.note ? ` — ${entry.note}` : ''}
+                                {' · '}{Number(entry.meters || 0)} m · {Number(entry.printedKg || 0)} kg · usable {entry.usable ? 'yes' : 'no'}
+                                {entry.heldBy ? ` · ${entry.heldBy}` : ''}
+                                {entry.heldAt ? ` · ${new Date(entry.heldAt).toLocaleString()}` : ''}
+                                {entry.restartedAt ? ` · restarted ${new Date(entry.restartedAt).toLocaleString()}${entry.restartMachineId ? ` on ${entry.restartMachineId}` : ''}` : ''}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {(order.hasVariants || (Array.isArray(order.variants) && order.variants.length > 0)) && (
                           <div style={{ marginTop: '6px', fontSize: '0.78rem', background: '#faf5ff', color: '#6b21a8', border: '1px solid #e9d5ff', borderRadius: '6px', padding: '4px 8px', fontWeight: '700' }}>
                             🎨 <strong>Variants Breakdown:</strong> {order.variants.map(v => `${v.variantName} (${v.allocatedQtyKg}kg)`).join(' • ')}
@@ -2111,7 +2297,18 @@ export default function ProductionScheduler({
 
                       {/* Execution Action Button */}
                       {order.isCurrentlyInProduction ? (
-                        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+                          {canHoldPrint && (
+                            <button
+                              type="button"
+                              data-testid="hold-queue-job"
+                              style={{ width: '100%', padding: '7px 12px', fontSize: '0.8rem', fontWeight: '800', background: '#b45309', color: '#ffffff', border: 'none', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', cursor: 'pointer' }}
+                              onClick={() => openHoldModal(order)}
+                            >
+                              <PauseCircle size={14} /> Hold Job
+                            </button>
+                          )}
+                          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                           <button
                             type="button"
                             data-testid="view-active-run"
@@ -2130,8 +2327,31 @@ export default function ProductionScheduler({
                           >
                             <StopCircle size={14} /> End Job
                           </button>
+                          </div>
                         </div>
-                      ) : (
+                      ) : isHeldPrintJob(order) && canHoldPrint ? (
+                        <button
+                          type="button"
+                          data-testid="restart-held-job"
+                          className="btn-primary"
+                          style={{
+                            width: '100%',
+                            padding: '9px 16px',
+                            fontSize: '0.88rem',
+                            fontWeight: '900',
+                            background: '#0f766e',
+                            color: '#ffffff',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                          onClick={() => openRestartModal(order)}
+                        >
+                          <PlayCircle size={16} /> Restart Job Print
+                        </button>
+                      ) : isHeldPrintJob(order) ? null : (
                         <button
                           type="button"
                           className="btn-primary"
@@ -2970,9 +3190,33 @@ export default function ProductionScheduler({
               </div>
             </div>
 
-            {/* End Job Action Footer (Only shown for active running job) */}
+            {balancePrintPrompt(activeRunningJob) && (
+              <div data-testid="balance-print-prompt" style={{ marginTop: '16px', background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', borderRadius: '10px', padding: '10px 12px', fontWeight: '800', fontSize: '0.88rem' }}>
+                {balancePrintPrompt(activeRunningJob)}
+              </div>
+            )}
+            {holdHistoryOf(activeRunningJob).length > 0 && (
+              <div data-testid="print-hold-history-run" style={{ marginTop: '12px', fontSize: '0.78rem', color: '#7c2d12' }}>
+                {holdHistoryOf(activeRunningJob).map((entry, index) => (
+                  <div key={`${entry.heldAt || index}`}>Hold {index + 1}: {entry.reason}{entry.note ? ` (${entry.note})` : ''} · {entry.meters} m · {entry.printedKg} kg · usable {entry.usable ? 'yes' : 'no'}{entry.restartedAt ? ` · restarted ${entry.restartMachineId || ''}` : ''}</div>
+                ))}
+              </div>
+            )}
+
+            {/* End Job stays on the right. Hold Job stays on the left. */}
             {!activeRunningJob.isPrintingCompleted && (
-              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '2px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '2px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                {canHoldPrint ? (
+                  <button
+                    type="button"
+                    data-testid="hold-job"
+                    style={{ padding: '10px 20px', fontWeight: '900', fontSize: '0.9rem', background: '#b45309', color: '#ffffff', border: 'none', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+                    onClick={() => openHoldModal(activeRunningJob)}
+                  >
+                    <PauseCircle size={18} /> Hold Job
+                  </button>
+                ) : <span />}
+                <div style={{ display: 'flex', gap: '12px' }}>
                 <button 
                   className="btn-secondary" 
                   style={{ padding: '10px 20px', fontWeight: '700', fontSize: '0.9rem' }}
@@ -2997,8 +3241,93 @@ export default function ProductionScheduler({
                 >
                   <StopCircle size={18} /> End Job & Enter Production Data
                 </button>
+                </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {isHoldModalOpen && holdTargetOrder && (
+        <div className="modal-overlay" data-testid="hold-job-modal" onClick={() => !isSubmittingHold && setIsHoldModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '680px', width: '96%', borderRadius: '16px' }} onClick={(event) => event.stopPropagation()}>
+            <div style={{ marginBottom: '12px' }}>
+              <span className="badge" style={{ background: '#ffedd5', color: '#9a3412', fontWeight: '900' }}>HOLD JOB</span>
+              <h3 style={{ margin: '8px 0 0' }}>{holdTargetOrder.jobName}</h3>
+              <p style={{ margin: '4px 0 0', color: '#64748b' }}>This stops the press run. It does not complete the job.</p>
+            </div>
+            <label style={{ fontSize: '0.8rem', fontWeight: '800' }}>Reason</label>
+            <SearchableSelect className="form-control" data-testid="hold-reason" value={holdReason} onChange={(event) => setHoldReason(event.target.value)}>
+              <option value="">Choose a reason</option>
+              {PRINT_HOLD_REASONS.map((reason) => <option key={reason} value={reason}>{reason}</option>)}
+            </SearchableSelect>
+            <label style={{ fontSize: '0.8rem', fontWeight: '800', marginTop: '10px', display: 'block' }}>Note {holdReason === PRINT_HOLD_OTHER ? '(required)' : '(optional)'}</label>
+            <textarea className="form-control" data-testid="hold-note" rows={2} value={holdNote} onChange={(event) => setHoldNote(event.target.value)} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: '800' }}>Meters Run Before Stop</label>
+                <input className="form-control" data-testid="hold-meters" type="number" min="0" step="0.01" value={holdMeters} onChange={(event) => setHoldMeters(event.target.value)} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: '800' }}>Print Quantity (Kg)</label>
+                <input className="form-control" data-testid="hold-kg" type="number" min="0" step="0.01" value={holdPrintedKg} onChange={(event) => setHoldPrintedKg(event.target.value)} />
+              </div>
+            </div>
+            <div style={{ marginTop: '10px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>Is Printed Quantity Usable</span>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '6px' }}>
+                <label><input type="radio" name="hold-usable" data-testid="hold-usable-yes" checked={holdUsable === 'yes'} onChange={() => setHoldUsable('yes')} /> Yes, send to SFG store</label>
+                <label><input type="radio" name="hold-usable" data-testid="hold-usable-no" checked={holdUsable === 'no'} onChange={() => setHoldUsable('no')} /> No, send to QC Hold Store</label>
+              </div>
+            </div>
+            <div style={{ marginTop: '12px' }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: '800' }}>Input rolls consumed before the stop</span>
+              {holdRolls.map((roll, index) => (
+                <div key={roll.id || index} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.7fr 0.7fr 0.8fr', gap: '6px', marginTop: '6px' }}>
+                  <input className="form-control" value={roll.barcodeId || ''} placeholder="Barcode" onChange={(event) => setHoldRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, barcodeId: event.target.value } : item))} />
+                  <input className="form-control" type="number" value={roll.initialWeightKg || ''} placeholder="Initial kg" onChange={(event) => setHoldRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, initialWeightKg: event.target.value } : item))} />
+                  <input className="form-control" type="number" value={roll.consumedWeightKg || ''} placeholder="Consumed kg" onChange={(event) => setHoldRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, consumedWeightKg: event.target.value } : item))} />
+                  <input className="form-control" type="number" value={roll.balanceLengthMeters || ''} placeholder="Balance m" onChange={(event) => setHoldRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, balanceLengthMeters: event.target.value } : item))} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+              <button type="button" className="btn-secondary" disabled={isSubmittingHold} onClick={() => setIsHoldModalOpen(false)}>Cancel</button>
+              <button type="button" data-testid="confirm-hold-job" disabled={isSubmittingHold} style={{ background: '#b45309', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontWeight: '900' }} onClick={handleConfirmHold}>
+                {isSubmittingHold ? 'Saving…' : 'Save Hold'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isRestartModalOpen && restartTargetOrder && (
+        <div className="modal-overlay" data-testid="restart-job-modal" onClick={() => !isSubmittingRestart && setIsRestartModalOpen(false)}>
+          <div className="modal-content" style={{ maxWidth: '560px', width: '96%', borderRadius: '16px' }} onClick={(event) => event.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>Restart Job Print</h3>
+            <p style={{ color: '#64748b' }}>{restartTargetOrder.jobName}. Earlier meters, kilograms, and rolls stay on this job. This starts a new run.</p>
+            {balancePrintPrompt(restartTargetOrder) && (
+              <div data-testid="restart-balance-prompt" style={{ background: '#fff7ed', border: '1px solid #fdba74', color: '#9a3412', borderRadius: '10px', padding: '10px 12px', fontWeight: '800' }}>
+                {balancePrintPrompt(restartTargetOrder)}
+              </div>
+            )}
+            <label style={{ fontSize: '0.8rem', fontWeight: '800', display: 'block', marginTop: '12px' }}>Machine</label>
+            <SearchableSelect className="form-control" data-testid="restart-machine" value={restartMachineId} onChange={(event) => setRestartMachineId(event.target.value)}>
+              {rotogravureMachines.map((machine) => {
+                const busy = findActivePrintConflict(orders, { orderId: restartTargetOrder.id, machineId: machine.id });
+                return (
+                  <option key={machine.id} value={machine.id} disabled={Boolean(busy)}>
+                    {machine.name}{busy ? ' (running another job)' : machine.id === restartTargetOrder.machineId ? ' (same machine)' : ''}
+                  </option>
+                );
+              })}
+            </SearchableSelect>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+              <button type="button" className="btn-secondary" disabled={isSubmittingRestart} onClick={() => setIsRestartModalOpen(false)}>Cancel</button>
+              <button type="button" data-testid="confirm-restart-job" disabled={isSubmittingRestart} className="btn-primary" onClick={handleConfirmRestart}>
+                {isSubmittingRestart ? 'Starting…' : 'Restart Job Print'}
+              </button>
+            </div>
           </div>
         </div>
       )}
