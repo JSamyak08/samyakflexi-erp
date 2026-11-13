@@ -4,6 +4,7 @@ import { isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm } from '../factor
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { displayAmendmentLabel, revisionNumber, getLayerMetallocenePct, formatOcnFilmName } from '../utils/ocnAmendment';
 import { formatPlantDate } from '../utils/dbDates';
@@ -137,6 +138,10 @@ export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, o
   const igstAmt = gstInfo.igstAmount;
   const totalTax = gstInfo.totalGstAmount;
   const grandTotal = gstInfo.grandTotal;
+  const ocnFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.orderConfirmation,
+    number: docRef || 'Unnumbered',
+  });
 
   return (
     <div className="pdf-modal-overlay">
@@ -154,13 +159,13 @@ export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, o
             <Edit3 size={15} /> Amend OCN ({revLabel})
           </button>
         )}
-        <button className="btn-primary" onClick={() => window.print()}>
+        <button className="btn-primary" onClick={() => printWithPdfName(ocnFileBase)}>
           <Printer size={16} /> Print OCN Note PDF
         </button>
       </div>
 
       <div className="pdf-paper-container" style={{ background: '#ffffff', height: 'auto', boxSizing: 'border-box' }}>
-        <div className="printable-document" id="printable-ocn" style={{ background: '#ffffff', height: 'auto', boxSizing: 'border-box' }}>
+        <div className="printable-document" id="printable-ocn" data-pdf-file-name={ocnFileBase} style={{ background: '#ffffff', height: 'auto', boxSizing: 'border-box' }}>
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">

@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { printablePersonName } from '../utils/recordedPerson';
 import { pdfLinesFromGrn, taxableAmountFromLines } from '../services/grnDocument';
@@ -113,19 +114,24 @@ export default function GRNPDF({ grnData, onClose }) {
     gstin: vendorGstin
   };
 
+  const grnFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.goodsReceipt,
+    number: currentGrnNo || 'Unnumbered',
+  });
+
   return (
     <div className="pdf-modal-overlay">
       <div className="pdf-modal-toolbar no-print">
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back to Inventory
         </button>
-        <button className="btn-primary" onClick={() => window.print()}>
+        <button className="btn-primary" onClick={() => printWithPdfName(grnFileBase)}>
           <Printer size={16} /> Print GRN PDF
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document">
+        <div className="printable-document" data-pdf-file-name={grnFileBase}>
           {/* Header */}
           <div className="letterhead-header">
             <div className="letterhead-brand">

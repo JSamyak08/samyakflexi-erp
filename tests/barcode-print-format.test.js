@@ -107,4 +107,14 @@ test('Thermal Barcode Printer Isolated Engine and Styling', () => {
   assert.ok(multiHtml.includes('page-break-after: always;'), 'Must page-break between multiple stickers');
   assert.ok(multiHtml.includes('page-break-after: avoid;'), 'Last sticker must avoid page-break');
   assert.ok(multiHtml.includes('RM-BC-20261029-9068NF5P') && multiHtml.includes('RM-BC-20261029-9068NF5Q'), 'Must contain both stickers');
+  assert.match(
+    multiHtml,
+    /<title>Barcode Labels - 2 labels \d{4}-\d{2}-\d{2} - Samyak International Ltd<\/title>/
+  );
+
+  const oneHtml = generateThermalLabelsHtml([testRoll], { name: 'SAMYAK INTERNATIONAL LTD.' });
+  assert.ok(
+    oneHtml.includes('<title>Barcode Label - RM-BC-20261029-9068NF5P - Samyak International Ltd</title>'),
+    'A single sticker uses its barcode as the PDF file name'
+  );
 });

@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Package, FileText, CheckCircle2 } from 'lucide-reac
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getCompanyLogo, getAuthorisedSignature } from '../services/settingsService';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 
 export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = [], jobMasters = [], onClose }) {
   const letterhead = loadLetterhead();
@@ -19,8 +20,13 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
   const totalOrders = pendingOrders.length;
   const totalPendingQtyKg = pendingOrders.reduce((sum, o) => sum + (parseFloat(o.orderQtyKg || o.orderQty || o.qtyKg || 0)), 0);
 
+  const pendingFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.pendingOrders,
+    number: docRefNo,
+  });
+
   const handlePrint = () => {
-    window.print();
+    printWithPdfName(pendingFileBase);
   };
 
   return (
@@ -81,6 +87,7 @@ export default function ClientPendingOrdersPDF({ client = {}, pendingOrders = []
       <div 
         id="printable-client-pending-orders"
         className="printable-document pdf-paper-container"
+        data-pdf-file-name={pendingFileBase}
         style={{
           width: '210mm',
           maxWidth: '100%',

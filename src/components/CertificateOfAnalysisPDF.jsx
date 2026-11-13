@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getCoaSignatories } from '../services/settingsService';
 import { printablePersonName } from '../utils/recordedPerson';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 
 export const DEFAULT_COA_PARAMETERS = [
   { srNo: 1, parameter: "Total Thickness", uom: "Micron", standard: "50 ( ± 5 % )", observation: "45 TO 55" },
@@ -86,19 +87,24 @@ export default function CertificateOfAnalysisPDF({ coaData, onClose }) {
     setTestRows(prev => prev.filter((_, i) => i !== index));
   };
 
+  const coaFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.certificateOfAnalysis,
+    number: currentCoaNo || 'Unnumbered',
+  });
+
   return (
     <div className="pdf-modal-overlay">
       <div className="pdf-modal-toolbar no-print">
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back to Dispatch Hub
         </button>
-        <button className="btn-primary" onClick={() => window.print()}>
+        <button className="btn-primary" onClick={() => printWithPdfName(coaFileBase)}>
           <Printer size={16} /> Print Quality Test Report (CoA)
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document">
+        <div className="printable-document" data-pdf-file-name={coaFileBase}>
           {/* Header */}
           <div className="letterhead-header" style={{ marginBottom: '10px' }}>
             <div className="letterhead-brand">

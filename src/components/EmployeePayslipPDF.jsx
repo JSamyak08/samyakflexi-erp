@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 import { printablePersonName } from '../utils/recordedPerson';
+import { PDF_DOCUMENT_TITLES, payslipIdentifier, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 
 // Helper to convert number to Indian currency words
 function numberToWords(num) {
@@ -34,6 +35,10 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const [yearStr, monthStr] = (monthKey || '2026-08').split('-');
   const monthLabel = `${monthNames[parseInt(monthStr, 10) - 1] || 'August'} ${yearStr || '2026'}`;
+  const payslipFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.salaryPayslip,
+    number: payslipIdentifier({ code: employee.empCode || employee.id, period: monthLabel }) || monthLabel,
+  });
 
   const bank = employee.bankDetails || {};
   const struct = employee.salaryStructure || {};
@@ -68,7 +73,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
             <button 
               className="btn-primary" 
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 20px', background: '#1e293b', borderColor: '#1e293b', fontWeight: '800' }}
-              onClick={() => window.print()}
+              onClick={() => printWithPdfName(payslipFileBase)}
             >
               <Printer size={18} /> Print Salary Slip
             </button>
@@ -76,7 +81,7 @@ export default function EmployeePayslipPDF({ employee, salaryData, monthKey = "2
         </div>
 
         {/* PRINTABLE PAYSLIP CONTAINER */}
-        <div id="printable-payslip" className="printable-document" style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div id="printable-payslip" className="printable-document" data-pdf-file-name={payslipFileBase} style={{ padding: 0, background: '#ffffff', color: '#0f172a', fontFamily: 'Inter, system-ui, sans-serif' }}>
           
           {/* Header Banner */}
           <div className="letterhead-header">
