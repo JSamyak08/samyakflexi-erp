@@ -86,10 +86,10 @@ export const BOOT_NEEDS = {
   productionRecords: ['production_records', 'scrap_analytics', 'printing_scheduler', 'dispatch'],
   datasheets: ['job_masters', 'production_records', 'scrap_analytics', 'job_punching'],
   rolls: ['inventory', 'material_indents', 'production_records', 'printing_scheduler'],
-  shipments: ['dispatch', 'sales', 'inventory'],
+  shipments: ['dispatch', 'sales', 'inventory', 'scrap_analytics'],
   inks: ['ink_management', 'inventory'],
   sfg: ['production_records', 'inventory', 'printing_scheduler', 'sfg_store'],
-  challans: ['dispatch', 'sales', 'inventory'],
+  challans: ['dispatch', 'sales', 'inventory', 'scrap_analytics'],
   coas: ['inventory', 'production_records', 'dispatch'],
   // Fuel rows are not part of Inventory or the printing scheduler.
   // Operators keep those screens without reading the pellet book.

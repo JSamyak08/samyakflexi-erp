@@ -2503,6 +2503,8 @@ export default function App() {
     const plan = planJobWastage({
       record,
       order,
+      challans: deliveryChallans,
+      shipments: dispatchShipments,
       scrappedBy: currentUser?.name || currentUser?.fullName || record.filledBy || 'Operator',
       date: record.dateFilled || recordedAt.slice(0, 10),
       timestamp: recordedAt
@@ -6736,6 +6738,8 @@ export default function App() {
             jobMasters={jobMasters}
             productionRecords={productionRecords}
             machines={machines}
+            deliveryChallans={deliveryChallans}
+            dispatchShipments={dispatchShipments}
             currentUser={currentUser}
             onSaveSFGGood={handleSaveSFGGood}
             onConsumeSFG={handleConsumeSFG}
@@ -6977,6 +6981,8 @@ export default function App() {
           <ScrapWastageAnalysis 
             productionRecords={productionRecords}
             orders={orders}
+            deliveryChallans={deliveryChallans}
+            dispatchShipments={dispatchShipments}
           />
         )}
 

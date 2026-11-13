@@ -1,3 +1,4 @@
+import { dispatchedKgForOrder } from './orderAutoClose.js';
 import { parseOptionalKg } from './productionRecordQuality.js';
 import { printingScrapId, PRINTING_SCRAP_SOURCE } from './printingScrap.js';
 import { finiteRate, scrapValueRs, withoutScrapBarcode } from './scrapIdentity.js';
@@ -143,9 +144,26 @@ export function orderQuantityKg(order) {
   return 0;
 }
 
-export function wastagePctOfOrder(totalKg, orderQtyKg) {
-  if (!(orderQtyKg > 0)) return null;
-  return (totalKg / orderQtyKg) * 100;
+/**
+ * Dispatched kilograms for one order.
+ * Finalised packing lists contribute each roll's weighed net kg.
+ * Delivery challans contribute their kg lines. An open packing list and a
+ * cancelled document contribute nothing. When both a challan and a packing
+ * list match, the larger total is kept so the same goods are not added twice.
+ * Returns 0 when the order has not been dispatched.
+ */
+export function dispatchQuantityKg(order, challans = [], shipments = []) {
+  if (!order) return 0;
+  const dispatched = dispatchedKgForOrder(order, challans, shipments);
+  const kg = Number(dispatched?.kg);
+  if (!(kg > 0)) return 0;
+  return roundKg(kg);
+}
+
+/** Wastage kg ÷ dispatched kg × 100. Null when nothing has been dispatched. */
+export function wastagePctOfDispatch(totalKg, dispatchQtyKg) {
+  if (!(Number(dispatchQtyKg) > 0)) return null;
+  return (totalKg / Number(dispatchQtyKg)) * 100;
 }
 
 export function isHighScrapPct(pct) {
@@ -198,12 +216,15 @@ function stageLines(record) {
 
 /**
  * One scrap-store row per order and wastage type, plus one high-scrap registry
- * row when total wastage is at least 5% of order quantity. Zero quantities and
- * jobs under 5% are returned as deletes so an edit removes the earlier row.
+ * row when total wastage is at least 5% of dispatched kg. A job with no
+ * dispatch yet has no percentage and is returned as a registry delete.
+ * Zero quantities and jobs under 5% are deletes so an edit removes the earlier row.
  */
 export function planJobWastage({
   record = {},
   order = null,
+  challans = [],
+  shipments = [],
   scrappedBy,
   date,
   timestamp
@@ -262,7 +283,8 @@ export function planJobWastage({
 
   const totalWastageKg = roundKg(lines.reduce((sum, line) => sum + line.qty, 0));
   const orderQtyKg = orderQuantityKg(order);
-  const pct = wastagePctOfOrder(totalWastageKg, orderQtyKg);
+  const dispatchQtyKg = dispatchQuantityKg(order, challans, shipments);
+  const pct = wastagePctOfDispatch(totalWastageKg, dispatchQtyKg);
   const flagged = isHighScrapPct(pct);
   const registryId = orderId ? highScrapRegistryId(orderId) : '';
   const breakdown = lines
@@ -285,6 +307,8 @@ export function planJobWastage({
       productionRecordId: normalized.id || '',
       orderQtyKg,
       orderQtyUnit: ORDER_QTY_UNIT,
+      dispatchQtyKg,
+      dispatchQtyUnit: ORDER_QTY_UNIT,
       totalWastageKg,
       wastagePct: Number(pct.toFixed(2)),
       thresholdPct: HIGH_SCRAP_THRESHOLD_PCT,
@@ -304,6 +328,8 @@ export function planJobWastage({
     registry: { upsert: registryUpsert, deleteId: registryDeleteId },
     totalWastageKg,
     orderQtyKg,
+    dispatchQtyKg,
+    notDispatched: !(dispatchQtyKg > 0),
     wastagePct: pct === null ? null : Number(pct.toFixed(2)),
     flagged
   };
@@ -316,7 +342,12 @@ export function formatStageBreakdown(stages) {
 }
 
 /** Dry-run plan for every job. Does not write. */
-export function planBackfill({ orders = [], productionRecords = [] } = {}) {
+export function planBackfill({
+  orders = [],
+  productionRecords = [],
+  challans = [],
+  shipments = []
+} = {}) {
   const ordersById = new Map();
   (orders || []).forEach((order) => {
     const id = String(order?.id || '').trim();
@@ -340,6 +371,8 @@ export function planBackfill({ orders = [], productionRecords = [] } = {}) {
     const plan = planJobWastage({
       record: mergeRecords(records),
       order: ordersById.get(orderId) || null,
+      challans,
+      shipments,
       date: records[0]?.dateFilled || '',
       timestamp: records[0]?.recordedAt || ''
     });
@@ -352,6 +385,11 @@ export function planBackfill({ orders = [], productionRecords = [] } = {}) {
   return { scrapUpserts, scrapDeleteIds, flaggedJobs, registryDeletes };
 }
 
-export function listHighScrapJobs(productionRecords, orders) {
-  return planBackfill({ orders, productionRecords }).flaggedJobs;
+export function listHighScrapJobs(productionRecords, orders, dispatch = {}) {
+  return planBackfill({
+    orders,
+    productionRecords,
+    challans: dispatch.challans || dispatch.deliveryChallans || [],
+    shipments: dispatch.shipments || dispatch.dispatchShipments || []
+  }).flaggedJobs;
 }

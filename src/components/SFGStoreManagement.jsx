@@ -209,6 +209,8 @@ export default function SFGStoreManagement({
   jobMasters = [],
   productionRecords = [],
   machines = [],
+  deliveryChallans = [],
+  dispatchShipments = [],
   currentUser,
   urlParams = {},
   onSaveSFGGood,
@@ -281,7 +283,9 @@ export default function SFGStoreManagement({
         jobMasters,
         productionRecords,
         machines,
-        registryRows
+        registryRows,
+        deliveryChallans,
+        dispatchShipments
       });
       try {
         const result = await fetchScrapStoreItems(supabase, scrapFilters, context);
@@ -296,7 +300,7 @@ export default function SFGStoreManagement({
       }
     })();
     return () => { active = false; };
-  }, [previewScrapItems, scrapFilterKey, scrapFilters, orders, jobMasters, productionRecords, machines, scrapReloadKey]);
+  }, [previewScrapItems, scrapFilterKey, scrapFilters, orders, jobMasters, productionRecords, machines, deliveryChallans, dispatchShipments, scrapReloadKey]);
 
   const persistQcHold = async (next) => {
     await replacePayloadRecords(supabase, 'sfg_qc_hold_items', next);
@@ -1680,8 +1684,8 @@ export default function SFGStoreManagement({
   };
 
   const scrapContext = useMemo(
-    () => buildScrapFilterContext({ orders, jobMasters, productionRecords, machines }),
-    [orders, jobMasters, productionRecords, machines]
+    () => buildScrapFilterContext({ orders, jobMasters, productionRecords, machines, deliveryChallans, dispatchShipments }),
+    [orders, jobMasters, productionRecords, machines, deliveryChallans, dispatchShipments]
   );
   const previewScrap = useMemo(() => {
     if (!Array.isArray(previewScrapItems)) return null;

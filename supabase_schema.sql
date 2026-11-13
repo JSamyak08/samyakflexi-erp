@@ -551,7 +551,7 @@ ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS target_adhesive_g
 ALTER TABLE public.production_records ADD COLUMN IF NOT EXISTS ink_gsm_in_speed NUMERIC;
 
 -- High scrap registry is created by supabase/migrations/20261026140000_job_wastage_scrap_registry.sql.
--- It lists a job only when total stage wastage is at least 5% of orders.order_qty_kg.
+-- It lists a job only when total stage wastage is at least 5% of dispatched kg.
 
 -- Ensure all columns exist on inventory if table was previously created with older schema
 ALTER TABLE public.inventory ADD COLUMN IF NOT EXISTS item_code TEXT;
