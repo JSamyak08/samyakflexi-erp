@@ -80,6 +80,8 @@ function categoryFamily(value) {
   const key = categoryKey(value);
   if (['film substrates', 'film', 'lamination films'].includes(key)) return 'film';
   if (['printing inks', 'inks', 'ink'].includes(key)) return 'ink';
+  if (key === 'boiler fuel - wood pellets' || key === 'boiler pellets / fuel') return 'pellet-fuel';
+  if (key.includes('pellet') || key.includes('biofuel') || key.includes('boiler fuel')) return 'pellet-fuel';
   return key;
 }
 

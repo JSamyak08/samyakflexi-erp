@@ -73,6 +73,13 @@ import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/ema
 import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, allocateOrderIdFromServer, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
+import {
+  BOILER_FUEL_WOOD_PELLETS_CATEGORY,
+  grnCategoryAfterStockPick,
+  isBoilerFuelWoodPelletCategory,
+  isPelletStockItem,
+  planWoodPelletGrnPost
+} from '../services/pelletFuel';
 import { grnInwardLedgerEntries, ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
@@ -2148,7 +2155,7 @@ export default function InventoryManagement({
     setIsNewGRNModalOpen(true);
   };
 
-  const handleSelectStockItemForGrn = (item) => {
+  const handleSelectStockItemForGrn = (item, options = {}) => {
     if (!item) return;
     const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
     const mPct = item.metallocenePct || item.metallocene_pct || '';
@@ -2162,8 +2169,8 @@ export default function InventoryManagement({
     setGrnItemName(title);
     setGrnItemSearchTerm(title);
     
-    if (item.category) {
-      setGrnCategory(item.category);
+    if (!options.keepCategory) {
+      setGrnCategory(grnCategoryAfterStockPick(grnCategory, item.category));
     }
     if (item.unit) {
       setGrnUnit(item.unit);
@@ -2223,6 +2230,9 @@ export default function InventoryManagement({
   const filteredStockItemsForGrn = (groupedInventory || []).filter(item => {
     const subs = item.subItems || [item];
     if (subs.every((sub) => !isInventoryItemActive(sub))) return false;
+    if (isBoilerFuelWoodPelletCategory(grnCategory) && !subs.some((sub) => isPelletStockItem(sub)) && !isPelletStockItem(item)) {
+      return false;
+    }
     const term = (grnItemSearchTerm || '').toLowerCase().trim();
     const title = (item.itemName || `${item.filmType || ''} ${item.micron || ''} ${item.widthMm || ''}`).toLowerCase();
     const code = String(item.itemCode || item.primaryId || item.id || '').toLowerCase();
@@ -2831,7 +2841,28 @@ export default function InventoryManagement({
     if (search && typeof search.focus === 'function') search.focus();
   }, [activeGrnLineKey]);
 
-  // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE)
+  const pendingWoodPelletReceipt = (receipt, pending) => {
+    const plan = planWoodPelletGrnPost(receipt, inventory);
+    if (plan.action === 'block') {
+      alert(plan.message);
+      return null;
+    }
+    if (plan.action !== 'post') return pending;
+    return {
+      ...pending,
+      newGRN: plan.grn,
+      newInvItem: null,
+      newInvItems: [],
+      updatedItems: [],
+      newRolls: [],
+      postsToPelletStock: true,
+      isCylinderCategory: false,
+      targetStockItemId: plan.stockItem.id,
+      itemName: plan.grn.itemName || pending.itemName
+    };
+  };
+
+  // Inward GRN Submit (Supports Films, Inks, Solvents, Adhesives, Blades, Spares, PPE, wood pellets)
   const handleSaveGRN = async (e) => {
     e.preventDefault();
     const currentLine = captureCurrentGrnLine();
@@ -2935,25 +2966,24 @@ export default function InventoryManagement({
         (sum, line) => sum + (Number(line.netWeightKg) || 0) * (Number(line.purchaseRate) || 0),
         0
       );
-      setGrnConfirmationModal({
-        isOpen: true,
-        pendingData: {
-          newGRN: prepared.newGRN,
-          newInvItems: prepared.inventoryLots,
-          updatedItems: prepared.updatedItems,
-          newRolls: prepared.rolls,
-          mode: editing ? 'edit' : 'create',
-          previousRolls: editing ? rollsForGrn(inventoryRolls, editing) : [],
-          isCylinderCategory: false,
-          targetStockItemId: prepared.newGRN.stockItemId,
-          itemName: prepared.newGRN.itemName,
-          grnPoNo,
-          unitCount: prepared.newGRN.rollsReceived,
-          totalNetQty: prepared.newGRN.netWeightKg,
-          rateVal: prepared.newGRN.purchaseRatePerKg,
-          totalAmountVal: Number(totalAmountVal.toFixed(2))
-        }
+      const pending = pendingWoodPelletReceipt(prepared.newGRN, {
+        newGRN: prepared.newGRN,
+        newInvItems: prepared.inventoryLots,
+        updatedItems: prepared.updatedItems,
+        newRolls: prepared.rolls,
+        mode: editing ? 'edit' : 'create',
+        previousRolls: editing ? rollsForGrn(inventoryRolls, editing) : [],
+        isCylinderCategory: false,
+        targetStockItemId: prepared.newGRN.stockItemId,
+        itemName: prepared.newGRN.itemName,
+        grnPoNo,
+        unitCount: prepared.newGRN.rollsReceived,
+        totalNetQty: prepared.newGRN.netWeightKg,
+        rateVal: prepared.newGRN.purchaseRatePerKg,
+        totalAmountVal: Number(totalAmountVal.toFixed(2))
       });
+      if (!pending) return;
+      setGrnConfirmationModal({ isOpen: true, pendingData: pending });
       return;
     }
 
@@ -3258,25 +3288,23 @@ export default function InventoryManagement({
       return rollObj;
     });
 
-    // Open Confirmation Pop-up Modal before saving
-    setGrnConfirmationModal({
-      isOpen: true,
-      pendingData: {
-        newGRN,
-        newInvItem,
-        newRolls,
-        mode: editing ? 'edit' : 'create',
-        previousRolls: editing ? rollsForGrn(inventoryRolls, editing) : [],
-        isCylinderCategory,
-        targetStockItemId,
-        itemName,
-        grnPoNo,
-        unitCount,
-        totalNetQty,
-        rateVal,
-        totalAmountVal: Number((totalNetQty * rateVal).toFixed(2))
-      }
+    const pending = pendingWoodPelletReceipt(newGRN, {
+      newGRN,
+      newInvItem,
+      newRolls,
+      mode: editing ? 'edit' : 'create',
+      previousRolls: editing ? rollsForGrn(inventoryRolls, editing) : [],
+      isCylinderCategory,
+      targetStockItemId,
+      itemName,
+      grnPoNo,
+      unitCount,
+      totalNetQty,
+      rateVal,
+      totalAmountVal: Number((totalNetQty * rateVal).toFixed(2))
     });
+    if (!pending) return;
+    setGrnConfirmationModal({ isOpen: true, pendingData: pending });
   };
 
   // Execute GRN registration upon user confirmation in pop-up modal
@@ -3294,8 +3322,10 @@ export default function InventoryManagement({
       isCylinderCategory,
       targetStockItemId,
       itemName,
-      grnPoNo
+      grnPoNo,
+      postsToPelletStock
     } = grnConfirmationModal.pendingData;
+    const pelletReceipt = postsToPelletStock === true || isBoilerFuelWoodPelletCategory(newGRN?.category);
 
     const deletedHits = [];
     for (const roll of newRolls || []) {
@@ -3317,13 +3347,17 @@ export default function InventoryManagement({
       return;
     }
 
-    const lots = Array.isArray(newInvItems) && newInvItems.length > 0
-      ? newInvItems
-      : (newInvItem ? [newInvItem] : []);
-    const stockWrites = [
-      ...lots,
-      ...(Array.isArray(updatedItems) ? updatedItems : [])
-    ];
+    const lots = pelletReceipt
+      ? []
+      : (Array.isArray(newInvItems) && newInvItems.length > 0
+        ? newInvItems
+        : (newInvItem ? [newInvItem] : []));
+    const stockWrites = pelletReceipt
+      ? []
+      : [
+        ...lots,
+        ...(Array.isArray(updatedItems) ? updatedItems : [])
+      ];
 
     // A new stock row is written only when nothing matched. Existing items stay at qty 0 until QC, except cylinders.
     for (const lot of stockWrites) {
@@ -3344,7 +3378,10 @@ export default function InventoryManagement({
       }
     } catch (err) {
       console.error('[GRN Inward] Save to database failed:', err);
-      alert(`❌ Failed to create GRN in database:\n${err.message || err}`);
+      const detail = err?.message || String(err);
+      alert(detail.includes('Pellet Fuel Stock')
+        ? detail
+        : `❌ Failed to create GRN in database:\n${detail}`);
       setGrnConfirmationModal({ isOpen: false, pendingData: null });
       return;
     }
@@ -3387,7 +3424,7 @@ export default function InventoryManagement({
       }
     }
 
-    const rollsToStore = (newRolls || []).map((roll) => ({
+    const rollsToStore = (pelletReceipt ? [] : (newRolls || [])).map((roll) => ({
       ...roll,
       grnNo: storedGRN.grnNo,
       grnId: storedGRN.id || storedGRN.grnNo,
@@ -3650,7 +3687,8 @@ export default function InventoryManagement({
           }
         }
       }
-      if (isApproved && savedGrn?.stockPosted !== true && onSaveInventoryItem && !pelletReceiptAlreadyPosted(updatedGRN)) {
+      const pelletReceipt = isBoilerFuelWoodPelletCategory(updatedGRN.category);
+      if (isApproved && !pelletReceipt && savedGrn?.stockPosted !== true && onSaveInventoryItem && !pelletReceiptAlreadyPosted(updatedGRN)) {
         const { saved } = applyQcApprovalStock(
           inventory,
           stockPosts.map((post) => ({ ...post, vendorName: updatedGRN.vendorName })),
@@ -3666,7 +3704,9 @@ export default function InventoryManagement({
       setQcInspectingGRN(null);
       setQcNotesInput('');
       alert(isApproved
-        ? `✅ GRN ${updatedGRN.grnNo} APPROVED!\n${stockPosts.map((post) => `${post.itemName}: ${post.addKg} kg`).join('\n')}`
+        ? (pelletReceipt
+          ? `✅ GRN ${updatedGRN.grnNo} APPROVED!\n${updatedGRN.netWeightKg} kg is on Pellet Fuel Stock Management. It was not added to a film or raw-material ledger.`
+          : `✅ GRN ${updatedGRN.grnNo} APPROVED!\n${stockPosts.map((post) => `${post.itemName}: ${post.addKg} kg`).join('\n')}`)
         : `🚫 GRN ${updatedGRN.grnNo} REJECTED!\nEach item was moved to QC Hold.`);
       return;
     }
@@ -3839,7 +3879,8 @@ export default function InventoryManagement({
     }
 
     // If Approved, add the verified kilograms to the existing ledger, not a new lot.
-    if (isApproved && savedGrn?.stockPosted !== true && (onSaveInventoryItem || onUpdateInventory) && !pelletReceiptAlreadyPosted(updatedGRN)) {
+    const pelletReceipt = isBoilerFuelWoodPelletCategory(updatedGRN.category);
+    if (isApproved && !pelletReceipt && savedGrn?.stockPosted !== true && (onSaveInventoryItem || onUpdateInventory) && !pelletReceiptAlreadyPosted(updatedGRN)) {
       const grnRate = parseFloat(updatedGRN.purchaseRatePerKg || updatedGRN.purchaseRate || updatedGRN.unitPrice) || 0;
       const { saved } = applyQcApprovalStock(inventory, [{
         stockItemId: updatedGRN.stockItemId,
@@ -3924,8 +3965,10 @@ export default function InventoryManagement({
     setQcInspectingGRN(null);
     setQcNotesInput('');
 
-    alert(isApproved 
-      ? `✅ GRN ${updatedGRN.grnNo} APPROVED!${hasVariances ? '\n⚠️ Inward details were corrected & Admin / Store notified.' : ''}\nStock of ${verifiedNetWeight} ${updatedGRN.unit || 'Kg'} added to central Inventory & Item Ledger.`
+    alert(isApproved
+      ? (pelletReceipt
+        ? `✅ GRN ${updatedGRN.grnNo} APPROVED!${hasVariances ? '\n⚠️ Inward details were corrected & Admin / Store notified.' : ''}\n${verifiedNetWeight} kg is on Pellet Fuel Stock Management. It was not added to a film or raw-material ledger.`
+        : `✅ GRN ${updatedGRN.grnNo} APPROVED!${hasVariances ? '\n⚠️ Inward details were corrected & Admin / Store notified.' : ''}\nStock of ${verifiedNetWeight} ${updatedGRN.unit || 'Kg'} added to central Inventory & Item Ledger.`)
       : `🚫 GRN ${updatedGRN.grnNo} REJECTED!${hasVariances ? '\n⚠️ Spec variances were logged & Admin / Store notified.' : ''}\nMaterial transferred to 'QC Hold Store'. Barcodes updated to QC Hold.`
     );
   };
@@ -7227,8 +7270,15 @@ export default function InventoryManagement({
                       searchPlaceholder="Search inward categories (e.g. Film, Inks, Cylinders, Solvents)..."
                       value={grnCategory} 
                       onChange={e => {
-                        setGrnCategory(e.target.value);
+                        const value = e.target.value;
+                        setGrnCategory(value);
                         setGrnSelectedStockItemId('');
+                        if (!isBoilerFuelWoodPelletCategory(value)) return;
+                        setGrnUnit('Kg');
+                        const matches = (inventory || []).filter((item) => isPelletStockItem(item));
+                        if (matches.length === 1) {
+                          handleSelectStockItemForGrn(matches[0], { keepCategory: true });
+                        }
                       }}
                       triggerStyle={grnCategory ? {
                         fontWeight: '600',
@@ -7248,7 +7298,13 @@ export default function InventoryManagement({
                       <option value="Lubricants & Oils" data-subtitle="Gearbox Oils, Greases & Sprays">Lubricants & Oils</option>
                       <option value="Tapes & Consumables" data-subtitle="PTFE, Masking & Packaging Consumables">Tapes & Consumables (PTFE, Masking)</option>
                       <option value="Safety Gear (PPE)" data-subtitle="Gloves, Masks, Goggles, Helmets">Safety Gear (PPE)</option>
+                      <option value={BOILER_FUEL_WOOD_PELLETS_CATEGORY} data-subtitle="Posts to Pellet Fuel Stock Management">{BOILER_FUEL_WOOD_PELLETS_CATEGORY}</option>
                     </SearchableSelect>
+                    {isBoilerFuelWoodPelletCategory(grnCategory) && (
+                      <p style={{ margin: '8px 0 0', fontSize: '0.78rem', color: '#92400e', fontWeight: 700 }}>
+                        This receipt posts to Pellet Fuel Stock Management. Pick the pellet fuel item and enter kilograms plus a rate per kg. Film and ink ledgers are not updated.
+                      </p>
+                    )}
                   </div>
 
                   {/* Searchable Stock Item Link */}
@@ -7307,6 +7363,11 @@ export default function InventoryManagement({
                           marginTop: '4px'
                         }}
                       >
+                        {isBoilerFuelWoodPelletCategory(grnCategory) ? (
+                          <div style={{ padding: '10px 14px', fontSize: '0.82rem', fontWeight: '700', color: '#92400e', background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
+                            Pick the pellet fuel stock item. A new custom item is not created, and a film SKU is not used.
+                          </div>
+                        ) : (
                         <div 
                           style={{
                             padding: '10px 14px',
@@ -7328,10 +7389,13 @@ export default function InventoryManagement({
                         >
                           <Plus size={14} /> + Inward New Custom Item (Not in Stock List)
                         </div>
+                        )}
 
                         {filteredStockItemsForGrn.length === 0 ? (
                           <div style={{ padding: '12px', fontSize: '0.85rem', color: '#64748b', textAlign: 'center' }}>
-                            No matching stock items found. You can enter a custom item name above.
+                            {isBoilerFuelWoodPelletCategory(grnCategory)
+                              ? 'No pellet fuel item is in inventory. Create that item, then pick it here. This GRN will not attach to a film SKU.'
+                              : 'No matching stock items found. You can enter a custom item name above.'}
                           </div>
                         ) : (
                           filteredStockItemsForGrn.map(item => {
@@ -7994,7 +8058,7 @@ export default function InventoryManagement({
                   </div>
                   <div>
                     <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, color: '#ffffff' }}>{p.mode === 'edit' ? 'Confirm GRN edit' : 'Confirm Inward GRN Registration'}</h3>
-                    <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>{p.mode === 'edit' ? 'This edit does not add stock. Pending QC is regenerated from these lines.' : 'Verify inward receipt details before generating barcodes & committing stock'}</p>
+                    <p style={{ fontSize: '0.78rem', color: '#94a3b8', margin: '2px 0 0 0' }}>{p.postsToPelletStock ? 'These kilograms post to Pellet Fuel Stock Management, not a film or ink ledger.' : (p.mode === 'edit' ? 'This edit does not add stock. Pending QC is regenerated from these lines.' : 'Verify inward receipt details before generating barcodes & committing stock')}</p>
                   </div>
                 </div>
                 <button type="button" className="modal-close-btn" onClick={() => setGrnConfirmationModal({ isOpen: false, pendingData: null })}>
@@ -8028,7 +8092,7 @@ export default function InventoryManagement({
                 <div style={{ background: p.isCylinderCategory ? '#ecfdf5' : '#eff6ff', padding: '12px 16px', borderRadius: '8px', border: `1px solid ${p.isCylinderCategory ? '#a7f3d0' : '#bfdbfe'}`, fontSize: '0.82rem', color: p.isCylinderCategory ? '#065f46' : '#1e40af', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <Info size={18} />
                   <div>
-                    <strong>Stock & Barcode Rule:</strong> {p.isCylinderCategory ? 'Cylinder set will be auto-approved and added directly to active cylinder inventory.' : 'Each roll/unit will be registered individually with its distinct barcode sticker. Stock will enter QC Lab Approval inspection.'}
+                    <strong>Stock & Barcode Rule:</strong> {p.postsToPelletStock ? 'Wood pellet kilograms are recorded once on Pellet Fuel Stock Management. They are not added to a film, ink, or other raw-material ledger. QC still approves the receipt.' : (p.isCylinderCategory ? 'Cylinder set will be auto-approved and added directly to active cylinder inventory.' : 'Each roll/unit will be registered individually with its distinct barcode sticker. Stock will enter QC Lab Approval inspection.')}
                   </div>
                 </div>
 
@@ -8070,7 +8134,9 @@ export default function InventoryManagement({
                   GRN #{g.grnNo} Registered Successfully!
                 </h2>
                 <p style={{ fontSize: '0.84rem', color: '#475569', margin: 0 }}>
-                  Inward receipt recorded & {rolls.length} individual barcode sticker(s) generated for unique item tracking.
+                  {isBoilerFuelWoodPelletCategory(g.category)
+                    ? 'Inward receipt recorded on Pellet Fuel Stock Management. Film and ink ledgers were not updated.'
+                    : `Inward receipt recorded & ${rolls.length} individual barcode sticker(s) generated for unique item tracking.`}
                 </p>
 
                 {/* Quick Summary Cards */}
@@ -8727,7 +8793,7 @@ export default function InventoryManagement({
                   }} 
                   onClick={() => handleQCAction('Approved')}
                 >
-                  <CheckCircle2 size={18} /> Approve & Add Verified Stock to Inventory
+                  <CheckCircle2 size={18} /> {isBoilerFuelWoodPelletCategory(qcInspectingGRN?.category) ? 'Approve & Post to Pellet Fuel Stock' : 'Approve & Add Verified Stock to Inventory'}
                 </button>
                 )}
               </div>

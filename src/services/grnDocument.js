@@ -9,6 +9,7 @@ import {
   planReceiptStockLink,
   resolveQcStockTarget
 } from './inventoryIdentity.js';
+import { isBoilerFuelWoodPelletCategory } from './pelletFuel.js';
 
 function asNumber(value, fallback = 0) {
   const n = Number(value);
@@ -754,7 +755,8 @@ export function applyMultiLineQc({ grn, draftsByLineId, status, formatFilmItemNa
     status: approved ? 'Approved' : 'QC Hold',
     qcStatus: approved ? 'Approved' : 'Rejected'
   };
-  const stockPosts = approved ? nextLines.map((line) => ({
+  const ledgerLines = nextLines.filter((line) => !isBoilerFuelWoodPelletCategory(line.category));
+  const stockPosts = approved ? ledgerLines.map((line) => ({
     stockItemId: line.stockItemId || '',
     masterItemId: line.masterItemId || '',
     itemName: line.itemName,
@@ -767,7 +769,7 @@ export function applyMultiLineQc({ grn, draftsByLineId, status, formatFilmItemNa
     batchNo: line.batchNo,
     isFilm: line.category === 'Film Substrates'
   })) : [];
-  const rollPatches = nextLines.flatMap((line) => (line.rolls || []).map((roll) => ({
+  const rollPatches = ledgerLines.flatMap((line) => (line.rolls || []).map((roll) => ({
     barcodeId: roll.barcodeId,
     grnLineItemId: line.id,
     lineNo: line.lineNo,

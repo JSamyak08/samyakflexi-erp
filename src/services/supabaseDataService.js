@@ -50,7 +50,7 @@ import { mapDirectoryUser } from '../utils/activeUserLabel';
 import { buildOcnAmendment } from '../utils/ocnAmendment';
 import { groupGrnLineItems, lineItemsForGrn, sanitizeGRN } from './grnLineItems';
 import { linesForSave, normalizeInvoiceNo, stampLineIds } from './grnDocument';
-import { pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
+import { grnPostsInventoryOnApproval, pelletConsumptionFromRow, pelletInwardFromRow } from './pelletFuel';
 import { inventoryDbColumns } from './bulkStockUpload.js';
 import { revisionFieldsForStorage, revisionFromRow, revisionToRow } from '../utils/poAmendment';
 import { deadlineFieldsFromRow } from '../utils/orderDeadlineReminder';
@@ -1187,6 +1187,7 @@ export async function saveGRNToSupabase(grn) {
     orderedPoQtyKg: clean.orderedPoQtyKg || null,
     agreedPoRate: clean.agreedPoRate || null,
     vehicleNo: clean.vehicleNo || '',
+    isPelletFuel: clean.isPelletFuel === true,
     cancelledBy: clean.cancelledBy || '',
     cancelledAt: clean.cancelledAt || '',
     cancelReason: clean.cancelReason || '',
@@ -1292,8 +1293,13 @@ export async function saveGRNToSupabase(grn) {
     rolls: rollLinks,
     // The database adds approved kilograms in this same save. The caller
     // must not add them again. Older databases ignore the flag.
+    // Wood-pellet receipts set this false below so those kilograms stay
+    // on the pellet fuel stock book.
     postStockOnApproval: true
   };
+  if (!grnPostsInventoryOnApproval(clean)) {
+    payload.postStockOnApproval = false;
+  }
 
   console.log('[GRNs] Saving GRN and its lines:', payload.grnNo || payload.id, lines.length);
   const { data, error } = await supabase.rpc('save_grn_with_lines', { p_grn: payload });
