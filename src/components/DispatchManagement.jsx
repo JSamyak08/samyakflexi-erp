@@ -53,6 +53,7 @@ import {
   PACKING_STATUS_FINALISED,
   PACKING_STATUS_OPEN
 } from '../utils/dispatchPacking';
+import { packingListParty } from '../utils/dispatchProductionJobs';
 import { resolvePackingRollWeight } from '../utils/packingRollWeight';
 import {
   displayRollNumber,
@@ -2228,6 +2229,7 @@ export default function DispatchManagement({
                   ) : (
                     (packingPagination.paginatedItems || []).map(ds => {
                       const openList = isOpenPackingList(ds);
+                      const party = packingListParty(ds, orders);
                       const consumptions = listConsumptions(ds);
                       const savedGain = gainLossForShipment(ds);
                       const rollCount = openList
@@ -2251,10 +2253,10 @@ export default function DispatchManagement({
                           {formatPlantDateTime(ds.dispatchDate)}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '700', color: '#0f172a' }}>
-                          {ds.clientName}
+                          {party.clientName}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '600' }}>
-                          {ds.jobName}
+                          {party.jobName}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                           {ds.vehicleNo || '-'} {ds.lrNo ? `| LR: ${ds.lrNo}` : ''}
