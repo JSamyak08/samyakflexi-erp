@@ -5,6 +5,8 @@
  * (or swap in the bundled logo) before opening the print dialog.
  */
 
+import { printWithPdfName } from './pdfFileName.js';
+
 export const CHALLAN_LOGO_FALLBACK = '/samyak-logo.png';
 
 const PIXEL =
@@ -53,7 +55,7 @@ export async function settleChallanImages(root, { timeoutMs = 1800, fallbackSrc 
   }));
 }
 
-export async function printDeliveryChallan(root) {
+export async function printDeliveryChallan(root, fileName) {
   if (typeof window === 'undefined' || typeof window.print !== 'function') return;
   const sheet = root || (typeof document !== 'undefined' ? document.getElementById('printable-dc') : null);
   try {
@@ -68,5 +70,6 @@ export async function printDeliveryChallan(root) {
     }
     requestAnimationFrame(() => requestAnimationFrame(resolve));
   });
-  window.print();
+  if (fileName) printWithPdfName(fileName);
+  else window.print();
 }

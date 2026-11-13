@@ -2,6 +2,7 @@ import QRCode from 'qrcode';
 import { codeKey, codeStartsWith, textFrom } from './barcodeCode.js';
 import { generateSyncQrSvg } from './qrCodeSvg.js';
 import { rollsEligibleForBarcodeLabel } from './scrapIdentity.js';
+import { barcodeSheetFileBase, printFrameWithPdfName, printWithPdfName } from './pdfFileName.js';
 import { isFinishedGoodsStock } from './finishedGoods.js';
 
 /**
@@ -512,17 +513,25 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
   `;
 }
 
+/** File name for a 4×4 barcode label sheet. One code, or a count and the IST date. */
+export function thermalLabelFileBase(rolls, when = new Date()) {
+  const codes = rollsEligibleForBarcodeLabel(rolls).map((roll) => stickerBarcode(roll));
+  return barcodeSheetFileBase(codes, when);
+}
+
 /**
  * Generates the full HTML document for isolated thermal label printing
  */
-export function generateThermalLabelsHtml(rollList = [], company = {}, { inventory = [], inks = [] } = {}) {
-  const stickersHtml = rollsEligibleForBarcodeLabel(rollList).map(r => generateSingleStickerHtml(r, company, { inventory, inks })).join('\n');
+export function generateThermalLabelsHtml(rollList = [], company = {}, { inventory = [], inks = [], documentTitle } = {}) {
+  const eligible = rollsEligibleForBarcodeLabel(rollList);
+  const stickersHtml = eligible.map(r => generateSingleStickerHtml(r, company, { inventory, inks })).join('\n');
+  const title = documentTitle || thermalLabelFileBase(eligible);
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Thermal Barcode Sticker - 4x4 Inch</title>
+  <title>${escapeHtml(title)}</title>
   <style>
     @page {
       size: 4in 4in;
@@ -891,7 +900,8 @@ export function printThermalBarcodeLabels({ rolls = [], company = {}, inventory 
   const rollList = rollsEligibleForBarcodeLabel(rolls);
   if (rollList.length === 0) return;
 
-  const html = generateThermalLabelsHtml(rollList, company, { inventory, inks });
+  const fileBase = thermalLabelFileBase(rollList);
+  const html = generateThermalLabelsHtml(rollList, company, { inventory, inks, documentTitle: fileBase });
 
   if (typeof document === 'undefined') return;
 
@@ -914,24 +924,24 @@ export function printThermalBarcodeLabels({ rolls = [], company = {}, inventory 
   const doc = iframe.contentWindow?.document || iframe.contentDocument;
   if (!doc) {
     console.error('Cannot access iframe document for printing');
-    window.print();
+    printWithPdfName(fileBase);
     return;
   }
 
   doc.open();
   doc.write(html);
   doc.close();
+  doc.title = fileBase;
 
   const triggerPrint = () => {
-    try {
-      iframe.contentWindow.focus();
-      iframe.contentWindow.print();
-    } catch (err) {
+    // Chrome names the saved PDF from the top-level document title, even when
+    // the printed frame has its own title. Hold that title until the dialog closes.
+    printFrameWithPdfName(iframe, fileBase).catch((err) => {
       console.warn('Iframe print failed, falling back to window.print():', err);
-      window.print();
-    } finally {
+      printWithPdfName(fileBase);
+    }).finally(() => {
       if (onComplete) onComplete();
-    }
+    });
   };
 
   // Give the browser 250ms to parse DOM, render SVG, and calculate dimensions

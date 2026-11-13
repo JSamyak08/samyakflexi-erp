@@ -3,6 +3,7 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { formatINR } from '../utils/pdfHelpers';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { printablePersonName } from '../utils/recordedPerson';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber } from '../services/settingsService';
 
@@ -36,6 +37,10 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
   const preTotalCost = (preCostPerKg * 1000).toFixed(2);
   const postTotalCost = (postCostPerKg * 1000).toFixed(2);
   const variancePerKg = (postCostPerKg - preCostPerKg).toFixed(2);
+  const sheetFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.jobDataSheet,
+    number: id || jobId || 'Unnumbered',
+  });
 
   return (
     <div className="pdf-modal-overlay">
@@ -43,13 +48,13 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
         <button className="btn-secondary" onClick={onClose}>
           <ArrowLeft size={16} /> Back
         </button>
-        <button className="btn-primary" onClick={() => window.print()}>
+        <button className="btn-primary" onClick={() => printWithPdfName(sheetFileBase)}>
           <Printer size={16} /> Print / Export Job Data Sheet PDF
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document" id="printable-jds">
+        <div className="printable-document" id="printable-jds" data-pdf-file-name={sheetFileBase}>
 
           
           {/* Header */}

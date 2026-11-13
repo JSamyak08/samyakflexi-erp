@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { purchaseLineHsn } from '../utils/inkHsn';
 import { pushSlugState } from '../utils/slugRouter';
 import { anyAssignedRole, rawRoleNames } from '../assignedRoles';
@@ -2029,7 +2030,10 @@ export default function ConsumablesAndIndents({
                 <button 
                   className="btn-primary" 
                   style={{ padding: '4px 12px', fontSize: '0.8rem', background: '#047857' }}
-                  onClick={() => window.print()}
+                  onClick={() => printWithPdfName(pdfFileBase({
+                    title: PDF_DOCUMENT_TITLES.indent,
+                    number: selectedIndentForPrint.indentNo || selectedIndentForPrint.date || 'Unnumbered',
+                  }))}
                 >
                   Print Slip
                 </button>
@@ -2040,7 +2044,10 @@ export default function ConsumablesAndIndents({
             </div>
 
             {/* Formatted Indent Slip Sheet */}
-            <div id="printable-indent" className="printable-document" style={{ padding: '11mm 12mm', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif', overflow: 'visible', flex: 1, width: '210mm', maxWidth: '100%', boxSizing: 'border-box' }}>
+            <div id="printable-indent" className="printable-document" data-pdf-file-name={pdfFileBase({
+              title: PDF_DOCUMENT_TITLES.indent,
+              number: selectedIndentForPrint.indentNo || selectedIndentForPrint.date || 'Unnumbered',
+            })} style={{ padding: '11mm 12mm', background: '#ffffff', color: '#1e293b', fontFamily: 'Inter, sans-serif', overflow: 'visible', flex: 1, width: '210mm', maxWidth: '100%', boxSizing: 'border-box' }}>
               <div className="letterhead-header">
                 <div>
                   <h2 className="letterhead-company-name" style={{ margin: 0 }}>SAMYAK INTERNATIONAL LTD.</h2>

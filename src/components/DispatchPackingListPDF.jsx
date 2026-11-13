@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getCompanyLogo } from '../services/settingsService';
 import { toTitleCase } from '../utils/pdfHelpers';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { buildPackingListPrintModel, formatPackingKg } from '../utils/packingListPrint';
 import './packingListPrint.css';
 
@@ -43,6 +44,10 @@ export default function DispatchPackingListPDF({
   const logoUrl = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
   const model = buildPackingListPrintModel(shipment, { clients, orders, jobMasters });
   const rollLabel = `${model.rollCount} ROLL${model.rollCount === 1 ? '' : 'S'}`;
+  const packingFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.packingList,
+    number: model.docNo || model.when || 'Unnumbered',
+  });
 
   return (
     <div className="pdf-modal-overlay">
@@ -50,13 +55,13 @@ export default function DispatchPackingListPDF({
         <button className="btn-secondary" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ArrowLeft size={16} /> Back to Dispatch Management
         </button>
-        <button className="btn-primary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button className="btn-primary" onClick={() => printWithPdfName(packingFileBase)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Printer size={16} /> Print Dispatch Packing List PDF
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div id="printable-packing-list" className="printable-document">
+        <div id="printable-packing-list" className="printable-document" data-pdf-file-name={packingFileBase}>
           <div className="letterhead-header">
             <div className="letterhead-brand">
               <img

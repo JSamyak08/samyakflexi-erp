@@ -5,6 +5,7 @@ import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown, toTitleCase } from '../utils/pdfHelpers';
 import { getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { printDeliveryChallan, CHALLAN_LOGO_FALLBACK } from '../utils/printDeliveryChallan';
+import { PDF_DOCUMENT_TITLES, pdfFileBase } from '../utils/pdfFileName';
 import './deliveryChallanPrint.css';
 
 export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa }) {
@@ -114,6 +115,10 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
   })();
 
   const selectedNature = challanData.challanNature || challanData.movementType || challanData.natureOfMovement || "Sale of Goods";
+  const challanFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.deliveryChallan,
+    number: currentChallanNo || 'Unnumbered',
+  });
   const isFGChallan = selectedNature === 'Sale of Goods' || !['QC Reject - Return to Vendor', 'Maintenance Material - Returnable', 'Job Work Material - Returnable', 'Returnable Material'].includes(selectedNature);
 
   return (
@@ -132,13 +137,13 @@ export default function DeliveryChallanPDF({ challanData, onClose, onGenerateCoa
             <FileText size={16} /> + Quality CoA Report (FG)
           </button>
         )}
-        <button className="btn-primary" onClick={() => printDeliveryChallan(document.getElementById('printable-dc'))}>
+        <button className="btn-primary" onClick={() => printDeliveryChallan(document.getElementById('printable-dc'), challanFileBase)}>
           <Printer size={16} /> Print Delivery Challan
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document" id="printable-dc">
+        <div className="printable-document" id="printable-dc" data-pdf-file-name={challanFileBase}>
           {/* Header */}
           <div className="letterhead-header" style={{ paddingBottom: '8px', marginBottom: '8px' }}>
             <div className="letterhead-brand">

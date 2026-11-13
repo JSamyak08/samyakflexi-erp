@@ -4,6 +4,7 @@ import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { getAuthorisedSignature, getCompanyLogo } from '../services/settingsService';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { quotationLineDescription } from '../utils/quotationLineDescription';
 import { printablePersonName } from '../utils/recordedPerson';
 import './salesQuotationPrint.css';
@@ -60,6 +61,10 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
   const totalTaxable = items.reduce((acc, it) => acc + (parseFloat(it.taxableAmount) || (it.quantity * it.ratePerUom)), 0);
   const gstBreakdown = calculateGSTBreakdown(clientGstin, clientAddress, totalTaxable, 18, COMPANY_DETAILS.gstin);
   const totalGrand = gstBreakdown.grandTotal;
+  const quoteFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.salesQuotation,
+    number: quotationNo || 'Unnumbered',
+  });
 
   return (
     <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.8)', zIndex: 1100 }}>
@@ -90,14 +95,14 @@ export default function SalesQuotationPDF({ quotationData, onClose }) {
             <button
               className="btn-primary"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 20px', background: '#1e293b', borderColor: '#1e293b', fontWeight: '800' }}
-              onClick={() => window.print()}
+              onClick={() => printWithPdfName(quoteFileBase)}
             >
               <Printer size={18} /> Print Sales Quotation PDF
             </button>
           </div>
         </div>
 
-        <div id="printable-quotation" className="printable-document quote-sheet">
+        <div id="printable-quotation" className="printable-document quote-sheet" data-pdf-file-name={quoteFileBase}>
           <header className="quote-head">
             <div>
               {logoImage ? (

@@ -5,6 +5,7 @@
 import * as XLSX from 'xlsx';
 import { formatDurationMinutes, formatIstStamp } from './printingShifts.js';
 import { buildSimplePdf } from './simplePdf.js';
+import { PDF_DOCUMENT_TITLES, pdfFileName, reportRangeIdentifier } from './pdfFileName.js';
 
 export const PRINT_UTILIZATION_SHEET = 'Runs and gaps';
 export const PRINT_UTILIZATION_SUMMARY_SHEET = 'Summary';
@@ -124,8 +125,15 @@ export function buildPrintUtilizationPdf(report, meta = {}) {
   });
 }
 
+export function printUtilizationPdfFileName(meta = {}) {
+  return pdfFileName({
+    title: PDF_DOCUMENT_TITLES.printUtilization,
+    number: reportRangeIdentifier(meta.fromDate, meta.toDate, meta.label) || 'Undated',
+  });
+}
+
 export function downloadPrintUtilizationPdf(report, meta = {}) {
-  const filename = `${printUtilizationFileBase(meta)}.pdf`;
+  const filename = printUtilizationPdfFileName(meta);
   const bytes = buildPrintUtilizationPdf(report, meta);
   if (typeof document !== 'undefined') {
     const blob = new Blob([bytes], { type: 'application/pdf' });

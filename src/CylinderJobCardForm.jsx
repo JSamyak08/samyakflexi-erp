@@ -16,8 +16,9 @@ import { applySavedJobCardSpec, buildCylinderJobCardDraft, findMatchingJobMaster
 import { DEFAULT_CYLINDER_RATE_PER_SQ_CM, storedEngravingRate } from './utils/cylinderCost';
 import { rawRoleNames, userHasAnyRole } from './assignedRoles';
 import { formatPlantDate } from './utils/dbDates';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printFrameWithPdfName, printWithPdfName } from './utils/pdfFileName';
 
-const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, ref) => {
+const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser, fileName }, ref) => {
   const letterhead = loadLetterhead();
   const isAdmin = userHasAnyRole(currentUser, ['Admin', 'SuperAdmin']);
   const managementSignature = getAuthorisedSignature();
@@ -26,7 +27,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser }, 
   const companyLogo = getCompanyLogo() || COMPANY_DETAILS.logoUrl || '/samyak-logo.png';
 
   return (
-    <div ref={ref} className="printable-landscape-card" style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '16px 20px', boxSizing: 'border-box', width: '100%' }}>
+    <div ref={ref} className="printable-landscape-card" data-pdf-file-name={fileName || ''} style={{ background: '#ffffff', color: '#000000', fontFamily: 'Inter, Arial, sans-serif', padding: '16px 20px', boxSizing: 'border-box', width: '100%' }}>
       <style>{`
         @media print {
           @page {
@@ -367,22 +368,28 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     }
   }, [layers]);
 
-  const handleReactToPrint = useReactToPrint({ 
+  const jobCardFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.jobCard,
+    number: formData.jobMasterId || formData.id || formData.skuCode || formData.sku || formData.jobName || 'Draft',
+  });
+  const jobCardFileBaseRef = useRef(jobCardFileBase);
+  jobCardFileBaseRef.current = jobCardFileBase;
+
+  const handleReactToPrint = useReactToPrint({
     contentRef: componentRef,
-    documentTitle: `Job_Card_${(formData.jobName || 'Draft').replace(/[^a-zA-Z0-9_-]/g, '_')}` 
+    print: (iframe) => printFrameWithPdfName(iframe, jobCardFileBaseRef.current),
   });
 
   const handlePrint = () => {
     try {
       if (typeof handleReactToPrint === 'function') {
         handleReactToPrint();
-      } else {
-        window.print();
+        return;
       }
     } catch (err) {
       console.warn('ReactToPrint error, falling back to window.print():', err);
-      window.print();
     }
+    printWithPdfName(jobCardFileBaseRef.current);
   };
 
   const handleChange = (e) => {
@@ -1236,6 +1243,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           data={{ ...formData, layers }}
           imagePreview={imagePreview || formData.artworkUrl}
           currentUser={currentUser}
+          fileName={jobCardFileBase}
         />
       </div>
     </div>

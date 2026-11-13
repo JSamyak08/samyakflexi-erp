@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
+import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { displayAmendmentLabel, revisionNumber } from '../utils/poAmendment';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
@@ -107,6 +108,10 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   const totalIgst = gstInfo.igstAmount;
   const totalTax = gstInfo.totalGstAmount;
   const grandTotal = gstInfo.grandTotal;
+  const poFileBase = pdfFileBase({
+    title: PDF_DOCUMENT_TITLES.purchaseOrder,
+    number: currentPoNumber || 'Unnumbered',
+  });
 
   return (
     <div className="pdf-modal-overlay">
@@ -114,13 +119,13 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
         <button className="btn-secondary" onClick={onClose} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ArrowLeft size={16} /> Back to Orders
         </button>
-        <button className="btn-primary" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button className="btn-primary" onClick={() => printWithPdfName(poFileBase)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Printer size={16} /> Print Purchase Order PDF
         </button>
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document" id="printable-po" style={{ fontFamily: "'Inter', 'Segoe UI', sans-serif", color: '#0f172a' }}>
+        <div className="printable-document" id="printable-po" data-pdf-file-name={poFileBase} style={{ fontFamily: "'Inter', 'Segoe UI', sans-serif", color: '#0f172a' }}>
           
           {/* Executive Header Banner */}
           <div className="letterhead-header" style={{ borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
