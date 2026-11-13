@@ -326,6 +326,7 @@ function shape(draft, barcode, rolls) {
       orderId: text(prepared.orderId),
       clientName: text(prepared.clientName || prepared.customerName),
       filmType: text(prepared.filmType),
+      inventoryRolls: rolls,
     });
     return pin(tagged, barcode);
   }

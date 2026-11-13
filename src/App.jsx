@@ -220,6 +220,7 @@ import {
   substrateRollsFromLog
 } from './utils/printingFilmIssue';
 import { planPrintingSfgLot, printingSfgLotCode } from './utils/printingSfgLot';
+import { inheritBalanceDetails } from './utils/balanceRollDetails';
 import { parseOptionalKg } from './utils/productionRecordQuality';
 import { finiteNumber, printLayerSpec, resolveJobMaster } from './utils/jobMasterGuardrails';
 import { factoryCalendarDate } from './services/employeeAttendance';
@@ -4755,6 +4756,7 @@ export default function App() {
       jobName: updatedSfgItem.jobName,
       stage: logEntry.targetProcess
     });
+    const createdBalanceRolls = [];
     for (const balance of balancePlan) {
       try {
         await writeWithRetry(() => setInventoryRollAvailability(balance.parentBarcodeId, {
@@ -4769,14 +4771,15 @@ export default function App() {
         if (!(balance.balanceKg > 0) || !balance.balanceBarcodeId) continue;
         const parent = (inventoryRolls || []).find(roll => (roll.barcodeId || roll.id) === balance.parentBarcodeId);
         const inwardDatetime = new Date().toISOString();
-        const balanceRoll = {
+        const balanceRoll = inheritBalanceDetails({
           id: balance.balanceBarcodeId,
           barcodeId: balance.balanceBarcodeId,
           parentBarcodeId: balance.parentBarcodeId,
+          balanceRoll: true,
           rollType: 'RAW_MATERIAL',
           category: 'Raw Material (RM)',
           itemId: balance.itemId || parent?.itemId || '',
-          itemName: parent?.itemName || `${balance.filmType || 'Film'} - Remaining Balance Roll`,
+          itemName: parent?.itemName || '',
           filmType: balance.filmType || parent?.filmType || '',
           micron: balance.micron ?? parent?.micron ?? null,
           widthMm: balance.widthMm ?? parent?.widthMm ?? null,
@@ -4786,13 +4789,17 @@ export default function App() {
           orderId: balance.orderId || parent?.orderId || '',
           jobName: balance.jobName || parent?.jobName || '',
           jobCode: parent?.jobCode || '',
+          clientName: parent?.clientName || updatedSfgItem.clientName || '',
           status: 'In Stock (RM)',
           qcStatus: 'Approved',
           inwardDatetime,
           productionDate: inwardDatetime.split('T')[0],
-          locationBay: parent?.locationBay || 'RM Store - Substrate Rolls'
-        };
+          locationBay: parent?.locationBay || 'RM Store - Substrate Rolls',
+          lengthMeters: parent?.balanceLengthMeters || null,
+          metadata: { balanceRoll: true, parentBarcodeId: balance.parentBarcodeId }
+        }, { rolls: inventoryRolls, inventory });
         await writeWithRetry(() => saveInventoryRollToSupabase(balanceRoll));
+        createdBalanceRolls.push(balanceRoll);
         setInventoryRolls(prev => [balanceRoll, ...prev.filter(roll => (roll.barcodeId || roll.id) !== balance.balanceBarcodeId)]);
       } catch (e) {
         followUpFailures.push({ label: `substrate balance ${balance.parentBarcodeId}`, error: e });
@@ -5002,7 +5009,7 @@ export default function App() {
       `SFG consumption for ${updatedSfgItem.sfgBatchCode} was saved (${updatedSfgItem.availableKg} kg remaining). Do not submit this consumption again.`,
       followUpFailures
     );
-    return packingResult;
+    return { ...(packingResult || {}), balanceRolls: createdBalanceRolls };
   };
 
   const refreshAfterConsumptionRevert = async () => {

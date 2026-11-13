@@ -5065,6 +5065,7 @@ export default function InventoryManagement({
           rolls={selectedRollForBarcodeModal} 
           roll={selectedRollForBarcodeModal} 
           inventory={inventory}
+          inventoryRolls={inventoryRolls}
           inks={inks}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />

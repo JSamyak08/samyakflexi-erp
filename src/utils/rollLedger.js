@@ -31,7 +31,15 @@ export function mapRollLedgerRow(row) {
     stockItemId: row.stock_item_id || row.stockItemId || '',
     occurredAt: row.occurred_at || row.occurredAt || null,
     itemName: row.item_name || row.itemName || '',
-    filmType: row.film_type || row.filmType || ''
+    filmType: row.film_type || row.filmType || '',
+    vendorName: row.vendor_name || row.vendorName || '',
+    batchNo: row.batch_no || row.batchNo || '',
+    purchaseRate: Number(row.purchase_rate ?? row.purchaseRate ?? row.purchaseRatePerKg) || 0,
+    grnNo: row.grn_no || row.grnNo || '',
+    parentNetKg: Number(row.parent_net_kg ?? row.parentNetKg ?? row.originalNetWeightKg) || 0,
+    parentInwardAt: row.parent_inward_at || row.parentInwardAt || row.parentInwardDatetime || null,
+    micron: row.micron,
+    widthMm: row.width_mm ?? row.widthMm
   };
 }
 
@@ -65,8 +73,12 @@ export function rollLedgerTransactions(entries) {
       partyName: link.jobName || 'Production job',
       subParty: link.stage || 'Roll consumption',
       barcode: entry.barcode || '',
-      batchNo: entry.barcode || '',
-      ratePerKg: 0,
+      batchNo: entry.batchNo || entry.barcode || '',
+      vendorName: entry.vendorName || '',
+      itemName: entry.itemName || '',
+      grnNo: entry.grnNo || '',
+      parentNetKg: entry.parentNetKg || 0,
+      ratePerKg: entry.purchaseRate || 0,
       unitPrice: 0,
       totalValue: 0,
       adjQtyKg: 0,
@@ -83,7 +95,15 @@ export function rollLedgerTransactions(entries) {
         inwardQtyKg: entry.qtyKg,
         outwardQtyKg: 0,
         status: 'In Stock (RM)',
-        notes: `Balance roll ${entry.barcode || ''} returned to stock. ${link.label}`
+        subParty: [entry.vendorName ? `Vendor: ${entry.vendorName}` : '', entry.batchNo ? `Batch: ${entry.batchNo}` : ''].filter(Boolean).join(' · ') || link.stage || 'Roll consumption',
+        notes: [
+          `Balance roll ${entry.barcode || ''} returned to stock.`,
+          entry.parentBarcode ? `Split from ${entry.parentBarcode}.` : '',
+          entry.itemName ? `Item ${entry.itemName}.` : '',
+          entry.grnNo ? `GRN ${entry.grnNo}.` : '',
+          entry.parentNetKg ? `Original net ${entry.parentNetKg} kg.` : '',
+          link.label
+        ].filter(Boolean).join(' ')
       }];
     }
     if (entry.entryKind !== 'issue') return [];

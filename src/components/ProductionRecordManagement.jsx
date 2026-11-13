@@ -2319,6 +2319,7 @@ export default function ProductionRecordManagement({
           rolls={selectedRollForBarcodeModal} 
           roll={selectedRollForBarcodeModal} 
           inventory={inventory}
+          inventoryRolls={inventoryRolls}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
       )}
@@ -5495,6 +5496,7 @@ export default function ProductionRecordManagement({
         <BarcodePrinterModal 
           roll={selectedRollForBarcodeModal} 
           inventory={inventory}
+          inventoryRolls={inventoryRolls}
           onClose={() => setSelectedRollForBarcodeModal(null)} 
         />
       )}

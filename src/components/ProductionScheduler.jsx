@@ -1230,6 +1230,8 @@ export default function ProductionScheduler({
         balanceRolls: rollsEligibleForBarcodeLabel(withEnteredBalanceMeters(balanceRolls, rollsForSave)),
         consumedRolls: rollsForSave,
         outputRecorded: true,
+        inventoryRolls,
+        inventory,
         notice: check.value.usable
           ? 'Printed rolls were saved to the SFG store. Print the balance-roll tag below.'
           : `Printed quantity was saved to the QC Hold Store (${check.value.reason}). Print the balance-roll tag below.`
@@ -1645,7 +1647,9 @@ export default function ProductionScheduler({
         printedRolls: rollsEligibleForBarcodeLabel(printedRolls),
         balanceRolls: rollsEligibleForBarcodeLabel(withEnteredBalanceMeters(balanceRolls, rollsForSave)),
         consumedRolls,
-        outputRecorded: endResult?.outputRecorded !== false
+        outputRecorded: endResult?.outputRecorded !== false,
+        inventoryRolls,
+        inventory
       });
     } catch (err) {
       console.error("Error ending printing job:", err);
@@ -2606,7 +2610,11 @@ export default function ProductionScheduler({
                         data-testid="print-run-history-output"
                         className="btn-secondary"
                         style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        onClick={() => setCompletionSummary(completionForOrder({ order, sfgGoods, inventoryRolls }))}
+                        onClick={() => setCompletionSummary({
+                          ...completionForOrder({ order, sfgGoods, inventoryRolls }),
+                          inventoryRolls,
+                          inventory
+                        })}
                       >
                         <Tag size={14} /> Rolls & labels
                       </button>
@@ -4114,7 +4122,9 @@ export default function ProductionScheduler({
 
       {selectedRollsForAutoPrint && (
         <BarcodePrinterModal 
-          rolls={selectedRollsForAutoPrint} 
+          rolls={selectedRollsForAutoPrint}
+          inventory={inventory}
+          inventoryRolls={inventoryRolls}
           onClose={() => setSelectedRollsForAutoPrint(null)} 
         />
       )}

@@ -56,10 +56,12 @@ export default function PrintRunCompletionSummary({
   consumedRolls = [],
   outputRecorded = true,
   notice = '',
+  inventoryRolls = [],
+  inventory = [],
   onPrint,
   onClose
 }) {
-  const context = { jobName, jobCode, orderId, clientName, filmType };
+  const context = { jobName, jobCode, orderId, clientName, filmType, inventoryRolls, inventory };
   const printable = rollsEligibleForBarcodeLabel([
     ...printedRolls.map((roll) => labelRoll(roll, context)),
     ...balanceRolls.map((roll) => labelRoll({ ...roll, rollType: 'RAW_MATERIAL' }, context))

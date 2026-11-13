@@ -256,6 +256,7 @@ export default function BarcodeRegistry({
         <BarcodePrinterModal
           roll={reprintRoll}
           inventory={inventory}
+          inventoryRolls={inventoryRolls}
           inks={inks}
           variant="reprint"
           onClose={() => setReprintRoll(null)}
