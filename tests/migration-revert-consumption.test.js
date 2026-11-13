@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const migrationSql = fs.readFileSync(
-  new URL('../supabase/migrations/20261113120000_revert_sfg_consumption.sql', import.meta.url),
+  new URL('../supabase/migrations/20261113190000_revert_sfg_consumption.sql', import.meta.url),
   'utf8'
 );
 
