@@ -34,12 +34,21 @@ test('auto-close boundaries are 90 to 110 percent when a challan exists and noth
   assert.equal(at1100.order.closeMode, 'auto');
 
   const at1101 = evaluateOrderAutoClose({ order: order(), challans: [challan(1101)], settings });
-  assert.equal(at1101.action, 'over-dispatch');
-  assert.notEqual(at1101.order.status, 'Completed');
-  assert.match(at1101.order.overDispatchWarning, /stays open/);
+  assert.equal(at1101.action, 'close');
+  assert.equal(at1101.order.status, 'Completed');
+  assert.equal(at1101.order.closeMode, 'auto');
+  assert.equal(at1101.order.overDispatchWarning, null);
+
+  const kasa = evaluateOrderAutoClose({
+    order: { id: 'ORD-2026-230', jobName: 'Kasa Creamy Donuts', orderQtyKg: 1000, status: 'In Production', overDispatchWarning: 'stays open' },
+    challans: [{ id: 'DC-K', orderId: 'ORD-2026-230', jobName: 'Kasa Creamy Donuts', status: 'Issued', items: [{ quantity: '1137.1', unit: 'Kg' }] }],
+    settings
+  });
+  assert.equal(kasa.order.status, 'Completed');
+  assert.equal(kasa.order.overDispatchWarning, null);
 });
 
-test('leftover SFG or FG keeps the order open', () => {
+test('leftover SFG or FG does not keep a dispatched order open', () => {
   const settings = { enabled: true, tolerancePct: 10 };
   const sfgLeft = evaluateOrderAutoClose({
     order: order(),
@@ -47,8 +56,8 @@ test('leftover SFG or FG keeps the order open', () => {
     sfgGoods: [{ orderId: 'ORD-1', availableKg: 12, sfgType: 'Printed Rolls', sfgBatchCode: 'SFG-1' }],
     settings
   });
-  assert.equal(sfgLeft.action, 'none');
-  assert.equal(sfgLeft.order.status, 'In Production');
+  assert.equal(sfgLeft.action, 'close');
+  assert.equal(sfgLeft.order.status, 'Completed');
 
   const fgLeft = evaluateOrderAutoClose({
     order: order(),
@@ -56,8 +65,16 @@ test('leftover SFG or FG keeps the order open', () => {
     sfgGoods: [{ orderId: 'ORD-1', availableKg: 8, sfgType: 'Finished Goods', sfgBatchCode: 'FG-1' }],
     settings
   });
-  assert.equal(fgLeft.changed, false);
-  assert.notEqual(fgLeft.order.status, 'Completed');
+  assert.equal(fgLeft.order.status, 'Completed');
+
+  const filledAfter = evaluateOrderAutoClose({
+    order: { ...order(), status: 'Completed', closeMode: 'auto', closedBy: 'auto-close' },
+    challans: [challan(1137.1)],
+    sfgGoods: [{ orderId: 'ORD-1', availableKg: 40, sfgType: 'Slit Rolls', sfgBatchCode: 'SFG-AFTER' }],
+    settings
+  });
+  assert.equal(filledAfter.order.status, 'Completed');
+  assert.equal(filledAfter.changed, false);
 });
 
 test('an open packing list is not dispatched weight until it is finalised', () => {

@@ -6952,6 +6952,7 @@ export default function App() {
             sfgGoods={sfgGoods}
             productionRecords={productionRecords}
             inventoryRolls={inventoryRolls}
+            orderCloseSettings={orderCloseSettings}
             currentUser={currentUser}
             onSaveDeliveryChallan={handleSaveDeliveryChallan}
             onDeleteDeliveryChallan={handleDeleteDeliveryChallan}

@@ -1,11 +1,16 @@
 /**
  * Order close rules.
- * Auto-close only when dispatched FG is within ±10% of the order quantity,
- * a challan or shipment exists, and no blocking SFG or undispatched FG remains.
+ * Completed means dispatched kg is at or above the lower bound of the
+ * auto-close band (default 10% below the order quantity). That includes a
+ * dispatch above the upper bound. Balance Dispatch Pending means a challan
+ * or finalised packing list exists and the dispatched kg is still below
+ * that lower bound.
+ * Leftover SFG or FG does not keep the order open and does not move a
+ * dispatched order back. Production records filled after dispatch stay
+ * off this status.
  * A reusable printed lot (SFG-LOT-) is stock for the next order of the same
- * product. It does not block this close and it is not written off.
- * Other SFG and undispatched FG still keep the order open.
- * There is no 110% cap on SFG or FG quantity that may be produced.
+ * product. It is not written off.
+ * There is no cap on SFG or FG quantity that may be produced.
  * A manual Admin close is sticky: auto-close must not reopen it or replace it.
  */
 
@@ -117,9 +122,14 @@ function matchesOrder(order, doc) {
   return Array.isArray(items) && items.some((item) => lineMatchesOrder(order, item));
 }
 
-export function dispatchedKgForOrder(order, challans = [], shipments = []) {
+export function dispatchedKgForOrder(order, challans = [], shipments = [], options = {}) {
+  const skip = new Set((options.exceptShipmentIds || []).map((id) => String(id || '').trim()).filter(Boolean));
   const eligibleChallans = (challans || []).filter(countsAsDispatchDocument);
-  const eligibleShipments = (shipments || []).filter(countsAsDispatchDocument);
+  const eligibleShipments = (shipments || []).filter((doc) => {
+    if (!countsAsDispatchDocument(doc)) return false;
+    if (skip.has(String(doc?.dispatchId || '').trim()) || skip.has(String(doc?.id || '').trim())) return false;
+    return true;
+  });
   const challanKg = eligibleChallans
     .filter((doc) => matchesOrder(order, doc))
     .reduce((sum, doc) => sum + documentDispatchKg(doc, order), 0);
@@ -212,16 +222,20 @@ export function evaluateOrderAutoClose({
     return unchanged(order, 'completed-not-auto');
   }
 
+  // Production stock left in the store does not decide this status.
+  void sfgGoods;
   const orderQty = Number(order.orderQtyKg) || 0;
   const dispatched = dispatchedKgForOrder(order, challans, shipments);
-  const stock = remainingStockForOrder(order, sfgGoods);
   const low = 1 - (config.tolerancePct / 100);
-  const high = 1 + (config.tolerancePct / 100);
   const ratio = orderQty > 0 ? dispatched.kg / orderQty : null;
-  const inBand = ratio !== null && ratio + 1e-9 >= low && ratio - 1e-9 <= high;
-  const qualifies = Boolean(dispatched.hasDocument && inBand && !stock.hasLeftover && orderQty > 0);
+  // At or above the lower bound, including a dispatch above the upper bound.
+  const atOrAbove = Boolean(
+    dispatched.hasDocument && orderQty > 0 && ratio !== null && ratio + 1e-9 >= low
+  );
+  const short = Boolean(dispatched.kg > 0 && orderQty > 0 && ratio !== null && ratio + 1e-9 < low);
+  const closeReason = `Dispatched ${dispatched.kg} kg is at or above the lower bound (${config.tolerancePct}% below order quantity ${orderQty} kg).`;
 
-  if (qualifies) {
+  if (atOrAbove) {
     const next = {
       ...order,
       status: 'Completed',
@@ -229,7 +243,7 @@ export function evaluateOrderAutoClose({
       closeWrite: true,
       closedBy: 'auto-close',
       closedAt: order.closeMode === 'auto' && order.closedAt ? order.closedAt : now,
-      closeReason: `Dispatched ${dispatched.kg} kg is within ±${config.tolerancePct}% of order quantity ${orderQty} kg. Any printed-lot balance stays in the SFG store.`,
+      closeReason,
       overDispatchWarning: null
     };
     if (sameClose(order, next)) return unchanged(order, 'already-auto-closed');
@@ -238,12 +252,9 @@ export function evaluateOrderAutoClose({
       changed: true,
       order: next,
       audit: `Auto-closed order ${order.id}. ${next.closeReason}`,
-      reason: 'in-band'
+      reason: 'at-or-above-lower-bound'
     };
   }
-
-  const short = Boolean(dispatched.kg > 0 && orderQty > 0 && ratio !== null && ratio < low);
-  const overWarning = `Dispatched ${dispatched.kg} kg is above ${config.tolerancePct}% of order quantity ${orderQty} kg. The order stays open.`;
 
   if (order.status === 'Completed' && order.closeMode === 'auto') {
     const nextStatus = short ? BALANCE_DISPATCH_PENDING : 'In Production';
@@ -255,32 +266,14 @@ export function evaluateOrderAutoClose({
       closedBy: null,
       closedAt: null,
       closeReason: null,
-      overDispatchWarning: ratio !== null && ratio > high ? overWarning : null
+      overDispatchWarning: null
     };
     return {
       action: 'reopen',
       changed: true,
       order: next,
-      audit: `Reopened auto-closed order ${order.id} because it no longer matches the ±${config.tolerancePct}% rule.`,
+      audit: `Reopened auto-closed order ${order.id} because dispatched kg is no longer at or above the lower bound.`,
       reason: 'auto-no-longer-qualifies'
-    };
-  }
-
-  if (ratio !== null && ratio > high && dispatched.hasDocument) {
-    const next = {
-      ...order,
-      overDispatchWarning: overWarning,
-      status: isBalanceDispatchStatus(order.status) ? 'In Production' : order.status
-    };
-    if ((order.overDispatchWarning || null) === overWarning && next.status === order.status) {
-      return unchanged(order, 'over-dispatch-already');
-    }
-    return {
-      action: 'over-dispatch',
-      changed: true,
-      order: next,
-      audit: `Over-dispatch warning on order ${order.id}. ${overWarning}`,
-      reason: 'over-dispatch'
     };
   }
 
@@ -306,7 +299,7 @@ export function evaluateOrderAutoClose({
     };
   }
 
-  if (order.overDispatchWarning && !(ratio > high)) {
+  if (order.overDispatchWarning) {
     return {
       action: 'clear-warning',
       changed: true,
@@ -316,7 +309,7 @@ export function evaluateOrderAutoClose({
     };
   }
 
-  return unchanged(order, stock.hasLeftover ? 'leftover-stock' : 'outside-band-or-no-document');
+  return unchanged(order, 'outside-band-or-no-document');
 }
 
 export function planAutoCloseUpdates(orders, context) {

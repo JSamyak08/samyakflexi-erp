@@ -4,12 +4,15 @@ import {
   formatSaleChallanConflicts,
   itemsForShipment,
   ordersOnShipment,
+  packingListDcAction,
   replacePackingListOnChallan,
   rollWithTare,
   saleChallanConflicts,
   syncChallansForShipment,
   tareEditSummary,
 } from '../src/utils/deliveryChallanGuard.js';
+import { liveGainLossForShipment } from '../src/utils/dispatchPacking.js';
+import { preserveDispatchStatus } from '../src/utils/printRun.js';
 import { getOrderStageInfo } from '../src/factoryStore.js';
 
 const orders = [
@@ -37,23 +40,73 @@ test('a packing list can name every job order on its rolls', () => {
   assert.deepEqual(found, ['ORD-A', 'ORD-B']);
 });
 
-test('one sale challan blocks every order already on it, including a shared packing list', () => {
+test('a short order may take one balance challan, and a completed dispatch may not', () => {
   const challans = [{
     id: 'DC-1',
     challanNo: 'SIL/DC/26-27/200',
     challanNature: 'Sale of Goods',
     jobName: 'Alpha Pouch',
     linkedPackingListIds: ['PL-1'],
-    items: [{ orderId: 'ORD-A', jobName: 'Alpha Pouch', quantity: 40, unit: 'Kg', packingListId: 'PL-1' }],
+    items: [
+      { orderId: 'ORD-A', jobName: 'Alpha Pouch', quantity: 40, unit: 'Kg', packingListId: 'PL-1' },
+      { orderId: 'ORD-B', jobName: 'Beta Pouch', quantity: 60, unit: 'Kg', packingListId: 'PL-1' },
+    ],
   }];
-  const conflicts = saleChallanConflicts(ordersOnShipment(shipment(), orders), challans, [shipment()]);
-  assert.deepEqual(conflicts.map((row) => row.orderId).sort(), ['ORD-A', 'ORD-B']);
-  assert.equal(conflicts[0].challanNo, 'SIL/DC/26-27/200');
-  assert.match(formatSaleChallanConflicts(conflicts), /ORD-A/);
-  assert.match(formatSaleChallanConflicts(conflicts), /second challan is not issued/);
+  const balance = saleChallanConflicts(ordersOnShipment(shipment(), orders), challans, [shipment()]);
+  assert.equal(balance.length, 0);
+
+  const completedOrder = { ...orders[0], orderQtyKg: 40 };
+  const blocked = saleChallanConflicts([completedOrder], challans, [shipment()]);
+  assert.deepEqual(blocked.map((row) => row.orderId), ['ORD-A']);
+  assert.match(formatSaleChallanConflicts(blocked), /another challan is not issued/);
+
+  const second = {
+    id: 'DC-2',
+    challanNo: 'SIL/DC/26-27/201',
+    challanNature: 'Sale of Goods',
+    orderId: 'ORD-A',
+    items: [{ orderId: 'ORD-A', quantity: 20, unit: 'Kg' }],
+  };
+  const third = saleChallanConflicts([orders[0]], [challans[0], second], [shipment()]);
+  assert.equal(third[0].reason, 'balance-used');
+  assert.match(formatSaleChallanConflicts(third), /third challan is not issued/);
 
   const editing = saleChallanConflicts(orders, challans, [shipment()], { exceptChallanId: 'DC-1' });
   assert.equal(editing.length, 0);
+
+  const issued = packingListDcAction(shipment(), { orders, challans, shipments: [shipment()] });
+  assert.equal(issued.action, 'edit');
+  assert.equal(issued.challan.challanNo, 'SIL/DC/26-27/200');
+  const leftover = packingListDcAction(
+    { ...shipment(), id: 'DISP-2', dispatchId: 'PL-2', items: [{ orderId: 'ORD-A', jobName: 'Alpha Pouch', netWeightKg: 30, unit: 'Kg' }] },
+    { orders, challans, shipments: [shipment()] }
+  );
+  assert.equal(leftover.action, 'issue');
+});
+
+test('the packing list being issued does not count as dispatch already finished', () => {
+  const challans = [{
+    id: 'DC-1',
+    challanNo: 'SIL/DC/26-27/200',
+    challanNature: 'Sale of Goods',
+    items: [{ orderId: 'ORD-B', quantity: 90, unit: 'Kg' }],
+  }];
+  const first = {
+    id: 'DISP-1',
+    dispatchId: 'PL-1',
+    packingStatus: 'Finalised',
+    items: [{ orderId: 'ORD-B', jobName: 'Beta Pouch', netWeightKg: 90, unit: 'Kg' }],
+  };
+  const balance = {
+    id: 'DISP-2',
+    dispatchId: 'PL-2',
+    packingStatus: 'Finalised',
+    orderId: 'ORD-B',
+    items: [{ orderId: 'ORD-B', jobName: 'Beta Pouch', netWeightKg: 100, unit: 'Kg' }],
+  };
+  assert.equal(saleChallanConflicts([orders[1]], challans, [first, balance]).length, 1);
+  assert.equal(saleChallanConflicts([orders[1]], challans, [first, balance], { exceptShipmentIds: ['PL-2'] }).length, 0);
+  assert.equal(packingListDcAction(balance, { orders, challans, shipments: [first, balance] }).action, 'issue');
 });
 
 test('a returnable challan does not block a sale challan', () => {
@@ -128,11 +181,30 @@ test('a sale challan moves a slitting job to dispatch or balance dispatch pendin
     shipments: [],
     settings: { enabled: true, tolerancePct: 10 },
   });
-  assert.equal(over.stage, 'Dispatched');
+  assert.equal(over.stage, 'Completed');
+  assert.match(over.stageLabel, /Completed/);
   const short = getOrderStageInfo({ ...order, orderQtyKg: 1000 }, slitting, records, {
     challans: [{ id: 'DC-S', orderId: 'ORD-SLIT', challanNature: 'Sale of Goods', items: [{ quantity: 400, unit: 'Kg' }] }],
     shipments: [],
     settings: { tolerancePct: 10 },
   });
   assert.equal(short.stage, 'Balance Dispatch Pending');
+});
+
+test('gain/loss follows the production record filled after dispatch', () => {
+  const list = shipment({ totalNetWeightKg: 100, items: [{ orderId: 'ORD-A', jobName: 'Alpha Pouch', netWeightKg: 100, unit: 'Kg' }] });
+  const before = liveGainLossForShipment(list, []);
+  assert.equal(before.consumedKg, 0);
+  const after = liveGainLossForShipment(list, [{ orderId: 'ORD-A', jobName: 'Alpha Pouch', qtySlitting: '110' }]);
+  assert.equal(after.consumedKg, 110);
+  assert.equal(after.packedNetKg, 100);
+  assert.equal(after.differenceKg, -10);
+  assert.equal(after.direction, 'loss');
+});
+
+test('a production write does not put a dispatched order back to In Production', () => {
+  assert.equal(preserveDispatchStatus('Completed', 'In Production'), 'Completed');
+  assert.equal(preserveDispatchStatus('Balance Dispatch Pending', 'In Production'), 'Balance Dispatch Pending');
+  assert.equal(preserveDispatchStatus('In Production', 'In Production'), 'In Production');
+  assert.equal(preserveDispatchStatus('Completed', 'Balance Dispatch Pending'), 'Balance Dispatch Pending');
 });

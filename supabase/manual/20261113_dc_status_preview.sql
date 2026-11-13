@@ -1,11 +1,11 @@
 -- Read-only preview. Do not update production.
 -- Lists job orders that already have a non-cancelled Sale of Goods delivery
 -- challan and whose order status is still a pre-dispatch status.
--- Suggested status uses the same auto-close band (default ±10%):
---   in band and no leftover stock -> Completed
---   dispatched kg below the band   -> Balance Dispatch Pending
---   above the band                  -> stays open (over dispatch)
--- Printed lots (SFG-LOT-) are not leftover. Cancelled challans are ignored.
+-- Suggested status uses the lower bound of the auto-close band (default 10%):
+--   dispatched kg at or above that bound, including over the upper bound -> Completed
+--   dispatched kg below that bound -> Balance Dispatch Pending
+-- Kasa Creamy Donuts (1,137.10 kg against 1,000 kg) is Completed.
+-- Cancelled challans are ignored. Leftover stock does not change the suggestion.
 -- A challan line that names an order is counted only for that order.
 -- When the lines do not name an order, the whole challan counts if its
 -- job name or order id matches. A finalised packing list is included the
@@ -129,8 +129,7 @@ SELECT
   CASE
     WHEN o.close_mode = 'manual' THEN 'leave (manual close)'
     WHEN COALESCE(o.order_qty_kg, 0) <= 0 THEN 'review (no order quantity)'
-    WHEN COALESCE(k.kg, 0) / o.order_qty_kg > 1.10 THEN 'leave open (over the +10% auto-close band)'
-    WHEN COALESCE(k.kg, 0) / o.order_qty_kg >= 0.90 THEN 'Completed, if no leftover SFG/FG stock'
+    WHEN COALESCE(k.kg, 0) / o.order_qty_kg >= 0.90 THEN 'Completed'
     ELSE 'Balance Dispatch Pending'
   END AS suggested_status
 FROM public.orders AS o

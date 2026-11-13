@@ -5,9 +5,11 @@
 -- preview in 20261113_dc_status_preview.sql has been read.
 --
 -- Requires migration 20261113220000_delivery_challan_once.sql so
--- private.refresh_order_dispatch_status exists. The function uses the same
--- dispatched-kg rule as order close: finalised packing lists and delivery
--- challans, cancelled documents ignored, no double counting.
+-- private.refresh_order_dispatch_status exists. The function completes an
+-- order when dispatched kg is at or above the lower bound, including a
+-- dispatch above the upper bound (Kasa Creamy Donuts, 1,137.10 kg of a
+-- 1,000 kg order, becomes Completed). Below that bound the status is
+-- Balance Dispatch Pending. Leftover stock does not keep the order open.
 -- Existing challan numbers are not changed.
 
 BEGIN;

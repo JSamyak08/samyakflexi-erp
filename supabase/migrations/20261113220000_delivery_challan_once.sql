@@ -11,21 +11,27 @@
 -- current prefix. A number that already exists, including a legacy
 -- duplicate, cannot be issued again.
 --
--- Editing the challan that already covers an order is allowed. Adding an
--- order that already has another active Sale of Goods challan is not.
--- Returnable and job-work challans are not part of that rule.
--- A later packing list of balance rolls does not get a second Sale of
--- Goods challan for the same order.
+-- Editing the challan that already covers an order is allowed. A job
+-- order whose dispatch is at or above the lower bound does not get
+-- another Sale of Goods challan. An order that is still below that bound
+-- may get one more Sale of Goods challan, from a new packing list of the
+-- leftover rolls. A third challan is rejected. Returnable and job-work
+-- challans are not part of that rule. A packing list that already has a
+-- challan is edited, never re-issued.
 --
 -- When a challan or finalised packing list changes, the order status
--- follows the existing auto-close rule. Dispatched kg is
--- private.order_dispatched_kg: finalised packing-list roll net weights
--- and delivery-challan kg lines, cancelled documents ignored, and the
--- larger of the two totals kept so the same goods are not added twice.
--- Within the tolerance band and with no leftover stock (printed SFG-LOT-
--- lots do not count) the order becomes Completed. A smaller quantity
--- becomes Balance Dispatch Pending. Above the band the order stays open.
+-- follows dispatched kg from private.order_dispatched_kg: finalised
+-- packing-list roll net weights and delivery-challan kg lines, cancelled
+-- documents ignored, and the larger of the two totals kept so the same
+-- goods are not added twice. At or above the lower bound of the tolerance
+-- band (including a dispatch above the upper bound) the order becomes
+-- Completed. Below that bound it becomes Balance Dispatch Pending.
+-- Leftover stock does not keep it open and does not move it back.
 -- Cancelling the challan runs the same rule again.
+-- A production or print write that only sets status back to In Production
+-- leaves Completed, Balance Dispatch Pending, and Partially Dispatched
+-- in place. The dispatch status writer sets samyak.dispatch_status_write
+-- so a real reopen still goes through.
 --
 -- Timestamp is after 20261113210000_wastage_pct_of_dispatch.sql.
 -- private.order_dispatched_kg keeps that migration's rule for a document
@@ -203,7 +209,15 @@ END;
 $$;
 
 -- Same quantity the order-close rule and the dispatch wastage percentage use.
-CREATE OR REPLACE FUNCTION private.order_dispatched_kg(p_order_id text, p_job_name text)
+-- p_except_shipment_ids, when passed, leaves those packing lists out. Issuing
+-- a balance challan from a list that was just finalised must not treat that
+-- list as dispatch that already closed the order.
+DROP FUNCTION IF EXISTS private.order_dispatched_kg(text, text);
+CREATE OR REPLACE FUNCTION private.order_dispatched_kg(
+  p_order_id text,
+  p_job_name text,
+  p_except_shipment_ids text[] DEFAULT NULL
+)
 RETURNS numeric
 LANGUAGE plpgsql
 STABLE
@@ -248,7 +262,12 @@ BEGIN
       )
     ), 0)
       INTO shipment_kg
-    FROM public.dispatch_shipments AS s;
+    FROM public.dispatch_shipments AS s
+    WHERE p_except_shipment_ids IS NULL
+       OR (
+         COALESCE(s.dispatch_id, '') <> ALL (p_except_shipment_ids)
+         AND COALESCE(s.id, '') <> ALL (p_except_shipment_ids)
+       );
   END IF;
 
   IF challan_kg > 0 AND shipment_kg > 0 THEN
@@ -585,6 +604,7 @@ DECLARE
   details jsonb;
   parsed boolean := false;
 BEGIN
+  PERFORM set_config('samyak.dispatch_status_write', '1', true);
   SELECT * INTO row FROM public.orders WHERE id = p_order_id FOR UPDATE;
   IF NOT FOUND THEN
     RETURN;
@@ -705,36 +725,21 @@ BEGIN
 
   job_key := private.clean_job_name(row.job_name);
   dispatched := COALESCE(private.order_dispatched_kg(row.id, job_key), 0);
-  IF to_regclass('public.sfg_goods') IS NOT NULL THEN
-    SELECT COALESCE(sum(GREATEST(COALESCE(g.available_kg, GREATEST(COALESCE(g.total_net_kg, 0) - COALESCE(g.consumed_kg, 0), 0)), 0)), 0)
-      INTO leftover
-    FROM public.sfg_goods AS g
-    WHERE GREATEST(COALESCE(g.available_kg, GREATEST(COALESCE(g.total_net_kg, 0) - COALESCE(g.consumed_kg, 0), 0)), 0) > 0.05
-      AND COALESCE(g.sfg_batch_code, '') NOT LIKE 'SFG-LOT-%'
-      AND (
-        lower(btrim(regexp_replace(COALESCE(g.order_id, ''), '^(PR-|REC-)', '', 'i')))
-          = lower(btrim(regexp_replace(row.id, '^(PR-|REC-)', '', 'i')))
-        OR (
-          job_key <> ''
-          AND private.clean_job_name(g.job_name) = job_key
-        )
-      );
-  END IF;
+  -- Leftover SFG/FG is intentionally not read. Filling production after
+  -- dispatch must not move a Completed or Balance Dispatch Pending order back.
 
   low := 1 - (tolerance / 100);
-  high := 1 + (tolerance / 100);
   IF COALESCE(row.order_qty_kg, 0) > 0 THEN
     ratio := dispatched / row.order_qty_kg;
   END IF;
-  in_band := ratio IS NOT NULL AND ratio + 0.000000001 >= low AND ratio - 0.000000001 <= high;
-  qualifies := dispatched > 0 AND in_band AND COALESCE(leftover, 0) <= 0.05 AND COALESCE(row.order_qty_kg, 0) > 0;
-  short := dispatched > 0 AND COALESCE(row.order_qty_kg, 0) > 0 AND ratio IS NOT NULL AND ratio < low;
-  IF ratio IS NOT NULL AND ratio > high AND dispatched > 0 THEN
-    warning := 'Dispatched ' || trim(to_char(dispatched, 'FM999999990.00'))
-      || ' kg is above ' || trim(to_char(tolerance, 'FM999990.00'))
-      || '% of order quantity ' || trim(to_char(row.order_qty_kg, 'FM999999990.00'))
-      || ' kg. The order stays open.';
-  END IF;
+  qualifies := dispatched > 0
+    AND ratio IS NOT NULL
+    AND ratio + 0.000000001 >= low
+    AND COALESCE(row.order_qty_kg, 0) > 0;
+  short := dispatched > 0
+    AND COALESCE(row.order_qty_kg, 0) > 0
+    AND ratio IS NOT NULL
+    AND ratio + 0.000000001 < low;
 
   IF qualifies THEN
     PERFORM private.write_order_dispatch_status(
@@ -744,9 +749,11 @@ BEGIN
       'auto-close',
       CASE WHEN row.close_mode = 'auto' AND row.closed_at IS NOT NULL THEN row.closed_at ELSE now() END,
       'Dispatched ' || trim(to_char(dispatched, 'FM999999990.00'))
-        || ' kg is within ±' || trim(to_char(tolerance, 'FM999990.00'))
-        || '% of order quantity ' || trim(to_char(row.order_qty_kg, 'FM999999990.00'))
-        || ' kg. Any printed-lot balance stays in the SFG store.',
+        || ' kg is at or above the lower bound ('
+        || trim(to_char(tolerance, 'FM999990.00'))
+        || '% below order quantity '
+        || trim(to_char(row.order_qty_kg, 'FM999999990.00'))
+        || ' kg).',
       NULL
     );
     RETURN;
@@ -754,18 +761,7 @@ BEGIN
 
   IF row.status = 'Completed' AND row.close_mode = 'auto' THEN
     next_status := CASE WHEN short THEN 'Balance Dispatch Pending' ELSE 'In Production' END;
-    PERFORM private.write_order_dispatch_status(row.id, next_status, NULL, NULL, NULL, NULL, warning);
-    RETURN;
-  END IF;
-
-  IF warning IS NOT NULL THEN
-    next_status := row.status;
-    IF row.status IN ('Balance Dispatch Pending', 'Partially Dispatched') THEN
-      next_status := 'In Production';
-    END IF;
-    PERFORM private.write_order_dispatch_status(
-      row.id, next_status, row.close_mode, row.closed_by, row.closed_at, row.close_reason, warning
-    );
+    PERFORM private.write_order_dispatch_status(row.id, next_status, NULL, NULL, NULL, NULL, NULL);
     RETURN;
   END IF;
 
@@ -776,6 +772,13 @@ BEGIN
 
   IF row.status IN ('Balance Dispatch Pending', 'Partially Dispatched') AND NOT short AND row.status IS DISTINCT FROM 'On Hold' THEN
     PERFORM private.write_order_dispatch_status(row.id, 'In Production', NULL, NULL, NULL, NULL, NULL);
+    RETURN;
+  END IF;
+
+  IF row.over_dispatch_warning IS NOT NULL THEN
+    PERFORM private.write_order_dispatch_status(
+      row.id, row.status, row.close_mode, row.closed_by, row.closed_at, row.close_reason, NULL
+    );
   END IF;
 END;
 $$;
@@ -815,6 +818,13 @@ DECLARE
   existing_no text;
   existing_order text;
   order_label text;
+  sale_count integer := 0;
+  order_qty numeric := 0;
+  dispatched numeric := 0;
+  except_ids text[] := ARRAY[]::text[];
+  tolerance_raw text;
+  tolerance numeric := 10;
+  low numeric;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     old_orders := ARRAY(SELECT private.orders_covered_by_document(OLD.payload));
@@ -865,18 +875,63 @@ BEGIN
       IF added = ANY (old_orders) THEN
         CONTINUE;
       END IF;
-      SELECT c.challan_no, o.id, private.clean_job_name(o.job_name)
-        INTO existing_no, existing_order, order_label
+      SELECT count(*)::integer,
+             string_agg(c.challan_no, ', ' ORDER BY c.challan_no)
+        INTO sale_count, existing_no
       FROM public.delivery_challans AS c
-      JOIN public.orders AS o ON o.id = added
       WHERE c.id IS DISTINCT FROM NEW.id
         AND private.challan_is_sale(c.payload, c.challan_nature)
         AND NOT private.challan_is_cancelled(c.payload)
-        AND added IN (SELECT private.orders_covered_by_document(c.payload))
-      LIMIT 1;
-      IF existing_no IS NOT NULL THEN
-        RAISE EXCEPTION 'Job order % (%) already has Sale of Goods delivery challan %. A second challan is not issued for the same order.',
-          existing_order, order_label, existing_no
+        AND added IN (SELECT private.orders_covered_by_document(c.payload));
+      IF COALESCE(sale_count, 0) = 0 THEN
+        CONTINUE;
+      END IF;
+      SELECT o.id, private.clean_job_name(o.job_name), COALESCE(o.order_qty_kg, 0)
+        INTO existing_order, order_label, order_qty
+      FROM public.orders AS o
+      WHERE o.id = added;
+      IF sale_count >= 2 THEN
+        RAISE EXCEPTION 'Job order % (%) already has two Sale of Goods delivery challans (%). A third challan is not issued.',
+          COALESCE(existing_order, added), COALESCE(order_label, added), existing_no
+          USING ERRCODE = '23505';
+      END IF;
+      SELECT COALESCE(array_agg(DISTINCT value), ARRAY[]::text[])
+        INTO except_ids
+      FROM (
+        SELECT jsonb_array_elements_text(
+          CASE
+            WHEN jsonb_typeof(NEW.payload->'linkedPackingListIds') = 'array'
+              THEN NEW.payload->'linkedPackingListIds'
+            ELSE '[]'::jsonb
+          END
+        ) AS value
+        UNION
+        SELECT item.value->>'packingListId'
+        FROM jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(NEW.payload->'items') = 'array' THEN NEW.payload->'items'
+            ELSE '[]'::jsonb
+          END
+        ) AS item(value)
+        WHERE nullif(btrim(item.value->>'packingListId'), '') IS NOT NULL
+      ) AS ids
+      WHERE nullif(btrim(value), '') IS NOT NULL;
+      dispatched := COALESCE(private.order_dispatched_kg(added, order_label, except_ids), 0);
+      tolerance_raw := NULL;
+      IF to_regclass('public.system_settings') IS NOT NULL THEN
+        SELECT setting_value INTO tolerance_raw
+        FROM public.system_settings
+        WHERE setting_key = 'order_close_tolerance_pct';
+      END IF;
+      tolerance := 10;
+      IF btrim(coalesce(tolerance_raw, '')) ~ '^[0-9]+(\.[0-9]+)?$' AND btrim(tolerance_raw)::numeric > 0 THEN
+        tolerance := btrim(tolerance_raw)::numeric;
+      END IF;
+      low := 1 - (tolerance / 100);
+      IF COALESCE(order_qty, 0) <= 0
+         OR (dispatched > 0 AND (dispatched / order_qty) + 0.000000001 >= low) THEN
+        RAISE EXCEPTION 'Job order % (%) already has Sale of Goods delivery challan %. Dispatch is at or above the lower bound, so another challan is not issued.',
+          COALESCE(existing_order, added), COALESCE(order_label, added), existing_no
           USING ERRCODE = '23505';
       END IF;
     END LOOP;
@@ -955,13 +1010,45 @@ CREATE TRIGGER guard_dispatch_shipment_status
   FOR EACH ROW
   EXECUTE FUNCTION private.guard_dispatch_shipment_status();
 
+-- A print or production update that only puts the order back to
+-- In Production must not undo a dispatch status. The dispatch writer sets
+-- samyak.dispatch_status_write so a real reopen (cancel, or kg leaving the
+-- lower bound) still changes the status.
+CREATE OR REPLACE FUNCTION private.keep_dispatch_order_status()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  IF coalesce(current_setting('samyak.dispatch_status_write', true), '') = '1' THEN
+    RETURN NEW;
+  END IF;
+  IF TG_OP = 'UPDATE'
+     AND OLD.status IN ('Completed', 'Balance Dispatch Pending', 'Partially Dispatched')
+     AND NEW.status = 'In Production'
+     AND NEW.close_mode IS NOT DISTINCT FROM OLD.close_mode
+     AND NEW.close_reason IS NOT DISTINCT FROM OLD.close_reason
+     AND NEW.closed_at IS NOT DISTINCT FROM OLD.closed_at THEN
+    NEW.status := OLD.status;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS zz_keep_dispatch_order_status ON public.orders;
+CREATE TRIGGER zz_keep_dispatch_order_status
+  BEFORE UPDATE ON public.orders
+  FOR EACH ROW
+  EXECUTE FUNCTION private.keep_dispatch_order_status();
+
 REVOKE ALL ON FUNCTION private.clean_job_name(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_item_kg(jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_document_counts(jsonb, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_document_kg(jsonb, numeric, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_document_matches(jsonb, text, text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_kg_for_order(jsonb, numeric, text, text, text, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text, text[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.challan_is_cancelled(jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.challan_is_sale(jsonb, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.orders_covered_by_document(jsonb) FROM PUBLIC;
@@ -975,6 +1062,7 @@ REVOKE ALL ON FUNCTION private.refresh_orders_dispatch_status(text[]) FROM PUBLI
 REVOKE ALL ON FUNCTION private.guard_delivery_challan_write() FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.refresh_challan_order_status() FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.guard_dispatch_shipment_status() FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.keep_dispatch_order_status() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.allocate_delivery_challan_no() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.release_delivery_challan_no(text) FROM PUBLIC;
 
@@ -983,12 +1071,12 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     EXECUTE 'REVOKE ALL ON FUNCTION public.allocate_delivery_challan_no() FROM anon';
     EXECUTE 'REVOKE ALL ON FUNCTION public.release_delivery_challan_no(text) FROM anon';
-    EXECUTE 'REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text) FROM anon';
+    EXECUTE 'REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text, text[]) FROM anon';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.allocate_delivery_challan_no() TO authenticated';
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.release_delivery_challan_no(text) TO authenticated';
-    EXECUTE 'GRANT EXECUTE ON FUNCTION private.order_dispatched_kg(text, text) TO authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION private.order_dispatched_kg(text, text, text[]) TO authenticated';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.allocate_delivery_challan_no() TO service_role';

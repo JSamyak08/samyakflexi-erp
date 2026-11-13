@@ -35,7 +35,7 @@ test('same product matches jobMasterId and falls back to an exact job name', () 
   assert.equal(sameProduct({ jobName: 'Nyra Original' }, { jobName: 'Nyra Original Outer' }), false);
 });
 
-test('auto-close leaves a printed lot in stock and still blocks on other leftover SFG or FG', () => {
+test('auto-close leaves a printed lot in stock and still completes when other SFG or FG remains', () => {
   const printed = lot();
   const closed = evaluateOrderAutoClose({
     order: { id: 'ORD-OLD', jobName: 'Nyra Original Outer', orderQtyKg: 1000, status: 'In Production' },
@@ -53,7 +53,8 @@ test('auto-close leaves a printed lot in stock and still blocks on other leftove
     sfgGoods: [{ orderId: 'ORD-1', availableKg: 12, sfgType: 'Printed Rolls', sfgBatchCode: 'SFG-1' }],
     settings: { enabled: true, tolerancePct: 10 }
   });
-  assert.equal(blocked.action, 'none');
+  assert.equal(blocked.action, 'close');
+  assert.equal(blocked.order.status, 'Completed');
 });
 
 test('default use takes the whole free printed balance and none leaves the PO quantities', () => {

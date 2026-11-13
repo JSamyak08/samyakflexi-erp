@@ -1,17 +1,26 @@
 /**
- * One Sale of Goods delivery challan per job order, and packing-list edits
- * that update the challan already linked to that list.
+ * Sale of Goods delivery challans, and packing-list edits that update the
+ * challan already linked to that list.
  *
- * A second shipment for a Balance Dispatch Pending order is not issued.
- * The existing challan and its packing list can be edited. Returnable and
- * job-work challans are not part of this rule.
+ * A job order gets one Sale of Goods challan. While it is still Balance
+ * Dispatch Pending (dispatched kg below the lower bound), one more Sale of
+ * Goods challan may be issued from a new packing list of the leftover rolls.
+ * After that second challan the same rule runs again. A dispatch that is
+ * already at or above the lower bound does not get another challan. A
+ * packing list that already has a challan is edited, never re-issued.
+ * Returnable and job-work challans are not part of this rule.
  *
  * Scale #4 records net weight. Core/package tare is typed. Gross is net plus
  * tare. Editing tare keeps the net and recalculates gross.
  */
 
 import { round2 } from './dispatchPacking.js';
-import { cleanJobName } from './orderAutoClose.js';
+import {
+  cleanJobName,
+  dispatchedKgForOrder,
+  isBalanceDispatchStatus,
+  normalizeAutoCloseSettings,
+} from './orderAutoClose.js';
 
 export const SALE_OF_GOODS = 'Sale of Goods';
 
@@ -119,21 +128,44 @@ export function activeSaleChallansForOrder(order, challans = [], shipments = [],
   });
 }
 
+export function dispatchMeetsLowerBound(order, challans = [], shipments = [], settings) {
+  const qty = Number(order?.orderQtyKg) || 0;
+  if (!(qty > 0)) return false;
+  const dispatched = dispatchedKgForOrder(order, challans, shipments, {
+    exceptShipmentIds: settings?.exceptShipmentIds || []
+  });
+  if (!dispatched.hasDocument || !(dispatched.kg > 0)) return false;
+  const config = normalizeAutoCloseSettings(settings);
+  const low = 1 - (config.tolerancePct / 100);
+  return dispatched.kg / qty + 1e-9 >= low;
+}
+
 /**
- * Block a new Sale of Goods challan when any of these orders already has one.
- * Pass exceptChallanId while editing that challan so it does not block itself.
+ * A new Sale of Goods challan is blocked when the order already has two,
+ * or when its one challan already meets the lower bound.
+ * One challan while the order is still below that bound (Balance Dispatch
+ * Pending) does not block a second challan from a different packing list.
+ * Pass exceptChallanId while editing that challan so it does not count itself.
  */
 export function saleChallanConflicts(orders, challans = [], shipments = [], options = {}) {
   const conflicts = [];
   (orders || []).forEach((order) => {
     const existing = activeSaleChallansForOrder(order, challans, shipments, options);
     if (!existing.length) return;
-    const challan = existing[0];
+    const qty = Number(order?.orderQtyKg) || 0;
+    const belowBand = qty > 0
+      ? !dispatchMeetsLowerBound(order, challans, shipments, {
+        ...options.settings,
+        exceptShipmentIds: options.exceptShipmentIds || []
+      })
+      : isBalanceDispatchStatus(order?.status);
+    if (existing.length === 1 && belowBand) return;
     conflicts.push({
       orderId: order.id,
       jobName: cleanJobName(order.jobName) || order.jobName || order.id,
-      challanNo: challan.challanNo || challan.id,
-      challanId: challan.id,
+      challanNo: existing.map((challan) => challan.challanNo || challan.id).join(', '),
+      challanId: existing[0].id,
+      reason: existing.length >= 2 ? 'balance-used' : 'dispatch-complete',
     });
   });
   return conflicts;
@@ -141,8 +173,30 @@ export function saleChallanConflicts(orders, challans = [], shipments = [], opti
 
 export function formatSaleChallanConflicts(conflicts) {
   if (!conflicts?.length) return '';
-  const lines = conflicts.map((row) => `${row.orderId} (${row.jobName}) already has ${row.challanNo}`);
-  return `A Sale of Goods delivery challan already exists for ${lines.join('; ')}. Edit that challan or its packing list. A second challan is not issued for the same job order.`;
+  return conflicts.map((row) => {
+    if (row.reason === 'balance-used') {
+      return `${row.orderId} (${row.jobName}) already has two Sale of Goods challans (${row.challanNo}). A third challan is not issued.`;
+    }
+    return `${row.orderId} (${row.jobName}) already has Sale of Goods delivery challan ${row.challanNo}. Dispatch is at or above the lower bound, so another challan is not issued.`;
+  }).join(' ');
+}
+
+/**
+ * A packing list that already has a Sale of Goods challan opens that challan
+ * for editing. A new list shows Issue DC unless an order on it is no longer
+ * eligible for another challan.
+ */
+export function packingListDcAction(shipment, { orders = [], challans = [], shipments = [], settings } = {}) {
+  const linked = challansLinkedToShipment(shipment, challans);
+  if (linked.length) return { action: 'edit', challan: linked[0] };
+  const blocks = saleChallanConflicts(
+    ordersOnShipment(shipment, orders),
+    challans,
+    shipments,
+    { settings, exceptShipmentIds: shipmentKeys(shipment) }
+  );
+  if (blocks.length) return { action: 'blocked', blocks };
+  return { action: 'issue' };
 }
 
 /**

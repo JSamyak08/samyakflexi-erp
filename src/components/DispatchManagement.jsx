@@ -43,7 +43,8 @@ import {
   formatSaleChallanConflicts,
   isSaleOfGoodsChallan,
   ordersCoveredByChallan,
-  ordersOnShipment,
+  packingListDcAction,
+  packingListIdsOf,
   rollWithTare,
   saleChallanConflicts,
 } from '../utils/deliveryChallanGuard';
@@ -55,6 +56,7 @@ import {
   formatGainLossPct,
   gainLossForShipment,
   isKgUnit,
+  liveGainLossForShipment,
   isOpenPackingList,
   round2,
   listConsumptions,
@@ -186,6 +188,7 @@ export default function DispatchManagement({
   sfgGoods = [],
   productionRecords = [],
   inventoryRolls = [],
+  orderCloseSettings = { enabled: true, tolerancePct: 10 },
   currentUser,
   onSaveDeliveryChallan,
   onDeleteDeliveryChallan,
@@ -863,7 +866,11 @@ export default function DispatchManagement({
       const covered = ordersCoveredByChallan(payload, orders, dispatchShipments);
       const already = new Set(ordersCoveredByChallan(existingDc, orders, dispatchShipments).map((order) => order.id));
       const added = editingDcId ? covered.filter((order) => !already.has(order.id)) : covered;
-      const conflicts = saleChallanConflicts(added, deliveryChallans, dispatchShipments, { exceptChallanId: editingDcId || '' });
+      const conflicts = saleChallanConflicts(added, deliveryChallans, dispatchShipments, {
+        exceptChallanId: editingDcId || '',
+        settings: orderCloseSettings,
+        exceptShipmentIds: packingListIdsOf(payload),
+      });
       if (conflicts.length) {
         if (releaseNumber) releaseDeliveryChallanNo(releaseNumber).catch(() => {});
         alert(formatSaleChallanConflicts(conflicts));
@@ -1522,13 +1529,18 @@ export default function DispatchManagement({
   };
 
   const handleCreateDcFromPackingList = async (shipment) => {
-    const conflicts = saleChallanConflicts(
-      ordersOnShipment(shipment, orders),
-      deliveryChallans,
-      dispatchShipments
-    );
-    if (conflicts.length) {
-      alert(formatSaleChallanConflicts(conflicts));
+    const decision = packingListDcAction(shipment, {
+      orders,
+      challans: deliveryChallans,
+      shipments: dispatchShipments,
+      settings: orderCloseSettings,
+    });
+    if (decision.action === 'edit') {
+      handleEditDc(decision.challan);
+      return;
+    }
+    if (decision.action === 'blocked') {
+      alert(formatSaleChallanConflicts(decision.blocks));
       return;
     }
     setEditingDcId(null);
@@ -2306,7 +2318,8 @@ export default function DispatchManagement({
                       const openList = isOpenPackingList(ds);
                       const party = packingListParty(ds, orders);
                       const consumptions = listConsumptions(ds);
-                      const savedGain = gainLossForShipment(ds);
+                      const liveGain = liveGainLossForShipment(ds, productionRecords);
+                      const showGain = liveGain.consumedKg > 0;
                       const rollCount = openList
                         ? (Array.isArray(ds.items) ? ds.items.length : 0)
                         : (ds.totalRolls || (ds.items?.length || 1));
@@ -2340,7 +2353,7 @@ export default function DispatchManagement({
                           {rollCount} rolls
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '700' }}>
-                          {consumptions.length ? `${consumedKgForList(ds).toFixed(2)} kg` : '—'}
+                          {showGain ? `${liveGain.consumedKg.toFixed(2)} kg` : '—'}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#047857' }}>
                           {(Number(ds.totalNetWeightKg) || 0).toLocaleString()} kg
@@ -2349,8 +2362,8 @@ export default function DispatchManagement({
                           {grossKg.toLocaleString()} kg
                         </td>
                         {isAdmin && (
-                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800' }}>
-                            {consumptions.length ? `${formatGainLossKg(savedGain.differenceKg)} (${formatGainLossPct(savedGain.differencePct)})` : '—'}
+                          <td data-testid="packing-gain-loss" style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800' }}>
+                            {showGain ? `${formatGainLossKg(liveGain.differenceKg)} (${formatGainLossPct(liveGain.differencePct)})` : '—'}
                           </td>
                         )}
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
@@ -2367,18 +2380,37 @@ export default function DispatchManagement({
                               </button>
                             )}
                             {(() => {
-                              const issueBlocks = saleChallanConflicts(ordersOnShipment(ds, orders), deliveryChallans, dispatchShipments);
-                              if (issueBlocks.length) {
+                              const decision = packingListDcAction(ds, {
+                                orders,
+                                challans: deliveryChallans,
+                                shipments: dispatchShipments,
+                                settings: orderCloseSettings,
+                              });
+                              if (decision.action === 'edit') {
+                                return (
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    data-testid="edit-dc"
+                                    style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#0369a1', borderColor: '#0369a1', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    title={`Edit ${decision.challan.challanNo || 'the linked delivery challan'}. The same number is kept.`}
+                                    onClick={() => handleEditDc(decision.challan)}
+                                  >
+                                    <Edit3 size={14} /> Edit DC
+                                  </button>
+                                );
+                              }
+                              if (decision.action === 'blocked') {
                                 return (
                                   <button
                                     type="button"
                                     className="btn-secondary"
                                     data-testid="issue-dc-blocked"
                                     disabled
-                                    title={formatSaleChallanConflicts(issueBlocks)}
+                                    title={formatSaleChallanConflicts(decision.blocks)}
                                     style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                                   >
-                                    DC {issueBlocks.map((row) => row.challanNo).filter((value, index, list) => list.indexOf(value) === index).join(', ')}
+                                    DC {decision.blocks.map((row) => row.challanNo).filter((value, index, list) => list.indexOf(value) === index).join(', ')}
                                   </button>
                                 );
                               }

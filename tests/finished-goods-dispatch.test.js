@@ -230,7 +230,7 @@ test('the order csv uses the same stage the screen shows', () => {
   assert.equal(fgRows[0]['Current Stage'], 'Ready for Dispatch (40kg)');
 });
 
-test('a semi-finished lot stays an SFG barcode and still blocks auto-close as leftover WIP', () => {
+test('a semi-finished lot stays an SFG barcode and does not block a dispatched close', () => {
   const rows = collectBarcodes({
     sfgGoods: [printedLot({ jobName: 'Palekar Cream Doughnut' })]
   });
@@ -242,6 +242,6 @@ test('a semi-finished lot stays an SFG barcode and still blocks auto-close as le
     sfgGoods: [printedLot({ sfgBatchCode: 'SFG-BC-ORD-2026-224-1', isPrintedLot: false })],
     settings: { enabled: true, tolerancePct: 10 }
   });
-  assert.equal(decision.action, 'none');
-  assert.equal(decision.order.status, 'In Production');
+  assert.equal(decision.action, 'close');
+  assert.equal(decision.order.status, 'Completed');
 });

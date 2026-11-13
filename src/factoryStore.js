@@ -1264,8 +1264,8 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = [], 
   // Dispatch progress uses finished goods only. Printed rolls, laminated
   // WIP, slitting WIP, and balance rolls stay on the production stage.
   // A delivery challan or finalised packing list moves the stage off the
-  // press step: Completed or within the auto-close band shows Dispatched,
-  // and a short quantity shows Balance Dispatch Pending.
+  // press step. At or above the lower bound, including over-dispatch,
+  // shows Completed. Below that bound shows Balance Dispatch Pending.
   const fgLots = activeLots.filter((lot) => lot.rollType === 'FG');
   const isOrderCompleted = order.status === 'Completed';
   const isFullyDispatched = (orderQtyKg > 0 && totalDispatchedKg >= orderQtyKg) || (
@@ -1284,7 +1284,7 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = [], 
 
   if (documentMovesStage) {
     if (isOrderCompleted || !documentShort) {
-      currentStage = 'Dispatched';
+      currentStage = 'Completed';
       stageIndex = 5;
     } else {
       currentStage = 'Balance Dispatch Pending';
@@ -1339,6 +1339,10 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = [], 
   let badgeStyle = { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' };
 
   switch (currentStage) {
+    case 'Completed':
+      stageLabel = '✅ Completed';
+      badgeStyle = { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };
+      break;
     case 'Dispatched':
       stageLabel = '🏁 Dispatched';
       badgeStyle = { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };

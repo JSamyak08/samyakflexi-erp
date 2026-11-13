@@ -2657,7 +2657,7 @@ export default function ProductionRecordManagement({
                           <button 
                             className="btn-primary"
                             data-testid="production-record-action"
-                            data-order-status={ord.status || ''} 
+                            data-order-status={ord.status || ''}
                             style={{ 
                               padding: '6px 14px', 
                               fontSize: '0.82rem', 

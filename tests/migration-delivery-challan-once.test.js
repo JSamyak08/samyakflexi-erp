@@ -178,17 +178,55 @@ test('a multi-order packing list challan blocks only the orders it covers', asyn
   const statuses = await db.query(`SELECT id, status FROM public.orders WHERE id IN ('ORD-A','ORD-B') ORDER BY id`);
   assert.equal(statuses.rows[0].status, 'Balance Dispatch Pending');
   assert.equal(statuses.rows[1].status, 'Balance Dispatch Pending');
+  await db.query(`
+    INSERT INTO public.delivery_challans (id, challan_no, payload, challan_nature)
+    VALUES ('DC-B2', 'SIL/DC/26-27/211', '{"challanNature":"Sale of Goods","orderId":"ORD-B","items":[{"orderId":"ORD-B","quantity":20,"unit":"Kg"}]}', 'Sale of Goods')
+  `);
+  const afterBalance = await db.query(`SELECT status FROM public.orders WHERE id = 'ORD-B'`);
+  assert.equal(afterBalance.rows[0].status, 'Balance Dispatch Pending');
   await assert.rejects(
     () => db.query(`
       INSERT INTO public.delivery_challans (id, challan_no, payload, challan_nature)
-      VALUES ('DC-B2', 'SIL/DC/26-27/211', '{"challanNature":"Sale of Goods","orderId":"ORD-B","items":[{"quantity":20,"unit":"Kg"}]}', 'Sale of Goods')
+      VALUES ('DC-B3', 'SIL/DC/26-27/212', '{"challanNature":"Sale of Goods","orderId":"ORD-B","items":[{"quantity":10,"unit":"Kg"}]}', 'Sale of Goods')
     `),
-    /ORD-B/
+    /third challan is not issued/
   );
   await db.close();
 });
 
-test('over-dispatch stays open and does not renumber the stored challan', async () => {
+test('one balance challan can complete the order and a later print write cannot reopen it', async () => {
+  const db = await database();
+  await db.query(`
+    INSERT INTO public.delivery_challans (id, challan_no, payload, challan_nature)
+    VALUES (
+      'DC-SHORT',
+      'SIL/DC/26-27/230',
+      '{"challanNature":"Sale of Goods","orderId":"ORD-A","items":[{"orderId":"ORD-A","quantity":40,"unit":"Kg"}]}',
+      'Sale of Goods'
+    )
+  `);
+  const pending = await db.query(`SELECT status FROM public.orders WHERE id = 'ORD-A'`);
+  assert.equal(pending.rows[0].status, 'Balance Dispatch Pending');
+  await db.query(`
+    INSERT INTO public.delivery_challans (id, challan_no, payload, challan_nature)
+    VALUES (
+      'DC-BAL',
+      'SIL/DC/26-27/231',
+      '{"challanNature":"Sale of Goods","orderId":"ORD-A","items":[{"orderId":"ORD-A","quantity":55,"unit":"Kg"}]}',
+      'Sale of Goods'
+    )
+  `);
+  const closed = await db.query(`SELECT status, close_mode FROM public.orders WHERE id = 'ORD-A'`);
+  assert.equal(closed.rows[0].status, 'Completed');
+  assert.equal(closed.rows[0].close_mode, 'auto');
+  await db.query(`UPDATE public.orders SET status = 'In Production' WHERE id = 'ORD-A'`);
+  const kept = await db.query(`SELECT status, close_mode FROM public.orders WHERE id = 'ORD-A'`);
+  assert.equal(kept.rows[0].status, 'Completed');
+  assert.equal(kept.rows[0].close_mode, 'auto');
+  await db.close();
+});
+
+test('over-dispatch is Completed and does not renumber the stored challan', async () => {
   const db = await database();
   await db.query(`
     INSERT INTO public.delivery_challans (id, challan_no, payload, challan_nature)
@@ -199,9 +237,10 @@ test('over-dispatch stays open and does not renumber the stored challan', async 
       'Sale of Goods'
     )
   `);
-  const row = await db.query(`SELECT status, over_dispatch_warning FROM public.orders WHERE id = 'ORD-K'`);
-  assert.equal(row.rows[0].status, 'In Production');
-  assert.match(row.rows[0].over_dispatch_warning, /stays open/);
+  const row = await db.query(`SELECT status, close_mode, over_dispatch_warning FROM public.orders WHERE id = 'ORD-K'`);
+  assert.equal(row.rows[0].status, 'Completed');
+  assert.equal(row.rows[0].close_mode, 'auto');
+  assert.equal(row.rows[0].over_dispatch_warning, null);
   const numbers = await db.query(`SELECT count(*)::int AS n FROM public.delivery_challans WHERE challan_no = 'SIL/DC/26-27/102'`);
   assert.equal(numbers.rows[0].n, 2);
   const kept = await db.query(`SELECT challan_no FROM public.delivery_challans WHERE id = 'DC-K'`);

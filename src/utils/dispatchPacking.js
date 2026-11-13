@@ -72,6 +72,79 @@ export function gainLossForShipment(shipment, items = shipment?.items) {
   });
 }
 
+function cleanRecordId(value) {
+  return String(value || '').replace(/^(PR-|REC-)/i, '').trim().toLowerCase();
+}
+
+function cleanRecordName(value) {
+  return String(value || '').split(' ||| ')[0].trim().toLowerCase();
+}
+
+/**
+ * Finished output on a production record. The furthest filled stage wins,
+ * so a record entered after dispatch still supplies a current weight.
+ */
+export function finishedKgFromProductionRecord(record) {
+  const candidates = [
+    record?.qtyPouching,
+    record?.qtySlitting,
+    record?.qtyDispatch,
+    record?.netUsableKg,
+    record?.totalProductionQtyKg,
+  ];
+  for (const value of candidates) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return round2(number);
+  }
+  return 0;
+}
+
+export function productionFinishedKgForShipment(shipment, productionRecords = []) {
+  const ids = new Set();
+  const names = new Set();
+  const remember = (id, name) => {
+    const clean = cleanRecordId(id);
+    if (clean && clean !== 'n/a') ids.add(clean);
+    const job = cleanRecordName(name);
+    if (job) names.add(job);
+  };
+  remember(shipment?.orderId, shipment?.jobName);
+  (shipment?.items || []).forEach((item) => remember(item?.orderId, item?.jobName));
+  const seen = new Set();
+  let total = 0;
+  (productionRecords || []).forEach((record) => {
+    const recordId = cleanRecordId(record?.orderId || record?.id);
+    const recordName = cleanRecordName(record?.jobName);
+    const key = record?.id || recordId || recordName;
+    if (!key || seen.has(key)) return;
+    const matches = (recordId && ids.has(recordId)) || (recordName && names.has(recordName));
+    if (!matches) return;
+    const kg = finishedKgFromProductionRecord(record);
+    if (!(kg > 0)) return;
+    seen.add(key);
+    total += kg;
+  });
+  return round2(total);
+}
+
+/**
+ * Gain/loss is packed net against the current production output when a
+ * record exists, otherwise against FG consumed into this packing list.
+ * It is not a number stored when the list was dispatched.
+ */
+export function liveConsumedKgForShipment(shipment, productionRecords = []) {
+  const produced = productionFinishedKgForShipment(shipment, productionRecords);
+  if (produced > 0) return produced;
+  return consumedKgForList(shipment);
+}
+
+export function liveGainLossForShipment(shipment, productionRecords = [], items = shipment?.items) {
+  return packingGainLoss({
+    consumedKg: liveConsumedKgForShipment(shipment, productionRecords),
+    packedNetKg: packedNetKgFromItems(items),
+  });
+}
+
 export function normalizeThresholdPct(value) {
   if (value && typeof value === 'object' && value.thresholdPct !== undefined) {
     return normalizeThresholdPct(value.thresholdPct);
