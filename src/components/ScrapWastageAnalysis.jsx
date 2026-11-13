@@ -44,14 +44,20 @@ const FINANCIAL_YEARS = [
   'FY 2027-28'
 ];
 
-export default function ScrapWastageAnalysis({ productionRecords = [], orders = [], sfgGoods = [] }) {
+export default function ScrapWastageAnalysis({
+  productionRecords = [],
+  orders = [],
+  sfgGoods = [],
+  deliveryChallans = [],
+  dispatchShipments = []
+}) {
   const [selectedFY, setSelectedFY] = useState('FY 2026-27');
   const [selectedMonth, setSelectedMonth] = useState('All Months');
   const [startDate, setStartDate] = useState('2026-04-01');
   const [endDate, setEndDate] = useState('2027-03-31');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Filter types: 'ALERTS_ONLY' (jobs at or above 5% of order quantity), 'SCRAP_STORE_ONLY', 'PRODUCTION_ONLY', 'ALL_RECORDS'
+  // Filter types: 'ALERTS_ONLY' (jobs at or above 5% of dispatched kg), 'SCRAP_STORE_ONLY', 'PRODUCTION_ONLY', 'ALL_RECORDS'
   const [filterType, setFilterType] = useState('ALERTS_ONLY');
 
   // Local storage persisted Physical Scrap Store Items (from QC Hold transfers)
@@ -123,8 +129,11 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
   };
 
   const highScrapJobs = useMemo(
-    () => listHighScrapJobs(productionRecords, orders),
-    [productionRecords, orders]
+    () => listHighScrapJobs(productionRecords, orders, {
+      challans: deliveryChallans,
+      shipments: dispatchShipments
+    }),
+    [productionRecords, orders, deliveryChallans, dispatchShipments]
   );
 
   const registryRows = useMemo(() => highScrapJobs.map((job) => ({
@@ -137,11 +146,12 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
     jobName: job.jobName || 'Production Job',
     operatorName: job.operatorName || '—',
     shift: job.shift || '',
-    grossKg: job.orderQtyKg,
+    grossKg: job.dispatchQtyKg,
     scrapKg: job.totalWastageKg,
     wastagePct: job.wastagePct,
+    pctState: 'ratio',
     reasonOrCategory: formatStageBreakdown(job.stages),
-    status: `${job.wastagePct}% of ${job.orderQtyKg} ${ORDER_QTY_UNIT} order`,
+    status: `${job.wastagePct}% of ${job.dispatchQtyKg} ${ORDER_QTY_UNIT} dispatched`,
     isHighWastage: true
   })), [highScrapJobs]);
 
@@ -154,7 +164,12 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       const order = ordersById.get(String(r.orderId)) || null;
       let plan = null;
       try {
-        plan = planJobWastage({ record: r, order });
+        plan = planJobWastage({
+          record: r,
+          order,
+          challans: deliveryChallans,
+          shipments: dispatchShipments
+        });
       } catch {
         plan = null;
       }
@@ -175,6 +190,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
         grossKg,
         scrapKg: wastageKg,
         wastagePct: plan?.wastagePct ?? null,
+        pctState: plan?.notDispatched ? 'not-dispatched' : 'ratio',
         reasonOrCategory: plan
           ? (formatStageBreakdown((plan.scrap.upserts || []).map((row) => ({
             stage: row.stage,
@@ -207,6 +223,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
         grossKg: scrapKg,
         scrapKg: scrapKg,
         wastagePct: null,
+        pctState: 'na',
         reasonOrCategory: `${stage} / ${type}`,
         status: 'In scrap store',
         isHighWastage: false
@@ -214,7 +231,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
     });
 
     return list;
-  }, [productionRecords, orders, scrapStoreItems]);
+  }, [productionRecords, orders, deliveryChallans, dispatchShipments, scrapStoreItems]);
 
   // Filter the merged record list based on date bounds, search term, and filter type
   const filteredRecords = useMemo(() => {
@@ -316,7 +333,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
               </h2>
             </div>
             <p style={{ color: '#64748b', fontSize: '0.88rem', marginTop: '4px', margin: '4px 0 0 0' }}>
-              Scrap store lines stay per stage and type. A job enters the high scrap registry only when its total stage wastage is {HIGH_SCRAP_THRESHOLD_PCT}% or more of order quantity ({ORDER_QTY_UNIT}).
+              Scrap store lines stay per stage and type. A job enters the high scrap registry only when its total stage wastage is {HIGH_SCRAP_THRESHOLD_PCT}% or more of the kilograms actually dispatched ({ORDER_QTY_UNIT}). Jobs that have not been dispatched are left out.
             </p>
           </div>
           
@@ -324,7 +341,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '8px 12px', borderRadius: '8px' }}>
               <AlertTriangle size={16} color="#dc2626" />
               <span style={{ color: '#991b1b', fontWeight: '900', fontSize: '0.85rem' }}>
-                High scrap: {HIGH_SCRAP_THRESHOLD_PCT}% of order quantity ({ORDER_QTY_UNIT})
+                High scrap: {HIGH_SCRAP_THRESHOLD_PCT}% of dispatch quantity ({ORDER_QTY_UNIT})
               </span>
             </div>
           </div>
@@ -358,7 +375,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           <div style={{ fontSize: '1.75rem', fontWeight: '900', color: '#a16207', marginTop: '6px' }}>
             {stats.avgScrapPct}%
           </div>
-          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>Average period wastage rate</div>
+          <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '4px' }}>Scrap weight ÷ period output. High-scrap % uses dispatch quantity.</div>
         </div>
 
         {/* High Scrap Alerts Count */}
@@ -370,7 +387,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
           borderLeft: '4px solid #ef4444' 
         }}>
           <div style={{ fontSize: '0.82rem', color: stats.highScrapCount > 0 ? '#991b1b' : '#64748b', fontWeight: '700' }}>
-            High Scrap Registry (&gt;={HIGH_SCRAP_THRESHOLD_PCT}% of order qty)
+            High Scrap Registry (&gt;={HIGH_SCRAP_THRESHOLD_PCT}% of dispatch qty)
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: '900', color: stats.highScrapCount > 0 ? '#dc2626' : '#0f172a', marginTop: '6px' }}>
             {stats.highScrapCount} <span style={{ fontSize: '0.85rem' }}>Records</span>
@@ -394,10 +411,10 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
       <div data-testid="high-scrap-registry" style={{ background: '#ffffff', border: '1px solid #fecaca', borderRadius: '14px', padding: '20px 24px' }}>
         <h3 style={{ margin: '0 0 4px', fontSize: '1.05rem', color: '#991b1b' }}>High Scrap Registry</h3>
         <p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '0.84rem' }}>
-          One row per job. Total stage wastage compared with order quantity in {ORDER_QTY_UNIT} (`orders.order_qty_kg`). Jobs under {HIGH_SCRAP_THRESHOLD_PCT}% are not listed. Editing a stage adds, updates, or removes the row.
+          One row per job. Total stage wastage compared with dispatched {ORDER_QTY_UNIT}: weighed rolls on finalised packing lists and delivery challans. Jobs under {HIGH_SCRAP_THRESHOLD_PCT}% are not listed. A job with no dispatch yet is not listed. Editing a stage adds, updates, or removes the row.
         </p>
         {registryRows.length === 0 ? (
-          <div style={{ padding: '18px', color: '#475569', fontWeight: '700' }}>No job is at or above {HIGH_SCRAP_THRESHOLD_PCT}% of its order quantity.</div>
+          <div style={{ padding: '18px', color: '#475569', fontWeight: '700' }}>No job is at or above {HIGH_SCRAP_THRESHOLD_PCT}% of its dispatched quantity. Jobs that have not been dispatched are listed in the logs as Not dispatched.</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.86rem' }}>
@@ -405,9 +422,9 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                 <tr style={{ background: '#fef2f2', color: '#7f1d1d', textAlign: 'left' }}>
                   <th style={{ padding: '10px' }}>Job</th>
                   <th style={{ padding: '10px' }}>Order</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>Order qty ({ORDER_QTY_UNIT})</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>Dispatch qty ({ORDER_QTY_UNIT})</th>
                   <th style={{ padding: '10px', textAlign: 'right' }}>Total wastage (kg)</th>
-                  <th style={{ padding: '10px', textAlign: 'right' }}>% of order</th>
+                  <th style={{ padding: '10px', textAlign: 'right' }}>% of dispatch</th>
                   <th style={{ padding: '10px' }}>Stage breakdown</th>
                 </tr>
               </thead>
@@ -521,7 +538,7 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                 gap: '6px'
               }}
             >
-              <AlertTriangle size={14} /> High Scrap Registry (&gt;={HIGH_SCRAP_THRESHOLD_PCT}% of order qty) ({stats.highScrapCount})
+              <AlertTriangle size={14} /> High Scrap Registry (&gt;={HIGH_SCRAP_THRESHOLD_PCT}% of dispatch qty) ({stats.highScrapCount})
             </button>
 
             <button 
@@ -660,11 +677,12 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
 
                       {/* Wastage % Badge (Highlighted when high scrap) */}
                       <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <span 
-                          style={{ 
-                            background: isHigh ? '#fee2e2' : '#dcfce7',
-                            color: isHigh ? '#b91c1c' : '#15803d',
-                            border: `1.5px solid ${isHigh ? '#fca5a5' : '#bbf7d0'}`,
+                        <span
+                          data-testid="scrap-wastage-pct"
+                          style={{
+                            background: isHigh ? '#fee2e2' : (r.pctState === 'not-dispatched' ? '#f1f5f9' : '#dcfce7'),
+                            color: isHigh ? '#b91c1c' : (r.pctState === 'not-dispatched' ? '#334155' : '#15803d'),
+                            border: `1.5px solid ${isHigh ? '#fca5a5' : (r.pctState === 'not-dispatched' ? '#cbd5e1' : '#bbf7d0')}`,
                             fontWeight: '900',
                             fontSize: '0.82rem',
                             padding: '4px 10px',
@@ -676,11 +694,13 @@ export default function ScrapWastageAnalysis({ productionRecords = [], orders = 
                           }}
                         >
                           {isHigh && <AlertTriangle size={12} color="#b91c1c" />}
-                          {r.wastagePct === null || r.wastagePct === undefined ? '—' : `${Number(r.wastagePct).toFixed(1)}%`}
+                          {r.pctState === 'not-dispatched'
+                            ? 'Not dispatched'
+                            : (r.wastagePct === null || r.wastagePct === undefined ? '—' : `${Number(r.wastagePct).toFixed(1)}%`)}
                         </span>
                         {isHigh && (
                           <div style={{ fontSize: '0.65rem', color: '#b91c1c', fontWeight: '800', marginTop: '2px' }}>
-                            {HIGH_SCRAP_THRESHOLD_PCT}% OR MORE OF ORDER QTY
+                            {HIGH_SCRAP_THRESHOLD_PCT}% OR MORE OF DISPATCH QTY
                           </div>
                         )}
                       </td>

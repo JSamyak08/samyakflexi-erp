@@ -344,7 +344,9 @@ export function buildScrapFilterContext({
   jobMasters = [],
   productionRecords = [],
   machines = [],
-  registryRows = []
+  registryRows = [],
+  deliveryChallans = [],
+  dispatchShipments = []
 } = {}) {
   const ordersById = new Map();
   (orders || []).forEach((order) => {
@@ -370,7 +372,10 @@ export function buildScrapFilterContext({
     if (orderId) highScrapOrderIds.add(orderId);
   });
   try {
-    listHighScrapJobs(productionRecords || [], orders || []).forEach((job) => {
+    listHighScrapJobs(productionRecords || [], orders || [], {
+      challans: deliveryChallans,
+      shipments: dispatchShipments
+    }).forEach((job) => {
       const orderId = cleanText(job?.orderId);
       if (orderId) highScrapOrderIds.add(orderId);
     });
@@ -871,6 +876,20 @@ export function scrapStoreE2eFixture(now = new Date('2026-10-27T08:00:00+05:30')
       machineId: 'MAC-LAM-1'
     }
   ];
+  const dispatchShipments = [
+    {
+      orderId: 'ORD-2026-210',
+      jobName: 'Nyra Original Outer',
+      packingStatus: 'Finalised',
+      items: [{ netWeightKg: 400, unit: 'Kg' }]
+    },
+    {
+      orderId: 'ORD-2026-211',
+      jobName: 'Sonu Jaljeera',
+      packingStatus: 'Finalised',
+      items: [{ netWeightKg: 800, unit: 'Kg' }]
+    }
+  ];
   const rows = [
     {
       id: 'print-scrap:ORD-2026-210:printing-wastage',
@@ -995,7 +1014,7 @@ export function scrapStoreE2eFixture(now = new Date('2026-10-27T08:00:00+05:30')
       timestamp: '2026-09-18T10:00:00+05:30'
     }
   ];
-  return { orders, jobMasters, machines, productionRecords, rows };
+  return { orders, jobMasters, machines, productionRecords, dispatchShipments, rows };
 }
 
 export function readE2eScrapStorePreview() {

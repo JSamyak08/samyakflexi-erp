@@ -752,7 +752,7 @@ ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS printing_notes TEXT;
 ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS machine_id TEXT;
 
 -- High scrap registry lives in supabase/migrations/20261026140000_job_wastage_scrap_registry.sql.
--- A job is included only when total stage wastage is at least 5% of orders.order_qty_kg.
+-- A job is included only when total stage wastage is at least 5% of dispatched kg.
 -- Do not recreate the old view that flagged wastage_percentage of output.
 
 -- Access control lives in supabase/migrations. Do not recreate an anon full-access policy.

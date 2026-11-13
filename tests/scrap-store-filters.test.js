@@ -68,6 +68,19 @@ test('this month plus a printing stage filter keeps the summary on that set', ()
   assert.deepEqual(result.summary.byStage, [{ stage: 'Printing', kg: 32, count: 2 }]);
 });
 
+test('a smaller dispatch quantity can put a job over the high scrap line', () => {
+  const context = buildScrapFilterContext({
+    ...fixture,
+    dispatchShipments: [
+      { orderId: 'ORD-2026-210', packingStatus: 'Finalised', items: [{ netWeightKg: 400, unit: 'Kg' }] },
+      { orderId: 'ORD-2026-211', packingStatus: 'Finalised', items: [{ netWeightKg: 100, unit: 'Kg' }] }
+    ]
+  });
+  const result = applyScrapFilters(fixture.rows, normalizeScrapFilters({ high: true }, NOW), context);
+  assert.equal(result.rows.some((row) => row.orderId === 'ORD-2026-211'), true);
+  assert.equal(result.summary.jobCount, 2);
+});
+
 test('high scrap jobs only uses the registry threshold, not every scrap row', () => {
   const result = view({ high: true });
   assert.deepEqual(result.rows.map((row) => row.orderId), ['ORD-2026-210', 'ORD-2026-210', 'ORD-2026-210']);
