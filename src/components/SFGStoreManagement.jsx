@@ -83,6 +83,8 @@ import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIde
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
+import RevertConsumptionModal from './RevertConsumptionModal';
+import { isRevertedConsumption, REVERT_WINDOW_CLOSED, revertWindowOpen } from '../utils/revertConsumption';
 import {
   acceptNewerBarcodeChoice,
   fifoAgeForBarcode,
@@ -212,7 +214,9 @@ export default function SFGStoreManagement({
   onSaveSFGGood,
   onConsumeSFG,
   onDeleteSFGGood,
+  onConsumptionReverted,
   canEditStore = true,
+  canRevertConsumption = false,
   previewScrapItems = null
 }) {
   const storeUi = sfgStoreUi(canEditStore);
@@ -312,6 +316,13 @@ export default function SFGStoreManagement({
   const [selectedItemForConsume, setSelectedItemForConsume] = useState(null);
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
   const [viewHistoryItem, setViewHistoryItem] = useState(null);
+  const [revertTarget, setRevertTarget] = useState(null);
+  const [revertWindowTip, setRevertWindowTip] = useState(null);
+  useEffect(() => {
+    if (!viewHistoryItem) return;
+    const fresh = (sfgGoods || []).find((item) => item.id === viewHistoryItem.id || item.sfgBatchCode === viewHistoryItem.sfgBatchCode);
+    if (fresh && fresh !== viewHistoryItem) setViewHistoryItem(fresh);
+  }, [sfgGoods, viewHistoryItem]);
 
   // Consume SFG Form State — Starts clean & empty
   const [consumedWeightKg, setConsumedWeightKg] = useState('');
@@ -4630,7 +4641,7 @@ export default function SFGStoreManagement({
             background: '#ffffff',
             borderRadius: '16px',
             width: '100%',
-            maxWidth: '700px',
+            maxWidth: '920px',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
             overflow: 'hidden',
             border: '1px solid #e2e8f0'
@@ -4672,18 +4683,27 @@ export default function SFGStoreManagement({
                     <th style={{ padding: '10px 12px', textAlign: 'right' }}>Balance (kg)</th>
                     <th style={{ padding: '10px 12px' }}>Operator</th>
                     <th style={{ padding: '10px 12px' }}>Notes</th>
+                    <th style={{ padding: '10px 12px' }}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(viewHistoryItem.consumptionHistory || []).map((log, idx) => (
-                    <tr key={log.id || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  {(viewHistoryItem.consumptionHistory || []).map((log, idx) => {
+                    const reverted = isRevertedConsumption(log);
+                    const windowOpen = revertWindowOpen(log);
+                    return (
+                    <tr key={log.id || idx} style={{ borderBottom: '1px solid #f1f5f9', opacity: reverted ? 0.72 : 1 }}>
                       <td style={{ padding: '10px 12px', color: '#64748b', fontSize: '0.78rem' }}>
                         {new Date(log.timestamp || log.date).toLocaleString()}
                       </td>
                       <td style={{ padding: '10px 12px', fontWeight: '700', color: '#0f172a' }}>
                         {log.targetProcess}
+                        {reverted && (
+                          <div style={{ marginTop: '4px', fontSize: '0.72rem', fontWeight: 800, color: '#9a3412' }}>
+                            Reverted{log.revertedBy ? ` by ${log.revertedBy}` : ''}{log.revertReason ? ` — ${log.revertReason}` : ''}
+                          </div>
+                        )}
                       </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: '#c2410c' }}>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: '700', color: reverted ? '#94a3b8' : '#c2410c', textDecoration: reverted ? 'line-through' : 'none' }}>
                         {log.consumedKg} kg
                       </td>
                       <td style={{ padding: '10px 12px', fontWeight: '700', color: '#9a3412', fontSize: '0.75rem' }} data-testid="sfg-history-fifo">
@@ -4707,8 +4727,50 @@ export default function SFGStoreManagement({
                       <td style={{ padding: '10px 12px', color: '#64748b', fontSize: '0.78rem' }}>
                         {log.notes || '-'}
                       </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        {canRevertConsumption && !reverted && windowOpen && (
+                          <button
+                            type="button"
+                            data-testid={`sfg-revert-${log.id}`}
+                            onClick={() => setRevertTarget(log)}
+                            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #fdba74', background: '#fff7ed', color: '#9a3412', fontWeight: 800, fontSize: '0.75rem', cursor: 'pointer' }}
+                          >
+                            Revert
+                          </button>
+                        )}
+                        {canRevertConsumption && !reverted && !windowOpen && (
+                          <span
+                            title={REVERT_WINDOW_CLOSED}
+                            onMouseEnter={() => setRevertWindowTip(log.id)}
+                            onMouseLeave={() => setRevertWindowTip(null)}
+                            onFocus={() => setRevertWindowTip(log.id)}
+                            onBlur={() => setRevertWindowTip(null)}
+                            style={{ position: 'relative', display: 'inline-flex' }}
+                          >
+                            <button
+                              type="button"
+                              data-testid={`sfg-revert-${log.id}`}
+                              disabled
+                              aria-describedby={revertWindowTip === log.id ? `revert-window-${log.id}` : undefined}
+                              style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#f8fafc', color: '#94a3b8', fontWeight: 800, fontSize: '0.75rem', cursor: 'not-allowed' }}
+                            >
+                              Revert
+                            </button>
+                            {revertWindowTip === log.id && (
+                              <span
+                                id={`revert-window-${log.id}`}
+                                role="tooltip"
+                                style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 5, width: 'max-content', background: '#0f172a', color: '#ffffff', fontSize: '0.72rem', fontWeight: 700, lineHeight: 1.35, padding: '6px 8px', borderRadius: '6px', boxShadow: '0 8px 20px rgba(15, 23, 42, 0.25)', pointerEvents: 'none', whiteSpace: 'nowrap' }}
+                              >
+                                {REVERT_WINDOW_CLOSED}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -4733,6 +4795,19 @@ export default function SFGStoreManagement({
             </div>
           </div>
         </div>
+      )}
+
+      {revertTarget && viewHistoryItem && (
+        <RevertConsumptionModal
+          batch={viewHistoryItem.sfgBatchCode}
+          log={revertTarget}
+          onClose={() => setRevertTarget(null)}
+          onReverted={async () => {
+            setRevertTarget(null);
+            if (onConsumptionReverted) await onConsumptionReverted();
+            window.dispatchEvent(new Event('sfg-consumption-reverted'));
+          }}
+        />
       )}
 
       {/* ==================================================================== */}

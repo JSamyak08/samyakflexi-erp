@@ -659,6 +659,7 @@ export function netUsableForSave(record = {}) {
 export function sumSfgScrapKg(logs) {
   const totals = Object.fromEntries(SCRAP_KEYS.map((key) => [key, 0]));
   (Array.isArray(logs) ? logs : []).forEach((log) => {
+    if (String(log?.status || '').trim().toLowerCase() === 'reverted' || log?.revertedAt) return;
     const breakdown = log?.scrapBreakdown || {};
     SCRAP_KEYS.forEach((key) => {
       const number = finiteNumber(breakdown[key]);

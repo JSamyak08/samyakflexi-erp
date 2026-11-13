@@ -4,6 +4,7 @@
  */
 
 import { NOT_RECORDED, computeDryInkSolids, finiteNumber } from './productionRecordQuality.js';
+import { isRevertedConsumption } from './revertConsumption.js';
 
 const STAGE_RULES = {
   printing: { warnGainPct: 8, warnGainKg: 40, blockGainPct: 20, blockGainKg: 120, warnLossPct: 8, blockLossPct: 25 },
@@ -191,6 +192,7 @@ export function buildRollLineage(record = {}) {
 
   const seenBarcodes = new Map();
   (record.sfgConsumptions || []).forEach((log, index) => {
+    if (isRevertedConsumption(log)) return;
     const stage = stageKeyFromName(log?.targetProcess);
     const label = log?.targetProcess || stage;
     const step = emptyStep(stage, label);
