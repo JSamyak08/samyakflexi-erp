@@ -57,6 +57,9 @@ export function withStoredShipmentNames(record, row) {
     orderId: firstFilled(record.orderId, source.order_id),
     jobName: firstFilled(record.jobName, source.job_name),
     clientName: firstFilled(record.clientName, source.client_name),
+    vehicleNo: firstFilled(record.vehicleNo, record.vehicle_no, source.vehicle_no, source.vehicleNo),
+    lrNo: firstFilled(record.lrNo, record.lr_no, source.lr_no, source.lrNo),
+    dispatchDate: firstFilled(record.dispatchDate, record.dispatch_date, source.dispatch_date, source.dispatchDate),
   };
 }
 

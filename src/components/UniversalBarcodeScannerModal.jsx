@@ -50,6 +50,16 @@ import { fetchPayloadRecords } from '../services/businessRecords';
 import { findScrapForScan, legacyScrapBarcode, scrapScanCard } from '../utils/scrapIdentity';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import {
+  EMPTY_TRACE_MESSAGE,
+  grnForRoll,
+  qcStatusTone,
+  readablePlantDate,
+  resolveBarcodeMaterials,
+  shipmentDispatchDate,
+  shipmentLr,
+  shipmentVehicle
+} from '../utils/barcodeMaterialTrace';
+import {
   cameraChoices,
   createBarcodeDetector,
   detectBarcode,
@@ -89,6 +99,8 @@ export default function UniversalBarcodeScannerModal({
   productionRecords = [],
   vendors = [],
   scrapItems: scrapItemsProp = null,
+  storeIssueTransactions = [],
+  sfgGoods = [],
   onNavigateToProductionRecord
 }) {
   const [loadedScrapItems, setLoadedScrapItems] = useState([]);
@@ -103,6 +115,8 @@ export default function UniversalBarcodeScannerModal({
   const [streamGeneration, setStreamGeneration] = useState(0);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
+  const [ledgerEntries, setLedgerEntries] = useState([]);
+  const [fetchedStoreIssues, setFetchedStoreIssues] = useState([]);
   
   const inputRef = useRef(null);
   const shellRef = useRef(null);
@@ -158,6 +172,45 @@ export default function UniversalBarcodeScannerModal({
       .catch(() => { if (active) setLoadedScrapItems([]); });
     return () => { active = false; };
   }, [isOpen, scrapItemsProp]);
+
+  // Read-only. Issue rows are not all loaded for every role, and the inspector must not invent them.
+  useEffect(() => {
+    if (!isOpen || !isSupabaseConfigured()) return undefined;
+    let active = true;
+    const readPages = async (table, columns, apply) => {
+      const rows = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        let query = supabase.from(table).select(columns).range(from, from + 999);
+        if (apply) query = apply(query);
+        const { data, error } = await query;
+        if (error) throw error;
+        const batch = Array.isArray(data) ? data : [];
+        rows.push(...batch);
+        if (batch.length < 1000) break;
+      }
+      return rows;
+    };
+    Promise.all([
+      readPages(
+        'inventory_ledger_entries',
+        'entry_kind, barcode, parent_barcode, order_id, production_record_id, job_name, item_name, film_type, category, vendor_name, batch_no, grn_no, micron',
+        (query) => query.eq('entry_kind', 'issue')
+      ),
+      readPages('store_issue_transactions', 'id, payload')
+    ]).then(([ledgerRows, issueRows]) => {
+      if (!active) return;
+      setLedgerEntries(ledgerRows);
+      setFetchedStoreIssues(issueRows.map((row) => ({
+        id: row.id,
+        ...(row.payload && typeof row.payload === 'object' ? row.payload : {})
+      })));
+    }).catch(() => {
+      if (!active) return;
+      setLedgerEntries([]);
+      setFetchedStoreIssues([]);
+    });
+    return () => { active = false; };
+  }, [isOpen]);
 
   // Clean up camera stream on unmount
   useEffect(() => {
@@ -262,136 +315,15 @@ export default function UniversalBarcodeScannerModal({
     if (inputRef.current) inputRef.current.focus();
   };
 
-  // Helper to resolve materials used and inward GRNs for a job dynamically from database
-  const getJobTraceabilityData = (targetJobName, targetOrderId) => {
-    if (!targetJobName && !targetOrderId) return { dateOfPrinting: null, materialsUsed: [], jobName: '', orderId: '' };
-
-    const matchedProdRec = (productionRecords || []).find(pr => 
-      (targetOrderId && String(pr.orderId) === String(targetOrderId)) ||
-      (targetJobName && String(pr.jobName || '').toLowerCase().trim() === String(targetJobName).toLowerCase().trim())
-    );
-    const matchedOrd = (orders || []).find(o => 
-      (targetOrderId && String(o.id) === String(targetOrderId)) ||
-      (targetJobName && String(o.jobName || '').toLowerCase().trim() === String(targetJobName).toLowerCase().trim())
-    );
-
-    const printingDate = matchedProdRec?.activeRunDate || 
-                         matchedProdRec?.printingDate || 
-                         matchedProdRec?.startedAt || 
-                         matchedProdRec?.date || 
-                         matchedProdRec?.created_at || 
-                         matchedOrd?.printingDate || 
-                         matchedOrd?.orderDate || 
-                         'Active Printing Run Date Recorded';
-
-    const resolvedJobName = matchedProdRec?.jobName || matchedOrd?.jobName || targetJobName || '';
-    const resolvedOrderId = matchedProdRec?.orderId || matchedOrd?.id || targetOrderId || '';
-
-    const materials = [];
-    const usedNames = new Set();
-
-    // 1. From production record materialsUsed / inputRolls
-    const prodMats = matchedProdRec?.materialsUsed || matchedProdRec?.inputRolls || matchedProdRec?.rawMaterials || [];
-    prodMats.forEach(m => {
-      const mName = textFrom(m.itemName, m.name, m.filmType, m.materialName) || 'Film Substrate';
-      const mNameKey = codeKey(mName);
-      if (!mNameKey || usedNames.has(mNameKey)) return;
-      usedNames.add(mNameKey);
-
-      const matchedGrn = (grns || []).find(g => {
-        const gItem = codeKeyFrom(g.itemName, g.item_name);
-        const mItem = mNameKey;
-        const mBatch = codeKeyFrom(m.batchNo, m.batch_no);
-        const gBatch = codeKeyFrom(g.batch_no, g.batchNo);
-        return (gItem && (gItem.includes(mItem) || mItem.includes(gItem))) || (mBatch && gBatch && mBatch === gBatch);
-      });
-
-      materials.push({
-        name: mName,
-        category: m.category || matchedGrn?.category || 'Film Substrates',
-        qtyUsed: m.qtyKg || m.weightKg || m.quantity ? `${m.qtyKg || m.weightKg || m.quantity} kg` : 'As per spec',
-        grnNo: matchedGrn?.grn_number || matchedGrn?.grnNumber || matchedGrn?.grnNo || m.grnNo || 'GRN-STORE',
-        vendorName: matchedGrn?.vendor_name || matchedGrn?.vendorName || matchedGrn?.supplier || m.vendorName || 'N/A',
-        invoiceNo: matchedGrn?.invoice_number || matchedGrn?.invoiceNumber || matchedGrn?.invoiceNo || m.invoiceNo || 'N/A',
-        batchNo: matchedGrn?.batch_no || matchedGrn?.batchNo || m.batchNo || 'N/A',
-        receivedDate: matchedGrn?.received_date || matchedGrn?.receivedDate || 'N/A',
-        qcStatus: matchedGrn?.qc_status || matchedGrn?.qcStatus || 'PASSED & APPROVED'
-      });
-    });
-
-    // 2. From matchedOrd.materialRequirements
-    const ordReqs = matchedOrd?.materialRequirements || [];
-    ordReqs.forEach(req => {
-      const rName = `${req.filmType || 'Substrate'} ${req.micron && req.micron !== '-' ? req.micron + 'µ' : ''}`.trim();
-      const rNameKey = codeKey(rName);
-      if (!rNameKey || usedNames.has(rNameKey)) return;
-      usedNames.add(rNameKey);
-
-      const matchedGrn = (grns || []).find(g => {
-        const gItem = codeKeyFrom(g.itemName, g.item_name);
-        const rItem = rNameKey;
-        return gItem && (gItem.includes(rItem) || rItem.includes(gItem) || g.category === 'Film Substrates');
-      });
-
-      materials.push({
-        name: rName,
-        category: 'Film Substrates',
-        qtyUsed: req.qtyKg ? `${req.qtyKg} kg` : 'As per job card',
-        grnNo: matchedGrn?.grn_number || matchedGrn?.grnNumber || matchedGrn?.grnNo || 'GRN-2026-STORE',
-        vendorName: matchedGrn?.vendor_name || matchedGrn?.vendorName || matchedGrn?.supplier || req.preferredVendor || 'N/A',
-        invoiceNo: matchedGrn?.invoice_number || matchedGrn?.invoiceNumber || matchedGrn?.invoiceNo || 'N/A',
-        batchNo: matchedGrn?.batch_no || matchedGrn?.batchNo || 'N/A',
-        receivedDate: matchedGrn?.received_date || matchedGrn?.receivedDate || 'N/A',
-        qcStatus: matchedGrn?.qc_status || matchedGrn?.qcStatus || 'PASSED & APPROVED'
-      });
-    });
-
-    // 3. From Inks & Adhesives
-    if (matchedProdRec?.inksUsed || matchedOrd?.inksUsed) {
-      const inksList = matchedProdRec?.inksUsed || matchedOrd?.inksUsed || [];
-      inksList.forEach(ink => {
-        const inkName = textFrom(ink.shade, ink.productCode, ink.name) || 'Liquid Ink';
-        const inkKey = codeKey(inkName);
-        if (usedNames.has(inkKey)) return;
-        usedNames.add(inkKey);
-
-        const matchedGrn = (grns || []).find(g => textFrom(g.category).includes('Ink') || codeKey(g.itemName).includes('ink'));
-        const matchedInkObj = (inks || []).find(i => codeKey(i.shade) === inkKey || codeKey(i.product_code) === codeKey(ink.productCode));
-
-        materials.push({
-          name: inkName,
-          category: 'Printing Inks & Solvents',
-          qtyUsed: ink.qtyKg ? `${ink.qtyKg} kg` : 'As per run',
-          grnNo: matchedGrn?.grn_number || matchedGrn?.grnNumber || matchedGrn?.grnNo || 'GRN-INK-STORE',
-          vendorName: matchedGrn?.vendor_name || matchedGrn?.vendorName || matchedInkObj?.supplier_name || matchedInkObj?.manufacturer || 'N/A',
-          invoiceNo: matchedGrn?.invoice_number || matchedGrn?.invoiceNumber || 'N/A',
-          batchNo: matchedGrn?.batch_no || matchedGrn?.batchNo || ink.batchNo || 'N/A',
-          receivedDate: matchedGrn?.received_date || matchedGrn?.receivedDate || 'N/A',
-          qcStatus: 'PASSED & APPROVED'
-        });
-      });
-    }
-
-    // 4. Default fallback to inventory / GRNs matching category if list is still empty
-    if (materials.length === 0 && (grns || []).length > 0) {
-      const sampleGrns = grns.slice(0, 2);
-      sampleGrns.forEach(g => {
-        materials.push({
-          name: g.itemName || g.item_name || 'Substrate Material',
-          category: g.category || 'Film Substrates',
-          qtyUsed: g.received_qty_kg || g.receivedQtyKg ? `${g.received_qty_kg || g.receivedQtyKg} kg` : 'N/A',
-          grnNo: g.grn_number || g.grnNumber || g.grnNo || g.id,
-          vendorName: g.vendor_name || g.vendorName || g.supplier || 'N/A',
-          invoiceNo: g.invoice_number || g.invoiceNumber || g.invoiceNo || 'N/A',
-          batchNo: g.batch_no || g.batchNo || 'N/A',
-          receivedDate: g.received_date || g.receivedDate || 'N/A',
-          qcStatus: g.qc_status || g.qcStatus || 'PASSED & APPROVED'
-        });
-      });
-    }
-
-    return { dateOfPrinting: printingDate, materialsUsed: materials, jobName: resolvedJobName, orderId: resolvedOrderId };
-  };
+  const traceBarcode = (args) => resolveBarcodeMaterials({
+    productionRecords,
+    inventoryRolls,
+    grns,
+    sfgGoods,
+    storeIssues: [...(storeIssueTransactions || []), ...(fetchedStoreIssues || [])],
+    ledgerEntries,
+    ...args
+  });
 
   // Cross-Database Multi-Collection Search Algorithm
   const searchResults = useMemo(() => {
@@ -426,10 +358,16 @@ export default function UniversalBarcodeScannerModal({
     if (matchedDispatchRollItem) {
       const roll = matchedDispatchRollItem;
       const shipment = parentDispatchDoc;
-      const jName = roll.jobName || shipment?.jobName || 'Finished Goods Job';
-      const oId = roll.orderId || shipment?.orderId || 'N/A';
-      const traceData = getJobTraceabilityData(jName, oId);
-      const matchedOrder = (orders || []).find(o => o.id === oId || o.jobName === jName);
+      const jName = roll.jobName || shipment?.jobName || '';
+      const oId = roll.orderId || shipment?.orderId || '';
+      const traceData = traceBarcode({
+        barcode: textFrom(roll.barcodeId, roll.id, roll.sourceFgBarcode),
+        dispatchItem: roll,
+        shipment,
+        jobName: jName,
+        orderId: oId
+      });
+      const matchedOrder = (orders || []).find(o => (oId && o.id === oId) || (jName && o.jobName === jName));
 
       return {
         type: 'DISPATCH_ROLL',
@@ -443,23 +381,24 @@ export default function UniversalBarcodeScannerModal({
         orderId: traceData.orderId || oId,
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
+        traceabilityChecked: true,
         isDispatchBarCode: true,
         properties: [
           { label: 'Dispatch Roll Barcode ID', value: textFrom(roll.barcodeId, roll.id), isCode: true },
-          { label: 'Job Order Name', value: jName },
+          { label: 'Job Order Name', value: jName || 'N/A' },
           { label: 'Client Consignee', value: shipment?.clientName || matchedOrder?.clientName || 'N/A' },
-          { label: 'Order OCN / Ref', value: oId, isCode: true },
+          { label: 'Order OCN / Ref', value: oId || 'N/A', isCode: true },
           { label: 'Invoice No', value: shipment?.invoiceNo || matchedOrder?.invoiceNo || 'N/A' },
-          { label: 'Substrate Spec', value: roll.substrateSpec || roll.structure || matchedOrder?.structure || 'PET 12µ / METBOPP 18µ' },
+          { label: 'Substrate Spec', value: textFrom(roll.substrateSpec, roll.structure, matchedOrder?.structure) || 'N/A' },
           { label: 'Roll Net Weight', value: roll.netWeightKg ? `${roll.netWeightKg} kg` : (roll.weightKg ? `${roll.weightKg} kg` : 'N/A'), isHighlight: true },
           { label: 'Gross Scale Weight', value: roll.grossWeightKg ? `${roll.grossWeightKg} kg` : 'N/A' },
           { label: 'Core Tare Weight', value: roll.coreWeightKg ? `${roll.coreWeightKg} kg` : 'N/A' },
-          { label: 'Core Size', value: roll.coreSize || '3 Inch' },
+          { label: 'Core Size', value: roll.coreSize || 'N/A' },
           { label: 'Roll # in Packing List', value: roll.rollNo ? `Roll #${roll.rollNo}` : 'N/A' },
           { label: 'Packing List / Dispatch ID', value: shipment?.dispatchId || shipment?.id || 'N/A' },
-          { label: 'Vehicle Number', value: shipment?.vehicleNo || 'N/A' },
-          { label: 'LR / Waybill No', value: shipment?.lrNo || 'N/A' },
-          { label: 'Dispatch Date', value: shipment?.dispatchDate || 'N/A' }
+          { label: 'Vehicle Number', value: shipmentVehicle(shipment) || 'N/A' },
+          { label: 'LR / Waybill No', value: shipmentLr(shipment) || 'N/A' },
+          { label: 'Dispatch Date', value: shipmentDispatchDate(shipment) || 'N/A' }
         ]
       };
     }
@@ -470,16 +409,8 @@ export default function UniversalBarcodeScannerModal({
     const matchedRoll = findInventoryRollByScan(inventoryRolls, query);
 
     if (matchedRoll) {
-      // Find linked GRN across grns list to backfill any missing inward metadata
-      const linkedGrn = (grns || []).find(g => {
-        const gNum = codeKeyFrom(g.grn_number, g.grnNumber, g.grnNo, g.id);
-        const gCode = gNum.replace(/^grn-/, '');
-        const rollGrn = codeKeyFrom(matchedRoll.grnNo, matchedRoll.grn_no);
-        return (rollGrn && (gNum === rollGrn || gNum.includes(rollGrn) || rollGrn.includes(gNum))) ||
-               (grnExtract && (gCode === grnExtract || gNum.includes(grnExtract))) ||
-               (matchedRoll.invoiceNo && (codeKeyFrom(g.invoice_number, g.invoiceNumber, g.invoiceNo) === codeKey(matchedRoll.invoiceNo))) ||
-               (matchedRoll.batchNo && (codeKeyFrom(g.batch_no, g.batchNo) === codeKey(matchedRoll.batchNo)));
-      });
+      // The roll's own GRN id or number. A shared batch or a similar name is not a link.
+      const linkedGrn = grnForRoll(grns, matchedRoll);
 
       // Find linked Inventory Item across inventory list
       const linkedItem = (inventory || []).find(item => {
@@ -493,13 +424,13 @@ export default function UniversalBarcodeScannerModal({
       });
 
       const resolvedCategory = textFrom(matchedRoll.category, linkedGrn?.category, linkedItem?.category) || (codeStartsWith(matchedRoll.barcodeId, 'CON-BC') ? 'Chemicals & Solvents' : '');
-      const resolvedItemName = displayItemName(matchedRoll.itemName || linkedGrn?.itemName || linkedItem?.item_name || linkedItem?.itemName) || (resolvedCategory ? `${resolvedCategory} Material` : 'Inward Stock Material');
-      const resolvedVendor = matchedRoll.vendorName || matchedRoll.vendor || linkedGrn?.vendor_name || linkedGrn?.vendorName || linkedGrn?.supplier || linkedItem?.vendor || linkedItem?.vendor_name || 'N/A';
-      const resolvedBatch = matchedRoll.batchNo || matchedRoll.lotNo || linkedGrn?.batch_no || linkedGrn?.batchNo || 'N/A';
-      const resolvedInvoice = matchedRoll.invoiceNo || matchedRoll.invoice_no || linkedGrn?.invoice_number || linkedGrn?.invoiceNumber || linkedGrn?.invoiceNo || 'N/A';
-      const resolvedPO = matchedRoll.poNumber || matchedRoll.po_number || linkedGrn?.po_number || linkedGrn?.poNumber || 'N/A';
-      const resolvedGRN = matchedRoll.grnNo || matchedRoll.grn_no || linkedGrn?.grn_number || linkedGrn?.grnNumber || linkedGrn?.grnNo || (grnExtract && grnExtract.length > 3 ? `GRN-${grnExtract.toUpperCase()}` : 'N/A');
-      const resolvedPackaging = matchedRoll.packagingType || linkedGrn?.packagingType || (resolvedCategory.includes('Chemical') || resolvedCategory.includes('Solvent') ? 'Drum / Container' : (resolvedCategory.includes('Ink') ? 'Ink Container / Bucket' : 'Roll / Pack'));
+      const resolvedItemName = displayItemName(matchedRoll.itemName || linkedGrn?.itemName || linkedItem?.item_name || linkedItem?.itemName) || textFrom(matchedRoll.barcodeId, matchedRoll.id) || 'Unnamed roll';
+      const resolvedVendor = textFrom(matchedRoll.vendorName, matchedRoll.vendor, linkedGrn?.vendorName, linkedGrn?.vendor_name, linkedItem?.vendor, linkedItem?.vendor_name) || 'N/A';
+      const resolvedBatch = textFrom(matchedRoll.batchNo, matchedRoll.lotNo, linkedGrn?.batchNo, linkedGrn?.batch_no) || 'N/A';
+      const resolvedInvoice = textFrom(matchedRoll.invoiceNo, matchedRoll.invoice_no, linkedGrn?.invoiceNo, linkedGrn?.invoice_number, linkedGrn?.invoiceNumber) || 'N/A';
+      const resolvedPO = textFrom(matchedRoll.poNumber, matchedRoll.po_number, linkedGrn?.poNumber, linkedGrn?.po_number) || 'N/A';
+      const resolvedGRN = textFrom(matchedRoll.grnNo, matchedRoll.grn_no, matchedRoll.metadata?.grnNo, linkedGrn?.grnNo, linkedGrn?.grn_number, linkedGrn?.grnNumber) || 'N/A';
+      const resolvedPackaging = textFrom(matchedRoll.packagingType) || 'N/A';
 
       const rollTypeText = textFrom(matchedRoll.rollType);
       const isFG = isFinishedGoodsStock({
@@ -548,7 +479,7 @@ export default function UniversalBarcodeScannerModal({
       const rollProps = [
         { label: 'Barcode ID', value: textFrom(matchedRoll.barcodeId, matchedRoll.id) || 'N/A', isCode: true },
         { label: 'Item Name', value: resolvedItemName },
-        { label: 'Material Category', value: resolvedCategory || (isFilm ? 'Film Substrates' : 'General Inventory') },
+        { label: 'Material Category', value: resolvedCategory || (isFilm ? 'Film Substrates' : 'N/A') },
         { label: 'Packaging Unit', value: resolvedPackaging },
         { label: 'Net Usable Qty / Weight', value: matchedRoll.netWeightKg !== undefined && matchedRoll.netWeightKg !== null ? `${matchedRoll.netWeightKg} ${matchedRoll.unit || 'kg'}` : (matchedRoll.weightKg !== undefined && matchedRoll.weightKg !== null ? `${matchedRoll.weightKg} ${matchedRoll.unit || 'kg'}` : 'N/A'), isHighlight: true },
         { label: 'Gross Scale Weight', value: matchedRoll.grossWeightKg !== undefined && matchedRoll.grossWeightKg !== null ? `${matchedRoll.grossWeightKg} ${matchedRoll.unit || 'kg'}` : 'N/A' },
@@ -558,9 +489,9 @@ export default function UniversalBarcodeScannerModal({
         { label: 'Vendor Invoice No', value: resolvedInvoice },
         { label: 'Purchase Order No', value: resolvedPO },
         { label: 'Linked GRN No', value: resolvedGRN },
-        { label: 'QC Quality Status', value: matchedRoll.qcStatus || matchedRoll.qc_status || linkedGrn?.qc_status || linkedGrn?.status || 'N/A', isStatus: true },
-        { label: 'Storage Bay / Location', value: matchedRoll.locationBay || matchedRoll.location || (resolvedCategory === 'Chemicals & Solvents' ? 'Solvent Storage Yard' : (resolvedCategory === 'Inks & Solvents' ? 'Ink Mixing Room' : 'N/A')) },
-        { label: 'Inward / Production Date', value: matchedRoll.productionDate || (matchedRoll.inwardDatetime ? String(matchedRoll.inwardDatetime).split('T')[0] : (matchedRoll.date || linkedGrn?.receivedDate || 'N/A')) }
+        { label: 'QC Quality Status', value: textFrom(matchedRoll.qcStatus, matchedRoll.qc_status, linkedGrn?.qcStatus, linkedGrn?.qc_status) || 'N/A', isStatus: true },
+        { label: 'Storage Bay / Location', value: textFrom(matchedRoll.locationBay, matchedRoll.location) || 'N/A' },
+        { label: 'Inward / Production Date', value: readablePlantDate(matchedRoll.inwardDatetime || matchedRoll.productionDate || matchedRoll.date) || readablePlantDate(linkedGrn?.received_date || linkedGrn?.receivedDate) || 'N/A' }
       ];
 
       // If film roll, include technical film geometry
@@ -597,7 +528,12 @@ export default function UniversalBarcodeScannerModal({
       rollProps.push({ label: 'Current Status', value: matchedRoll.status || 'In Stock' });
 
       // Traceability data
-      const traceData = getJobTraceabilityData(matchedRoll.jobName, matchedRoll.orderId);
+      const traceData = traceBarcode({
+        barcode: textFrom(matchedRoll.barcodeId, matchedRoll.id),
+        roll: matchedRoll,
+        jobName: matchedRoll.jobName,
+        orderId: matchedRoll.orderId
+      });
 
       return {
         type: 'ROLL',
@@ -613,6 +549,7 @@ export default function UniversalBarcodeScannerModal({
         orderId: traceData.orderId || matchedRoll.orderId,
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
+        traceabilityChecked: true,
         isDispatchBarCode: isFG || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-')
       };
     }
@@ -632,7 +569,11 @@ export default function UniversalBarcodeScannerModal({
     });
 
     if (matchedOrder) {
-      const traceData = getJobTraceabilityData(matchedOrder.jobName, matchedOrder.id);
+      const traceData = traceBarcode({
+        barcode: matchedOrder.id,
+        jobName: matchedOrder.jobName,
+        orderId: matchedOrder.id
+      });
       return {
         type: 'ORDER',
         entityCategory: 'Sales Order & Job Card (OCN)',
@@ -645,6 +586,7 @@ export default function UniversalBarcodeScannerModal({
         orderId: matchedOrder.id,
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
+        traceabilityChecked: true,
         isDispatchBarCode: true,
         properties: [
           { label: 'Order ID / OCN', value: matchedOrder.id, isCode: true },
@@ -652,7 +594,7 @@ export default function UniversalBarcodeScannerModal({
           { label: 'Client Name', value: matchedOrder.clientName || 'N/A' },
           { label: 'Order Quantity', value: matchedOrder.orderQtyKg ? `${matchedOrder.orderQtyKg} kg` : 'N/A', isHighlight: true },
           { label: 'Order Type', value: matchedOrder.orderType || 'N/A' },
-          { label: 'Target Delivery Date', value: matchedOrder.targetDeliveryDate || matchedOrder.deliveryDate || 'N/A' },
+          { label: 'Target Delivery Date', value: readablePlantDate(matchedOrder.targetDeliveryDate || matchedOrder.deliveryDate) || 'N/A' },
           { label: 'Production Status', value: matchedOrder.status || 'N/A', isStatus: true },
           { label: 'Printing Execution', value: matchedOrder.printing_status || 'N/A' },
           { label: 'Actual Meters Printed', value: matchedOrder.actual_meters_printed ? `${matchedOrder.actual_meters_printed} m` : 'N/A' }
@@ -699,7 +641,11 @@ export default function UniversalBarcodeScannerModal({
     });
 
     if (matchedJobMaster) {
-      const traceData = getJobTraceabilityData(matchedJobMaster.job_name || matchedJobMaster.jobName, matchedJobMaster.id);
+      const traceData = traceBarcode({
+        barcode: matchedJobMaster.sku_code || matchedJobMaster.skuCode || matchedJobMaster.id,
+        jobName: matchedJobMaster.job_name || matchedJobMaster.jobName,
+        orderId: ''
+      });
       return {
         type: 'JOB_MASTER',
         entityCategory: 'Job Master Technical Specification',
@@ -708,10 +654,11 @@ export default function UniversalBarcodeScannerModal({
         title: matchedJobMaster.job_name || matchedJobMaster.jobName || 'Job Master',
         code: matchedJobMaster.sku_code || matchedJobMaster.skuCode || matchedJobMaster.id,
         raw: matchedJobMaster,
-        jobName: matchedJobMaster.job_name || matchedJobMaster.jobName,
-        orderId: matchedJobMaster.id,
+        jobName: traceData.jobName || matchedJobMaster.job_name || matchedJobMaster.jobName,
+        orderId: traceData.orderId || '',
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
+        traceabilityChecked: true,
         properties: [
           { label: 'Job SKU Code', value: matchedJobMaster.sku_code || matchedJobMaster.skuCode || 'N/A', isCode: true },
           { label: 'Job Name', value: matchedJobMaster.job_name || matchedJobMaster.jobName || 'N/A' },
@@ -750,7 +697,7 @@ export default function UniversalBarcodeScannerModal({
           { label: 'Purchase Order No', value: matchedGrn.po_number || matchedGrn.poNumber || 'N/A' },
           { label: 'Vendor Invoice No', value: matchedGrn.invoice_number || matchedGrn.invoiceNumber || matchedGrn.invoiceNo || 'N/A' },
           { label: 'Batch / Lot Number', value: matchedGrn.batch_no || matchedGrn.batchNo || 'N/A' },
-          { label: 'Received Date', value: matchedGrn.received_date || matchedGrn.receivedDate || 'N/A' },
+          { label: 'Received Date', value: readablePlantDate(matchedGrn.received_date || matchedGrn.receivedDate) || 'N/A' },
           { label: 'Received Quantity', value: matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || matchedGrn.netWeightKg ? `${matchedGrn.received_qty_kg || matchedGrn.receivedQtyKg || matchedGrn.netWeightKg} ${matchedGrn.unit || 'kg'}` : 'N/A', isHighlight: true },
           { label: 'QC Inspection Status', value: matchedGrn.qc_status || matchedGrn.qcStatus || matchedGrn.status || 'Pending QC', isStatus: true }
         ]
@@ -795,7 +742,12 @@ export default function UniversalBarcodeScannerModal({
     if (matchedDispatch) {
       const jName = matchedDispatch.job_name || matchedDispatch.jobName || '';
       const oId = matchedDispatch.order_id || matchedDispatch.orderId || '';
-      const traceData = getJobTraceabilityData(jName, oId);
+      const traceData = traceBarcode({
+        barcode: matchedDispatch.dispatch_id || matchedDispatch.dispatchId || matchedDispatch.id,
+        shipment: matchedDispatch,
+        jobName: jName,
+        orderId: oId
+      });
 
       return {
         type: 'DISPATCH',
@@ -809,18 +761,19 @@ export default function UniversalBarcodeScannerModal({
         orderId: traceData.orderId || oId,
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
+        traceabilityChecked: true,
         isDispatchBarCode: true,
         properties: [
           { label: 'Dispatch Shipment ID', value: matchedDispatch.dispatch_id || matchedDispatch.dispatchId || matchedDispatch.id, isCode: true },
           { label: 'Client Consignee', value: matchedDispatch.client_name || matchedDispatch.clientName || 'N/A' },
           { label: 'Job Name', value: jName || 'N/A' },
           { label: 'Invoice No', value: matchedDispatch.invoiceNo || matchedDispatch.invoice_no || 'N/A' },
-          { label: 'Vehicle Number', value: matchedDispatch.vehicle_no || matchedDispatch.vehicleNo || matchedDispatch.vehicle_number || 'N/A' },
-          { label: 'LR / Waybill Number', value: matchedDispatch.lr_no || matchedDispatch.lrNo || matchedDispatch.lr_number || 'N/A' },
+          { label: 'Vehicle Number', value: shipmentVehicle(matchedDispatch) || 'N/A' },
+          { label: 'LR / Waybill Number', value: shipmentLr(matchedDispatch) || 'N/A' },
           { label: 'Total Rolls Dispatched', value: matchedDispatch.total_rolls || matchedDispatch.totalRolls || matchedDispatch.items?.length ? `${matchedDispatch.total_rolls || matchedDispatch.totalRolls || matchedDispatch.items?.length} Rolls` : 'N/A' },
           { label: 'Total Net Weight', value: matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg ? `${matchedDispatch.total_net_weight_kg || matchedDispatch.totalNetWeightKg} kg` : 'N/A', isHighlight: true },
           { label: 'Total Gross Weight', value: matchedDispatch.total_gross_weight_kg || matchedDispatch.totalGrossWeightKg ? `${matchedDispatch.total_gross_weight_kg || matchedDispatch.totalGrossWeightKg} kg` : 'N/A' },
-          { label: 'Dispatch Date', value: matchedDispatch.dispatch_date || matchedDispatch.dispatchDate ? String(matchedDispatch.dispatch_date || matchedDispatch.dispatchDate).split('T')[0] : 'N/A' }
+          { label: 'Dispatch Date', value: shipmentDispatchDate(matchedDispatch) || 'N/A' }
         ]
       };
     }
@@ -966,7 +919,7 @@ export default function UniversalBarcodeScannerModal({
     }
 
     return { notFound: true, query: activeBarcode };
-  }, [activeBarcode, deletedBarcodes, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords, scrapItems]);
+  }, [activeBarcode, deletedBarcodes, inventoryRolls, orders, cylinders, jobMasters, grns, inks, dispatchShipments, deliveryChallans, inventory, vendors, productionRecords, scrapItems, storeIssueTransactions, fetchedStoreIssues, ledgerEntries, sfgGoods]);
 
   const handleCopyDetails = () => {
     if (!searchResults || searchResults.notFound || searchResults.deleted) return;
@@ -977,6 +930,10 @@ export default function UniversalBarcodeScannerModal({
       `Identifier: ${searchResults.code}`,
       `------------------------------------------`,
       ...searchResults.properties.map(p => `${p.label}: ${p.value}`),
+      ...(searchResults.dateOfPrinting ? [`Date of Printing: ${searchResults.dateOfPrinting}`] : []),
+      ...(Array.isArray(searchResults.materialsUsed) && searchResults.materialsUsed.length
+        ? searchResults.materialsUsed.map((mat) => `Material: ${mat.name} | GRN ${mat.grnNo} | ${mat.vendorName} | Invoice ${mat.invoiceNo} | Batch ${mat.batchNo} | Inward ${mat.receivedDate} | QC ${mat.qcStatus}`)
+        : (searchResults.traceabilityChecked ? [EMPTY_TRACE_MESSAGE] : [])),
       `------------------------------------------`,
       `Scanned At: ${new Date().toLocaleString('en-IN')}`
     ].join('\n');
@@ -1513,60 +1470,70 @@ export default function UniversalBarcodeScannerModal({
                 </div>
               )}
 
-              {/* Raw Materials Used (All) with Inward GRN Details Table */}
-              {Array.isArray(searchResults.materialsUsed) && searchResults.materialsUsed.length > 0 && (
-                <div 
-                  style={{ 
-                    background: '#ffffff', 
-                    border: '1px solid #cbd5e1', 
-                    borderRadius: '12px', 
+              {/* Raw materials actually consumed, issued, or linked by roll lineage */}
+              {searchResults.traceabilityChecked && (
+                <div
+                  data-material-trace=""
+                  style={{
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '12px',
                     padding: '16px',
                     boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                     <h4 style={{ margin: 0, fontSize: '0.92rem', fontWeight: '800', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Database size={16} style={{ color: '#2563eb' }} /> Raw Materials Used & Inward GRN Details ({searchResults.materialsUsed.length})
+                      <Database size={16} style={{ color: '#2563eb' }} /> Raw Materials Used & Inward GRN Details ({searchResults.materialsUsed?.length || 0})
                     </h4>
                     <span style={{ fontSize: '0.72rem', fontWeight: '700', background: '#e0f2fe', color: '#0369a1', padding: '3px 8px', borderRadius: '4px' }}>
                       Database Inward Traceability
                     </span>
                   </div>
 
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
-                      <thead>
-                        <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '1px solid #cbd5e1', textAlign: 'left' }}>
-                          <th style={{ padding: '8px 10px' }}>Material Name</th>
-                          <th style={{ padding: '8px 10px' }}>Category</th>
-                          <th style={{ padding: '8px 10px' }}>Inward GRN #</th>
-                          <th style={{ padding: '8px 10px' }}>Vendor / Supplier</th>
-                          <th style={{ padding: '8px 10px' }}>Vendor Invoice #</th>
-                          <th style={{ padding: '8px 10px' }}>Batch / Lot #</th>
-                          <th style={{ padding: '8px 10px' }}>Inward Date</th>
-                          <th style={{ padding: '8px 10px' }}>QC Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {searchResults.materialsUsed.map((mat, idx) => (
-                          <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                            <td style={{ padding: '8px 10px', fontWeight: '700', color: '#0f172a' }}>{mat.name}</td>
-                            <td style={{ padding: '8px 10px', color: '#475569' }}>{mat.category}</td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: '800', color: '#2563eb' }}>{mat.grnNo}</td>
-                            <td style={{ padding: '8px 10px', color: '#334155' }}>{mat.vendorName}</td>
-                            <td style={{ padding: '8px 10px', color: '#475569' }}>{mat.invoiceNo}</td>
-                            <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{mat.batchNo}</td>
-                            <td style={{ padding: '8px 10px', color: '#64748b' }}>{mat.receivedDate}</td>
-                            <td style={{ padding: '8px 10px' }}>
-                              <span style={{ fontSize: '0.7rem', fontWeight: '700', color: '#047857', background: '#ecfdf5', padding: '2px 6px', borderRadius: '4px' }}>
-                                {mat.qcStatus}
-                              </span>
-                            </td>
+                  {Array.isArray(searchResults.materialsUsed) && searchResults.materialsUsed.length > 0 ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', color: '#475569', borderBottom: '1px solid #cbd5e1', textAlign: 'left' }}>
+                            <th style={{ padding: '8px 10px' }}>Material Name</th>
+                            <th style={{ padding: '8px 10px' }}>Category</th>
+                            <th style={{ padding: '8px 10px' }}>Inward GRN #</th>
+                            <th style={{ padding: '8px 10px' }}>Vendor / Supplier</th>
+                            <th style={{ padding: '8px 10px' }}>Vendor Invoice #</th>
+                            <th style={{ padding: '8px 10px' }}>Batch / Lot #</th>
+                            <th style={{ padding: '8px 10px' }}>Inward Date</th>
+                            <th style={{ padding: '8px 10px' }}>QC Status</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {searchResults.materialsUsed.map((mat, idx) => {
+                            const tone = qcStatusTone(mat.qcStatus);
+                            return (
+                              <tr key={`${mat.barcode || mat.grnNo || 'row'}-${idx}`} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
+                                <td style={{ padding: '8px 10px', fontWeight: '700', color: '#0f172a' }}>{mat.name}</td>
+                                <td style={{ padding: '8px 10px', color: '#475569' }}>{mat.category}</td>
+                                <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: '800', color: '#2563eb' }}>{mat.grnNo}</td>
+                                <td style={{ padding: '8px 10px', color: '#334155' }}>{mat.vendorName}</td>
+                                <td style={{ padding: '8px 10px', color: '#475569' }}>{mat.invoiceNo}</td>
+                                <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{mat.batchNo}</td>
+                                <td style={{ padding: '8px 10px', color: '#64748b' }}>{mat.receivedDate}</td>
+                                <td style={{ padding: '8px 10px' }}>
+                                  <span style={{ fontSize: '0.7rem', fontWeight: '700', color: tone.color, background: tone.background, padding: '2px 6px', borderRadius: '4px' }}>
+                                    {mat.qcStatus}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div data-material-trace-empty="" style={{ padding: '14px 12px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#475569', fontSize: '0.84rem', fontWeight: '700' }}>
+                      {EMPTY_TRACE_MESSAGE}
+                    </div>
+                  )}
                 </div>
               )}
 

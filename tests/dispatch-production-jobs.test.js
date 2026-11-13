@@ -75,6 +75,22 @@ test('a blank payload name falls back to the shipment columns', () => {
   assert.equal(blank.jobName, 'Column Job');
   assert.equal(blank.clientName, 'Column Client');
   assert.equal(blank.orderId, 'ORD-9');
+
+  const storedVehicle = withStoredShipmentNames(
+    { vehicleNo: 'MH12QA1234', lrNo: '', dispatchDate: '2026-11-13T07:24:08.890Z' },
+    { vehicle_no: 'COLUMN-1', lr_no: 'LR-9', dispatch_date: '2026-01-01T00:00:00.000Z' },
+  );
+  assert.equal(storedVehicle.vehicleNo, 'MH12QA1234');
+  assert.equal(storedVehicle.lrNo, 'LR-9');
+  assert.equal(storedVehicle.dispatchDate, '2026-11-13T07:24:08.890Z');
+
+  const columnVehicle = withStoredShipmentNames(
+    { vehicleNo: '', lrNo: '  ', dispatchDate: '' },
+    { vehicle_no: 'MH12QA1234', lr_no: 'LR-COLUMN', dispatch_date: '2026-10-22T01:52:08.000Z' },
+  );
+  assert.equal(columnVehicle.vehicleNo, 'MH12QA1234');
+  assert.equal(columnVehicle.lrNo, 'LR-COLUMN');
+  assert.equal(columnVehicle.dispatchDate, '2026-10-22T01:52:08.000Z');
 });
 
 test('the packing list table fills a missing name from the job list', () => {

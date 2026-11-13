@@ -7064,6 +7064,8 @@ export default function App() {
         deliveryChallans={deliveryChallans}
         productionRecords={productionRecords}
         vendors={vendors}
+        storeIssueTransactions={storeIssueTransactions}
+        sfgGoods={sfgGoods}
         onNavigateToProductionRecord={(jobName, params) => {
           setIsBarcodeScannerOpen(false);
           const recordId = params?.id || params?.recordId;
