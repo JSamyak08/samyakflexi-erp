@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { anyAssignedRole } from '../assignedRoles';
 import { canDecideGrnQc } from '../approvalAccess';
-import { formatPlantDateTime } from '../utils/dbDates';
+import { formatPlantDate, formatPlantDateTime } from '../utils/dbDates';
 import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
 import { 
   Package, 
@@ -49,6 +49,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
+import ModalOverlay from './ModalOverlay';
 import SearchableSelect from './SearchableSelect';
 import GrnPoSuggestion from './GrnPoSuggestion';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
@@ -58,7 +59,6 @@ import {
   barcodeCode,
   buildRollFifoIndex,
   fifosForItemIds,
-  formatConsumedFifoLabel,
   formatFifoAgeLabel,
   getItemInwardDate,
   parseDateFlexible,
@@ -879,7 +879,12 @@ export default function InventoryManagement({
 
   // Ledger Filter & Quick Adjustment State
   const [ledgerFilterTab, setLedgerFilterTab] = useState('all'); // 'all', 'inward', 'usage', 'reconciliation'
+  const [ledgerPanel, setLedgerPanel] = useState('ledger'); // 'ledger' | 'barcodes'
   const [ledgerSearchTerm, setLedgerSearchTerm] = useState('');
+
+  useEffect(() => {
+    setLedgerPanel('ledger');
+  }, [selectedItemForPurchaseHistory]);
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   const [selectedStockIds, setSelectedStockIds] = useState(() => new Set());
   const [deletePrompt, setDeletePrompt] = useState(null);
@@ -5861,34 +5866,6 @@ export default function InventoryManagement({
                         {item.itemCode && (
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.itemCode}</div>
                         )}
-                        {barcodeFifos.length > 0 && (
-                          <div data-testid="stock-barcode-fifo" style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                            {barcodeFifos.slice(0, 8).map(({ roll, fifo }) => {
-                              const code = barcodeCode(roll);
-                              const label = formatFifoAgeLabel(fifo);
-                              const prefer = isFifoConsumeFirst({ roll, fifo }, barcodeFifos);
-                              const slices = fifo.balanceQty > 0
-                                ? fifo.consumed
-                                : (fifo.consumed.length > 1 ? fifo.consumed.slice(0, -1) : []);
-                              return (
-                                <div key={code} data-testid="barcode-fifo-line" style={{ fontSize: '0.68rem', fontWeight: '700', color: '#0f172a', lineHeight: 1.35 }}>
-                                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{code}</span>
-                                  {prefer && <span style={{ marginLeft: '4px', color: '#0369a1' }}>FIFO consume first</span>}
-                                  {label && (
-                                    <span style={{ marginLeft: '4px', color: fifo.display?.frozen ? '#64748b' : '#0369a1' }}>{label}</span>
-                                  )}
-                                  <span style={{ marginLeft: '4px', color: '#64748b' }}>{Number(fifo.balanceQty || 0).toFixed(2)} kg left</span>
-                                  {slices.map((slice) => (
-                                    <span key={slice.id || String(slice.consumedAt)} style={{ marginLeft: '4px', color: '#9a3412' }}>{formatConsumedFifoLabel(slice)}</span>
-                                  ))}
-                                </div>
-                              );
-                            })}
-                            {barcodeFifos.length > 8 && (
-                              <div style={{ fontSize: '0.68rem', color: '#64748b' }}>+{barcodeFifos.length - 8} more barcodes</div>
-                            )}
-                          </div>
-                        )}
                       </td>
                       <td>
                         <span className="badge badge-info" style={{ fontSize: '0.75rem', fontWeight: '700' }}>
@@ -10120,8 +10097,12 @@ export default function InventoryManagement({
         const totalReservedOrdersQty = orderResTxLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const netAvailableBalance = Math.max(0, runningStock);
 
+        const inStockBarcodeFifos = fifosForItemIds(item.allInventoryIds || [item.id], inventoryRolls, rollFifoIndex)
+          .filter(({ fifo }) => Number(fifo?.balanceQty) > 0);
+        const closeItemLedger = () => setSelectedItemForPurchaseHistory(null);
+
         return (
-          <div className="modal-overlay" onClick={() => setSelectedItemForPurchaseHistory(null)}>
+          <ModalOverlay onClose={closeItemLedger}>
             <div className="modal-content" style={{ maxWidth: '1180px', width: '96%', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
               
               {/* Modal Header */}
@@ -10135,19 +10116,102 @@ export default function InventoryManagement({
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <button 
-                    className="btn-primary" 
-                    style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '6px 14px', fontSize: '0.85rem' }}
-                    onClick={() => setIsQuickAdjOpen(!isQuickAdjOpen)}
-                  >
-                    <Plus size={15} /> {isQuickAdjOpen ? 'Close Form' : 'Quick Stock Adjustment'}
-                  </button>
-                  <button className="btn-secondary" style={{ padding: '6px 12px' }} onClick={() => setSelectedItemForPurchaseHistory(null)}>
+                  {ledgerPanel === 'ledger' && (
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '6px 14px', fontSize: '0.85rem' }}
+                      onClick={() => setIsQuickAdjOpen(!isQuickAdjOpen)}
+                    >
+                      <Plus size={15} /> {isQuickAdjOpen ? 'Close Form' : 'Quick Stock Adjustment'}
+                    </button>
+                  )}
+                  <button type="button" className="btn-secondary" style={{ padding: '6px 12px' }} data-modal-dismiss="" onClick={closeItemLedger}>
                     ✕ Close
                   </button>
                 </div>
               </div>
 
+              <div role="tablist" aria-label="Item history views" data-testid="item-ledger-views" style={{ display: 'flex', gap: '6px', marginBottom: '16px', background: '#e2e8f0', padding: '4px', borderRadius: '8px', width: 'fit-content' }}>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={ledgerPanel === 'ledger'}
+                  data-testid="ledger-view-tab"
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.82rem', border: 'none', background: ledgerPanel === 'ledger' ? '#ffffff' : 'transparent', fontWeight: ledgerPanel === 'ledger' ? '700' : '500', color: '#0f172a' }}
+                  onClick={() => setLedgerPanel('ledger')}
+                >
+                  Ledger
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={ledgerPanel === 'barcodes'}
+                  data-testid="ledger-barcode-tab"
+                  className="btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '0.82rem', border: 'none', background: ledgerPanel === 'barcodes' ? '#ffffff' : 'transparent', fontWeight: ledgerPanel === 'barcodes' ? '700' : '500', color: ledgerPanel === 'barcodes' ? '#0369a1' : 'var(--text-secondary)' }}
+                  onClick={() => setLedgerPanel('barcodes')}
+                >
+                  Barcodes (FIFO){inStockBarcodeFifos.length ? ` (${inStockBarcodeFifos.length})` : ''}
+                </button>
+              </div>
+
+              {ledgerPanel === 'barcodes' && (
+                <div data-testid="ledger-barcode-fifo">
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '12px' }}>
+                    In-stock barcodes, oldest origin first. Age is counted from each barcode's own origin.
+                  </p>
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                    <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                      <thead>
+                        <tr style={{ background: '#f1f5f9' }}>
+                          <th>Barcode</th>
+                          <th>Remaining qty</th>
+                          <th>FIFO age</th>
+                          <th>Origin date</th>
+                          <th>Consume order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {inStockBarcodeFifos.length === 0 ? (
+                          <tr>
+                            <td colSpan="5" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
+                              No in-stock barcodes for this item.
+                            </td>
+                          </tr>
+                        ) : inStockBarcodeFifos.map(({ roll, fifo }) => {
+                          const code = barcodeCode(roll);
+                          const prefer = isFifoConsumeFirst({ roll, fifo }, inStockBarcodeFifos);
+                          const ageDays = fifo.display?.ageDays;
+                          const ageText = ageDays == null
+                            ? '—'
+                            : `${ageDays} day${ageDays === 1 ? '' : 's'}${fifo.display?.frozen ? ' (frozen)' : ''}`;
+                          const originText = fifo.origin ? formatPlantDate(fifo.origin.toISOString()) : '—';
+                          return (
+                            <tr key={code} data-testid="barcode-fifo-line">
+                              <td style={{ fontFamily: 'ui-monospace, monospace', fontWeight: '700' }}>{code}</td>
+                              <td>{Number(fifo.balanceQty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {unitStr}</td>
+                              <td data-testid="barcode-fifo-age" style={{ fontWeight: '700', color: fifo.display?.frozen ? '#64748b' : '#0369a1' }}>{ageText}</td>
+                              <td>{originText}</td>
+                              <td>
+                                {prefer ? (
+                                  <span data-testid="fifo-consume-first" style={{ color: '#0369a1', fontWeight: '800' }}>FIFO consume first</span>
+                                ) : (
+                                  <span style={{ color: '#94a3b8' }}>—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {ledgerPanel === 'ledger' && (
+              <>
               {/* Quick Physical Stock Adjustment Form (Collapsible) */}
               {isQuickAdjOpen && (
                 <div className="glass-card" style={{ background: '#f0f9ff', border: '1px solid #bae6fd', padding: '16px', marginBottom: '20px' }}>
@@ -10714,8 +10778,10 @@ export default function InventoryManagement({
                 onPageChange={setLedgerCurrentPage}
                 onPageSizeChange={setLedgerPageSize}
               />
+              </>
+              )}
             </div>
-          </div>
+          </ModalOverlay>
         );
       })()}
 

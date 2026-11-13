@@ -238,10 +238,17 @@ test('SFG and raw-material screens show barcode FIFO and not one age on the stoc
   assert.match(sfg, /data-testid="sfg-fifo-age"/);
   assert.doesNotMatch(badge, /getItemAgeInDays/);
 
+  assert.match(inventory, /data-testid="ledger-barcode-fifo"/);
+  assert.match(inventory, /Barcodes \(FIFO\)/);
   assert.match(inventory, /data-testid="barcode-fifo-line"/);
   assert.match(inventory, /buildRollFifoIndex/);
   assert.doesNotMatch(inventory, /FIFO Stock/);
   const stockRows = inventory.slice(inventory.indexOf('stockPagination.paginatedItems.map'), inventory.indexOf('TAB 2: INWARD'));
   assert.doesNotMatch(stockRows, /getItemAgeInDays\(/);
   assert.doesNotMatch(stockRows, /getItemInwardDate\(/);
+  assert.doesNotMatch(stockRows, /data-testid="barcode-fifo-line"/);
+  assert.doesNotMatch(stockRows, /data-testid="stock-barcode-fifo"/);
+  const ledgerView = inventory.slice(inventory.indexOf('data-testid="ledger-barcode-fifo"'));
+  assert.match(ledgerView, /FIFO consume first/);
+  assert.match(ledgerView, /formatPlantDate\(fifo\.origin/);
 });
