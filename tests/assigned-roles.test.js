@@ -119,7 +119,8 @@ test('a second role unlocks that role\'s actions', () => {
   assert.equal(isAdminRole(storeAndPlant), false);
   assert.equal(canSeePackingGainLoss(storeAndAdmin), true);
   assert.equal(canSeePackingGainLoss(storeAndPlant), false);
-  assert.equal(canApproveSalaryAdvanceRole(storeAndHr), true);
+  assert.equal(canApproveSalaryAdvanceRole(storeAndHr), false);
+  assert.equal(canApproveSalaryAdvanceRole(storeAndAdmin), true);
   assert.equal(canApproveSalaryAdvanceRole(storeAndPlant), false);
   assert.equal(isExactAdminRole(storeAndAdmin), true);
   assert.equal(isExactAdminRole(' admin '), true);

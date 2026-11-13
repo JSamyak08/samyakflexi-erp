@@ -71,6 +71,7 @@ import {
   buildApprovedSalaryAdvance,
   buildDisbursedSalaryAdvance,
   canApproveSalaryAdvanceRole,
+  canDecideEmployeeAuthorization,
   findUnsettledAdvance,
   isExactAdminRole,
   isPayrollRecoverableAdvance,
@@ -260,12 +261,10 @@ export default function EmployeeManagement({
     );
   }, [actor, currentUser, userRole]);
 
-  const canApprove = useMemo(() => {
-    if (!currentUser && !userRole) return true;
-    return anyAssignedRole(actor, (_role, lower) =>
-      ['admin', 'plant', 'hr', 'director'].some((needle) => lower.includes(needle))
-    );
-  }, [actor, currentUser, userRole]);
+  const canDecide = useMemo(
+    () => canDecideEmployeeAuthorization(actor, { anonymous: !currentUser && !userRole }),
+    [actor, currentUser, userRole]
+  );
 
   const isAdmin = useMemo(() => anyAssignedRole(actor, (_role, lower) =>
     lower === 'admin' || lower.includes('admin') || lower.includes('director') || lower.includes('owner')
@@ -1003,7 +1002,7 @@ export default function EmployeeManagement({
     }
 
     const isExisting = Boolean(markingAttendanceEmp?.id && (attendanceRecords || []).some(a => attendanceMatchesEmployeeDate(a, markingAttendanceEmp.id, markedDate)));
-    if (isExisting && !isAdmin) {
+    if (isExisting && !canDecide) {
       alert("⛔ Permission Denied: Attendance has already been marked for this employee. Only the Admin role is authorized to edit or modify locked attendance records.");
       return;
     }
@@ -1079,7 +1078,7 @@ export default function EmployeeManagement({
 
     for (const emp of employees.filter(e => e.status === 'Active' || e.status === 'On Probation')) {
       const alreadyMarked = (attendanceRecords || []).some(a => attendanceMatchesEmployeeDate(a, emp.id, markedDate));
-      if (alreadyMarked && !isAdmin) {
+      if (alreadyMarked && !canDecide) {
         lockedCount += 1;
         continue;
       }
@@ -1119,8 +1118,8 @@ export default function EmployeeManagement({
 
   // Approve / Reject Overtime
   const handleApproveOvertime = async (attRecord, isApproved) => {
-    if (!canApprove) {
-      alert("Only Plant Head, HR Manager, or Admin can approve Overtime requests!");
+    if (!canDecide) {
+      alert("Only an Admin can approve or reject overtime.");
       return;
     }
     const emp = (employees || []).find(e => String(e.id) === String(attRecord.employeeId));
@@ -1151,8 +1150,8 @@ export default function EmployeeManagement({
 
   // Revert Overtime Approval or Rejection
   const handleRevertOvertime = async (attRecord) => {
-    if (!canApprove) {
-      alert("Only Plant Head, HR Manager, or Admin can revert Overtime approvals!");
+    if (!canDecide) {
+      alert("Only an Admin can revert an overtime approval or rejection.");
       return;
     }
     const emp = (employees || []).find(e => String(e.id) === String(attRecord.employeeId));
@@ -1186,6 +1185,109 @@ export default function EmployeeManagement({
     } else {
       alert(`✅ Rejection reverted for ${empName}. Request is now Pending Approval.`);
     }
+  };
+
+  const renderOtActions = (att, payoutAmount) => {
+    const status = att.overtimeStatus || 'Pending Approval';
+    const payoutText = (payoutAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (!canDecide) {
+      if (status === 'Pending Approval') {
+        return (
+          <span
+            data-testid={`ot-awaiting-admin-${att.id}`}
+            style={{ fontSize: '0.72rem', fontWeight: '800', color: '#92400e', background: '#fef3c7', padding: '3px 8px', borderRadius: '4px', display: 'inline-block' }}
+          >
+            Awaiting Admin
+          </span>
+        );
+      }
+      return (
+        <span data-testid={`ot-decision-note-${att.id}`} style={{ fontSize: '0.68rem', color: '#64748b' }}>
+          {status === 'Approved' ? 'Approved' : 'Rejected'} by {att.overtimeApprovedBy || 'Admin'}
+        </span>
+      );
+    }
+    if (status === 'Pending Approval') {
+      return (
+        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+          <button
+            type="button"
+            className="btn-primary"
+            data-testid={`ot-approve-${att.id}`}
+            style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            onClick={() => handleApproveOvertime(att, true)}
+            title="Approve overtime and credit to monthly salary"
+          >
+            <Check size={13} /> Approve
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            data-testid={`ot-reject-${att.id}`}
+            style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            onClick={() => handleApproveOvertime(att, false)}
+            title="Reject overtime request"
+          >
+            <X size={13} /> Reject
+          </button>
+        </div>
+      );
+    }
+    if (status === 'Approved') {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            data-testid={`ot-revert-${att.id}`}
+            style={{
+              padding: '4px 10px',
+              fontSize: '0.75rem',
+              color: '#b45309',
+              background: '#fffbeb',
+              borderColor: '#fcd34d',
+              fontWeight: '800',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+            onClick={() => handleRevertOvertime(att)}
+            title={`Revert approval and immediately deduct ₹${payoutText} from the employee's monthly salary`}
+          >
+            <RotateCcw size={13} /> Revert (Deduct ₹{payoutText})
+          </button>
+          <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+            Approved by {att.overtimeApprovedBy || 'Admin'}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+        <button
+          type="button"
+          className="btn-secondary"
+          data-testid={`ot-revert-${att.id}`}
+          style={{
+            padding: '4px 10px',
+            fontSize: '0.75rem',
+            color: '#475569',
+            background: '#f8fafc',
+            fontWeight: '700',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+          onClick={() => handleRevertOvertime(att)}
+          title="Revert rejection and return to Pending Approval"
+        >
+          <RotateCcw size={13} /> Revert Rejection
+        </button>
+        <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
+          Rejected by {att.overtimeApprovedBy || 'Admin'}
+        </div>
+      </div>
+    );
   };
 
   // Export Overtime Data to CSV based on current active View
@@ -1349,6 +1451,10 @@ export default function EmployeeManagement({
   };
 
   const commitAdvanceApproval = async (adv, withOverride) => {
+    if (!canDecide) {
+      alert('Only an Admin can approve a salary advance.');
+      return;
+    }
     const actorName = currentUser?.name || currentUser?.fullName || advanceActorRole || 'Approver';
     const updated = buildApprovedSalaryAdvance(adv, {
       withOverride,
@@ -1419,6 +1525,10 @@ export default function EmployeeManagement({
 
   const handleDisburseAdvanceSubmit = async (e) => {
     e.preventDefault();
+    if (!canDecide) {
+      alert('Only an Admin can disburse a salary advance.');
+      return;
+    }
     if (!disburseTargetAdvance) return;
     const ref = disbursePaymentRef.trim();
     if (!ref) {
@@ -1448,6 +1558,10 @@ export default function EmployeeManagement({
 
   // Open Payment Disbursal Modal with Advance Recovery Option
   const handleOpenPaymentModal = (row, emp) => {
+    if (!canDecide) {
+      alert('Only an Admin can authorize a salary payment.');
+      return;
+    }
     setPaymentRowData(row);
     setPaymentEmpData(emp);
     const now = new Date();
@@ -1481,6 +1595,10 @@ export default function EmployeeManagement({
   // Save Salary Payment Record with Confirmed Advance Recovery
   const handleSaveSalaryPaymentSubmit = async (e) => {
     e.preventDefault();
+    if (!canDecide) {
+      alert('Only an Admin can authorize a salary payment.');
+      return;
+    }
     if (!paymentRowData || !paymentEmpData) return;
 
     const baseDeductions = (Number(paymentRowData.pfDeduction) || 0) + 
@@ -1582,6 +1700,10 @@ export default function EmployeeManagement({
 
   // Open Direct / Standalone Advance Recovery Modal (Advances Tab)
   const handleOpenAdvanceRecoveryModal = (adv) => {
+    if (!canDecide) {
+      alert('Only an Admin can confirm recovery of a salary advance.');
+      return;
+    }
     setRecoveryTargetAdvance(adv);
     const remBal = Number(adv.remainingBalance ?? (adv.advanceAmount - (adv.totalRecoveredAmount || 0)));
     const emi = Number(adv.monthlyEmiAmount) || 0;
@@ -1598,6 +1720,10 @@ export default function EmployeeManagement({
   // Submit Direct / Standalone Advance Recovery
   const handleDirectAdvanceRecoverySubmit = async (e) => {
     e.preventDefault();
+    if (!canDecide) {
+      alert('Only an Admin can confirm recovery of a salary advance.');
+      return;
+    }
     if (!recoveryTargetAdvance) return;
     if (recoveryTargetAdvance.status !== 'Disbursed' && recoveryTargetAdvance.status !== 'Approved & Disbursed') {
       alert('Recovery starts only after the advance is disbursed.');
@@ -2256,7 +2382,7 @@ export default function EmployeeManagement({
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         {att ? (
-                          isAdmin ? (
+                          canDecide ? (
                             <button 
                               type="button" 
                               className="btn-secondary" 
@@ -2383,77 +2509,7 @@ export default function EmployeeManagement({
                           </span>
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {status === 'Pending Approval' ? (
-                            <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                              <button
-                                type="button"
-                                className="btn-primary"
-                                style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                                onClick={() => handleApproveOvertime(att, true)}
-                                title="Approve overtime and add to monthly salary"
-                              >
-                                <Check size={12} /> Approve
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-secondary"
-                                style={{ padding: '3px 6px', fontSize: '0.72rem', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '3px' }}
-                                onClick={() => handleApproveOvertime(att, false)}
-                                title="Reject overtime request"
-                              >
-                                <X size={12} /> Reject
-                              </button>
-                            </div>
-                          ) : status === 'Approved' ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                              <button
-                                type="button"
-                                className="btn-secondary"
-                                style={{
-                                  padding: '3px 8px',
-                                  fontSize: '0.72rem',
-                                  color: '#b45309',
-                                  background: '#fffbeb',
-                                  borderColor: '#fcd34d',
-                                  fontWeight: '800',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                onClick={() => handleRevertOvertime(att)}
-                                title={`Revert approval and automatically deduct ₹${(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} from employee's monthly salary`}
-                              >
-                                <RotateCcw size={12} /> Revert (Deduct ₹{(payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                              </button>
-                              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
-                                by {att.overtimeApprovedBy || 'Admin'}
-                              </span>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                              <button
-                                type="button"
-                                className="btn-secondary"
-                                style={{
-                                  padding: '3px 8px',
-                                  fontSize: '0.72rem',
-                                  color: '#475569',
-                                  background: '#f8fafc',
-                                  fontWeight: '700',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}
-                                onClick={() => handleRevertOvertime(att)}
-                                title="Revert rejection and restore to Pending Approval"
-                              >
-                                <RotateCcw size={12} /> Revert Rejection
-                              </button>
-                              <span style={{ fontSize: '0.65rem', color: '#64748b' }}>
-                                by {att.overtimeApprovedBy || 'Admin'}
-                              </span>
-                            </div>
-                          )}
+                          {renderOtActions(att, payout)}
                         </td>
                       </tr>
                     );
@@ -2475,9 +2531,9 @@ export default function EmployeeManagement({
                     Factory Overtime Authorization Protocol & Wage Impact
                   </h4>
                   <p style={{ margin: '3px 0 0 0', fontSize: '0.8rem', color: '#15803d', lineHeight: '1.4' }}>
-                    Rule Enforcement: Overtime logged on shop floor beyond standard shifts (8h, 10h, 12h) requires plant authorization. 
-                    Approved overtime is automatically credited to the employee’s monthly gross earnings. 
-                    <strong> Reverting an approval will immediately deduct the added overtime pay from the employee’s calculated monthly salary.</strong>
+                    Rule Enforcement: Overtime logged beyond a standard shift (8h, 10h, or 12h) requires Admin authorization.
+                    Approved overtime is credited to the employee’s monthly gross earnings.
+                    <strong> Only an Admin can approve, reject, or revert. Reverting an approval removes that overtime pay from the calculated monthly salary.</strong>
                   </p>
                 </div>
               </div>
@@ -2864,77 +2920,7 @@ export default function EmployeeManagement({
                               </span>
                             </td>
                             <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                              {status === 'Pending Approval' ? (
-                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                                  <button 
-                                    type="button" 
-                                    className="btn-primary" 
-                                    style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                    onClick={() => handleApproveOvertime(att, true)}
-                                    title="Approve overtime and credit to monthly salary"
-                                  >
-                                    <Check size={13} /> Approve
-                                  </button>
-                                  <button 
-                                    type="button" 
-                                    className="btn-secondary" 
-                                    style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                    onClick={() => handleApproveOvertime(att, false)}
-                                    title="Reject overtime request"
-                                  >
-                                    <X size={13} /> Reject
-                                  </button>
-                                </div>
-                              ) : status === 'Approved' ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                                  <button
-                                    type="button"
-                                    className="btn-secondary"
-                                    style={{
-                                      padding: '4px 10px',
-                                      fontSize: '0.75rem',
-                                      color: '#b45309',
-                                      background: '#fffbeb',
-                                      borderColor: '#fcd34d',
-                                      fontWeight: '800',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px'
-                                    }}
-                                    onClick={() => handleRevertOvertime(att)}
-                                    title={`Revert approval and immediately deduct ₹${(payoutInfo?.payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} from employee's monthly salary`}
-                                  >
-                                    <RotateCcw size={13} /> Revert (Deduct ₹{(payoutInfo?.payout || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-                                  </button>
-                                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
-                                    Approved by {att.overtimeApprovedBy || 'Admin'}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
-                                  <button
-                                    type="button"
-                                    className="btn-secondary"
-                                    style={{
-                                      padding: '4px 10px',
-                                      fontSize: '0.75rem',
-                                      color: '#475569',
-                                      background: '#f8fafc',
-                                      fontWeight: '700',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px'
-                                    }}
-                                    onClick={() => handleRevertOvertime(att)}
-                                    title="Revert rejection and return to Pending Approval"
-                                  >
-                                    <RotateCcw size={13} /> Revert Rejection
-                                  </button>
-                                  <div style={{ fontSize: '0.68rem', color: '#64748b' }}>
-                                    Rejected by {att.overtimeApprovedBy || 'Admin'}
-                                  </div>
-                                </div>
-                              )}
+                              {renderOtActions(att, payoutInfo?.payout)}
                             </td>
                           </tr>
                         );
@@ -3543,6 +3529,7 @@ export default function EmployeeManagement({
                             <button
                               type="button"
                               className="btn-primary"
+                              data-testid={`advance-recover-${adv.id}`}
                               style={{ padding: '3px 8px', fontSize: '0.73rem', background: '#16a34a', borderColor: '#16a34a', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: '700' }}
                               onClick={() => handleOpenAdvanceRecoveryModal(adv)}
                               title="Confirm recovery of advance in salary or direct payment"
@@ -3795,15 +3782,23 @@ export default function EmployeeManagement({
                               {matchingPayment.paymentMode} {matchingPayment.transactionReference ? `• Ref: ${matchingPayment.transactionReference}` : ''}
                             </div>
                           </div>
-                        ) : (
+                        ) : canDecide ? (
                           <button 
                             type="button" 
-                            className="btn-primary" 
+                            className="btn-primary"
+                            data-testid={`payroll-record-${row.employeeId}`}
                             style={{ padding: '4px 10px', fontSize: '0.74rem', fontWeight: '800', background: '#0284c7', borderColor: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                             onClick={() => handleOpenPaymentModal(row, emp)}
                           >
                             <CreditCard size={13} /> Record Payment
                           </button>
+                        ) : (
+                          <span
+                            data-testid={`payroll-awaiting-admin-${row.employeeId}`}
+                            style={{ fontSize: '0.72rem', fontWeight: '800', color: '#92400e', background: '#fef3c7', padding: '3px 8px', borderRadius: '4px', display: 'inline-block' }}
+                          >
+                            Awaiting Admin
+                          </span>
                         )}
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -4309,7 +4304,7 @@ export default function EmployeeManagement({
                   <input 
                     type="text" 
                     className="form-control" 
-                    value={Number(attOtHours) > 0 ? "Pending Plant Head Approval" : "N/A"} 
+                    value={Number(attOtHours) > 0 ? "Pending Admin approval" : "N/A"} 
                     disabled 
                     style={{ background: '#f1f5f9' }}
                   />
