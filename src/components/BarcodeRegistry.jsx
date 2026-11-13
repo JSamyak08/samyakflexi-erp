@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScanBarcode, Search } from 'lucide-react';
+import { Printer, ScanBarcode, Search } from 'lucide-react';
 import TablePagination, { usePagination } from './TablePagination';
+import BarcodePrinterModal from './BarcodePrinterModal';
 import { isSupabaseConfigured, supabase } from '../services/supabaseClient';
 import { fetchBarcodeRegistry } from '../services/supabaseDataService';
 import { fetchPayloadRecords } from '../services/businessRecords';
+import { reprintStickerForRow } from '../utils/barcodeReprint';
 import {
   barcodeSourceModules,
   collectBarcodes,
@@ -56,23 +58,29 @@ export default function BarcodeRegistry({
   productionRecords = [],
   cylinders = [],
   pelletInwards = [],
+  inks = [],
 }) {
   const [viewRows, setViewRows] = useState([]);
   const [extras, setExtras] = useState(null);
+  const [printSources, setPrintSources] = useState(null);
+  const [reprintRoll, setReprintRoll] = useState(null);
   const [query, setQuery] = useState('');
   const [sourceModule, setSourceModule] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const fromView = await fetchBarcodeRegistry();
+      const [fromView, printed] = await Promise.all([
+        fetchBarcodeRegistry(),
+        loadPrintedBarcodes(),
+      ]);
       if (cancelled) return;
+      setPrintSources(printed);
       if (Array.isArray(fromView) && fromView.length) {
         setViewRows(fromView);
         return;
       }
-      const printed = await loadPrintedBarcodes();
-      if (!cancelled) setExtras(printed);
+      setExtras(printed);
     })();
     return () => {
       cancelled = true;
@@ -115,6 +123,14 @@ export default function BarcodeRegistry({
     [rows, query, sourceModule]
   );
   const pagination = usePagination(visible, 25);
+  const stickerSources = useMemo(() => ({
+    inventoryRolls,
+    sfgGoods,
+    grns,
+    dispatchShipments,
+    qcHoldItems: printSources?.qcHoldItems || [],
+    customBarcodes: printSources?.customBarcodes || [],
+  }), [inventoryRolls, sfgGoods, grns, dispatchShipments, printSources]);
 
   return (
     <div data-screen="barcodes" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -163,19 +179,22 @@ export default function BarcodeRegistry({
               <th>Created</th>
               <th>Status</th>
               <th>Location</th>
+              <th>Print</th>
             </tr>
           </thead>
           <tbody>
             {pagination.paginatedItems.length === 0 && (
               <tr>
-                <td colSpan={7} style={{ textAlign: 'center', color: '#64748b', padding: '28px' }}>
+                <td colSpan={8} style={{ textAlign: 'center', color: '#64748b', padding: '28px' }}>
                   {rows.length === 0
                     ? 'No barcodes have been stored yet.'
                     : 'No barcodes match this search.'}
                 </td>
               </tr>
             )}
-            {pagination.paginatedItems.map((row) => (
+            {pagination.paginatedItems.map((row) => {
+              const sticker = reprintStickerForRow(row, stickerSources);
+              return (
               <tr key={`${row.sourceModule}|${row.barcode}`}>
                 <td>
                   <code style={{ fontWeight: '800', color: '#0f172a' }}>{row.barcode}</code>
@@ -200,12 +219,48 @@ export default function BarcodeRegistry({
                   ) : (row.status || '—')}
                 </td>
                 <td>{row.location || '—'}</td>
+                <td>
+                  {sticker ? (
+                    <button
+                      type="button"
+                      data-testid="barcode-reprint"
+                      aria-label={`Print sticker ${row.barcode}`}
+                      title="Reprint this sticker"
+                      onClick={() => setReprintRoll(sticker)}
+                      style={{
+                        background: '#ecfdf5',
+                        border: '1px solid #a7f3d0',
+                        color: '#047857',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        fontWeight: '800',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
+                      <Printer size={13} /> Print
+                    </button>
+                  ) : '—'}
+                </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         <TablePagination pagination={pagination} />
       </div>
+      {reprintRoll && (
+        <BarcodePrinterModal
+          roll={reprintRoll}
+          inventory={inventory}
+          inks={inks}
+          variant="reprint"
+          onClose={() => setReprintRoll(null)}
+        />
+      )}
     </div>
   );
 }
