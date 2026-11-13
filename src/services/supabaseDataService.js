@@ -16,6 +16,7 @@ import { mapInkMasterToRow, mapInkRowToMaster, readHsnCode } from '../utils/inkH
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { storedEngravingRate, withReconciledCosts } from '../utils/cylinderCost';
 import { clientEmailForSave } from '../utils/clientEmail';
+import { ordersOrDispatchJobs, withStoredShipmentNames } from '../utils/dispatchProductionJobs';
 export { uploadArtworkFile, uploadDocumentFile, openArtworkViewer, fileToDataUrl };
 
 /**
@@ -109,6 +110,32 @@ async function orderIdIfExists(orderId) {
 // 1. ORDERS / JOB PUNCHING
 // ============================================================================
 
+/**
+ * Job names for Dispatch when public.orders is hidden.
+ * Store Manager can open the packing list but cannot read order rows.
+ * The view returns id, display name, client, status, and customer PO only.
+ * A missing view on an older database leaves the dropdown empty.
+ */
+export async function fetchDispatchProductionJobs() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const { data, error } = await supabase
+      .from('dispatch_production_jobs')
+      .select('id, job_name, client_name, status, po_number')
+      .order('job_name', { ascending: true });
+    if (error) {
+      if (isMissingRelationError(error)) return [];
+      console.warn('[ORDERS][FETCH] Dispatch job names are not available:', error.message || error);
+      return [];
+    }
+    return ordersOrDispatchJobs([], data);
+  } catch (err) {
+    if (isMissingRelationError(err)) return [];
+    console.warn('[ORDERS][FETCH] Dispatch job names are not available:', err?.message || err);
+    return [];
+  }
+}
+
 export async function fetchOrders() {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -117,7 +144,11 @@ export async function fetchOrders() {
   try {
     const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false });
     if (error) throw error;
-    if (!data || !Array.isArray(data)) return [];
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      const jobs = await fetchDispatchProductionJobs();
+      console.log(`[ORDERS][FETCH] Received ${jobs.length} dispatch job names`);
+      return jobs;
+    }
 
     console.log(`[ORDERS][FETCH] Received ${data.length} records from Supabase`);
 
@@ -2452,34 +2483,34 @@ export async function fetchDispatchShipments() {
       if (!error && Array.isArray(data)) {
         tableRecords = data.map(d => {
           const columnStatus = d.packing_status ?? null;
-          if (d.payload && typeof d.payload === 'object') {
-            return {
+          const record = (d.payload && typeof d.payload === 'object')
+            ? {
               ...d.payload,
               id: d.payload.id || d.id || d.dispatch_id,
               dispatchId: d.payload.dispatchId || d.dispatch_id,
               packing_status: columnStatus
+            }
+            : {
+              id: d.id || d.dispatch_id,
+              dispatchId: d.dispatch_id,
+              orderId: d.order_id,
+              jobName: d.job_name,
+              clientName: d.client_name,
+              vehicleNo: d.vehicle_no,
+              lrNo: d.lr_no,
+              transporterName: d.transporter_name || '',
+              poNo: d.po_no || '',
+              invoiceNo: d.invoice_no || '',
+              dispatchDate: d.dispatch_date,
+              totalRolls: Number(d.total_rolls) || 0,
+              totalNetWeightKg: Number(d.total_net_weight_kg) || 0,
+              totalGrossWeightKg: Number(d.total_gross_weight_kg) || 0,
+              items: Array.isArray(d.items) ? d.items : [],
+              hideBranding: d.hide_branding || false,
+              packing_status: columnStatus,
+              packingStatus: columnStatus
             };
-          }
-          return {
-            id: d.id || d.dispatch_id,
-            dispatchId: d.dispatch_id,
-            orderId: d.order_id,
-            jobName: d.job_name,
-            clientName: d.client_name,
-            vehicleNo: d.vehicle_no,
-            lrNo: d.lr_no,
-            transporterName: d.transporter_name || '',
-            poNo: d.po_no || '',
-            invoiceNo: d.invoice_no || '',
-            dispatchDate: d.dispatch_date,
-            totalRolls: Number(d.total_rolls) || 0,
-            totalNetWeightKg: Number(d.total_net_weight_kg) || 0,
-            totalGrossWeightKg: Number(d.total_gross_weight_kg) || 0,
-            items: Array.isArray(d.items) ? d.items : [],
-            hideBranding: d.hide_branding || false,
-            packing_status: columnStatus,
-            packingStatus: columnStatus
-          };
+          return withStoredShipmentNames(record, d);
         });
       } else if (error) {
         handleSupabaseError(error, 'dispatch_shipments');
