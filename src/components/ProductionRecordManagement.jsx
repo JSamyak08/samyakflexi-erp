@@ -38,7 +38,7 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import SFGFGEntryModal from './SFGFGEntryModal';
-import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap } from '../factoryStore';
+import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap, getOrderStageInfo } from '../factoryStore';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
 import { pushSlugState } from '../utils/slugRouter';
@@ -824,6 +824,9 @@ export default function ProductionRecordManagement({
   inventory = [],
   inventoryRolls = [],
   sfgGoods = [],
+  deliveryChallans = [],
+  dispatchShipments = [],
+  orderCloseSettings,
   jobMasters = [],
   cylinders = [],
   machines = [],
@@ -2585,6 +2588,7 @@ export default function ProductionRecordManagement({
                   <th>Substrate Structure</th>
                   <th>Order Qty (kg)</th>
                   <th>Target Delivery</th>
+                  <th>Order stage</th>
                   <th>Production Record Status</th>
                   <th>Action</th>
                 </tr>
@@ -2592,7 +2596,7 @@ export default function ProductionRecordManagement({
               <tbody>
                 {filteredPunchedOrders.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
+                    <td colSpan="8" style={{ textAlign: 'center', padding: '30px', color: 'var(--text-muted)' }}>
                       No punched jobs found matching your search.
                     </td>
                   </tr>
@@ -2619,6 +2623,20 @@ export default function ProductionRecordManagement({
                         </td>
                         <td style={{ fontSize: '0.8rem' }}>{ord?.targetDeliveryDate || '—'}</td>
                         <td>
+                          {(() => {
+                            const stageInfo = getOrderStageInfo(ord, sfgGoods, productionRecords, {
+                              challans: deliveryChallans,
+                              shipments: dispatchShipments,
+                              settings: orderCloseSettings
+                            });
+                            return (
+                              <span style={{ ...stageInfo.badgeStyle, display: 'inline-flex', padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 800 }}>
+                                {stageInfo.stageLabel}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td>
                           {existingRecord ? (
                             existingRecord.status === 'Approved by Admin' ? (
                               <span className="badge badge-us" style={{ background: '#dcfce7', color: '#15803d' }}>
@@ -2637,7 +2655,9 @@ export default function ProductionRecordManagement({
                         </td>
                         <td>
                           <button 
-                            className="btn-primary" 
+                            className="btn-primary"
+                            data-testid="production-record-action"
+                            data-order-status={ord.status || ''} 
                             style={{ 
                               padding: '6px 14px', 
                               fontSize: '0.82rem', 
@@ -2759,6 +2779,22 @@ export default function ProductionRecordManagement({
                         <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{rec.orderId}</td>
                         <td>
                           <div style={{ fontWeight: '600' }}>{rec.jobName}</div>
+                          {linkedOrder?.id && (
+                            <div style={{ marginTop: '3px' }}>
+                              {(() => {
+                                const stageInfo = getOrderStageInfo(linkedOrder, sfgGoods, productionRecords, {
+                                  challans: deliveryChallans,
+                                  shipments: dispatchShipments,
+                                  settings: orderCloseSettings
+                                });
+                                return (
+                                  <span style={{ ...stageInfo.badgeStyle, display: 'inline-flex', padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800 }}>
+                                    {stageInfo.stageLabel}
+                                  </span>
+                                );
+                              })()}
+                            </div>
+                          )}
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                             {rec.clientName} {jobMasterDisplay ? `• ${jobMasterDisplay}` : ''}
                           </div>

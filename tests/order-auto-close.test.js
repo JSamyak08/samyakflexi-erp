@@ -20,7 +20,7 @@ function challan(kg, extra = {}) {
 test('auto-close boundaries are 90 to 110 percent when a challan exists and nothing remains', () => {
   const settings = { enabled: true, tolerancePct: 10 };
   const at899 = evaluateOrderAutoClose({ order: order(), challans: [challan(899)], settings });
-  assert.equal(at899.order.status, 'Partially Dispatched');
+  assert.equal(at899.order.status, 'Balance Dispatch Pending');
   assert.notEqual(at899.order.closeMode, 'auto');
 
   const at900 = evaluateOrderAutoClose({ order: order(), challans: [challan(900)], settings });
@@ -98,6 +98,45 @@ test('a challan is required and job names are not fuzzy matched', () => {
     settings
   });
   assert.equal(fuzzy.changed, false);
+});
+
+test('a packing list of two orders counts each order only its own rolls', () => {
+  const settings = { enabled: true, tolerancePct: 10 };
+  const shipment = {
+    id: 'PL-1',
+    orderId: 'ORD-QA-DC-SHORT',
+    jobName: 'QA DC Short Roll',
+    packingStatus: 'Finalised',
+    totalNetWeightKg: 190,
+    items: [
+      { orderId: 'ORD-QA-DC-FULL', jobName: 'QA DC Full Roll', netWeightKg: 100, unit: 'Kg' },
+      { orderId: 'ORD-QA-DC-SHORT', jobName: 'QA DC Short Roll', netWeightKg: 90, unit: 'Kg' }
+    ]
+  };
+  const short = evaluateOrderAutoClose({
+    order: { id: 'ORD-QA-DC-SHORT', jobName: 'QA DC Short Roll', orderQtyKg: 200, status: 'In Production' },
+    shipments: [shipment],
+    settings
+  });
+  assert.equal(short.order.status, 'Balance Dispatch Pending');
+  const full = evaluateOrderAutoClose({
+    order: { id: 'ORD-QA-DC-FULL', jobName: 'QA DC Full Roll', orderQtyKg: 100, status: 'In Production' },
+    shipments: [shipment],
+    settings
+  });
+  assert.equal(full.action, 'close');
+  assert.equal(full.order.status, 'Completed');
+});
+
+test('a short challan that is cancelled clears Balance Dispatch Pending', () => {
+  const settings = { enabled: true };
+  const cleared = evaluateOrderAutoClose({
+    order: { ...order(), status: 'Balance Dispatch Pending' },
+    challans: [{ ...challan(400), status: 'Cancelled' }],
+    settings
+  });
+  assert.equal(cleared.order.status, 'In Production');
+  assert.equal(cleared.order.closeMode || null, null);
 });
 
 test('cancelled challan reopens only an auto-closed order', () => {

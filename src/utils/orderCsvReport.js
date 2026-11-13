@@ -505,7 +505,11 @@ function reportOrders(options) {
   const source = options.includeOrders || options.orders || [];
   return source.filter((order) => {
     if (!order) return false;
-    const stageInfo = getOrderStageInfo(order, options.sfgGoods || [], options.productionRecords || []);
+    const stageInfo = getOrderStageInfo(order, options.sfgGoods || [], options.productionRecords || [], {
+      challans: options.deliveryChallans || options.challans || [],
+      shipments: options.dispatchShipments || options.shipments || [],
+      settings: options.orderCloseSettings
+    });
     if (options.kind === 'overdue') return isOverdueOrder(order, stageInfo, options.today);
     return isPendingOrder(order, stageInfo);
   });
@@ -530,7 +534,11 @@ export function buildOrderReportRows(options = {}) {
 
   return reportOrders(options).map((order) => {
     const preparedOrder = preparedById.get(String(order.id)) || order;
-    const stageInfo = getOrderStageInfo(order, options.sfgGoods || [], options.productionRecords || []);
+    const stageInfo = getOrderStageInfo(order, options.sfgGoods || [], options.productionRecords || [], {
+      challans: options.deliveryChallans || options.challans || [],
+      shipments: options.dispatchShipments || options.shipments || [],
+      settings: options.orderCloseSettings
+    });
     const progress = stageProgress(order, stageInfo, options.productionRecords || []);
     const due = committedDueDate(order);
     const daysRemaining = calendarDaysUntil(due, options.today);

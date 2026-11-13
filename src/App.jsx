@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from './services/supabaseClient';
-import { applyRemoteCompanyProfile } from './services/companyProfile';
+import { applyRemoteCompanyProfile, getCompanyProfile } from './services/companyProfile';
 import { 
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
@@ -23,6 +23,8 @@ import {
   DEFAULT_PRINTING_LEAD_DAYS,
 } from './utils/orderDeadlineReminder';
 import { loggedInActorLabel } from './utils/recordedPerson';
+import { calculateGSTBreakdown } from './utils/pdfHelpers';
+import { syncChallansForShipment, tareEditSummary } from './utils/deliveryChallanGuard';
 import { withReconciledCosts } from './utils/cylinderCost';
 import { artworkToApply, cylinderIdentityKey, isExplicitCylinderJobLink } from './utils/cylinderArtwork';
 import { cylindersLinkedToJobMaster, skuAfterJobMasterSync, skuWhenLinkingCylinder } from './utils/jobMasterLink';
@@ -2391,9 +2393,13 @@ export default function App() {
     if (!canManageOrderDeadline(currentUser)) return [];
     return printingDeadlineReminderRows(orders, {
       ...printingDeadlineContext,
-      getStageInfo: (order) => getOrderStageInfo(order, sfgGoods, productionRecords),
+      getStageInfo: (order) => getOrderStageInfo(order, sfgGoods, productionRecords, {
+        challans: deliveryChallans,
+        shipments: dispatchShipments,
+        settings: orderCloseSettings
+      }),
     });
-  }, [orders, sfgGoods, productionRecords, currentUser, printingDeadlineContext]);
+  }, [orders, sfgGoods, productionRecords, deliveryChallans, dispatchShipments, orderCloseSettings, currentUser, printingDeadlineContext]);
 
   useEffect(() => {
     if (!deadlineDigestReady || !isSupaActive || !canManageOrderDeadline(currentUser)) return undefined;
@@ -2840,8 +2846,43 @@ export default function App() {
     }
   };
 
+  const orderHasCloseInputs = (order) => Boolean(order) && Object.prototype.hasOwnProperty.call(order, 'orderQtyKg');
+
+  const reloadOrdersAfterDispatch = async () => {
+    try {
+      const fresh = await fetchOrders();
+      if (!Array.isArray(fresh)) return;
+      if (fresh.some((order) => orderHasCloseInputs(order))) {
+        setOrders(fresh.filter((order) => order && order.id && !deletedOrderIdsRef.current.has(order.id)));
+        return;
+      }
+      setOrders((prev) => prev.map((order) => {
+        const next = fresh.find((row) => row.id === order.id);
+        return next ? { ...order, status: next.status || order.status } : order;
+      }));
+    } catch (err) {
+      reportBackgroundFailure(err, 'Orders were not reloaded after dispatch');
+    }
+  };
+
+  const priceLinkedChallan = (challan) => {
+    const plantGstin = getCompanyProfile().gstin;
+    const freight = Number(challan.freightCharges) || 0;
+    const subtotal = Number(challan.subtotalAmount) || 0;
+    const taxable = subtotal + freight;
+    const gst = calculateGSTBreakdown(
+      challan.clientGstin,
+      challan.clientAddress,
+      taxable,
+      challan.gstRatePct || 18,
+      plantGstin,
+      challan.taxType || 'auto'
+    );
+    return { ...challan, taxableSubtotal: taxable, grandTotalAmount: gst.grandTotal };
+  };
+
   const reconcileOrderAutoClose = async (orderList, challanList, shipmentList, goodsList, settings) => {
-    const decisions = planAutoCloseUpdates(orderList, {
+    const decisions = planAutoCloseUpdates((orderList || []).filter(orderHasCloseInputs), {
       challans: challanList,
       shipments: shipmentList,
       sfgGoods: goodsList,
@@ -4187,9 +4228,40 @@ export default function App() {
         : `Created client dispatch shipment ${shipmentToSave.id} for "${shipmentToSave.clientName}"`,
       shipmentToSave.id
     );
-    reconcileOrderAutoClose(orders, deliveryChallans, nextShipments, sfgGoods, orderCloseSettings).catch((err) => {
+    const tareNotes = tareEditSummary(previous, shipmentToSave);
+    if (tareNotes.length) {
+      logAudit('UPDATE', 'Dispatch', `Edited core/tare on packing list ${shipmentKey}: ${tareNotes.join('; ')}`, shipmentKey);
+    }
+    let nextChallans = deliveryChallans;
+    try {
+      const linked = syncChallansForShipment(shipmentToSave, deliveryChallans, {
+        rateFor: (jobName) => {
+          const matchedJm = (jobMasters || []).find((job) => String(job.jobName || '').split(' ||| ')[0] === jobName);
+          const matchedOrder = (orders || []).find((order) => String(order.jobName || '').split(' ||| ')[0] === jobName);
+          return Number(matchedJm?.sellingPricePerKg || matchedOrder?.rate || matchedOrder?.sellingPricePerKg || 0);
+        }
+      });
+      if (linked.length) {
+        const saved = [];
+        for (const challan of linked) {
+          const priced = priceLinkedChallan(challan);
+          await saveDeliveryChallanToSupabase(priced);
+          saved.push(priced);
+          logAudit('UPDATE', 'Dispatch', `Updated delivery challan ${priced.challanNo} from packing list ${shipmentKey}. Net lines now total ${priced.items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)} kg, grand ${priced.grandTotalAmount}.`, priced.id);
+        }
+        const savedIds = new Set(saved.map((challan) => challan.id));
+        nextChallans = [...saved, ...deliveryChallans.filter((challan) => !savedIds.has(challan.id))];
+        setDeliveryChallans(nextChallans);
+      }
+    } catch (err) {
+      reportBackgroundFailure(err, `Packing list ${shipmentKey} was saved. Its linked delivery challan was not updated.`);
+    }
+    try {
+      await reconcileOrderAutoClose(orders, nextChallans, nextShipments, sfgGoods, orderCloseSettings);
+      await reloadOrdersAfterDispatch();
+    } catch (err) {
       reportBackgroundFailure(err, 'An order was not auto-closed');
-    });
+    }
 
     // 1. Reduce dispatched FG quantities from sfgGoods (FG Store)
     const shipmentItems = Array.isArray(shipmentToSave.items) ? shipmentToSave.items : [];
@@ -4300,13 +4372,19 @@ export default function App() {
 
   const handleSaveDeliveryChallan = async (newDc) => {
     requireDatabaseConnection('save delivery challan');
+    const existed = (deliveryChallans || []).some((row) => row.id === newDc.id);
     await saveDeliveryChallanToSupabase(newDc);
     const nextChallans = [newDc, ...deliveryChallans.filter(d => d.id !== newDc.id)];
     setDeliveryChallans(nextChallans);
-    logAudit('CREATE', 'Dispatch', `Issued Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
-    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => {
+    const cancelled = String(newDc.status || '').toLowerCase() === 'cancelled';
+    const verb = cancelled ? 'Cancelled' : (existed ? 'Updated' : 'Issued');
+    logAudit(verb === 'Issued' ? 'CREATE' : 'UPDATE', 'Dispatch', `${verb} Delivery Challan ${newDc.challanNo} for "${newDc.clientName}"`, newDc.id);
+    try {
+      await reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings);
+      await reloadOrdersAfterDispatch();
+    } catch (err) {
       reportBackgroundFailure(err, 'An order was not auto-closed');
-    });
+    }
   };
 
   const handleDeleteDeliveryChallan = async (id) => {
@@ -4315,9 +4393,12 @@ export default function App() {
     const nextChallans = deliveryChallans.filter(d => d.id !== id);
     setDeliveryChallans(nextChallans);
     logAudit('DELETE', 'Dispatch', `Deleted Delivery Challan ${id}`, id);
-    reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings).catch((err) => {
+    try {
+      await reconcileOrderAutoClose(orders, nextChallans, dispatchShipments, sfgGoods, orderCloseSettings);
+      await reloadOrdersAfterDispatch();
+    } catch (err) {
       reportBackgroundFailure(err, 'An order was not auto-closed');
-    });
+    }
   };
 
   const handleSaveCoA = async (newCoa) => {
@@ -5862,6 +5943,9 @@ export default function App() {
               cylinders={cylinders}
               productionRecords={productionRecords}
               sfgGoods={sfgGoods}
+              deliveryChallans={deliveryChallans}
+              dispatchShipments={dispatchShipments}
+              orderCloseSettings={orderCloseSettings}
               currentUser={currentUser}
               initialPressQueueOrder={pressQueueOrder}
               initialPressMachineAssignments={pressMachineAssignments}
@@ -6252,7 +6336,11 @@ export default function App() {
                       {(orders || []).map(o => {
                         if (!o) return null;
                         const statusInfo = getOrderStatusInfo(o);
-                        const stageInfo = getOrderStageInfo(o, sfgGoods, productionRecords);
+                        const stageInfo = getOrderStageInfo(o, sfgGoods, productionRecords, {
+                          challans: deliveryChallans,
+                          shipments: dispatchShipments,
+                          settings: orderCloseSettings
+                        });
                         const isOverdue = statusInfo.isOverdue;
                         const isNearing = statusInfo.isNearingDeadline;
                         // Derive substrate structure from the matching Job Master's layers, fallback to order.structure
@@ -6531,6 +6619,7 @@ export default function App() {
             sfgGoods={sfgGoods}
             dispatchShipments={dispatchShipments}
             deliveryChallans={deliveryChallans}
+            orderCloseSettings={orderCloseSettings}
             jobMasters={jobMasters}
             cylinders={cylinders}
             machines={machines}
@@ -6636,6 +6725,8 @@ export default function App() {
             currentUser={currentUser}
             productionRecords={productionRecords}
             sfgGoods={sfgGoods}
+            deliveryChallans={deliveryChallans}
+            dispatchShipments={dispatchShipments}
             onUpdateOrder={handleUpdateOrder} 
             onDeleteOrder={handleDeleteOrder}
             onUpdateCylinder={handleUpdateCylinder}
@@ -6940,6 +7031,9 @@ export default function App() {
             cylinders={cylinders}
             productionRecords={productionRecords}
             sfgGoods={sfgGoods}
+            deliveryChallans={deliveryChallans}
+            dispatchShipments={dispatchShipments}
+            orderCloseSettings={orderCloseSettings}
             currentUser={currentUser}
             initialPressQueueOrder={pressQueueOrder}
             initialPressMachineAssignments={pressMachineAssignments}

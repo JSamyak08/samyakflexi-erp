@@ -1446,6 +1446,23 @@ export async function allocateOrderIdFromServer() {
   return id;
 }
 
+export async function allocateDeliveryChallanNo() {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured.');
+  }
+  const { data, error } = await supabase.rpc('allocate_delivery_challan_no');
+  if (error) handleSupabaseError(error, 'allocate_delivery_challan_no');
+  const number = String(data || '').trim();
+  if (!number) throw new Error('The database did not return a delivery challan number.');
+  return number;
+}
+
+export async function releaseDeliveryChallanNo(number) {
+  if (!isSupabaseConfigured() || !number) return;
+  const { error } = await supabase.rpc('release_delivery_challan_no', { p_number: number });
+  if (error) handleSupabaseError(error, 'release_delivery_challan_no');
+}
+
 export async function allocateJobMasterIdsFromServer(count = 1) {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
