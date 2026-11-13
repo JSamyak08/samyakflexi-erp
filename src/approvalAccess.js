@@ -33,3 +33,9 @@ export function canDecideGrnQc(user) {
 export function canRecordPelletFuel(user) {
   return userHasAnyRole(user, PELLET_RECORD_ROLES);
 }
+
+export const PELLET_ITEM_CREATE_ROLES = ['Admin', 'Store Manager'];
+
+export function canCreatePelletFuelItem(user) {
+  return userHasAnyRole(user, PELLET_ITEM_CREATE_ROLES);
+}

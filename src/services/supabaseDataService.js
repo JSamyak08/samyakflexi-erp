@@ -9,6 +9,7 @@ import { isMetalloceneEligibleFilm, getFilmTypeCode } from '../factoryStore';
 import { assertPersistableMeasures } from '../utils/productionRecordQuality';
 import { finiteNumber, measureColumnsForSave, netUsableForSave } from '../utils/jobMasterGuardrails';
 import { displayItemName } from './inventoryIdentity';
+import { pelletNameShouldBePreserved, resolvePelletCategory } from './pelletFuel';
 import { inventoryRollDateFields, toDatabaseDate, toDatabaseTimestamp } from '../utils/dbDates';
 import { mergeConsumptionsIntoShipments, shipmentWithoutGainLoss } from '../utils/dispatchPacking';
 import { assignedRolesOf, primaryRole } from '../assignedRoles';
@@ -770,8 +771,18 @@ export function sanitizeInventoryItem(rawItem) {
   delete extractedMeta.allBatches;
   delete extractedMeta.primaryId;
 
-  // 1. Resolve true category with priority to extracted metadata
+  // 1. Resolve true category with priority to extracted metadata.
+  // A pellet fuel name stored under the default film category must keep that
+  // name. The film formatter would turn "Boiler Wood Pellets" into a film code
+  // and the GRN screen would no longer recognise the item.
   let category = extractedMeta.category || cleanRaw.category;
+  const keepPelletName = pelletNameShouldBePreserved({
+    itemName: rawName,
+    category,
+    itemCode: cleanRaw.itemCode || cleanRaw.item_code,
+    isPelletFuel: extractedMeta.isPelletFuel === true || cleanRaw.isPelletFuel === true
+  });
+  if (keepPelletName) category = resolvePelletCategory(category);
   const lowerName = rawName.toLowerCase();
 
   // If category is unspecified or defaulted to 'Film Substrates', check keywords
@@ -827,7 +838,7 @@ export function sanitizeInventoryItem(rawItem) {
 
   const resolvedUnit = cleanRaw.unit || cleanRaw.unit_of_measure || extractedMeta.unit || fallbackUnit;
 
-  const keepGivenName = (extractedMeta.preserveItemName === true || cleanRaw.preserveItemName === true) && Boolean(rawName);
+  const keepGivenName = keepPelletName || ((extractedMeta.preserveItemName === true || cleanRaw.preserveItemName === true) && Boolean(rawName));
   const cleanItemName = keepGivenName
     ? rawName.replace(/µ/g, 'Micron')
     : (isFilm
@@ -863,6 +874,7 @@ export function sanitizeInventoryItem(rawItem) {
     dimensions: cleanRaw.dimensions || extractedMeta.dimensions || '',
     lastUpdated: cleanRaw.lastUpdated || extractedMeta.lastUpdated || new Date().toISOString(),
     preserveItemName: keepGivenName || undefined,
+    isPelletFuel: keepPelletName ? true : (cleanRaw.isPelletFuel === true || extractedMeta.isPelletFuel === true || undefined),
     isActive: cleanRaw.isActive === false || cleanRaw.is_active === false || extractedMeta.isActive === false ? false : true,
     is_active: cleanRaw.isActive === false || cleanRaw.is_active === false || extractedMeta.isActive === false ? false : true,
     archivedAt: cleanRaw.archivedAt || cleanRaw.archived_at || extractedMeta.archivedAt || null,

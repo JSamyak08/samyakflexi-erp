@@ -3,15 +3,24 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import {
+  PELLET_FUEL_CATEGORY,
   PELLET_FUEL_ROLES,
   PELLET_FUEL_SHIFTS,
+  ambiguousPelletInventoryItems,
   buildPelletCompanionGrn,
+  canonicalPelletInventoryItem,
   countActiveLoggingDays,
   findPelletInventoryItem,
   fuelActorName,
+  nextPelletStockQty,
   pelletConsumptionFromRow,
-  pelletInwardFromRow
+  pelletInventoryQtyDelta,
+  pelletInwardFromRow,
+  pelletNameShouldBePreserved,
+  pelletReceiptAlreadyPosted,
+  resolvePelletCategory
 } from '../src/services/pelletFuel.js';
+import { canCreatePelletFuelItem } from '../src/approvalAccess.js';
 
 const migrationSql = fs.readFileSync(
   new URL('../supabase/migrations/20261023190000_pellet_fuel_grn_and_vehicle.sql', import.meta.url),
@@ -168,6 +177,74 @@ test('pellet helpers use real fields and do not invent stock or people', () => {
   ];
   assert.equal(findPelletInventoryItem(inventory).id, 'INV-PEL');
   assert.equal(findPelletInventoryItem([]), null);
+  assert.equal(findPelletInventoryItem([
+    { id: 'CASE', itemName: 'WOOD PELLETS', category: 'fuel', itemCode: 'wp-1' }
+  ]).id, 'CASE');
+  assert.equal(findPelletInventoryItem([
+    { id: 'REWRITTEN', itemName: 'BOILER-1000-12', category: 'Film Substrates', itemCode: 'INVT-9' },
+    { id: 'LIVE', itemName: 'Boiler Wood Pellets (Biofuel Fuel Stock)', category: 'Boiler Pellets / Fuel', availableQtyKg: 252 }
+  ]).id, 'LIVE');
+  assert.equal(findPelletInventoryItem([
+    { id: 'WHITE', itemName: 'White Coal', category: 'Other Raw Materials', itemCode: 'WC-1' }
+  ]).id, 'WHITE');
+  assert.equal(findPelletInventoryItem([
+    { id: 'A', itemName: 'White Coal Lot A', category: 'Other Raw Materials' },
+    { id: 'B', itemName: 'White Coal Lot B', category: 'Other Raw Materials' }
+  ]), null);
+  assert.deepEqual(ambiguousPelletInventoryItems([
+    { id: 'A', itemName: 'White Coal Lot A', category: 'Other Raw Materials' },
+    { id: 'B', itemName: 'White Coal Lot B', category: 'Other Raw Materials' }
+  ]).map((item) => item.id), ['A', 'B']);
+  assert.equal(findPelletInventoryItem([
+    { id: 'ARCHIVED', itemName: 'Wood Pellets', category: 'Fuel', isActive: false },
+    { id: 'INK', itemName: 'Red Ink', category: 'Ink' }
+  ]), null);
+  const stockTie = [
+    { id: 'NEW', itemName: 'Boiler Pellet Fuel', category: 'Boiler Pellets / Fuel', availableQtyKg: 8, isPelletFuel: true },
+    { id: 'OLD', itemName: 'Boiler Wood Pellets', category: 'Boiler Pellets / Fuel', availableQtyKg: 252, isPelletFuel: true }
+  ];
+  assert.equal(findPelletInventoryItem(stockTie).id, 'OLD');
+
+  assert.equal(pelletNameShouldBePreserved({
+    itemName: 'Boiler Wood Pellets (Biofuel Fuel Stock)',
+    category: 'Film Substrates',
+    itemCode: 'INVT-0002'
+  }), true);
+  assert.equal(resolvePelletCategory('Film Substrates'), PELLET_FUEL_CATEGORY);
+  assert.equal(resolvePelletCategory('Other Raw Materials'), 'Other Raw Materials');
+  assert.equal(pelletNameShouldBePreserved({
+    itemName: 'PET 12 Micron 1000mm',
+    category: 'Film Substrates',
+    itemCode: 'PET-12'
+  }), false);
+  assert.equal(pelletNameShouldBePreserved({
+    itemName: 'White Coal',
+    category: 'Film Substrates'
+  }), true);
+
+  const canonical = canonicalPelletInventoryItem();
+  assert.equal(canonical.id, 'INVT-PELLET-FUEL');
+  assert.equal(canonical.itemName, 'Boiler Pellet Fuel');
+  assert.equal(canonical.preserveItemName, true);
+  assert.equal(findPelletInventoryItem([canonical]).id, canonical.id);
+
+  assert.deepEqual(pelletInventoryQtyDelta(null, 100), { delta: 100, inventoryQtyPosted: true });
+  assert.deepEqual(
+    pelletInventoryQtyDelta({ inwardQtyKg: 100, inventoryQtyPosted: true }, 140),
+    { delta: 40, inventoryQtyPosted: true }
+  );
+  assert.deepEqual(
+    pelletInventoryQtyDelta({ inwardQtyKg: 250 }, 260),
+    { delta: 0, inventoryQtyPosted: false }
+  );
+  assert.equal(nextPelletStockQty(252, 10), 262);
+  assert.equal(nextPelletStockQty(5, -10), 0);
+  assert.equal(pelletReceiptAlreadyPosted({ isPelletFuel: true, inventoryQtyPosted: true }), true);
+  assert.equal(pelletReceiptAlreadyPosted({ isPelletFuel: true }), false);
+  assert.equal(canCreatePelletFuelItem('Admin'), true);
+  assert.equal(canCreatePelletFuelItem('Store Manager'), true);
+  assert.equal(canCreatePelletFuelItem('Plant Manager'), false);
+  assert.equal(canCreatePelletFuelItem('Production Manager'), false);
 
   assert.throws(
     () => buildPelletCompanionGrn({ vendorId: 'V1', vendorName: 'Acme' }, null),
@@ -194,6 +271,18 @@ test('pellet helpers use real fields and do not invent stock or people', () => {
   assert.equal(companion.isPelletFuel, true);
   assert.equal(companion.itemName.includes('Boiler Wood Pellets'), false);
   assert.equal(JSON.parse(companion.itemName.split('|||')[1]).isPelletFuel, true);
+  assert.equal(JSON.parse(companion.itemName.split('|||')[1]).inventoryQtyPosted, false);
+  const posted = buildPelletCompanionGrn({
+    id: 'PEL-2',
+    grnNo: 'SIL/GRN/26-27/105',
+    vendorId: 'VEND-1',
+    vendorName: 'Acme Pellets',
+    inwardDate: '2026-10-23',
+    inwardQtyKg: 10,
+    unitCostPerKg: 18.5,
+    inventoryQtyPosted: true
+  }, inventory[2]);
+  assert.equal(JSON.parse(posted.itemName.split('|||')[1]).inventoryQtyPosted, true);
 
   assert.equal(fuelActorName({ name: 'User', email: 'asha@samyakinternational.in' }), 'asha@samyakinternational.in');
   assert.equal(fuelActorName({ full_name: 'Asha Rao', name: 'User' }), 'Asha Rao');
@@ -217,6 +306,12 @@ test('pellet screens no longer ship the old placeholder values', () => {
   assert.equal(ui.includes('|| 12'), false);
   assert.equal(ui.includes('.size || 1'), false);
   assert.match(ui, /countActiveLoggingDays/);
+  assert.match(ui, /Create Boiler Pellet Fuel item/);
+  assert.match(ui, /canCreatePelletFuelItem/);
+  assert.match(ui, /placeholder="Select a vendor\.\.\."/);
+  const dataService = readSource('src/services/supabaseDataService.js');
+  assert.match(dataService, /pelletNameShouldBePreserved/);
+  assert.match(readSource('src/components/InventoryManagement.jsx'), /pelletReceiptAlreadyPosted/);
   assert.match(ui, /value=\{iVehicleNo\}/);
   assert.match(service, /Could not check for a duplicate GRN invoice/);
   assert.match(service, /save_pellet_inward_with_grn/);

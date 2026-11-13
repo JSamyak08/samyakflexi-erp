@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { pushSlugState } from '../utils/slugRouter';
 import { 
   Flame, 
@@ -28,10 +28,11 @@ import {
 import SearchableSelect from './SearchableSelect';
 import {
   PELLET_FUEL_SHIFTS,
+  ambiguousPelletInventoryItems,
   countActiveLoggingDays,
   findPelletInventoryItem
 } from '../services/pelletFuel';
-import { canRecordPelletFuel } from '../approvalAccess';
+import { canCreatePelletFuelItem, canRecordPelletFuel } from '../approvalAccess';
 
 export default function PelletFuelManagement({
   urlParams = {},
@@ -41,7 +42,9 @@ export default function PelletFuelManagement({
   vendors = [],
   machines = [],
   inventory = [],
+  inventoryReady = true,
   loadError = "",
+  onCreatePelletInventoryItem,
   onAllocatePelletGrnNumber,
   pelletInwards = [],
   pelletConsumptions = [],
@@ -91,6 +94,11 @@ export default function PelletFuelManagement({
   // Form State: Inward
   const [iGrnNo, setIGrnNo] = useState('');
   const [iGrnError, setIGrnError] = useState('');
+  const [iGrnPending, setIGrnPending] = useState(false);
+  const [chosenPelletItemId, setChosenPelletItemId] = useState('');
+  const [creatingPelletItem, setCreatingPelletItem] = useState(false);
+  const allocatePelletGrnRef = useRef(onAllocatePelletGrnNumber);
+  allocatePelletGrnRef.current = onAllocatePelletGrnNumber;
   const [iDate, setIDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [iVendorId, setIVendorId] = useState('');
   const [iVendor, setIVendor] = useState('');
@@ -107,7 +115,18 @@ export default function PelletFuelManagement({
     () => (machines || []).map(m => m.name).filter(Boolean),
     [machines]
   );
-  const pelletInventoryItem = useMemo(() => findPelletInventoryItem(inventory), [inventory]);
+  const pelletInventoryItem = useMemo(() => {
+    if (chosenPelletItemId) {
+      const chosen = (inventory || []).find((item) => String(item?.id) === String(chosenPelletItemId));
+      if (chosen && chosen.isActive !== false && chosen.is_active !== false) return chosen;
+    }
+    return findPelletInventoryItem(inventory);
+  }, [inventory, chosenPelletItemId]);
+  const similarPelletItems = useMemo(
+    () => (pelletInventoryItem ? [] : ambiguousPelletInventoryItems(inventory)),
+    [inventory, pelletInventoryItem]
+  );
+  const canCreatePelletItem = canCreatePelletFuelItem(currentUser || userRole);
   const vendorOptions = useMemo(() => (vendors || []).filter(v => v && (v.name || v.companyName)), [vendors]);
 
   // Overall Stock & Weighted Average Cost Calculation
@@ -324,15 +343,19 @@ export default function PelletFuelManagement({
     }
   };
 
-  // Open Add Inward Modal
-  const handleOpenNewInward = async () => {
+  // Open Add Inward Modal. The GRN number is reserved once a pellet item
+  // is known, including when that item is created or finishes loading
+  // after the window is already open.
+  const handleOpenNewInward = () => {
     if (!canRecordPellet) {
       denyPelletWrite();
       return;
     }
     setEditingInward(null);
+    setChosenPelletItemId('');
     setIGrnNo('');
     setIGrnError('');
+    setIGrnPending(false);
     setIDate(new Date().toISOString().split('T')[0]);
     setIVendorId('');
     setIVendor('');
@@ -345,20 +368,52 @@ export default function PelletFuelManagement({
     setIReceivedBy(userName || '');
     setIRemarks('');
     setShowInwardModal(true);
-    if (!pelletInventoryItem) {
-      setIGrnError('No pellet fuel item is in inventory. Add that item before recording a GRN.');
-      return;
-    }
-    if (!onAllocatePelletGrnNumber) {
+  };
+
+  const pelletItemIdForGrn = pelletInventoryItem?.id || '';
+  useEffect(() => {
+    if (!showInwardModal || editingInward || iGrnNo || !pelletItemIdForGrn) return undefined;
+    const allocate = allocatePelletGrnRef.current;
+    if (!allocate) {
       setIGrnError('A GRN number cannot be reserved because the numbering service is not connected.');
+      return undefined;
+    }
+    let cancelled = false;
+    setIGrnPending(true);
+    setIGrnError('');
+    allocate()
+      .then((number) => {
+        if (cancelled) return;
+        setIGrnNo(number || '');
+        if (!number) setIGrnError('The database did not return a GRN number.');
+      })
+      .catch((error) => {
+        if (!cancelled) setIGrnError(error?.message || 'A GRN number could not be reserved.');
+      })
+      .finally(() => {
+        if (!cancelled) setIGrnPending(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showInwardModal, editingInward, iGrnNo, pelletItemIdForGrn]);
+
+  const handleCreatePelletItem = async () => {
+    if (!canCreatePelletItem) return;
+    if (!onCreatePelletInventoryItem) {
+      setIGrnError('The pellet fuel item cannot be created from this screen.');
       return;
     }
+    setCreatingPelletItem(true);
+    setIGrnError('');
     try {
-      const number = await onAllocatePelletGrnNumber();
-      setIGrnNo(number || '');
-      if (!number) setIGrnError('The database did not return a GRN number.');
+      const created = await onCreatePelletInventoryItem();
+      if (created?.id) setChosenPelletItemId(String(created.id));
+      else setIGrnError('The pellet fuel item was not created.');
     } catch (error) {
-      setIGrnError(error?.message || 'A GRN number could not be reserved.');
+      setIGrnError(error?.message || 'The pellet fuel item was not created.');
+    } finally {
+      setCreatingPelletItem(false);
     }
   };
 
@@ -406,7 +461,9 @@ export default function PelletFuelManagement({
       return;
     }
     if (!pelletInventoryItem) {
-      alert("No pellet fuel item is in inventory. The GRN was not saved.");
+      alert(canCreatePelletItem
+        ? "Create the Boiler Pellet Fuel item, or choose the existing fuel item, before saving this GRN."
+        : "No pellet fuel item is in inventory. An Admin or Store Manager has to add it before this GRN can be saved.");
       return;
     }
     if (!iVendorId || !String(iVendor || '').trim()) {
@@ -1319,8 +1376,58 @@ export default function PelletFuelManagement({
                     value={iGrnNo}
                   />
                   <div style={{ marginTop: '6px', fontSize: '0.75rem', color: iGrnError ? '#b91c1c' : '#64748b', fontWeight: '700' }}>
-                    {iGrnError || 'Reserved from the GRN number series. It is not typed or generated in the browser.'}
+                    {iGrnError
+                      || (iGrnPending ? 'Reserving the next GRN number…' : '')
+                      || (pelletInventoryItem
+                        ? `Reserved from the GRN number series. Stock is added to ${pelletInventoryItem.itemName}.`
+                        : 'The GRN number is reserved once a pellet fuel item is available.')}
                   </div>
+                  {!editingInward && !pelletInventoryItem && (
+                    <div role="status" style={{ marginTop: '8px', padding: '10px 12px', borderRadius: '8px', background: inventoryReady ? '#fef2f2' : '#fffbeb', border: inventoryReady ? '1px solid #fecaca' : '1px solid #fde68a', color: inventoryReady ? '#991b1b' : '#92400e' }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: '800' }}>
+                        {inventoryReady
+                          ? (similarPelletItems.length
+                            ? 'More than one similar fuel item is in inventory.'
+                            : 'No pellet fuel item is in inventory.')
+                          : 'Inventory is still loading.'}
+                      </div>
+                      <div style={{ marginTop: '4px', fontSize: '0.76rem', fontWeight: '600' }}>
+                        {inventoryReady
+                          ? (similarPelletItems.length
+                            ? 'Choose the item this GRN should add stock to. A new item is not created while one of these can be used.'
+                            : (canCreatePelletItem
+                              ? 'Add the Boiler Pellet Fuel stock item here. The GRN number is reserved as soon as it exists.'
+                              : 'An Admin or Store Manager can add the Boiler Pellet Fuel item from this window. The GRN number is reserved after that item exists.'))
+                          : 'The GRN number is reserved as soon as the pellet fuel item is found.'}
+                      </div>
+                      {inventoryReady && similarPelletItems.length > 0 && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                          {similarPelletItems.map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="btn-secondary"
+                              style={{ textAlign: 'left', fontWeight: '700', fontSize: '0.78rem' }}
+                              onClick={() => setChosenPelletItemId(String(item.id))}
+                            >
+                              Use {item.itemName || item.itemCode || item.id}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {inventoryReady && !similarPelletItems.length && canCreatePelletItem && (
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          style={{ marginTop: '8px', fontWeight: '800', fontSize: '0.8rem' }}
+                          disabled={creatingPelletItem}
+                          onClick={handleCreatePelletItem}
+                        >
+                          {creatingPelletItem ? 'Creating Boiler Pellet Fuel…' : 'Create Boiler Pellet Fuel item'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -1345,6 +1452,7 @@ export default function PelletFuelManagement({
                 <SearchableSelect
                   className="input-field"
                   style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.88rem' }}
+                  placeholder="Select a vendor..."
                   required
                   value={iVendorId}
                   onChange={(e) => {
@@ -1360,7 +1468,7 @@ export default function PelletFuelManagement({
                 </SearchableSelect>
                 {!vendorOptions.length && (
                   <div style={{ marginTop: '6px', fontSize: '0.78rem', color: '#b45309', fontWeight: '700' }}>
-                    No vendors are loaded. This GRN cannot be saved until the vendor list is available.
+                    No suppliers are loaded, so this list is empty. Add a vendor, then choose it here. The GRN number does not depend on the supplier list.
                   </div>
                 )}
               </div>
