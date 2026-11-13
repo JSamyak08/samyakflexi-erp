@@ -131,7 +131,18 @@ export function productionFinishedKgForShipment(shipment, productionRecords = []
  * Gain/loss is packed net against the current production output when a
  * record exists, otherwise against FG consumed into this packing list.
  * It is not a number stored when the list was dispatched.
+ * A list with no weighed rolls has no variance. Consumption recorded
+ * before any roll is weighed is not shown as a 100% loss.
  */
+export function packedRollCount(items) {
+  return (items || []).filter((item) => {
+    if (!item) return false;
+    const net = Number(item.netWeightKg);
+    const quantity = Number(item.quantity ?? item.qtyKg);
+    return (Number.isFinite(net) && net > 0) || (Number.isFinite(quantity) && quantity > 0);
+  }).length;
+}
+
 export function liveConsumedKgForShipment(shipment, productionRecords = []) {
   const produced = productionFinishedKgForShipment(shipment, productionRecords);
   if (produced > 0) return produced;
@@ -139,10 +150,18 @@ export function liveConsumedKgForShipment(shipment, productionRecords = []) {
 }
 
 export function liveGainLossForShipment(shipment, productionRecords = [], items = shipment?.items) {
-  return packingGainLoss({
-    consumedKg: liveConsumedKgForShipment(shipment, productionRecords),
-    packedNetKg: packedNetKgFromItems(items),
-  });
+  const packedNetKg = packedNetKgFromItems(items);
+  const hasRolls = packedRollCount(items) > 0 && packedNetKg > 0;
+  if (!hasRolls) {
+    return { ...packingGainLoss({ consumedKg: 0, packedNetKg: 0 }), hasRolls: false };
+  }
+  return {
+    ...packingGainLoss({
+      consumedKg: liveConsumedKgForShipment(shipment, productionRecords),
+      packedNetKg,
+    }),
+    hasRolls: true,
+  };
 }
 
 export function normalizeThresholdPct(value) {

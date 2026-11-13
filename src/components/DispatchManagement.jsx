@@ -2319,7 +2319,7 @@ export default function DispatchManagement({
                       const party = packingListParty(ds, orders);
                       const consumptions = listConsumptions(ds);
                       const liveGain = liveGainLossForShipment(ds, productionRecords);
-                      const showGain = liveGain.consumedKg > 0;
+                      const showGain = liveGain.hasRolls && liveGain.consumedKg > 0;
                       const rollCount = openList
                         ? (Array.isArray(ds.items) ? ds.items.length : 0)
                         : (ds.totalRolls || (ds.items?.length || 1));

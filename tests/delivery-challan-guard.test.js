@@ -195,11 +195,29 @@ test('gain/loss follows the production record filled after dispatch', () => {
   const list = shipment({ totalNetWeightKg: 100, items: [{ orderId: 'ORD-A', jobName: 'Alpha Pouch', netWeightKg: 100, unit: 'Kg' }] });
   const before = liveGainLossForShipment(list, []);
   assert.equal(before.consumedKg, 0);
+  assert.equal(before.differencePct, null);
   const after = liveGainLossForShipment(list, [{ orderId: 'ORD-A', jobName: 'Alpha Pouch', qtySlitting: '110' }]);
   assert.equal(after.consumedKg, 110);
   assert.equal(after.packedNetKg, 100);
   assert.equal(after.differenceKg, -10);
   assert.equal(after.direction, 'loss');
+});
+
+test('a packing list with no rolls does not show a 100 percent loss', () => {
+  const empty = {
+    id: 'DISP-0',
+    dispatchId: 'PL-0',
+    packingStatus: 'Open',
+    totalRolls: 0,
+    totalNetWeightKg: 0,
+    items: [],
+    dispatchConsumptions: [{ id: 'c1', consumedKg: 2, barcode: 'FG-1' }],
+  };
+  const gain = liveGainLossForShipment(empty, []);
+  assert.equal(gain.hasRolls, false);
+  assert.equal(gain.consumedKg, 0);
+  assert.equal(gain.packedNetKg, 0);
+  assert.equal(gain.differencePct, null);
 });
 
 test('a production write does not put a dispatched order back to In Production', () => {
