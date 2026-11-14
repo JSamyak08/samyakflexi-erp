@@ -444,7 +444,13 @@ export default function UniversalBarcodeScannerModal({
         || rollTypeText.includes('SFG')
         || codeStartsWith(matchedRoll.barcodeId, 'SFG-')
       );
-      const isFilm = resolvedCategory === 'Film Substrates' || (!resolvedCategory && (matchedRoll.rollType === 'RAW_MATERIAL' || codeStartsWith(matchedRoll.barcodeId, 'RM-BC') || Number(matchedRoll.micron) > 0));
+      const barcodeCode = textFrom(matchedRoll.barcodeId, matchedRoll.id);
+      const isBalanceRoll = /-BAL$/i.test(barcodeCode) || matchedRoll.balanceRoll === true;
+      const hasFilmMeasure = Number(matchedRoll.micron) > 0 || Number(matchedRoll.widthMm) > 0 || Number(matchedRoll.lengthMeters) > 0;
+      const isFilm = resolvedCategory === 'Film Substrates'
+        || isBalanceRoll
+        || (matchedRoll.rollType === 'RAW_MATERIAL' && hasFilmMeasure)
+        || (!resolvedCategory && (codeStartsWith(matchedRoll.barcodeId, 'RM-BC') || Number(matchedRoll.micron) > 0));
 
       let entityCatTitle = 'Raw Material (RM) Substrate Roll';
       let badgeCol = '#d97706';
@@ -502,8 +508,8 @@ export default function UniversalBarcodeScannerModal({
         if (matchedRoll.widthMm || linkedItem?.width_mm || linkedItem?.widthMm) {
           rollProps.push({ label: 'Film / Slit Width', value: `${matchedRoll.widthMm || linkedItem?.width_mm || linkedItem?.widthMm} mm` });
         }
-        if (matchedRoll.lengthMeters) {
-          rollProps.push({ label: 'Calculated Length', value: `${matchedRoll.lengthMeters} m` });
+        if (Number(matchedRoll.lengthMeters) > 0) {
+          rollProps.push({ label: 'Length', value: `${matchedRoll.lengthMeters} m` });
         }
         if (matchedRoll.coreDia || matchedRoll.core_dia) {
           rollProps.push({ label: 'Core Diameter', value: matchedRoll.coreDia || matchedRoll.core_dia });
