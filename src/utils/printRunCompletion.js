@@ -1,5 +1,6 @@
 /** Printed output an operator can label after a press run ends. */
 
+import { inheritBalanceDetails, isPlaceholderItemName } from './balanceRollDetails.js';
 import { printingSfgLotCode } from './printingSfgLot.js';
 
 function finite(value) {
@@ -162,7 +163,14 @@ function withInventoryFacts(rolls, inventoryRolls) {
       : (finite(match.netWeightKg ?? match.availableWeightKg ?? match.availableKg) > 0
         ? finite(match.netWeightKg ?? match.availableWeightKg ?? match.availableKg)
         : roll.netWeightKg);
-    return { ...roll, lengthMeters: meters, grossWeightKg: gross, netWeightKg: net };
+    return inheritBalanceDetails({
+      ...match,
+      ...roll,
+      itemName: !isPlaceholderItemName(roll.itemName) ? roll.itemName : (match.itemName || roll.itemName),
+      lengthMeters: meters,
+      grossWeightKg: gross,
+      netWeightKg: net
+    }, { rolls: inventoryRolls });
   });
 }
 
@@ -266,13 +274,26 @@ export function balanceRollMeterErrors(rolls) {
   return errors;
 }
 
+function measure(value, fallback) {
+  const own = finite(value);
+  if (own !== null && own > 0) return own;
+  const next = finite(fallback);
+  return next !== null && next > 0 ? next : null;
+}
+
 /** A roll the label printer can stick. Consumed parent rolls keep their old tag. */
 export function labelRoll(row, context = {}) {
-  const barcodeId = rollBarcode(row);
-  const balance = barcodeId.endsWith('-BAL') || row?.rollType === 'RAW_MATERIAL';
-  const weight = finite(row?.netWeightKg) || finite(row?.availableWeightKg) || finite(row?.availableKg) || finite(row?.totalNetKg) || finite(row?.consumedWeightKg) || 0;
-  const gross = finite(row?.grossWeightKg ?? row?.totalGrossKg);
-  const meters = finite(row?.lengthMeters ?? row?.meters ?? row?.totalMeters);
+  const inherited = inheritBalanceDetails(row, {
+    rolls: context.inventoryRolls || context.rolls || [],
+    inventory: context.inventory || []
+  });
+  const barcodeId = rollBarcode(inherited);
+  const balance = barcodeId.endsWith('-BAL') || inherited?.rollType === 'RAW_MATERIAL' || inherited?.balanceRoll === true;
+  const balanceSticker = barcodeId.endsWith('-BAL') || inherited?.balanceRoll === true;
+  const weight = finite(inherited?.netWeightKg) || finite(inherited?.availableWeightKg) || finite(inherited?.availableKg) || finite(inherited?.totalNetKg) || finite(inherited?.consumedWeightKg) || 0;
+  const gross = finite(inherited?.grossWeightKg ?? inherited?.totalGrossKg);
+  const meters = finite(inherited?.lengthMeters ?? inherited?.meters ?? inherited?.totalMeters);
+  const realName = !isPlaceholderItemName(inherited?.itemName) ? text(inherited.itemName) : '';
   return {
     id: barcodeId,
     barcodeId,
@@ -282,18 +303,32 @@ export function labelRoll(row, context = {}) {
     lengthMeters: meters !== null && meters > 0 ? meters : null,
     unit: 'Kg',
     uom: 'Kg',
-    jobName: text(context.jobName),
-    jobCode: text(context.jobCode),
-    orderId: text(context.orderId),
-    clientName: text(context.clientName),
-    customerName: text(context.clientName),
-    filmType: text(row?.filmType || context.filmType),
-    micron: context.micron ?? null,
-    widthMm: context.widthMm ?? null,
+    jobName: text(context.jobName || inherited?.jobName),
+    jobCode: text(context.jobCode || inherited?.jobCode),
+    orderId: text(context.orderId || inherited?.orderId),
+    clientName: text(context.clientName || inherited?.clientName),
+    customerName: text(context.clientName || inherited?.customerName || inherited?.clientName),
+    filmType: text(inherited?.filmType || context.filmType),
+    micron: measure(inherited?.micron, context.micron),
+    widthMm: measure(inherited?.widthMm, context.widthMm),
     rollType: balance ? 'RAW_MATERIAL' : 'SEMI_FINISHED_GOODS',
     category: balance ? 'Raw Material (RM)' : 'Semi-Finished Goods (SFG)',
     sfgType: balance ? '' : 'Printed Rolls',
-    itemName: text(row?.itemName) || (balance ? `${barcodeId} balance roll` : text(context.jobName) || barcodeId),
+    itemName: realName || text(inherited?.itemName) || (balance ? `${barcodeId} balance roll` : text(context.jobName) || barcodeId),
+    itemId: text(inherited?.itemId),
+    vendorName: text(inherited?.vendorName || inherited?.supplier),
+    batchNo: text(inherited?.batchNo || inherited?.heatNo),
+    heatNo: text(inherited?.heatNo || inherited?.batchNo),
+    invoiceNo: text(inherited?.invoiceNo),
+    grnNo: text(inherited?.grnNo),
+    vendorRollNo: text(inherited?.vendorRollNo),
+    purchaseRatePerKg: measure(inherited?.purchaseRatePerKg, inherited?.unitPrice) || undefined,
+    parentBarcodeId: balanceSticker ? text(inherited?.parentBarcodeId) : text(inherited?.parentBarcodeId),
+    originalNetWeightKg: balanceSticker ? measure(inherited?.originalNetWeightKg, inherited?.parentNetWeightKg) : undefined,
+    parentInwardDatetime: balanceSticker ? text(inherited?.parentInwardDatetime) : '',
+    balanceRoll: balanceSticker || undefined,
+    inwardDatetime: inherited?.inwardDatetime || inherited?.inward_datetime || '',
+    productionDate: inherited?.productionDate || '',
     status: balance ? 'In Stock (RM)' : 'In Stock (SFG)'
   };
 }

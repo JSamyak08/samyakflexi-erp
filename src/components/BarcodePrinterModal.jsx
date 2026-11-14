@@ -9,11 +9,13 @@ import {
   resolveItemPurchaseRate,
   getStickerCategoryInfo,
   getStickerDisplayDate,
+  formatStickerDateTime,
   stickerBarcode
 } from '../utils/thermalBarcodePrinter';
+import { balanceOriginView, inheritBalanceDetails } from '../utils/balanceRollDetails';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
 
-export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], autoPrint = false, onRecordNext, onClose, variant = '' }) {
+export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks = [], inventoryRolls = [], autoPrint = false, onRecordNext, onClose, variant = '' }) {
   const rollList = rollsEligibleForBarcodeLabel(Array.isArray(rolls)
     ? rolls
     : (Array.isArray(roll) ? roll : (roll ? [roll] : [])));
@@ -41,7 +43,8 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
       rolls: rollList,
       company: COMPANY_DETAILS,
       inventory,
-      inks
+      inks,
+      inventoryRolls
     });
   };
 
@@ -58,7 +61,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [reprint, onRecordNext, onClose, rollList, COMPANY_DETAILS, inventory, inks]);
+  }, [reprint, onRecordNext, onClose, rollList, COMPANY_DETAILS, inventory, inks, inventoryRolls]);
 
   // Auto-trigger instant isolated iframe thermal print command when requested
   useEffect(() => {
@@ -70,9 +73,13 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     }
   }, [autoPrint, rollList.length]);
 
-  const renderSingleStickerPreview = (r) => {
+  const renderSingleStickerPreview = (source) => {
+    const r = inheritBalanceDetails(source, { rolls: inventoryRolls, inventory });
     const catInfo = getStickerCategoryInfo(r);
     const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel, grossKg, showLength, lengthLabel } = catInfo;
+    const origin = balanceOriginView(r);
+    const titleName = (origin && origin.itemName) || r.itemName || r.jobName || '-';
+    const originDate = origin?.grnDate ? formatStickerDateTime(origin.grnDate) : '';
 
     const rateVal = resolveItemPurchaseRate(r, inventory, inks);
     const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
@@ -182,10 +189,16 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
         <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.4fr', gap: '6px', fontSize: '0.78rem', background: '#f8fafc', padding: '5px 7px', borderRadius: '4px', border: '1px solid #cbd5e1', flexShrink: 0 }}>
           <div style={{ minWidth: 0 }}>
             <span style={{ fontSize: '0.58rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.03em', display: 'block' }}>Item / Substrate</span>
-            <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', lineHeight: '1.2', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={r.itemName || r.jobName}>
-              {r.itemName || r.jobName || '-'}
+            <div style={{ fontWeight: '800', fontSize: '0.85rem', color: '#0f172a', lineHeight: '1.2', marginTop: '1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={titleName}>
+              {titleName}
             </div>
-            {isFilmItem ? (
+            {origin && (origin.widthMm || origin.micron) ? (
+              <div style={{ fontSize: '0.68rem', color: '#334155', marginTop: '1px', lineHeight: '1.2' }}>
+                {origin.widthMm ? <>Size: <strong>{origin.widthMm} mm</strong></> : null}
+                {origin.widthMm && origin.micron ? ' · ' : null}
+                {origin.micron ? <>Micron: <strong>{origin.micron} µ</strong></> : null}
+              </div>
+            ) : isFilmItem ? (
               <div style={{ fontSize: '0.68rem', color: '#334155', marginTop: '1px', lineHeight: '1.2' }}>
                 Gauge: <strong>{r.micron}µ</strong> | Width: <strong>{r.widthMm}mm</strong>
               </div>
@@ -242,6 +255,21 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
                 <span>Batch / Heat #: <strong>{batchStr}</strong></span>
                 <span style={{ color: '#047857', fontWeight: '700' }}>Rate: <strong>{rateVal > 0 ? `₹${rateVal} / ${displayUnit}` : '₹-'}</strong></span>
               </div>
+              {origin?.parentBarcode ? (
+                <div style={{ fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Split from: <strong>{origin.parentBarcode}</strong>
+                </div>
+              ) : null}
+              {(origin?.grnNo || originDate) ? (
+                <div style={{ fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  Original GRN: <strong>{[origin.grnNo, originDate].filter(Boolean).join(' · ')}</strong>
+                </div>
+              ) : null}
+              {origin?.originalNetKg ? (
+                <div style={{ fontSize: '0.62rem' }}>
+                  Original net: <strong>{origin.originalNetKg} kg</strong>
+                </div>
+              ) : null}
             </>
           )}
 

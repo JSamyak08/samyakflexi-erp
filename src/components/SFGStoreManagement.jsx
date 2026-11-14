@@ -1439,8 +1439,9 @@ export default function SFGStoreManagement({
       }
 
       const childrenFailed = consumeWarning && String(consumeWarning.message || '').includes('child output rolls');
+      let stickers = null;
       if (!childrenFailed && logEntry.outputRolls && logEntry.outputRolls.length > 1) {
-        const stickers = logEntry.outputRolls.map((roll) => ({
+        stickers = logEntry.outputRolls.map((roll) => ({
           id: roll.barcode,
           barcodeId: roll.barcode,
           rollType: roll.outputType === 'FG' ? 'FG' : 'SFG',
@@ -1463,6 +1464,12 @@ export default function SFGStoreManagement({
           remarks: `Produced from ${targetProcess}`,
           inwardDatetime: roll.timestamp
         }));
+      }
+      const balanceStickers = Array.isArray(consumeResult?.balanceRolls) ? consumeResult.balanceRolls.filter((roll) => roll?.barcodeId) : [];
+      if (balanceStickers.length && targetProcess !== 'QC Hold Store') {
+        stickers = [...balanceStickers, ...(stickers || [])];
+      }
+      if (stickers && stickers.length && targetProcess !== 'QC Hold Store') {
         setBarcodePrintRolls(stickers);
         setSelectedRollForBarcodeModal(stickers[0]);
       }
@@ -2670,7 +2677,12 @@ export default function SFGStoreManagement({
                                             jobName: item.jobName,
                                             jobCode: item.jobCode,
                                             orderId: item.orderId,
-                                            filmType: balanceRoll.filmType || item.filmType
+                                            clientName: item.clientName,
+                                            filmType: balanceRoll.filmType || item.filmType,
+                                            micron: balanceRoll.micron ?? item.micron,
+                                            widthMm: balanceRoll.widthMm ?? item.widthMm,
+                                            inventoryRolls,
+                                            inventory
                                           }));
                                         }}
                                       />
@@ -4841,6 +4853,8 @@ export default function SFGStoreManagement({
         <BarcodePrinterModal
           roll={selectedRollForBarcodeModal}
           rolls={barcodePrintRolls && barcodePrintRolls.length > 1 ? barcodePrintRolls : undefined}
+          inventory={inventory}
+          inventoryRolls={inventoryRolls}
           onClose={() => {
             setSelectedRollForBarcodeModal(null);
             setBarcodePrintRolls(null);

@@ -2282,8 +2282,11 @@ export async function fetchInventoryRolls() {
       coreWeightKg: r.core_weight_kg === null || r.core_weight_kg === undefined
         ? (meta.coreWeightKg === undefined || meta.coreWeightKg === null ? undefined : (Number(meta.coreWeightKg) || 0))
         : (Number(r.core_weight_kg) || 0),
-      purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
-      unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? 0) || 0,
+      purchaseRatePerKg: Number(r.purchase_rate_per_kg ?? r.unit_price ?? meta.purchaseRatePerKg ?? meta.unitPrice ?? 0) || 0,
+      unitPrice: Number(r.purchase_rate_per_kg ?? r.unit_price ?? meta.purchaseRatePerKg ?? meta.unitPrice ?? 0) || 0,
+      parentNetWeightKg: Number(meta.parentNetWeightKg) || 0,
+      originalNetWeightKg: Number(meta.parentNetWeightKg) || 0,
+      parentInwardDatetime: meta.parentInwardDatetime || '',
       unit: r.unit || ((['RAW_MATERIAL', 'SEMI_FINISHED_GOODS', 'FINISHED_GOODS', 'SFG', 'FG', 'SFG_PRINTED', 'SFG_LAMINATED', 'FG_DISPATCH'].includes(String(r.roll_type || '').toUpperCase()) || /semi-finished|finished goods|film substrate|raw material/i.test(String(r.category || ''))) ? 'Kg' : 'Pcs'),
       inputBarcodeIds: Array.isArray(r.input_barcode_ids) ? r.input_barcode_ids : [],
       stationId: r.station_id || '',
@@ -2293,6 +2296,7 @@ export async function fetchInventoryRolls() {
       filmType: r.film_type || meta.filmType || '',
       bulkUploadFingerprint: meta.bulkUploadFingerprint || '',
       parentBarcodeId: meta.parentBarcodeId || meta.parentBarcode || '',
+      balanceRoll: meta.balanceRoll === true || /-BAL$/i.test(String(r.barcode_id || '')),
       creatingOrderId: meta.orderId || meta.creatingOrderId || '',
       ...(meta.parentSfgBatchCode ? { parentSfgBatchCode: meta.parentSfgBatchCode } : {})
     };
@@ -2350,7 +2354,7 @@ export async function fetchRecordBalanceRolls(recordId) {
   try {
     const { data, error } = await supabase
       .from('inventory_ledger_entries')
-      .select('barcode, qty_kg, stage, order_id, job_name, film_type, micron, width_mm, item_name, stock_item_id, parent_barcode')
+      .select('barcode, qty_kg, stage, order_id, job_name, film_type, micron, width_mm, item_name, stock_item_id, parent_barcode, vendor_name, batch_no, purchase_rate, grn_no, parent_net_kg, parent_inward_at')
       .eq('production_record_id', recordId)
       .eq('entry_kind', 'balance_receipt');
     if (error || !Array.isArray(data)) return [];
@@ -2366,6 +2370,14 @@ export async function fetchRecordBalanceRolls(recordId) {
       widthMm: row.width_mm,
       itemName: row.item_name || '',
       itemId: row.stock_item_id || '',
+      vendorName: row.vendor_name || '',
+      batchNo: row.batch_no || '',
+      purchaseRatePerKg: Number(row.purchase_rate) || 0,
+      grnNo: row.grn_no || '',
+      originalNetWeightKg: Number(row.parent_net_kg) || 0,
+      parentNetWeightKg: Number(row.parent_net_kg) || 0,
+      parentInwardDatetime: row.parent_inward_at || '',
+      balanceRoll: true,
       orderId: row.order_id || '',
       jobName: row.job_name || '',
       stage: row.stage || '',
@@ -2448,7 +2460,12 @@ export async function saveInventoryRollToSupabase(roll) {
         ? { orderId: String(roll.creatingOrderId || roll.metadata?.orderId || roll.metadata?.creatingOrderId).trim() }
         : {}),
       ...(String(roll.metadata?.stage || '').trim() ? { stage: String(roll.metadata.stage).trim() } : {}),
-      ...(roll.metadata?.balanceRoll === true ? { balanceRoll: true } : {})
+      ...(roll.balanceRoll === true || roll.metadata?.balanceRoll === true || /-BAL$/i.test(String(roll.barcodeId || roll.id || '')) ? { balanceRoll: true } : {}),
+      ...(Number(roll.originalNetWeightKg || roll.parentNetWeightKg) > 0
+        ? { parentNetWeightKg: Number(roll.originalNetWeightKg || roll.parentNetWeightKg) }
+        : {}),
+      ...(roll.parentInwardDatetime ? { parentInwardDatetime: roll.parentInwardDatetime } : {}),
+      ...(roll.grnNo || roll.grn_no ? { grnNo: roll.grnNo || roll.grn_no } : {})
     }
   };
   console.log('[inventory_rolls] Saving barcode:', roll.barcodeId || roll.id);

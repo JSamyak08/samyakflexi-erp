@@ -1,5 +1,6 @@
 import QRCode from 'qrcode';
 import { codeKey, codeStartsWith, textFrom } from './barcodeCode.js';
+import { balanceOriginView, inheritBalanceDetails } from './balanceRollDetails.js';
 import { generateSyncQrSvg } from './qrCodeSvg.js';
 import { rollsEligibleForBarcodeLabel } from './scrapIdentity.js';
 import { barcodeSheetFileBase, printFrameWithPdfName, printWithPdfName } from './pdfFileName.js';
@@ -141,8 +142,9 @@ export function prepareStoreStickerRoll(item, inventoryRolls = []) {
   ]);
   const identity = rollIdentity({ ...item, ...(match || {}), barcodeId: code || item.barcodeId, sfgBatchCode: item.sfgBatchCode || code });
   const kilogram = identity.isSFG || identity.isFG || identity.isRaw || identity.isBalance;
-  return {
+  const prepared = {
     ...item,
+    ...(match || {}),
     barcodeId: code || stickerBarcode(item),
     sfgBatchCode: item.sfgBatchCode || code || item.barcodeId,
     netWeightKg: net ?? 0,
@@ -159,6 +161,7 @@ export function prepareStoreStickerRoll(item, inventoryRolls = []) {
     uom: kilogram ? 'Kg' : (canonicalUnit(item.uom || item.unit || match?.uom) || item.uom),
     itemName: item.itemName || item.jobName || match?.itemName || match?.jobName || ''
   };
+  return inheritBalanceDetails(prepared, { rolls: inventoryRolls });
 }
 
 function rollIdentity(record) {
@@ -210,7 +213,8 @@ export function getStickerCategoryInfo(r) {
     grossKg: null,
     lengthMeters: null,
     lengthLabel: '-',
-    showLength: false
+    showLength: false,
+    isBalance: false
   };
 
   const identity = rollIdentity(r);
@@ -299,7 +303,8 @@ export function getStickerCategoryInfo(r) {
     grossKg,
     lengthMeters,
     lengthLabel,
-    showLength
+    showLength,
+    isBalance
   };
 }
 
@@ -401,21 +406,59 @@ export function getStickerDisplayDate(r, fallbackDate = '') {
 /**
  * Generates the clean HTML string for a single 4x4 thermal sticker
  */
-export function generateSingleStickerHtml(r, company = {}, { inventory = [], inks = [], dateStr = '' } = {}) {
+function formatOriginKg(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return '';
+  return String(Math.round(number * 100) / 100);
+}
+
+function balanceSpecHtml(view) {
+  if (!view) return '';
+  const parts = [];
+  if (view.widthMm) parts.push(`Size: <strong>${escapeHtml(view.widthMm)} mm</strong>`);
+  if (view.micron) parts.push(`Micron: <strong>${escapeHtml(view.micron)} µ</strong>`);
+  if (!parts.length) return '';
+  return `<div class="specs-sub">${parts.join(' · ')}</div>`;
+}
+
+function balanceOriginHtml(view, displayDateFormatter) {
+  if (!view) return '';
+  const lines = [];
+  if (view.parentBarcode) {
+    lines.push(`<div class="origin-line">Split from: <strong>${escapeHtml(view.parentBarcode)}</strong></div>`);
+  }
+  const grnDate = view.grnDate ? displayDateFormatter(view.grnDate) : '';
+  if (view.grnNo || grnDate) {
+    const grn = [view.grnNo, grnDate].filter(Boolean).join(' · ');
+    lines.push(`<div class="origin-line">Original GRN: <strong>${escapeHtml(grn)}</strong></div>`);
+  }
+  const originalNet = formatOriginKg(view.originalNetKg);
+  if (originalNet) {
+    lines.push(`<div class="origin-line">Original net: <strong>${escapeHtml(originalNet)} kg</strong></div>`);
+  }
+  return lines.join('\n');
+}
+
+export function generateSingleStickerHtml(r, company = {}, { inventory = [], inks = [], dateStr = '', inventoryRolls = [] } = {}) {
+  r = inheritBalanceDetails(r, { rolls: inventoryRolls, inventory });
   const catInfo = getStickerCategoryInfo(r);
-  const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel, barcodeCode, grossKg, showLength, lengthLabel } = catInfo;
+  const { isSFG, isFG, isFilmItem, isQCHold, isBalance, displayUnit, displayQty, tagLabel, barcodeCode, grossKg, showLength, lengthLabel } = catInfo;
+  const origin = balanceOriginView(r);
+  const titleName = (origin && origin.itemName) || r.itemName || r.jobName || '-';
 
   const rateVal = resolveItemPurchaseRate(r, inventory, inks);
   const vendorStr = r.vendorName || r.supplier || r.partyName || '-';
   const batchStr = r.batchNo || r.heatNo || r.batch || '-';
   const barcodeCodeStr = barcodeCode || stickerBarcode(r);
   const displayDate = getStickerDisplayDate(r, dateStr);
+  const balanceSpecs = balanceSpecHtml(origin);
+  const originHtml = balanceOriginHtml(origin, (value) => formatStickerDateTime(value, ''));
 
   const qrSvg = generateSyncQrSvg(barcodeCodeStr, 1);
 
   return `
     <div class="thermal-label-sheet">
-      <div class="thermal-label-card ${isQCHold ? 'qc-hold' : ''}">
+      <div class="thermal-label-card ${isQCHold ? 'qc-hold' : ''} ${isBalance ? 'balance-roll' : ''}">
         <!-- Header -->
         <div class="label-header">
           <div class="header-left">
@@ -458,12 +501,12 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
         <div class="specs-grid">
           <div class="specs-left">
             <span class="specs-label">Item / Substrate</span>
-            <div class="specs-title" title="${escapeHtml(r.itemName || r.jobName || '')}">${escapeHtml(r.itemName || r.jobName || '-')}</div>
-            ${isFilmItem ? `
+            <div class="specs-title" title="${escapeHtml(titleName)}">${escapeHtml(titleName)}</div>
+            ${balanceSpecs || (isFilmItem ? `
               <div class="specs-sub">Gauge: <strong>${escapeHtml(r.micron)}µ</strong> | Width: <strong>${escapeHtml(r.widthMm)}mm</strong></div>
             ` : `
               <div class="specs-sub">${r.substrateSpec ? `<strong>${escapeHtml(r.substrateSpec)}</strong>` : `Unit: ${escapeHtml(displayUnit)}`}</div>
-            `}
+            `)}
           </div>
           <div class="specs-right">
             <span class="specs-label">Net Qty / Weight</span>
@@ -493,6 +536,7 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
               <span>Batch / Heat #: <strong>${escapeHtml(batchStr)}</strong></span>
               <span style="color: #047857; font-weight: 700;">Rate: <strong>${rateVal > 0 ? `₹${rateVal} / ${escapeHtml(displayUnit)}` : '₹-'}</strong></span>
             </div>
+            ${originHtml}
           `}
           ${r.inputBarcodeIds && r.inputBarcodeIds.length > 0 ? `
             <div class="meta-line" style="color: #4f46e5; font-weight: 600;">Input Roll Ref: ${escapeHtml(r.inputBarcodeIds.join(', '))}</div>
@@ -522,9 +566,9 @@ export function thermalLabelFileBase(rolls, when = new Date()) {
 /**
  * Generates the full HTML document for isolated thermal label printing
  */
-export function generateThermalLabelsHtml(rollList = [], company = {}, { inventory = [], inks = [], documentTitle } = {}) {
+export function generateThermalLabelsHtml(rollList = [], company = {}, { inventory = [], inks = [], inventoryRolls = [], documentTitle } = {}) {
   const eligible = rollsEligibleForBarcodeLabel(rollList);
-  const stickersHtml = eligible.map(r => generateSingleStickerHtml(r, company, { inventory, inks })).join('\n');
+  const stickersHtml = eligible.map(r => generateSingleStickerHtml(r, company, { inventory, inks, inventoryRolls })).join('\n');
   const title = documentTitle || thermalLabelFileBase(eligible);
 
   return `<!DOCTYPE html>
@@ -874,6 +918,24 @@ export function generateThermalLabelsHtml(rollList = [], company = {}, { invento
       padding-top: 2px;
       word-break: break-word;
     }
+    .origin-line {
+      font-size: 0.60rem;
+      line-height: 1.25;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .balance-roll .qr-code-box,
+    .balance-roll .qr-code-box svg {
+      width: 62px;
+      height: 62px;
+    }
+    .balance-roll .barcode-code {
+      font-size: 0.74rem;
+    }
+    .balance-roll .company-name {
+      font-size: 0.74rem;
+    }
     .footer-row {
       display: flex;
       justify-content: space-between;
@@ -896,12 +958,12 @@ export function generateThermalLabelsHtml(rollList = [], company = {}, { invento
  * Completely isolates the thermal print layout from parent DOM, global stylesheets,
  * modals, and tables, ensuring zero text overlapping, crisp QR codes, and exact 4x4 inch bounds.
  */
-export function printThermalBarcodeLabels({ rolls = [], company = {}, inventory = [], inks = [], onComplete } = {}) {
+export function printThermalBarcodeLabels({ rolls = [], company = {}, inventory = [], inks = [], inventoryRolls = [], onComplete } = {}) {
   const rollList = rollsEligibleForBarcodeLabel(rolls);
   if (rollList.length === 0) return;
 
   const fileBase = thermalLabelFileBase(rollList);
-  const html = generateThermalLabelsHtml(rollList, company, { inventory, inks, documentTitle: fileBase });
+  const html = generateThermalLabelsHtml(rollList, company, { inventory, inks, inventoryRolls, documentTitle: fileBase });
 
   if (typeof document === 'undefined') return;
 
