@@ -68,6 +68,8 @@ export default function OrderManagement({
   currentUser,
   productionRecords = [],
   sfgGoods = [],
+  deliveryChallans = [],
+  dispatchShipments = [],
   onUpdateOrder, 
   onDeleteOrder,
   onUpdateCylinder,
@@ -679,9 +681,13 @@ export default function OrderManagement({
     return printingDeadlineReminderRows(orders, {
       ...reminderContext,
       leadDays: printingLeadDays,
-      getStageInfo: (order) => getOrderStageInfo(order, sfgGoods, productionRecords),
+      getStageInfo: (order) => getOrderStageInfo(order, sfgGoods, productionRecords, {
+        challans: deliveryChallans,
+        shipments: dispatchShipments,
+        settings: orderCloseSettings
+      }),
     });
-  }, [orders, sfgGoods, productionRecords, currentUser, printingLeadDays, reminderContext]);
+  }, [orders, sfgGoods, productionRecords, deliveryChallans, dispatchShipments, orderCloseSettings, currentUser, printingLeadDays, reminderContext]);
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subtab === 'requirements' ? 'requirements' : 'orders');
   useEffect(() => {
     if (urlParams?.subtab === 'requirements' || urlParams?.subtab === 'orders') setActiveSubTab(urlParams.subtab);
@@ -1431,6 +1437,9 @@ export default function OrderManagement({
       retiredBarcodes,
       productionRecords,
       sfgGoods,
+      deliveryChallans,
+      dispatchShipments,
+      orderCloseSettings,
       storeIssues: storeIssueTransactions,
       allocationChoices: allocationDrafts,
       structureOf: getSubstrateStructure,
@@ -1870,7 +1879,11 @@ export default function OrderManagement({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {ordersPagination.paginatedItems.map(order => {
                 const statusInfo = getOrderStatusInfo(order);
-                const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords);
+                const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords, {
+                  challans: deliveryChallans,
+                  shipments: dispatchShipments,
+                  settings: orderCloseSettings
+                });
                 const isOverdue = statusInfo.isOverdue;
                 const isNearing = statusInfo.isNearingDeadline;
                 const isExpanded = expandedOrders[order.id];
@@ -3121,7 +3134,11 @@ export default function OrderManagement({
                             <td>
                               {(() => {
                                 const parentOrder = (orders || []).find(o => String(o.id) === String(req.orderId));
-                                const rStageInfo = parentOrder ? getOrderStageInfo(parentOrder, sfgGoods, productionRecords) : null;
+                                const rStageInfo = parentOrder ? getOrderStageInfo(parentOrder, sfgGoods, productionRecords, {
+                                  challans: deliveryChallans,
+                                  shipments: dispatchShipments,
+                                  settings: orderCloseSettings
+                                }) : null;
                                 if (!rStageInfo) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
                                 return (
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-start' }}>

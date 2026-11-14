@@ -86,7 +86,8 @@ import {
   calculatePrintingScheduleMetrics,
   isOrderOverdue,
   FILM_DENSITIES,
-  getFilmSubstrateMap
+  getFilmSubstrateMap,
+  getOrderStageInfo
 } from '../factoryStore';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
@@ -244,6 +245,9 @@ export default function ProductionScheduler({
   cylinders = [],
   productionRecords = [],
   sfgGoods = [],
+  deliveryChallans = [],
+  dispatchShipments = [],
+  orderCloseSettings,
   currentUser,
   initialPressQueueOrder = [],
   initialPressMachineAssignments = {},
@@ -2547,6 +2551,19 @@ export default function ProductionScheduler({
                           <span className="badge badge-success" style={{ fontSize: '0.7rem', fontWeight: '900', background: '#dcfce7', color: '#15803d' }}>
                             ✓ PRINTING COMPLETE
                           </span>
+                          {(() => {
+                            const stageInfo = getOrderStageInfo(order, sfgGoods, productionRecords, {
+                              challans: deliveryChallans,
+                              shipments: dispatchShipments,
+                              settings: orderCloseSettings
+                            });
+                            if (stageInfo.stage !== 'Dispatched' && stageInfo.stage !== 'Completed' && stageInfo.stage !== 'Balance Dispatch Pending') return null;
+                            return (
+                              <span className="badge" style={{ ...stageInfo.badgeStyle, fontSize: '0.7rem', fontWeight: 800 }}>
+                                {stageInfo.stageLabel}
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         <div style={{ fontSize: '1.05rem', fontWeight: '800', color: 'var(--text-primary)', marginTop: '2px' }}>

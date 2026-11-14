@@ -17,6 +17,7 @@ import { getFilmSubstrates } from './services/filmSubstratesService.js';
 import { attendanceCalendarDate } from './services/employeeAttendance.js';
 import { isPayrollRecoverableAdvance } from './services/salaryAdvance.js';
 import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from './utils/finishedGoods.js';
+import { dispatchedKgForOrder, normalizeAutoCloseSettings } from './utils/orderAutoClose.js';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -1114,7 +1115,7 @@ function printedStockAwaitsLamination(order, lots) {
  * Helper to compute real-time SFG/FG production stage for a given job order:
  * Matches live sfgGoods and productionRecords.
  * Returns:
- * - stage: Current stage string ('Pre-Production', 'Printing (Pass 1)', 'Lamination (Pass 1)', 'Lamination (Pass 2)', 'Slitting & Rewinding', 'Pouching / Bag Making', 'Ready for Dispatch', 'Partially Dispatched', 'Dispatched')
+ * - stage: Current stage string ('Pre-Production', 'Printing (Pass 1)', 'Lamination (Pass 1)', 'Lamination (Pass 2)', 'Slitting & Rewinding', 'Pouching / Bag Making', 'Ready for Dispatch', 'Partially Dispatched', 'Balance Dispatch Pending', 'Dispatched')
  * - stageIndex: 0 (Pre-Production) to 5 (Dispatched)
  * - stageLabel: Human-friendly text with icon
  * - badgeStyle: { background, color, border }
@@ -1125,7 +1126,7 @@ function printedStockAwaitsLamination(order, lots) {
  * - totalDispatchedKg: Dispatched kg
  * - pipeline: Array of { id, label, isCompleted, isCurrent, isUpcoming } for progress track visualization
  */
-export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) => {
+export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = [], dispatchContext = null) => {
   if (!order) {
     return {
       stage: 'Pre-Production',
@@ -1254,9 +1255,17 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
   let stageIndex = 0;
 
   const orderQtyKg = Number(order.orderQtyKg || 0);
+  const documentDispatch = dispatchContext
+    ? dispatchedKgForOrder(order, dispatchContext.challans || [], dispatchContext.shipments || [])
+    : null;
+  let reportedDispatchedKg = totalDispatchedKg;
+  if (documentDispatch?.hasDocument) reportedDispatchedKg = documentDispatch.kg;
 
   // Dispatch progress uses finished goods only. Printed rolls, laminated
   // WIP, slitting WIP, and balance rolls stay on the production stage.
+  // A delivery challan or finalised packing list moves the stage off the
+  // press step. At or above the lower bound, including over-dispatch,
+  // shows Completed. Below that bound shows Balance Dispatch Pending.
   const fgLots = activeLots.filter((lot) => lot.rollType === 'FG');
   const isOrderCompleted = order.status === 'Completed';
   const isFullyDispatched = (orderQtyKg > 0 && totalDispatchedKg >= orderQtyKg) || (
@@ -1265,8 +1274,23 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
     && fgAvailableKg <= DISPATCH_READY_DUST_KG
     && fgLots.every((lot) => lot.status === 'Dispatched' || lot.status === 'Fully Consumed')
   );
+  const closeConfig = normalizeAutoCloseSettings(dispatchContext?.settings);
+  const lowBand = 1 - (closeConfig.tolerancePct / 100);
+  const documentRatio = orderQtyKg > 0 ? reportedDispatchedKg / orderQtyKg : null;
+  const documentMovesStage = Boolean(
+    documentDispatch?.hasDocument && reportedDispatchedKg > DISPATCH_READY_DUST_KG
+  );
+  const documentShort = documentRatio === null || documentRatio + 1e-9 < lowBand;
 
-  if (isOrderCompleted || isFullyDispatched) {
+  if (documentMovesStage) {
+    if (isOrderCompleted || !documentShort) {
+      currentStage = 'Completed';
+      stageIndex = 5;
+    } else {
+      currentStage = 'Balance Dispatch Pending';
+      stageIndex = 5;
+    }
+  } else if (isOrderCompleted || isFullyDispatched) {
     currentStage = 'Dispatched';
     stageIndex = 5;
   } else if (totalDispatchedKg > DISPATCH_READY_DUST_KG) {
@@ -1315,13 +1339,21 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
   let badgeStyle = { background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1' };
 
   switch (currentStage) {
+    case 'Completed':
+      stageLabel = '✅ Completed';
+      badgeStyle = { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };
+      break;
     case 'Dispatched':
       stageLabel = '🏁 Dispatched';
       badgeStyle = { background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' };
       break;
     case 'Partially Dispatched':
-      stageLabel = `🚚 Partially Dispatched (${totalDispatchedKg.toFixed(0)}kg)`;
+      stageLabel = `🚚 Partially Dispatched (${reportedDispatchedKg.toFixed(0)}kg)`;
       badgeStyle = { background: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4' };
+      break;
+    case 'Balance Dispatch Pending':
+      stageLabel = `📦 Balance Dispatch Pending (${reportedDispatchedKg.toFixed(0)}kg)`;
+      badgeStyle = { background: '#fff7ed', color: '#c2410c', border: '1px solid #fdba74' };
       break;
     case 'Ready for Dispatch':
       stageLabel = `📦 Ready for Dispatch (${fgAvailableKg > 0 ? fgAvailableKg.toFixed(0) + 'kg' : 'FG Stock'})`;
@@ -1365,10 +1397,15 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
     { id: 'dispatch', label: 'Dispatch', stepNum: 5 }
   ];
 
+  const balanceDispatch = currentStage === 'Balance Dispatch Pending';
   const pipeline = standardSteps.map(step => {
-    const isCompleted = stageIndex > step.stepNum || (stageIndex === 5 && step.stepNum === 5);
-    const isCurrent = stageIndex === step.stepNum && stageIndex !== 5;
-    const isUpcoming = stageIndex < step.stepNum;
+    const isCompleted = balanceDispatch
+      ? step.stepNum < 5
+      : (stageIndex > step.stepNum || (stageIndex === 5 && step.stepNum === 5));
+    const isCurrent = balanceDispatch
+      ? step.stepNum === 5
+      : (stageIndex === step.stepNum && stageIndex !== 5);
+    const isUpcoming = balanceDispatch ? false : stageIndex < step.stepNum;
     return {
       ...step,
       isCompleted,
@@ -1386,7 +1423,7 @@ export const getOrderStageInfo = (order, sfgGoods = [], productionRecords = []) 
     totalAvailableKg,
     fgAvailableKg,
     sfgAvailableKg,
-    totalDispatchedKg,
+    totalDispatchedKg: reportedDispatchedKg,
     totalSfgLotsCount: matchedSfg.length,
     pipeline
   };

@@ -37,6 +37,17 @@ import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateO
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { allocateDeliveryChallanNo, releaseDeliveryChallanNo } from '../services/supabaseDataService';
+import {
+  challanNature,
+  formatSaleChallanConflicts,
+  isSaleOfGoodsChallan,
+  ordersCoveredByChallan,
+  packingListDcAction,
+  packingListIdsOf,
+  rollWithTare,
+  saleChallanConflicts,
+} from '../utils/deliveryChallanGuard';
 import PackingGainLossReport from './PackingGainLossReport';
 import {
   canSeePackingGainLoss,
@@ -45,6 +56,7 @@ import {
   formatGainLossPct,
   gainLossForShipment,
   isKgUnit,
+  liveGainLossForShipment,
   isOpenPackingList,
   round2,
   listConsumptions,
@@ -176,6 +188,7 @@ export default function DispatchManagement({
   sfgGoods = [],
   productionRecords = [],
   inventoryRolls = [],
+  orderCloseSettings = { enabled: true, tolerancePct: 10 },
   currentUser,
   onSaveDeliveryChallan,
   onDeleteDeliveryChallan,
@@ -619,8 +632,7 @@ export default function DispatchManagement({
   // --------------------------------------------------------------------------
   const handleOpenNewDcModal = () => {
     setEditingDcId(null);
-    const nextRef = generateDocRefNumber('dc');
-    setDcChallanNo(nextRef);
+    setDcChallanNo('');
     setDcInvoiceNo('');
     setDcLrNo('');
     setDcSelectedPackingListIds([]);
@@ -693,6 +705,16 @@ export default function DispatchManagement({
     setIsDcModalOpen(true);
   };
 
+  const handleCancelDc = async (dc) => {
+    if (!dc?.id) return;
+    if (!window.confirm(`Cancel Delivery Challan "${dc.challanNo}"? The document stays on file. The order status is calculated again from the remaining dispatch.`)) return;
+    try {
+      if (onSaveDeliveryChallan) await onSaveDeliveryChallan({ ...dc, status: 'Cancelled' });
+    } catch (err) {
+      alert(`The delivery challan was not cancelled: ${err.message || err}`);
+    }
+  };
+
   const handlePartySelectChange = (partyTypeStr, partyNameStr) => {
     setDcSelectedClientName(partyNameStr);
     if (partyTypeStr === 'Vendor') {
@@ -754,7 +776,7 @@ export default function DispatchManagement({
     setDcItems(prev => prev.filter(item => item.id !== id));
   };
 
-  const handleSaveDcSubmit = (e) => {
+  const handleSaveDcSubmit = async (e) => {
     e.preventDefault();
 
     if (dcChallanNature === 'QC Reject - Return to Vendor' && !dcDebitNoteNo.trim()) {
@@ -772,7 +794,17 @@ export default function DispatchManagement({
       return;
     }
 
-    const finalChallanNo = editingDcId ? dcChallanNo : getNextDocRefNumber('dc');
+    let finalChallanNo = editingDcId ? dcChallanNo : '';
+    let releaseNumber = '';
+    if (!editingDcId) {
+      try {
+        finalChallanNo = await allocateDeliveryChallanNo();
+        releaseNumber = finalChallanNo;
+      } catch (err) {
+        alert(`A delivery challan number was not issued: ${err.message || err}`);
+        return;
+      }
+    }
 
     const subtotalItems = dcItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0);
     const freightAmount = parseFloat(dcFreightCharges) || 0;
@@ -782,6 +814,7 @@ export default function DispatchManagement({
     try {
       plantGstin = getCompanyProfile().gstin;
     } catch (error) {
+      if (releaseNumber) releaseDeliveryChallanNo(releaseNumber).catch(() => {});
       alert(error.message);
       return;
     }
@@ -825,7 +858,29 @@ export default function DispatchManagement({
       dispatchedBy: dcDispatchedBy,
       remarks: dcRemarks,
       termsAndConditions: dcTerms,
-      createdDate: new Date().toISOString()
+      createdDate: existingDc?.createdDate || new Date().toISOString(),
+      status: existingDc?.status || ''
+    };
+
+    if (isSaleOfGoodsChallan(payload)) {
+      const covered = ordersCoveredByChallan(payload, orders, dispatchShipments);
+      const already = new Set(ordersCoveredByChallan(existingDc, orders, dispatchShipments).map((order) => order.id));
+      const added = editingDcId ? covered.filter((order) => !already.has(order.id)) : covered;
+      const conflicts = saleChallanConflicts(added, deliveryChallans, dispatchShipments, {
+        exceptChallanId: editingDcId || '',
+        settings: orderCloseSettings,
+        exceptShipmentIds: packingListIdsOf(payload),
+      });
+      if (conflicts.length) {
+        if (releaseNumber) releaseDeliveryChallanNo(releaseNumber).catch(() => {});
+        alert(formatSaleChallanConflicts(conflicts));
+        return;
+      }
+    }
+
+    const releaseReserved = async () => {
+      if (!releaseNumber) return;
+      try { await releaseDeliveryChallanNo(releaseNumber); } catch { /* unused number stays reserved */ }
     };
 
     setPendingDocConfirmation({
@@ -849,10 +904,15 @@ export default function DispatchManagement({
         col3: formatINR(item.rate),
         col4: formatINR(item.amount)
       })),
+      onDismiss: async () => {
+        await releaseReserved();
+        setPendingDocConfirmation(null);
+      },
       onConfirm: async () => {
         try {
           if (onSaveDeliveryChallan) await onSaveDeliveryChallan(payload);
         } catch (err) {
+          await releaseReserved();
           alert(`The delivery challan was not saved: ${err.message || err}`);
           return;
         }
@@ -1309,7 +1369,6 @@ export default function DispatchManagement({
   const packingPagination = usePagination(filteredPackingLists, 10);
 
   const handleImportMultiplePackingLists = (selectedIds) => {
-    setEditingDcId(null);
     const validIds = Array.isArray(selectedIds) ? selectedIds : [selectedIds].filter(Boolean);
     const strIds = validIds.map(id => String(id));
     setDcSelectedPackingListIds(strIds);
@@ -1321,9 +1380,6 @@ export default function DispatchManagement({
     );
 
     if (matchedShipments.length === 0) return;
-
-    const newDcNo = dcChallanNo || getNextDocRefNumber('dc');
-    setDcChallanNo(newDcNo);
 
     // Primary metadata aggregation
     const clientName = matchedShipments[0].clientName || '';
@@ -1370,7 +1426,8 @@ export default function DispatchManagement({
         const jobGroupMap = new Map();
         itemsList.forEach(r => {
           const jName = r.jobName || shipment.jobName || 'Printed Roll Job';
-          const existing = jobGroupMap.get(jName) || { jobName: jName, netW: 0, grossW: 0, count: 0 };
+          const existing = jobGroupMap.get(jName) || { jobName: jName, orderId: r.orderId || shipment.orderId || '', netW: 0, grossW: 0, count: 0 };
+          if (!existing.orderId) existing.orderId = r.orderId || shipment.orderId || '';
           existing.netW += (Number(r.netWeightKg) || 0);
           existing.grossW += (Number(r.grossWeightKg) || 0);
           existing.count += 1;
@@ -1389,6 +1446,8 @@ export default function DispatchManagement({
             hsnSac: '3923',
             description: `${jName} - Printed Laminated Film Rolls (Packing List: ${plId} | ${grp.count} Reels | Net: ${netKg} Kg | Gross: ${grossKg} Kg)`,
             itemDetails: `Linked Packing List: ${plId}`,
+            jobName: jName,
+            orderId: grp.orderId || undefined,
             quantity: netKg,
             unit: 'Kg',
             grossWeightKg: grossKg,
@@ -1412,6 +1471,8 @@ export default function DispatchManagement({
           hsnSac: '3923',
           description: `${jName} - Printed Laminated Film Rolls (Packing List: ${plId} | ${count} Reels | Net: ${netKg} Kg | Gross: ${grossKg} Kg)`,
           itemDetails: `Linked Packing List: ${plId}`,
+          jobName: jName,
+          orderId: shipment.orderId || undefined,
           quantity: netKg,
           unit: 'Kg',
           grossWeightKg: grossKg,
@@ -1468,6 +1529,21 @@ export default function DispatchManagement({
   };
 
   const handleCreateDcFromPackingList = async (shipment) => {
+    const decision = packingListDcAction(shipment, {
+      orders,
+      challans: deliveryChallans,
+      shipments: dispatchShipments,
+      settings: orderCloseSettings,
+    });
+    if (decision.action === 'edit') {
+      handleEditDc(decision.challan);
+      return;
+    }
+    if (decision.action === 'blocked') {
+      alert(formatSaleChallanConflicts(decision.blocks));
+      return;
+    }
+    setEditingDcId(null);
     let source = shipment;
     if (isOpenPackingList(shipment) && onAddDispatchShipment) {
       source = { ...shipment, packingStatus: PACKING_STATUS_FINALISED };
@@ -1618,7 +1694,9 @@ export default function DispatchManagement({
     });
     const matchedOrder = matchPackingOrder(orders, { orderId: pktOrderId, jobName: pktJobName });
     const hasConsumptions = pktConsumptions.length > 0;
-    const finalise = !hasConsumptions || e.nativeEvent?.submitter?.dataset?.finalise === 'true';
+    const editingExisting = Boolean(pktInternalId);
+    const keepFinalised = editingExisting && pktPackingStatus === PACKING_STATUS_FINALISED;
+    const finalise = keepFinalised || !hasConsumptions || e.nativeEvent?.submitter?.dataset?.finalise === 'true';
     if (finalise && !String(pktVehicleNo || '').trim()) {
       alert('Vehicle number is required to finalise the packing list.');
       return;
@@ -1668,9 +1746,6 @@ export default function DispatchManagement({
     });
 
     const finalDispatchId = pktDispatchId || getNextDocRefNumber('pl');
-    if (pktDispatchId) {
-      getNextDocRefNumber('pl');
-    }
 
     const newShipment = {
       id: pktInternalId || `DISP-PL-${Date.now()}`,
@@ -2129,6 +2204,18 @@ export default function DispatchManagement({
                               >
                                 <Edit3 size={14} />
                               </button>
+                              {String(dc.status || '').toLowerCase() !== 'cancelled' && challanNature(dc) === 'Sale of Goods' && (
+                                <button
+                                  type="button"
+                                  className="btn-secondary"
+                                  data-testid="cancel-dc"
+                                  style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                                  title="Cancel this delivery challan"
+                                  onClick={() => handleCancelDc(dc)}
+                                >
+                                  Cancel
+                                </button>
+                              )}
                               {onDeleteDeliveryChallan && (
                                 <button 
                                   className="btn-danger" 
@@ -2231,7 +2318,8 @@ export default function DispatchManagement({
                       const openList = isOpenPackingList(ds);
                       const party = packingListParty(ds, orders);
                       const consumptions = listConsumptions(ds);
-                      const savedGain = gainLossForShipment(ds);
+                      const liveGain = liveGainLossForShipment(ds, productionRecords);
+                      const showGain = liveGain.hasRolls && liveGain.consumedKg > 0;
                       const rollCount = openList
                         ? (Array.isArray(ds.items) ? ds.items.length : 0)
                         : (ds.totalRolls || (ds.items?.length || 1));
@@ -2265,7 +2353,7 @@ export default function DispatchManagement({
                           {rollCount} rolls
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '700' }}>
-                          {consumptions.length ? `${consumedKgForList(ds).toFixed(2)} kg` : '—'}
+                          {showGain ? `${liveGain.consumedKg.toFixed(2)} kg` : '—'}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#047857' }}>
                           {(Number(ds.totalNetWeightKg) || 0).toLocaleString()} kg
@@ -2274,8 +2362,8 @@ export default function DispatchManagement({
                           {grossKg.toLocaleString()} kg
                         </td>
                         {isAdmin && (
-                          <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800' }}>
-                            {consumptions.length ? `${formatGainLossKg(savedGain.differenceKg)} (${formatGainLossPct(savedGain.differencePct)})` : '—'}
+                          <td data-testid="packing-gain-loss" style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800' }}>
+                            {showGain ? `${formatGainLossKg(liveGain.differenceKg)} (${formatGainLossPct(liveGain.differencePct)})` : '—'}
                           </td>
                         )}
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
@@ -2291,14 +2379,63 @@ export default function DispatchManagement({
                                 <Package size={14} /> Weigh packages
                               </button>
                             )}
-                            <button 
+                            {(() => {
+                              const decision = packingListDcAction(ds, {
+                                orders,
+                                challans: deliveryChallans,
+                                shipments: dispatchShipments,
+                                settings: orderCloseSettings,
+                              });
+                              if (decision.action === 'edit') {
+                                return (
+                                  <button
+                                    type="button"
+                                    className="btn-primary"
+                                    data-testid="edit-dc"
+                                    style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#0369a1', borderColor: '#0369a1', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                    title={`Edit ${decision.challan.challanNo || 'the linked delivery challan'}. The same number is kept.`}
+                                    onClick={() => handleEditDc(decision.challan)}
+                                  >
+                                    <Edit3 size={14} /> Edit DC
+                                  </button>
+                                );
+                              }
+                              if (decision.action === 'blocked') {
+                                return (
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    data-testid="issue-dc-blocked"
+                                    disabled
+                                    title={formatSaleChallanConflicts(decision.blocks)}
+                                    style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                  >
+                                    DC {decision.blocks.map((row) => row.challanNo).filter((value, index, list) => list.indexOf(value) === index).join(', ')}
+                                  </button>
+                                );
+                              }
+                              return (
+                                <button
+                                  type="button"
+                                  className="btn-primary"
+                                  data-testid="issue-dc"
+                                  style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#0284c7', borderColor: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                                  title="Issue Delivery Challan linked to this Packing List"
+                                  onClick={() => handleCreateDcFromPackingList(ds)}
+                                >
+                                  <Truck size={14} /> Issue DC
+                                </button>
+                              );
+                            })()}
+                            <button
                               type="button"
-                              className="btn-primary" 
-                              style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#0284c7', borderColor: '#0284c7', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              title="Issue Delivery Challan linked to this Packing List"
-                              onClick={() => handleCreateDcFromPackingList(ds)}
+                              className="btn-secondary"
+                              data-testid="edit-packing-list"
+                              style={{ padding: '5px 10px', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              title="Edit this packing list. A linked delivery challan is updated with the new weights."
+                              onClick={() => openPackingListForWeighing(ds)}
                             >
-                              <Truck size={14} /> Issue DC
+                              <Edit3 size={14} /> Edit
                             </button>
                             <button 
                               type="button"
@@ -2512,7 +2649,7 @@ export default function DispatchManagement({
       {/* MODAL 1: CREATE / EDIT DELIVERY CHALLAN */}
       {/* ==================================================================== */}
       {isDcModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsDcModalOpen(false)}>
+        <div className="modal-overlay">
           <div className="glass-card modal-content" style={{ width: '920px', maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             
             {/* Header */}
@@ -2636,9 +2773,9 @@ export default function DispatchManagement({
                       type="text" 
                       className="form-control" 
                       style={{ fontWeight: '700', color: '#0284c7', background: '#f0f9ff' }}
-                      value={dcChallanNo} 
-                      onChange={e => setDcChallanNo(e.target.value)} 
-                      required 
+                      value={editingDcId ? dcChallanNo : (dcChallanNo || 'Assigned when you save')}
+                      readOnly
+                      aria-readonly="true"
                     />
                   </div>
 
@@ -4048,7 +4185,7 @@ export default function DispatchManagement({
       {/* MODAL 7: CREATE NEW PACKING LIST (SCALE #4 STATION)                  */}
       {/* ==================================================================== */}
       {isPackingModalOpen && (
-        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => setIsPackingModalOpen(false)}>
+        <div className="modal-overlay" style={{ zIndex: 2100 }}>
           <div className="glass-card modal-content" style={{ width: pktConsumptions.length ? '920px' : '680px', maxWidth: '95vw' }} onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
               <div>
@@ -4346,7 +4483,21 @@ export default function DispatchManagement({
                             jobName: r.jobName || pktJobName,
                             order: matchPackingOrder(orders, { orderId: r.orderId || pktOrderId, jobName: r.jobName || pktJobName }),
                           })}</td>
-                          <td style={{ textAlign: 'center' }}>{r.tareWeightKg !== undefined ? r.tareWeightKg : r.coreWeightKg} kg</td>
+                          <td style={{ textAlign: 'center' }}>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              data-testid={`packing-tare-${i}`}
+                              aria-label={`Core or package tare for roll ${displayRollNumber(i)}`}
+                              value={r.tareWeightKg !== undefined && r.tareWeightKg !== null ? r.tareWeightKg : (r.coreWeightKg ?? 0)}
+                              onChange={(event) => {
+                                const next = rollWithTare(r, event.target.value);
+                                setPktRollsList((rows) => rows.map((row, index) => (index === i ? next : row)));
+                              }}
+                              style={{ width: '88px', textAlign: 'right', fontWeight: 700 }}
+                            />
+                          </td>
                           <td style={{ fontWeight: '700', color: '#1e293b', textAlign: 'right' }}>{r.grossWeightKg} kg</td>
                           <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{r.netWeightKg} {r.unit || pktUom}</td>
                           <td style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
@@ -4605,7 +4756,10 @@ export default function DispatchManagement({
               <button
                 type="button"
                 data-modal-dismiss=""
-                onClick={() => setPendingDocConfirmation(null)}
+                onClick={() => {
+                  if (typeof pendingDocConfirmation?.onDismiss === 'function') pendingDocConfirmation.onDismiss();
+                  else setPendingDocConfirmation(null);
+                }}
                 style={{
                   padding: '10px 20px',
                   borderRadius: '8px',

@@ -54,6 +54,18 @@ function closeModeFromResult(order, result) {
   return order?.closeMode ?? order?.jobDetails?.closeMode ?? null;
 }
 
+/**
+ * A print or production write that only flips the order back to
+ * In Production must leave a dispatch status in place.
+ */
+export function preserveDispatchStatus(currentStatus, incomingStatus) {
+  const sticky = currentStatus === 'Completed'
+    || currentStatus === 'Balance Dispatch Pending'
+    || currentStatus === 'Partially Dispatched';
+  if (sticky && incomingStatus === 'In Production') return currentStatus;
+  return incomingStatus || currentStatus || null;
+}
+
 export function applyPrintRunResult(order, result) {
   const current = order || {};
   const saved = result || {};
@@ -81,7 +93,7 @@ export function applyPrintRunResult(order, result) {
     : current.nextProcess;
   return {
     ...current,
-    status: saved.status || current.status,
+    status: preserveDispatchStatus(current.status, saved.status),
     closeMode,
     printingStatus,
     printingStartTime,
