@@ -1,3 +1,10 @@
+/** Saved meters on a balance roll. A parent length or a job total is not used. */
+export function ledgerRollMeters(roll, barcode) {
+  if (!/-BAL$/i.test(String(barcode || '').trim())) return null;
+  const meters = Number(roll?.lengthMeters ?? roll?.length_meters);
+  return Number.isFinite(meters) && meters > 0 ? meters : null;
+}
+
 export function openRollConsumptionWarnings(rows) {
   return (rows || []).filter((row) => String(row?.status || 'open') === 'open' && String(row?.reason || '').trim());
 }
@@ -60,7 +67,7 @@ export function materialCoveredByRollLedger(material, record, entries) {
 }
 
 /** Ledger lines for one posted roll consumption. Net quantity is the consumed weight. */
-export function rollLedgerTransactions(entries) {
+export function rollLedgerTransactions(entries, rolls = []) {
   return (entries || []).filter(Boolean).flatMap((entry) => {
     const link = rollLedgerJobLink(entry);
     const common = {
@@ -85,6 +92,10 @@ export function rollLedgerTransactions(entries) {
       legacy: false
     };
     if (entry.entryKind === 'balance_receipt') {
+      const meters = ledgerRollMeters(
+        (rolls || []).find((roll) => String(roll?.barcodeId || roll?.id || '').trim().toLowerCase() === String(entry.barcode || '').trim().toLowerCase()),
+        entry.barcode
+      );
       return [{
         ...common,
         txId: entry.id,
@@ -102,6 +113,7 @@ export function rollLedgerTransactions(entries) {
           entry.itemName ? `Item ${entry.itemName}.` : '',
           entry.grnNo ? `GRN ${entry.grnNo}.` : '',
           entry.parentNetKg ? `Original net ${entry.parentNetKg} kg.` : '',
+          meters ? `Length ${meters} m.` : '',
           link.label
         ].filter(Boolean).join(' ')
       }];

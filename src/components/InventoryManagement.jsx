@@ -73,7 +73,7 @@ import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationD
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, allocateOrderIdFromServer, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection } from '../services/supabaseDataService';
 import { grnInwardLedgerEntries, ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
-import { mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
+import { ledgerRollMeters, mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
 import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
 import {
@@ -9797,7 +9797,7 @@ export default function InventoryManagement({
         // 2. Gather Job Material Consumptions from Production Records
         const jobUsageLines = [];
         // posted roll issues are appended after the material loop below
-        const postedRollLines = rollLedgerTransactions(rollLedgerEntries);
+        const postedRollLines = rollLedgerTransactions(rollLedgerEntries, inventoryRolls);
         const postedIssues = postedRollLines.filter((line) => line.category === 'usage');
         const postedReturns = postedRollLines.filter((line) => line.category === 'inward');
         (productionRecords || []).forEach(rec => {
@@ -10575,6 +10575,7 @@ export default function InventoryManagement({
                                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                         {barcodeTokens.map((bCode, index) => {
                                           const singleRollObj = allRollObjs[index];
+                                          const balanceMeters = ledgerRollMeters(singleRollObj, bCode);
                                           return (
                                             <div 
                                               key={`${bCode}-${index}`}
@@ -10594,7 +10595,7 @@ export default function InventoryManagement({
                                               </code>
                                               {singleRollObj?.netWeightKg > 0 && (
                                                 <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: '600' }}>
-                                                  ({singleRollObj.netWeightKg} {item.unit || 'kg'})
+                                                  ({singleRollObj.netWeightKg} {item.unit || 'kg'}{balanceMeters ? ` · ${balanceMeters} m` : ''})
                                                 </span>
                                               )}
                                               <button 

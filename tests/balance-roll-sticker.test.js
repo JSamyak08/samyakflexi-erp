@@ -7,7 +7,8 @@ import {
 import { labelRoll } from '../src/utils/printRunCompletion.js';
 import { barcodeOriginDate, rollsByBarcode } from '../src/utils/barcodeFifo.js';
 import { inheritBalanceDetails } from '../src/utils/balanceRollDetails.js';
-import { rollLedgerTransactions, mapRollLedgerRow } from '../src/utils/rollLedger.js';
+import fs from 'node:fs';
+import { ledgerRollMeters, rollLedgerTransactions, mapRollLedgerRow } from '../src/utils/rollLedger.js';
 
 const company = { name: 'SAMYAK INTERNATIONAL LTD.', gstin: '23AABCM3526F1ZY' };
 
@@ -169,4 +170,21 @@ test('a balance receipt ledger line keeps the parent batch, vendor, and item', (
   assert.match(line.notes, /Original net 210.4 kg/);
   assert.match(line.subParty, /Cosmo Films/);
   assert.match(line.subParty, /HEAT-197/);
+  assert.doesNotMatch(line.notes, /Length /);
+  const [withMeters] = rollLedgerTransactions([row], [
+    { barcodeId: 'RM-1-BAL', lengthMeters: 180 },
+    { barcodeId: 'RM-1', lengthMeters: 410 }
+  ]);
+  assert.match(withMeters.notes, /Length 180 m/);
+  assert.doesNotMatch(withMeters.notes, /410/);
+  assert.equal(ledgerRollMeters({ lengthMeters: 9758 }, 'RM-PARENT'), null);
+  assert.equal(ledgerRollMeters({ lengthMeters: 3217 }, 'RM-PARENT-BAL'), 3217);
+  assert.equal(ledgerRollMeters({ length_meters: 0 }, 'RM-PARENT-BAL'), null);
+});
+
+test('the barcode inspector shows a balance roll saved length', () => {
+  const src = fs.readFileSync(new URL('../src/components/UniversalBarcodeScannerModal.jsx', import.meta.url), 'utf8');
+  assert.match(src, /isBalanceRoll/);
+  assert.match(src, /label: 'Length'/);
+  assert.doesNotMatch(src, /Calculated Length/);
 });
