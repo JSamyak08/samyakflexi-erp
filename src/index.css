@@ -3027,6 +3027,13 @@ div[style*="overflowX: 'auto'"] {
   margin: 4px 0 8px;
 }
 
+.field-inline-error {
+  color: #b91c1c;
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin: 4px 0 0;
+}
+
 .bug-report-actions {
   justify-content: flex-end;
   margin-top: 14px;

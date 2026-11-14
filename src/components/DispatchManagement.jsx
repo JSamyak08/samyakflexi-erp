@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { formatPlantDateTime } from '../utils/dbDates';
 import { parseInrAmount } from '../utils/cylinderCost';
 import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
@@ -66,6 +66,7 @@ import {
   PACKING_STATUS_OPEN
 } from '../utils/dispatchPacking';
 import { packingListParty } from '../utils/dispatchProductionJobs';
+import { trimmedVehicleNumber, vehicleNumberError } from '../utils/vehicleNumber';
 import { resolvePackingRollWeight } from '../utils/packingRollWeight';
 import {
   displayRollNumber,
@@ -176,6 +177,13 @@ export const DEFAULT_MATERIAL_TEMPLATES = [
   }
 ];
 
+function focusVehicleField(ref) {
+  const node = ref.current;
+  if (!node) return;
+  node.scrollIntoView({ block: 'center' });
+  node.querySelector('input')?.focus();
+}
+
 export default function DispatchManagement({
   deliveryChallans = [],
   certificateOfAnalyses = [],
@@ -245,6 +253,8 @@ export default function DispatchManagement({
   const [pktJobName, setPktJobName] = useState('');
   const [pktClientName, setPktClientName] = useState('');
   const [pktVehicleNo, setPktVehicleNo] = useState('');
+  const [pktVehicleError, setPktVehicleError] = useState('');
+  const pktVehicleRef = useRef(null);
   const [pktLrNo, setPktLrNo] = useState('');
   const [pktTransporterName, setPktTransporterName] = useState('');
   const [pktPoNo, setPktPoNo] = useState('');
@@ -346,6 +356,20 @@ export default function DispatchManagement({
   const [dcClientContactPerson, setDcClientContactPerson] = useState('');
   const [dcClientPhone, setDcClientPhone] = useState('');
   const [dcVehicleNo, setDcVehicleNo] = useState('');
+  const [dcVehicleError, setDcVehicleError] = useState('');
+  const dcVehicleRef = useRef(null);
+
+  useEffect(() => {
+    if (!isPackingModalOpen || !pktVehicleError) return undefined;
+    const frame = requestAnimationFrame(() => focusVehicleField(pktVehicleRef));
+    return () => cancelAnimationFrame(frame);
+  }, [isPackingModalOpen, pktVehicleError]);
+
+  useEffect(() => {
+    if (!isDcModalOpen || !dcVehicleError) return undefined;
+    const frame = requestAnimationFrame(() => focusVehicleField(dcVehicleRef));
+    return () => cancelAnimationFrame(frame);
+  }, [isDcModalOpen, dcVehicleError]);
   const [dcTransporterName, setDcTransporterName] = useState('');
   const [dcDriverPhone, setDcDriverPhone] = useState('');
   const [dcPoRefNo, setDcPoRefNo] = useState('');
@@ -652,6 +676,7 @@ export default function DispatchManagement({
     setDcClientPhone(firstClient.phone || firstClient.contactNo || firstClient.mobile || '');
 
     setDcVehicleNo('');
+    setDcVehicleError('');
     setDcTransporterName('');
     setDcDriverPhone('');
     setDcPoRefNo('');
@@ -688,6 +713,7 @@ export default function DispatchManagement({
     setDcClientContactPerson(dc.clientContactPerson || '');
     setDcClientPhone(dc.clientPhone || '');
     setDcVehicleNo(dc.vehicleNo || '');
+    setDcVehicleError('');
     setDcTransporterName(dc.transporterName || '');
     setDcDriverPhone(dc.driverPhone || '');
     setDcPoRefNo(dc.poRefNo || '');
@@ -794,6 +820,11 @@ export default function DispatchManagement({
       return;
     }
 
+    const vehicleNo = trimmedVehicleNumber(dcVehicleNo);
+    const vehicleError = vehicleNumberError(dcVehicleNo);
+    setDcVehicleError(vehicleError);
+    if (vehicleError) return;
+
     let finalChallanNo = editingDcId ? dcChallanNo : '';
     let releaseNumber = '';
     if (!editingDcId) {
@@ -839,7 +870,7 @@ export default function DispatchManagement({
       clientGstin: dcClientGstin,
       clientContactPerson: dcClientContactPerson,
       clientPhone: dcClientPhone,
-      vehicleNo: dcVehicleNo,
+      vehicleNo,
       transporterName: dcTransporterName,
       driverPhone: dcDriverPhone,
       poRefNo: dcPoRefNo,
@@ -892,7 +923,7 @@ export default function DispatchManagement({
       jobName: dcJobName || (dcItems[0]?.description ? dcItems[0].description.split(' - ')[0] : 'Dispatch Item'),
       summaryFields: [
         { label: 'Nature of Challan', value: dcChallanNature },
-        { label: 'Vehicle & Transport', value: `${dcVehicleNo || 'N/A'} | ${dcTransporterName || 'Direct'} (${dcLrNo ? 'LR: ' + dcLrNo : 'No LR'})` },
+        { label: 'Vehicle & Transport', value: `${vehicleNo} | ${dcTransporterName || 'Direct'} (${dcLrNo ? 'LR: ' + dcLrNo : 'No LR'})` },
         { label: 'PO / Order Ref', value: dcPoRefNo || 'N/A' },
         { label: 'Total Taxable Subtotal', value: formatINR(totalTaxable) },
         { label: 'GST Amount & Type', value: `${formatINR(gstInfo.totalTax)} (${gstInfo.taxLabel})` },
@@ -1385,7 +1416,7 @@ export default function DispatchManagement({
     const clientName = matchedShipments[0].clientName || '';
     const invoices = [...new Set(matchedShipments.map(s => s.invoiceNo).filter(Boolean))].join(', ');
     const lrs = [...new Set(matchedShipments.map(s => s.lrNo).filter(Boolean))].join(', ');
-    const vehicles = [...new Set(matchedShipments.map(s => s.vehicleNo).filter(Boolean))].join(', ');
+    const vehicles = [...new Set(matchedShipments.map(s => trimmedVehicleNumber(s.vehicleNo)).filter(Boolean))].join(', ');
     const transporters = [...new Set(matchedShipments.map(s => s.transporterName).filter(Boolean))].join(', ');
     const pos = [...new Set(matchedShipments.map(s => s.poNo).filter(Boolean))].join(', ');
     const jobs = [...new Set(matchedShipments.map(s => s.jobName).filter(Boolean))].join(', ');
@@ -1402,6 +1433,7 @@ export default function DispatchManagement({
     setDcInvoiceNo(invoices);
     setDcLrNo(lrs);
     setDcVehicleNo(vehicles);
+    if (vehicles) setDcVehicleError('');
     setDcTransporterName(transporters);
     setDcPoRefNo(pos);
     setDcJobName(jobs);
@@ -1494,6 +1526,7 @@ export default function DispatchManagement({
     setPktConsumptions([]);
     setPktInvoiceNo('');
     setPktVehicleNo('');
+    setPktVehicleError('');
     setPktLrNo('');
     setPktTransporterName('');
     setPktPoNo('');
@@ -1505,7 +1538,7 @@ export default function DispatchManagement({
     setSelectedFgRollForWeighing(null);
   };
 
-  const openPackingListForWeighing = (shipment) => {
+  const openPackingListForWeighing = (shipment, { vehicleError = '' } = {}) => {
     const matchedOrder = matchPackingOrder(orders, { orderId: shipment.orderId, jobName: shipment.jobName });
     setPktInternalId(shipment.id || `DISP-PL-${shipment.dispatchId}`);
     setPktDispatchId(shipment.dispatchId || '');
@@ -1514,6 +1547,7 @@ export default function DispatchManagement({
     setPktJobName(shipment.jobName || '');
     setPktClientName(shipment.clientName || '');
     setPktVehicleNo(shipment.vehicleNo || '');
+    setPktVehicleError(vehicleError);
     setPktLrNo(shipment.lrNo || '');
     setPktTransporterName(shipment.transporterName || '');
     setPktPoNo(shipment.poNo || matchedOrder?.poNo || '');
@@ -1543,10 +1577,15 @@ export default function DispatchManagement({
       alert(formatSaleChallanConflicts(decision.blocks));
       return;
     }
+    const vehicleNo = trimmedVehicleNumber(shipment?.vehicleNo);
+    if (isOpenPackingList(shipment) && !vehicleNo) {
+      openPackingListForWeighing(shipment, { vehicleError: vehicleNumberError(shipment?.vehicleNo) });
+      return;
+    }
     setEditingDcId(null);
     let source = shipment;
     if (isOpenPackingList(shipment) && onAddDispatchShipment) {
-      source = { ...shipment, packingStatus: PACKING_STATUS_FINALISED };
+      source = { ...shipment, vehicleNo, packingStatus: PACKING_STATUS_FINALISED };
       try {
         await onAddDispatchShipment(source);
       } catch (err) {
@@ -1684,6 +1723,10 @@ export default function DispatchManagement({
       alert("Please select a Production Job and enter Client Name.");
       return;
     }
+    const vehicleNo = trimmedVehicleNumber(pktVehicleNo);
+    const vehicleError = vehicleNumberError(pktVehicleNo);
+    setPktVehicleError(vehicleError);
+    if (vehicleError) return;
 
     const coreW = Number(pktCoreWeight) >= 0 ? Number(pktCoreWeight) : 4.5;
     const weighedNow = resolvePackingRollWeight({
@@ -1697,10 +1740,6 @@ export default function DispatchManagement({
     const editingExisting = Boolean(pktInternalId);
     const keepFinalised = editingExisting && pktPackingStatus === PACKING_STATUS_FINALISED;
     const finalise = keepFinalised || !hasConsumptions || e.nativeEvent?.submitter?.dataset?.finalise === 'true';
-    if (finalise && !String(pktVehicleNo || '').trim()) {
-      alert('Vehicle number is required to finalise the packing list.');
-      return;
-    }
     const substrateContext = {
       orders,
       jobMasters,
@@ -1754,7 +1793,7 @@ export default function DispatchManagement({
       orderId: pktOrderId || matchedOrder?.id || 'N/A',
       jobName: pktJobName,
       clientName: pktClientName,
-      vehicleNo: pktVehicleNo || '',
+      vehicleNo,
       lrNo: pktLrNo || '',
       transporterName: pktTransporterName || '',
       poNo: pktPoNo || matchedOrder?.poNo || '',
@@ -1778,7 +1817,7 @@ export default function DispatchManagement({
       jobName: pktJobName,
       summaryFields: [
         { label: 'Customer PO #', value: pktPoNo || matchedOrder?.poNo || 'N/A' },
-        { label: 'Vehicle Number', value: pktVehicleNo || 'N/A' },
+        { label: 'Vehicle Number', value: vehicleNo },
         { label: 'Lorry Receipt (LR) #', value: pktLrNo || 'N/A' },
         { label: 'Transporter Name', value: pktTransporterName || 'N/A' },
         { label: 'Total Rolls / Reels', value: `${rollsToSave.length} Reels` },
@@ -3012,16 +3051,28 @@ export default function DispatchManagement({
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
-                    <div>
-                      <label className="form-label">Vehicle Number *</label>
-                      <input 
-                        type="text" 
-                        className="form-control" 
+                    <div ref={dcVehicleRef}>
+                      <label className="form-label" htmlFor="dc-vehicle-number">Vehicle Number *</label>
+                      <input
+                        id="dc-vehicle-number"
+                        data-testid="dc-vehicle-number"
+                        type="text"
+                        className="form-control"
                         placeholder="e.g. MP-09-AB-1234"
-                        value={dcVehicleNo} 
-                        onChange={e => setDcVehicleNo(e.target.value)} 
-                        required 
+                        value={dcVehicleNo}
+                        aria-required="true"
+                        aria-invalid={dcVehicleError ? 'true' : 'false'}
+                        aria-describedby={dcVehicleError ? 'dc-vehicle-error' : undefined}
+                        onChange={e => {
+                          const next = e.target.value;
+                          setDcVehicleNo(next);
+                          if (dcVehicleError) setDcVehicleError(vehicleNumberError(next));
+                        }}
+                        style={dcVehicleError ? { borderColor: '#dc2626' } : undefined}
                       />
+                      {dcVehicleError ? (
+                        <p id="dc-vehicle-error" className="field-inline-error" role="alert" data-testid="dc-vehicle-error">{dcVehicleError}</p>
+                      ) : null}
                     </div>
 
                     <div>
@@ -4281,9 +4332,28 @@ export default function DispatchManagement({
                   <input type="text" className="form-control" required value={pktClientName} onChange={e => setPktClientName(e.target.value)} />
                 </div>
 
-                <div className="form-group">
-                  <label>Vehicle Number{pktConsumptions.length ? '' : ' *'}</label>
-                  <input type="text" className="form-control" value={pktVehicleNo} onChange={e => setPktVehicleNo(e.target.value)} placeholder={pktConsumptions.length ? 'Required when the packing list is finalised' : ''} />
+                <div className="form-group" ref={pktVehicleRef}>
+                  <label htmlFor="packing-vehicle-number">Vehicle Number *</label>
+                  <input
+                    id="packing-vehicle-number"
+                    data-testid="packing-vehicle-number"
+                    type="text"
+                    className="form-control"
+                    value={pktVehicleNo}
+                    aria-required="true"
+                    aria-invalid={pktVehicleError ? 'true' : 'false'}
+                    aria-describedby={pktVehicleError ? 'packing-vehicle-error' : undefined}
+                    onChange={e => {
+                      const next = e.target.value;
+                      setPktVehicleNo(next);
+                      if (pktVehicleError) setPktVehicleError(vehicleNumberError(next));
+                    }}
+                    placeholder="e.g. MP-09-AB-1234"
+                    style={pktVehicleError ? { borderColor: '#dc2626' } : undefined}
+                  />
+                  {pktVehicleError ? (
+                    <p id="packing-vehicle-error" className="field-inline-error" role="alert" data-testid="packing-vehicle-error">{pktVehicleError}</p>
+                  ) : null}
                 </div>
 
                 <div className="form-group">
