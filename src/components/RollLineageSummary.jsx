@@ -45,15 +45,31 @@ export default function RollLineageSummary({ record }) {
               </tr>
             ) : lineage.steps.map((step, index) => (
               <tr key={`${step.stage}-${index}`}>
-                <td>{step.label}</td>
+                <td style={{ fontWeight: '700' }}>{step.label}</td>
                 <td>{step.inputStatus === NOT_RECORDED ? NOT_RECORDED : cell(step.inputKg, 'kg')}</td>
                 <td>{step.addedSubstrateKg ? cell(step.addedSubstrateKg, 'kg') : NOT_RECORDED}</td>
                 <td>{step.outputStatus === NOT_RECORDED ? NOT_RECORDED : cell(step.outputKg, 'kg')}</td>
-                <td>{step.gainKg === null || step.gainKg === undefined ? NOT_RECORDED : cell(step.gainKg, 'kg')}</td>
-                <td>{step.lossKg === null || step.lossKg === undefined ? NOT_RECORDED : cell(step.lossKg, 'kg')}</td>
+                <td style={{ color: (step.gainKg || 0) > 0 ? '#059669' : 'inherit', fontWeight: (step.gainKg || 0) > 0 ? '700' : 'normal' }}>
+                  {step.gainKg === null || step.gainKg === undefined ? NOT_RECORDED : cell(step.gainKg, 'kg')}
+                </td>
+                <td style={{ color: (step.lossKg || 0) > 0 ? '#dc2626' : 'inherit', fontWeight: (step.lossKg || 0) > 0 ? '700' : 'normal' }}>
+                  {step.lossKg === null || step.lossKg === undefined ? NOT_RECORDED : cell(step.lossKg, 'kg')}
+                </td>
               </tr>
             ))}
           </tbody>
+          {lineage.steps.length > 0 && (
+            <tfoot>
+              <tr style={{ background: '#f1f5f9', fontWeight: '800', borderTop: '2px solid #cbd5e1' }}>
+                <td>Job Overall Net Statement</td>
+                <td>{summary.rawInputKg === null ? NOT_RECORDED : cell(summary.rawInputKg, 'kg')}</td>
+                <td>{summary.addedSubstrateKg ? cell(summary.addedSubstrateKg, 'kg') : NOT_RECORDED}</td>
+                <td style={{ color: '#0284c7' }}>{summary.fgOutputKg === null ? NOT_RECORDED : cell(summary.fgOutputKg, 'kg')}</td>
+                <td style={{ color: '#059669' }}>{summary.totalGainKg === null ? NOT_RECORDED : `+${cell(summary.totalGainKg, 'kg')}`}</td>
+                <td style={{ color: '#dc2626' }}>{summary.totalLossKg === null ? NOT_RECORDED : `-${cell(summary.totalLossKg, 'kg')}`}</td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       {lineage.findings.length > 0 && (

@@ -3570,29 +3570,47 @@ export default function ProductionRecordManagement({
                   linkedOrder?.rate ||
                   linkedOrder?.unitPrice ||
                   linkedOrder?.orderRatePerKg ||
+                  linkedOrder?.minSellingPricePerKg ||
+                  linkedOrder?.calculationDetails?.minSellingPricePerKg ||
+                  linkedOrder?.calculationDetails?.summary?.minSellingPricePerKg ||
                   linkedJobMaster?.sellingPricePerKg ||
                   linkedJobMaster?.pricePerKg ||
+                  linkedJobMaster?.minSellingPricePerKg ||
                   (linkedOrder?.totalAmount && targetOrderQtyKg > 0 ? (linkedOrder.totalAmount / targetOrderQtyKg) : 0) ||
+                  (linkedOrder?.calculationDetails?.totalMinSellingAmount && targetOrderQtyKg > 0 ? (linkedOrder.calculationDetails.totalMinSellingAmount / targetOrderQtyKg) : 0) ||
                   0
                 );
 
                 const materials = selectedRecord.materialsList || [];
-                const filmsCost = materials.filter(m => 
-                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('film') || 
-                  (m.filmType || '').match(/pet|bopp|ldpe|poly|cpp|foil|met/i)
-                ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+                const isInkOrSolvent = (m) => {
+                  const text = `${m.filmType || ''} ${m.category || ''} ${m.itemName || ''}`.toLowerCase();
+                  return text.includes('ink') || text.includes('solvent') || text.includes('reducer') || text.includes('retarder') || text.includes('ethyl') || /ea|cy|mg|ye|bl|wh/i.test(m.filmType || '');
+                };
+                const isAdhesiveItem = (m) => {
+                  const text = `${m.filmType || ''} ${m.category || ''} ${m.itemName || ''}`.toLowerCase();
+                  return text.includes('adhesive') || text.includes('hardener') || text.includes('polyurethane') || /adh|hard|polyurethane/i.test(m.filmType || '');
+                };
+                const isPaperCoreItem = (m) => {
+                  const text = `${m.filmType || ''} ${m.category || ''} ${m.itemName || ''}`.toLowerCase();
+                  return text.includes('core');
+                };
+                const isFilmSubstrateItem = (m) => {
+                  if (isInkOrSolvent(m) || isAdhesiveItem(m) || isPaperCoreItem(m)) return false;
+                  const text = `${m.filmType || ''} ${m.category || ''} ${m.itemName || ''}`.toLowerCase();
+                  return text.includes('film') || /pet|bopp|ld|pe|poly|cpp|foil|met|alu|substrate/i.test(text);
+                };
 
-                const inksSolventsCost = materials.filter(m => 
-                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('ink') || 
-                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('solvent') || 
-                  (m.filmType || '').match(/ea|cy|mg|ye|bl|wh|reducer|retarder|ethyl/i)
-                ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+                const filmsCost = materials
+                  .filter(isFilmSubstrateItem)
+                  .reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
 
-                const adhesiveLoggedCost = materials.filter(m => 
-                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('adhesive') || 
-                  (m.filmType || m.category || m.itemName || '').toLowerCase().includes('hardener') || 
-                  (m.filmType || '').match(/adh|hard|polyurethane/i)
-                ).reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+                const inksSolventsCost = materials
+                  .filter(isInkOrSolvent)
+                  .reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
+
+                const adhesiveLoggedCost = materials
+                  .filter(isAdhesiveItem)
+                  .reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
 
                 const totalAdhesiveConsumedKg = roundToTwo((parseFloat(selectedRecord.adhesiveConsumedL1Kg) || 0) + (parseFloat(selectedRecord.adhesiveConsumedL2Kg) || 0));
                 const adhesiveCostPerKgSnap = Number(selectedRecord.adhesiveCostPerKg !== undefined && selectedRecord.adhesiveCostPerKg !== null ? selectedRecord.adhesiveCostPerKg : 270);
@@ -3602,7 +3620,17 @@ export default function ProductionRecordManagement({
                 const paperCoreCostPerKgSnap = Number(selectedRecord.paperCoreCostPerKg !== undefined && selectedRecord.paperCoreCostPerKg !== null ? selectedRecord.paperCoreCostPerKg : 45);
                 const paperCoreCost = roundToTwo(Number(selectedRecord.paperCoreCostRs !== undefined && selectedRecord.paperCoreCostRs !== null ? selectedRecord.paperCoreCostRs : (paperCoreConsumedKg * paperCoreCostPerKgSnap)));
 
-                const actualProcCost = roundToTwo(parseFloat(selectedRecord.totalProcessingCostRs) || parseFloat(selectedRecord.processingCostRs) || (actualQtyKg * (parseFloat(selectedRecord.processingCostPerKg) || 25)));
+                const actualProcRatePerKg = Number(
+                  selectedRecord.processingCostPerKg ||
+                  linkedOrder?.conversionChargesPerKg ||
+                  linkedJobMaster?.conversionChargesPerKg ||
+                  0
+                );
+                const actualProcCost = roundToTwo(
+                  parseFloat(selectedRecord.totalProcessingCostRs) ||
+                  parseFloat(selectedRecord.processingCostRs) ||
+                  (actualQtyKg * actualProcRatePerKg)
+                );
                 const actualMaterialCost = selectedRecord.totalMaterialCostRs !== undefined && Number(selectedRecord.totalMaterialCostRs) > 0
                   ? roundToTwo(Number(selectedRecord.totalMaterialCostRs))
                   : roundToTwo(filmsCost + inksSolventsCost + adhesiveCost + paperCoreCost);
@@ -3629,10 +3657,52 @@ export default function ProductionRecordManagement({
                   }
                 }
 
-                const hasPreCosting = Boolean(preCosting && (preCosting.summary || preCosting.totalRawMaterialCost || preCosting.grandTotalCost || preCosting.estimatedCost));
-                const estRawMaterialCost = hasPreCosting ? Number(preCosting.summary?.totalRawMaterialCost || preCosting.totalRawMaterialCost || preCosting.rawMaterialCost || 0) : 0;
-                const estProcessingCost = hasPreCosting ? Number(preCosting.summary?.totalProcessingCost || preCosting.totalProcessingCost || preCosting.processingCost || 0) : 0;
-                const estTotalCost = hasPreCosting ? (estRawMaterialCost + estProcessingCost || Number(preCosting.summary?.grandTotalCost || preCosting.grandTotalCost || preCosting.estimatedCost || 0)) : 0;
+                const hasPreCosting = Boolean(preCosting && (preCosting.summary || preCosting.totalRawMaterialCost || preCosting.grandTotalCost || preCosting.estimatedCost || preCosting.layerResults));
+
+                const estFilmCost = hasPreCosting ? Number(
+                  preCosting.summary?.totalFilmCost ||
+                  (Array.isArray(preCosting.layerResults) && preCosting.layerResults.length > 0
+                    ? preCosting.layerResults.reduce((s, l) => s + (Number(l.totalCost) || (Number(l.grossKg || 0) * Number(l.pricePerKg || 0))), 0)
+                    : 0) ||
+                  (preCosting.summary?.totalFilmGrossKg && preCosting.summary?.avgFilmRate ? preCosting.summary.totalFilmGrossKg * preCosting.summary.avgFilmRate : 0) ||
+                  (preCosting.filmDetails?.totalCost || 0)
+                ) : 0;
+
+                const estInkCost = hasPreCosting ? Number(
+                  preCosting.summary?.totalInkCost ||
+                  preCosting.inkDetails?.totalCost ||
+                  (preCosting.inkDetails?.grossKg && preCosting.inkDetails?.pricePerKg ? preCosting.inkDetails.grossKg * preCosting.inkDetails.pricePerKg : 0) ||
+                  0
+                ) : 0;
+
+                const estAdhesiveCost = hasPreCosting ? Number(
+                  preCosting.summary?.totalAdhesiveCost ||
+                  preCosting.adhesiveDetails?.totalCost ||
+                  (preCosting.adhesiveDetails?.grossKg && preCosting.adhesiveDetails?.pricePerKg ? preCosting.adhesiveDetails.grossKg * preCosting.adhesiveDetails.pricePerKg : 0) ||
+                  0
+                ) : 0;
+
+                const estProcCost = hasPreCosting ? Number(
+                  preCosting.summary?.totalConversionCost ||
+                  preCosting.totalConversionCost ||
+                  preCosting.summary?.totalProcessingCost ||
+                  preCosting.totalProcessingCost ||
+                  preCosting.processingCost ||
+                  (preCosting.summary?.conversionChargesPerKg && targetOrderQtyKg ? preCosting.summary.conversionChargesPerKg * targetOrderQtyKg : 0) ||
+                  0
+                ) : 0;
+
+                const estRawMaterialCost = hasPreCosting ? Number(
+                  preCosting.summary?.totalRawMaterialCost ||
+                  preCosting.totalRawMaterialCost ||
+                  (estFilmCost + estInkCost + estAdhesiveCost) ||
+                  0
+                ) : 0;
+
+                const estTotalCost = hasPreCosting ? (
+                  estRawMaterialCost + estProcCost ||
+                  Number(preCosting.summary?.grandTotalCost || preCosting.grandTotalCost || preCosting.estimatedCost || 0)
+                ) : 0;
 
                 const costVarianceRs = hasPreCosting && estTotalCost > 0 ? actualProductionCost - estTotalCost : 0;
                 const costVariancePct = hasPreCosting && estTotalCost > 0 ? ((costVarianceRs / estTotalCost) * 100).toFixed(1) : null;
@@ -3715,11 +3785,6 @@ export default function ProductionRecordManagement({
                       </thead>
                       <tbody>
                         {(() => {
-                          const estFilmCost = hasPreCosting ? Number(preCosting.summary?.totalFilmCost || (preCosting.summary?.totalFilmGrossKg && preCosting.summary?.avgFilmRate ? preCosting.summary.totalFilmGrossKg * preCosting.summary.avgFilmRate : (preCosting.filmDetails?.totalCost || 0))) : 0;
-                          const estInkCost = hasPreCosting ? Number(preCosting.summary?.totalInkCost || (preCosting.inkDetails?.grossKg && preCosting.inkDetails?.ratePerKg ? preCosting.inkDetails.grossKg * preCosting.inkDetails.ratePerKg : (preCosting.inkDetails?.totalCost || 0))) : 0;
-                          const estAdhesiveCost = hasPreCosting ? Number(preCosting.summary?.totalAdhesiveCost || (preCosting.adhesiveDetails?.grossKg && preCosting.adhesiveDetails?.ratePerKg ? preCosting.adhesiveDetails.grossKg * preCosting.adhesiveDetails.ratePerKg : (preCosting.adhesiveDetails?.totalCost || 0))) : 0;
-                          const estProcCost = hasPreCosting ? Number(preCosting.summary?.totalProcessingCost || preCosting.totalProcessingCost || preCosting.processingCost || 0) : 0;
-
                           const rows = [
                             { label: "Film Substrates (PET / LDPE / BOPP)", est: Math.round(estFilmCost), act: Math.round(filmsCost) },
                             { label: "Printing Inks & Solvents", est: Math.round(estInkCost), act: Math.round(inksSolventsCost) },
