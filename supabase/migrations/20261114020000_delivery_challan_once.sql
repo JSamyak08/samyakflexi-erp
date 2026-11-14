@@ -210,14 +210,14 @@ END;
 $$;
 
 -- Same quantity the order-close rule and the dispatch wastage percentage use.
--- p_except_shipment_ids, when passed, leaves those packing lists out. Issuing
--- a balance challan from a list that was just finalised must not treat that
--- list as dispatch that already closed the order.
-DROP FUNCTION IF EXISTS private.order_dispatched_kg(text, text);
-CREATE OR REPLACE FUNCTION private.order_dispatched_kg(
+-- The 2-argument function keeps its signature because
+-- public.high_scrap_audit_registry depends on it. Do not drop it.
+-- Exclusions live on private.order_dispatched_kg_except so a balance
+-- challan can ignore the packing list it is issuing.
+CREATE OR REPLACE FUNCTION private.order_dispatched_kg_except(
   p_order_id text,
   p_job_name text,
-  p_except_shipment_ids text[] DEFAULT NULL
+  p_except_shipment_ids text[]
 )
 RETURNS numeric
 LANGUAGE plpgsql
@@ -281,6 +281,16 @@ BEGIN
   END IF;
   RETURN result;
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION private.order_dispatched_kg(p_order_id text, p_job_name text)
+RETURNS numeric
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT private.order_dispatched_kg_except(p_order_id, p_job_name, NULL);
 $$;
 
 CREATE OR REPLACE FUNCTION private.challan_is_cancelled(payload jsonb)
@@ -917,7 +927,7 @@ BEGIN
         WHERE nullif(btrim(item.value->>'packingListId'), '') IS NOT NULL
       ) AS ids
       WHERE nullif(btrim(value), '') IS NOT NULL;
-      dispatched := COALESCE(private.order_dispatched_kg(added, order_label, except_ids), 0);
+      dispatched := COALESCE(private.order_dispatched_kg_except(added, order_label, except_ids), 0);
       tolerance_raw := NULL;
       IF to_regclass('public.system_settings') IS NOT NULL THEN
         SELECT setting_value INTO tolerance_raw
@@ -1049,7 +1059,8 @@ REVOKE ALL ON FUNCTION private.dispatch_document_counts(jsonb, text) FROM PUBLIC
 REVOKE ALL ON FUNCTION private.dispatch_document_kg(jsonb, numeric, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_document_matches(jsonb, text, text, text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.dispatch_kg_for_order(jsonb, numeric, text, text, text, text, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text, text[]) FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION private.order_dispatched_kg_except(text, text, text[]) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.challan_is_cancelled(jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.challan_is_sale(jsonb, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION private.orders_covered_by_document(jsonb) FROM PUBLIC;
@@ -1072,12 +1083,14 @@ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     EXECUTE 'REVOKE ALL ON FUNCTION public.allocate_delivery_challan_no() FROM anon';
     EXECUTE 'REVOKE ALL ON FUNCTION public.release_delivery_challan_no(text) FROM anon';
-    EXECUTE 'REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text, text[]) FROM anon';
+    EXECUTE 'REVOKE ALL ON FUNCTION private.order_dispatched_kg(text, text) FROM anon';
+    EXECUTE 'REVOKE ALL ON FUNCTION private.order_dispatched_kg_except(text, text, text[]) FROM anon';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.allocate_delivery_challan_no() TO authenticated';
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.release_delivery_challan_no(text) TO authenticated';
-    EXECUTE 'GRANT EXECUTE ON FUNCTION private.order_dispatched_kg(text, text, text[]) TO authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION private.order_dispatched_kg(text, text) TO authenticated';
+    EXECUTE 'GRANT EXECUTE ON FUNCTION private.order_dispatched_kg_except(text, text, text[]) TO authenticated';
   END IF;
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     EXECUTE 'GRANT EXECUTE ON FUNCTION public.allocate_delivery_challan_no() TO service_role';

@@ -68,6 +68,13 @@ async function database() {
   return db;
 }
 
+test('the delivery challan migration keeps the two-argument dispatched kg function', () => {
+  assert.doesNotMatch(migrationSql, /DROP FUNCTION IF EXISTS private\.order_dispatched_kg\(text, text\)/);
+  assert.match(migrationSql, /FUNCTION private\.order_dispatched_kg_except/);
+  assert.match(migrationSql, /FUNCTION private\.order_dispatched_kg\(p_order_id text, p_job_name text\)/);
+  assert.doesNotMatch(migrationSql, /p_except_shipment_ids text\[\] DEFAULT/);
+});
+
 test('existing duplicate challan numbers are kept and the next number is unused', async () => {
   const db = await database();
   const before = await db.query(`SELECT challan_no, count(*)::int AS n FROM public.delivery_challans GROUP BY challan_no`);
@@ -245,5 +252,141 @@ test('over-dispatch is Completed and does not renumber the stored challan', asyn
   assert.equal(numbers.rows[0].n, 2);
   const kept = await db.query(`SELECT challan_no FROM public.delivery_challans WHERE id = 'DC-K'`);
   assert.equal(kept.rows[0].challan_no, 'SIL/DC/26-27/220');
+  await db.close();
+});
+
+const wastagePreviousSql = fs.readFileSync(
+  new URL('../supabase/migrations/20261026140000_job_wastage_scrap_registry.sql', import.meta.url),
+  'utf8'
+);
+const wastageSql = fs.readFileSync(
+  new URL('../supabase/migrations/20261113210000_wastage_pct_of_dispatch.sql', import.meta.url),
+  'utf8'
+);
+
+test('the scrap registry view blocks a drop and still works after this migration', async () => {
+  const db = new PGlite();
+  await db.exec(`
+    CREATE TABLE public.orders (
+      id text PRIMARY KEY,
+      job_name text,
+      client_name text,
+      order_qty_kg numeric,
+      job_details jsonb,
+      order_type text,
+      status text,
+      close_mode text,
+      closed_by text,
+      closed_at timestamptz,
+      close_reason text,
+      over_dispatch_warning text
+    );
+    CREATE TABLE public.production_records (
+      id text PRIMARY KEY,
+      order_id text,
+      job_name text,
+      client_name text,
+      operator_name text,
+      shift text,
+      date_filled date,
+      recorded_at timestamptz,
+      status text,
+      process_logs jsonb,
+      printing_plain_setting_wastage_kg numeric,
+      printing_wastage_kg numeric,
+      lamination_plain_substrate_wastage_kg numeric,
+      lamination_plain_substrate_wastage_l2_kg numeric,
+      laminate_wastage_kg numeric,
+      printed_wastage_kg numeric,
+      trim_wastage_kg numeric,
+      pouching_scrap_kg numeric
+    );
+    CREATE TABLE public.delivery_challans (
+      id text PRIMARY KEY,
+      challan_no text,
+      client_name text,
+      payload jsonb,
+      challan_nature text,
+      party_type text
+    );
+    CREATE TABLE public.dispatch_shipments (
+      id text,
+      dispatch_id text PRIMARY KEY,
+      order_id text,
+      job_name text,
+      client_name text,
+      packing_status text,
+      total_net_weight_kg numeric,
+      items jsonb,
+      payload jsonb
+    );
+    CREATE TABLE public.sfg_goods (
+      id text PRIMARY KEY,
+      order_id text,
+      job_name text,
+      sfg_batch_code text,
+      sfg_type text,
+      available_kg numeric,
+      total_net_kg numeric,
+      consumed_kg numeric
+    );
+    CREATE TABLE public.system_settings (
+      setting_key text PRIMARY KEY,
+      setting_value text
+    );
+  `);
+  await db.exec(wastagePreviousSql);
+  await db.exec(wastageSql);
+  await db.exec(`
+    INSERT INTO public.orders (id, job_name, order_qty_kg) VALUES
+      ('ORD-ROLLS', 'Sonu Mango Mirchi Shots Inner', 500);
+    INSERT INTO public.production_records (
+      id, order_id, job_name, printing_wastage_kg, process_logs, recorded_at
+    ) VALUES
+      ('REC-ROLLS', 'ORD-ROLLS', 'Sonu Mango Mirchi Shots Inner', 30.82, '{}'::jsonb, '2026-10-26T10:00:00Z');
+    INSERT INTO public.dispatch_shipments (
+      dispatch_id, order_id, job_name, packing_status, total_net_weight_kg, items, payload
+    ) VALUES (
+      'PL-ROLLS', 'ORD-ROLLS', 'Sonu Mango Mirchi Shots Inner', 'Finalised', 420,
+      '[{"netWeightKg": 210.5, "unit": "Kg"}, {"netWeightKg": 209.5, "unit": "Kg"}]'::jsonb,
+      '{"orderId":"ORD-ROLLS","jobName":"Sonu Mango Mirchi Shots Inner","packingStatus":"Finalised","totalNetWeightKg":420,"items":[{"netWeightKg":210.5,"unit":"Kg"},{"netWeightKg":209.5,"unit":"Kg"}]}'::jsonb
+    );
+  `);
+  const before = await db.query(`
+    SELECT dispatch_qty_kg FROM public.high_scrap_audit_registry WHERE order_id = 'ORD-ROLLS'
+  `);
+  assert.equal(Number(before.rows[0].dispatch_qty_kg), 420);
+  const dependents = await db.query(`
+    SELECT c.relname AS view_name
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    JOIN pg_depend d ON d.refobjid = p.oid AND d.refclassid = 'pg_proc'::regclass
+    JOIN pg_rewrite r ON d.classid = 'pg_rewrite'::regclass AND r.oid = d.objid
+    JOIN pg_class c ON c.oid = r.ev_class
+    WHERE n.nspname = 'private'
+      AND p.proname = 'order_dispatched_kg'
+      AND pg_get_function_identity_arguments(p.oid) = 'p_order_id text, p_job_name text'
+  `);
+  assert.deepEqual(dependents.rows.map((row) => row.view_name), ['high_scrap_audit_registry']);
+  await assert.rejects(
+    () => db.exec('DROP FUNCTION private.order_dispatched_kg(text, text)'),
+    /cannot drop function private\.order_dispatched_kg\(text,text\)/
+  );
+  await db.exec(migrationSql);
+  const after = await db.query(`
+    SELECT dispatch_qty_kg FROM public.high_scrap_audit_registry WHERE order_id = 'ORD-ROLLS'
+  `);
+  assert.equal(Number(after.rows[0].dispatch_qty_kg), 420);
+  const signatures = await db.query(`
+    SELECT p.proname, pg_get_function_identity_arguments(p.oid) AS args
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'private' AND p.proname LIKE 'order_dispatched_kg%'
+    ORDER BY 1, 2
+  `);
+  assert.deepEqual(signatures.rows, [
+    { proname: 'order_dispatched_kg', args: 'p_order_id text, p_job_name text' },
+    { proname: 'order_dispatched_kg_except', args: 'p_order_id text, p_job_name text, p_except_shipment_ids text[]' },
+  ]);
   await db.close();
 });
