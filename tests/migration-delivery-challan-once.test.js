@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const migrationSql = fs.readFileSync(new URL('../supabase/migrations/20261113220000_delivery_challan_once.sql', import.meta.url), 'utf8');
+const migrationSql = fs.readFileSync(new URL('../supabase/migrations/20261114020000_delivery_challan_once.sql', import.meta.url), 'utf8');
 
 async function database() {
   const db = new PGlite();

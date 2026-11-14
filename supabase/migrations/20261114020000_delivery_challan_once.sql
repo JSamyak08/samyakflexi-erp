@@ -33,7 +33,8 @@
 -- in place. The dispatch status writer sets samyak.dispatch_status_write
 -- so a real reopen still goes through.
 --
--- Timestamp is after 20261113210000_wastage_pct_of_dispatch.sql.
+-- Timestamp is 20261114020000, after 20261113230000_balance_roll_parent_details.sql
+-- (already applied on production) and after 20261113210000_wastage_pct_of_dispatch.sql.
 -- private.order_dispatched_kg keeps that migration's rule for a document
 -- whose lines do not name an order. When lines name an order or job, only
 -- that order's lines are counted, so one packing list of two job orders
