@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import {
-  allocateCylinderSkuSeries,
+  cylinderCodeSerial,
   cylinderSkuTaken,
-  nextCylinderSku,
   planBulkCylinderSkus
 } from '../src/utils/cylinderSku.js';
 
@@ -24,14 +23,13 @@ const rows = [
   { id: 'g', sku: 'SKU-CYL-7271', jobName: 'Four digit serial', status: 'Active In-Use' }
 ];
 
-test('the next SKU-CYL code is one past the highest serial and does not fill gaps', () => {
-  assert.equal(nextCylinderSku(rows), 'SKU-CYL-7272');
-  assert.deepEqual(allocateCylinderSkuSeries(rows, 2), ['SKU-CYL-7272', 'SKU-CYL-7273']);
-  assert.equal(nextCylinderSku([
-    { sku: 'CYL-2026-900' },
-    { sku: 'JM-2026-800' },
-    { id: '1792841545179', sku: 'SKU-CYL-400' }
-  ]), 'SKU-CYL-401');
+test('the browser does not issue the next cylinder code', () => {
+  const source = fs.readFileSync(new URL('../src/utils/cylinderSku.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /function nextCylinderSku|function allocateCylinderSkuSeries/);
+  assert.equal(cylinderCodeSerial('SKU-CYL-514'), 514);
+  assert.equal(cylinderCodeSerial('SKU-2026-514'), 514);
+  assert.equal(cylinderCodeSerial('CYL-2026-0420'), 420);
+  assert.equal(cylinderCodeSerial('JM-2026-569'), null);
   assert.equal(cylinderSkuTaken('SKU-CYL-517', rows), true);
   assert.equal(cylinderSkuTaken('sku-cyl-517', rows), true);
   assert.equal(cylinderSkuTaken('SKU-CYL-516', rows), false);
@@ -39,12 +37,12 @@ test('the next SKU-CYL code is one past the highest serial and does not fill gap
   assert.equal(cylinderSkuTaken('SKU-CYL-518', rows, 'c'), false);
 });
 
-test('blank CSV rows get the next codes and a colliding SKU is flagged', () => {
+test('blank CSV rows wait for the database and a shared number is flagged', () => {
   const plan = planBulkCylinderSkus(
-    ['', 'SKU-CYL-518', 'CYL-2026-100', 'SKU-CYL-518', ''],
+    ['', 'SKU-CYL-518', 'CYL-2026-100', 'SKU-CYL-518', '', 'CYL-2026-0518'],
     rows
   );
-  assert.equal(plan[0].sku, 'SKU-CYL-7272');
+  assert.equal(plan[0].sku, '');
   assert.equal(plan[0].generated, true);
   assert.equal(plan[0].collision, false);
   assert.equal(plan[1].collision, true);
@@ -53,8 +51,10 @@ test('blank CSV rows get the next codes and a colliding SKU is flagged', () => {
   assert.equal(plan[2].sku, 'CYL-2026-100');
   assert.equal(plan[2].collision, false);
   assert.equal(plan[3].collision, true);
-  assert.equal(plan[4].sku, 'SKU-CYL-7273');
-  assert.equal(plan[4].collision, false);
+  assert.equal(plan[4].sku, '');
+  assert.equal(plan[4].generated, true);
+  assert.equal(plan[5].collision, true);
+  assert.match(plan[5].message, /518/);
 });
 
 test('the migration is later than 20261109160000 and does not add a unique index', () => {

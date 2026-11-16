@@ -1408,10 +1408,24 @@ export async function claimGrnEscalations(ids, claimedAt) {
 // 5. CYLINDERS
 // ============================================================================
 
-export function cylinderSkuConflict(error) {
-  const code = String(error?.code || '');
+export function jobMasterDuplicateMessage(jobMasterId) {
+  return `Job master ${jobMasterId} already exists. It was not overwritten.`;
+}
+
+export function cylinderDuplicateMessage(cylinderId) {
+  return `Cylinder ${cylinderId} already exists. It was not overwritten.`;
+}
+
+function isPrimaryKeyConflict(error) {
   const message = String(error?.message || error?.details || '').toLowerCase();
-  return code === '23505' || message.includes('already exists for another cylinder');
+  return String(error?.code || '') === '23505' && message.includes('_pkey');
+}
+
+export function cylinderSkuConflict(error) {
+  if (isPrimaryKeyConflict(error)) return false;
+  const message = String(error?.message || error?.details || '').toLowerCase();
+  return message.includes('already exists for another cylinder')
+    || message.includes('already used by another cylinder code');
 }
 
 export async function allocateCylinderSkusFromServer(count = 1) {
@@ -1577,7 +1591,11 @@ export async function saveCylinderToSupabase(cyl, options = {}) {
     throw new Error("Cannot save cylinder: Supabase database connection is not available.");
   }
   await ensureValidSession();
+  const mode = options.mode === 'insert' ? 'insert' : (options.mode === 'update' ? 'update' : 'upsert');
   const rateVal = cyl.rate !== undefined ? cyl.rate : cyl.ratePerSqInch;
+  if ((mode === 'insert' || mode === 'update') && !cyl.id) {
+    throw new Error('Cannot save cylinder: the cylinder id is missing.');
+  }
   const id = cyl.id || `CYL-${Math.floor(100 + Math.random() * 900)}`;
   const layers = Array.isArray(cyl.layers) ? cyl.layers : [];
   const structureSummary = (layers.length > 0)
@@ -1685,21 +1703,34 @@ export async function saveCylinderToSupabase(cyl, options = {}) {
   };
 
   const allocateOnConflict = options.allocateOnConflict ?? Boolean(cyl.skuAllocated);
-  const { error: fullErr } = await supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
+  const writeCylinder = () => {
+    if (mode === 'insert') return supabase.from('cylinders').insert(fullPayload).select('id');
+    if (mode === 'update') return supabase.from('cylinders').update(fullPayload).eq('id', id).select('id');
+    return supabase.from('cylinders').upsert(fullPayload, { onConflict: 'id' });
+  };
+  const { data: written, error: fullErr } = await writeCylinder();
   if (fullErr) {
+    if (mode === 'insert' && isPrimaryKeyConflict(fullErr)) {
+      const duplicate = new Error(cylinderDuplicateMessage(id));
+      duplicate.code = '23505';
+      throw duplicate;
+    }
     if (allocateOnConflict && !options._retried && cylinderSkuConflict(fullErr)) {
       const [fresh] = await allocateCylinderSkusFromServer(1);
       if (fresh && fresh !== cyl.sku) {
         return saveCylinderToSupabase(
           { ...cyl, sku: fresh, skuAllocated: false },
-          { allocateOnConflict: false, _retried: true }
+          { ...options, allocateOnConflict: false, _retried: true }
         );
       }
     }
     console.error('[cylinders] Save failed:', fullErr.message);
     handleSupabaseError(fullErr, 'cylinders');
   }
-  return cyl;
+  if (mode !== 'upsert' && (!Array.isArray(written) || written.length === 0)) {
+    throw new Error(mode === 'insert' ? `Cylinder ${id} was not created.` : `Cylinder ${id} was not updated.`);
+  }
+  return { ...cyl, id, sku: fullPayload.sku };
 }
 
 export async function saveCylinderBatchToSupabase(cylList) {
@@ -2921,12 +2952,15 @@ export async function fetchJobMasters() {
   }
 }
 
-export async function saveJobMasterToSupabase(jobMaster) {
+export async function saveJobMasterToSupabase(jobMaster, options = {}) {
   if (!isSupabaseConfigured() || !jobMaster) {
     throw new Error("Cannot save job master: Supabase database connection is not available.");
   }
   await ensureValidSession();
-  
+  const mode = options.mode === 'insert' ? 'insert' : (options.mode === 'update' ? 'update' : 'upsert');
+  if ((mode === 'insert' || mode === 'update') && !jobMaster.id) {
+    throw new Error('Cannot save job master: the job master id is missing.');
+  }
   const id = jobMaster.id || (await allocateJobMasterIdsFromServer(1))[0];
   const skuCode = jobMaster.skuCode || jobMaster.sku || '';
   const jobName = jobMaster.jobName || '';
@@ -3012,9 +3046,11 @@ export async function saveJobMasterToSupabase(jobMaster) {
     cost_borne_by: costBorneBy,
     engraver_name: engraverName,
     job_card_file_url: fileUrl,
-    artwork_url: fileUrl,
-    created_at: new Date().toISOString()
+    artwork_url: fileUrl
   };
+  if (mode !== 'update') {
+    legacyPayload.created_at = new Date().toISOString();
+  }
 
   const extendedPayload = {
     ...legacyPayload,
@@ -3054,9 +3090,25 @@ export async function saveJobMasterToSupabase(jobMaster) {
     creation_date: toDatabaseDate(jobMaster.creationDate)
   };
 
-  // 1. Try extended payload with new columns (including press marks & layers) FIRST
-  const { error: extErr } = await supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
+  const writeJobMaster = () => {
+    if (mode === 'insert') return supabase.from('job_masters').insert(extendedPayload).select('id');
+    if (mode === 'update') return supabase.from('job_masters').update(extendedPayload).eq('id', id).select('id');
+    return supabase.from('job_masters').upsert(extendedPayload, { onConflict: 'id' });
+  };
+  const { data: written, error: extErr } = await writeJobMaster();
+  if (extErr && mode === 'insert' && isPrimaryKeyConflict(extErr)) {
+    const duplicate = new Error(jobMasterDuplicateMessage(id));
+    duplicate.code = '23505';
+    throw duplicate;
+  }
   if (extErr) handleSupabaseError(extErr, 'job_masters');
+  if (mode !== 'upsert' && (!Array.isArray(written) || written.length === 0)) {
+    throw new Error(
+      mode === 'insert'
+        ? `Job master ${id} was not created.`
+        : `Job master ${id} was not updated.`
+    );
+  }
 }
 
 export async function deleteJobMasterFromSupabase(jobMasterId) {

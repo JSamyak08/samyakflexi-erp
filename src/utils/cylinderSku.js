@@ -1,10 +1,11 @@
 /**
  * Cylinder SKU codes of the form SKU-CYL-515.
  *
- * The next code is one past the highest SKU-CYL serial in the whole cylinder
- * list, then stepped forward while that code is already taken. Gaps below the
- * max are left alone. CYL-2026-xxx, job-master ids, and other number formats
- * are not part of this series.
+ * New codes are issued only by the database (allocate_cylinder_sku).
+ * This module does not count a maximum or build the next code.
+ * SKU-CYL-, SKU-2026-, and CYL-2026- share one trailing-number series, so a
+ * typed code can be flagged when that number is already stored under another
+ * prefix. Job master ids and other formats are not part of the series.
  */
 
 export function normalizeCylinderSku(value) {
@@ -13,6 +14,14 @@ export function normalizeCylinderSku(value) {
 
 export function skuCylSerial(value) {
   const match = normalizeCylinderSku(value).match(/^sku-cyl-(\d+)$/);
+  if (!match) return null;
+  const serial = Number(match[1]);
+  return Number.isSafeInteger(serial) ? serial : null;
+}
+
+/** Trailing number of SKU-CYL-N, SKU-2026-N, or CYL-2026-N. Leading zeros count as the same number. */
+export function cylinderCodeSerial(value) {
+  const match = normalizeCylinderSku(value).match(/^(?:sku-cyl|sku-2026|cyl-2026)-(\d+)$/);
   if (!match) return null;
   const serial = Number(match[1]);
   return Number.isSafeInteger(serial) ? serial : null;
@@ -38,69 +47,48 @@ export function cylinderSkuTaken(sku, rows, ignoreId) {
   });
 }
 
-/**
- * Issue `count` SKU-CYL codes from rows already stored plus any codes passed
- * in `reserved`. Each issued code is treated as taken for the next one.
- */
-export function allocateCylinderSkuSeries(rows, count = 1, reserved = []) {
-  const wanted = Math.max(0, parseInt(count, 10) || 0);
-  const takenSerials = new Set();
-  let maxSerial = 0;
-  const note = (value) => {
-    const serial = skuCylSerial(value);
-    if (serial == null) return;
-    takenSerials.add(serial);
-    if (serial > maxSerial) maxSerial = serial;
-  };
-  (rows || []).forEach((row) => skuValues(row).forEach(note));
-  (reserved || []).forEach(note);
-
-  const issued = [];
-  let serial = maxSerial;
-  let guard = 0;
-  while (issued.length < wanted) {
-    serial += 1;
-    guard += 1;
-    if (guard > 100000) break;
-    if (takenSerials.has(serial)) continue;
-    takenSerials.add(serial);
-    issued.push(formatSkuCyl(serial));
-  }
-  return issued;
-}
-
-export function nextCylinderSku(rows, reserved = []) {
-  return allocateCylinderSkuSeries(rows, 1, reserved)[0] || '';
+function serialUsedByOtherCode(sku, rows) {
+  const serial = cylinderCodeSerial(sku);
+  if (serial == null) return false;
+  const own = normalizeCylinderSku(sku);
+  return (rows || []).some((row) => skuValues(row).some((value) => {
+    const code = normalizeCylinderSku(value);
+    if (!code || code === own) return false;
+    return cylinderCodeSerial(value) === serial;
+  }));
 }
 
 /**
- * Assign SKUs for a CSV import.
- * A blank cell receives the next SKU-CYL code. A cell whose normalized code
- * is already on a cylinder, or earlier in this file, is flagged and kept as
- * typed so the operator can see the collision. It is not renamed.
+ * Plan SKUs for a CSV import.
+ * A blank cell is left empty and marked generated so the database can issue
+ * SKU-CYL-NNN at save time. A cell whose code, or whose trailing number, is
+ * already on a cylinder or earlier in this file is flagged and kept as typed.
  */
 export function planBulkCylinderSkus(rawSkus, existingRows) {
   const planned = [];
   (rawSkus || []).forEach((raw) => {
     const typed = String(raw ?? '').trim();
     if (!typed) {
-      const sku = nextCylinderSku(existingRows, planned.filter((item) => !item.collision).map((item) => item.sku));
       planned.push({
-        sku,
+        sku: '',
         generated: true,
         collision: false,
         message: ''
       });
       return;
     }
-    const blockedByFile = planned.some((item) => !item.collision && normalizeCylinderSku(item.sku) === normalizeCylinderSku(typed));
+    const accepted = planned.filter((item) => !item.collision && item.sku).map((item) => ({ sku: item.sku }));
+    const blockedByFile = accepted.some((item) => normalizeCylinderSku(item.sku) === normalizeCylinderSku(typed));
     const blockedByTable = cylinderSkuTaken(typed, existingRows);
-    if (blockedByFile || blockedByTable) {
+    const blockedByNumber = serialUsedByOtherCode(typed, [...(existingRows || []), ...accepted]);
+    if (blockedByFile || blockedByTable || blockedByNumber) {
       planned.push({
         sku: typed,
         generated: false,
         collision: true,
-        message: `SKU Code "${typed}" already exists for another cylinder set.`
+        message: blockedByNumber && !blockedByFile && !blockedByTable
+          ? `SKU number ${cylinderCodeSerial(typed)} is already used by another cylinder code.`
+          : `SKU Code "${typed}" already exists for another cylinder set.`
       });
       return;
     }

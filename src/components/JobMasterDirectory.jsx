@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { formatPlantDate } from '../utils/dbDates';
 import SearchableSelect from './SearchableSelect';
 import TablePagination, { usePagination } from './TablePagination';
 import { allocateJobMasterIds } from '../utils/jobMasterId';
-import { skuWhenLinkingCylinder } from '../utils/jobMasterLink';
-import { allocateJobMasterIdsFromServer } from '../services/supabaseDataService';
+import { cylindersLinkedToJobMaster, skuWhenLinkingCylinder } from '../utils/jobMasterLink';
+import { allocateCylinderSkusFromServer, allocateJobMasterIdsFromServer, releaseCylinderSkuReservation } from '../services/supabaseDataService';
+import { reportBackgroundFailure } from '../utils/backgroundFailure';
 import { 
   FileCode, 
   Search, 
@@ -142,12 +143,41 @@ export default function JobMasterDirectory({
     alert(`✅ Job Master (${linkingJobMaster.skuCode}) successfully linked to Cylinder (${targetCyl?.sku || selectedExistingCylId})!`);
   };
 
+  const releaseAllocatedSku = async () => {
+    const reserved = allocatedSkuRef.current;
+    allocatedSkuRef.current = '';
+    if (!reserved) return;
+    try {
+      await releaseCylinderSkuReservation(reserved);
+    } catch (err) {
+      reportBackgroundFailure(err, 'A cylinder code reservation was not released');
+    }
+  };
+
+  const closeCreateModal = async () => {
+    if (!editingJobId) await releaseAllocatedSku();
+    setIsCreateModalOpen(false);
+  };
+
   const handleCreateNewCylAndLink = async () => {
     if (!linkingJobMaster) return;
+    let sku = '';
+    try {
+      const [issued] = await allocateCylinderSkusFromServer(1);
+      sku = issued || '';
+    } catch (err) {
+      alert(`A cylinder code was not issued by the database: ${err?.message || err}`);
+      return;
+    }
+    if (!sku) {
+      alert('A cylinder code was not issued by the database.');
+      return;
+    }
     const newCylId = `CYL-${Date.now()}`;
     const newCyl = {
       id: newCylId,
-      sku: linkingJobMaster.skuCode || `SKU-${Date.now().toString().slice(-4)}`,
+      sku,
+      skuAllocated: true,
       jobName: linkingJobMaster.jobName,
       clientGroup: linkingJobMaster.clientName || 'Standard Client',
       colorsCount: linkingJobMaster.colorsCount || 6,
@@ -167,9 +197,11 @@ export default function JobMasterDirectory({
       artworkUrl: linkingJobMaster.artworkUrl || null
     };
 
+    let savedSku = sku;
     const updatedJm = {
       ...linkingJobMaster,
-      cylinderSku: newCyl.sku,
+      skuCode: savedSku,
+      cylinderSku: savedSku,
       cylinderId: newCylId
     };
 
@@ -177,16 +209,24 @@ export default function JobMasterDirectory({
       if (onCreateAndLinkPair) {
         await onCreateAndLinkPair({ cylinder: newCyl, jobMaster: updatedJm });
       } else {
-        if (onAddCylinder) await onAddCylinder(newCyl);
+        if (onAddCylinder) {
+          const saved = await onAddCylinder(newCyl);
+          savedSku = saved?.sku || sku;
+          updatedJm.skuCode = savedSku;
+          updatedJm.cylinderSku = savedSku;
+        }
         if (onUpdateJobMaster) await onUpdateJobMaster(updatedJm);
       }
     } catch (err) {
+      try { await releaseCylinderSkuReservation(sku); } catch (releaseErr) {
+        reportBackgroundFailure(releaseErr, 'A cylinder code reservation was not released');
+      }
       alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder link was not saved: ${err.message || err}`);
       return;
     }
 
     setLinkingJobMaster(null);
-    alert(`✅ New Rotogravure Cylinder (${newCyl.sku}) created and linked to Job Master (${linkingJobMaster.skuCode}) in database!`);
+    alert(`✅ New Rotogravure Cylinder (${savedSku}) created and linked to Job Master (${updatedJm.id}) in database!`);
   };
 
   // Auto-select job master if unique id is present in URL params
@@ -246,6 +286,7 @@ export default function JobMasterDirectory({
   const [onboardSuccessNotice, setOnboardSuccessNotice] = useState('');
 
   const [skuCode, setSkuCode] = useState('');
+  const allocatedSkuRef = useRef('');
   const [printWidthMm, setPrintWidthMm] = useState('1000');
   const [faceLengthMm, setFaceLengthMm] = useState('1050');
   const [repeatLengthMm, setRepeatLengthMm] = useState('400');
@@ -364,7 +405,9 @@ export default function JobMasterDirectory({
         return mappedHeader ? row[mappedHeader] : '';
       };
 
-      const skuCode = getVal('skuCode') || `SKU-2026-${String(idx + 101).padStart(3, '0')}`;
+      const typedSku = String(getVal('skuCode') || '').trim();
+      const skuPending = !typedSku;
+      const skuCode = typedSku;
       const jobName = getVal('jobName') || `Untitled Job ${idx + 1}`;
       const clientName = getVal('clientName') || 'Standard Client';
       const colorsCount = parseInt(getVal('colorsCount')) || 6;
@@ -381,6 +424,7 @@ export default function JobMasterDirectory({
       return {
         id,
         skuCode,
+        skuPending,
         jobName,
         clientName,
         colorsCount,
@@ -406,13 +450,34 @@ export default function JobMasterDirectory({
       return;
     }
 
+    const pending = bulkPreviewJobs.filter((job) => job.skuPending);
+    let issuedSkus = [];
+    if (pending.length > 0) {
+      try {
+        issuedSkus = await allocateCylinderSkusFromServer(pending.length);
+      } catch (err) {
+        alert(`A cylinder code was not issued by the database: ${err?.message || err}`);
+        return;
+      }
+      if (issuedSkus.length < pending.length) {
+        alert('The database did not return enough cylinder codes. Nothing was imported.');
+        return;
+      }
+    }
+    let skuCursor = 0;
+    const jobsWithSku = bulkPreviewJobs.map((job) => {
+      if (!job.skuPending) return job;
+      const sku = issuedSkus[skuCursor++] || '';
+      return { ...job, skuCode: sku, cylinderSku: sku, skuPending: false };
+    });
+
     let ids = [];
     try {
-      ids = await allocateJobMasterIdsFromServer(bulkPreviewJobs.length);
+      ids = await allocateJobMasterIdsFromServer(jobsWithSku.length);
     } catch (err) {
-      ids = allocateJobMasterIds((jobMasters || []).map(job => job.id), bulkPreviewJobs.length);
+      ids = allocateJobMasterIds((jobMasters || []).map(job => job.id), jobsWithSku.length);
     }
-    const jobs = bulkPreviewJobs.map((job, idx) => ({ ...job, id: ids[idx] || job.id }));
+    const jobs = jobsWithSku.map((job, idx) => ({ ...job, id: ids[idx] || job.id }));
 
     if (onBatchAddJobMasters) {
       onBatchAddJobMasters(jobs);
@@ -822,38 +887,6 @@ export default function JobMasterDirectory({
     setProcessRouting(generateDefaultRouting(nextLayers, machines));
   };
 
-  const getNextSerialSkuCode = () => {
-    let maxIndex = 0;
-
-    const checkStringForNum = (str) => {
-      if (!str) return;
-      const matches = String(str).match(/\d+/g);
-      if (matches) {
-        const num = parseInt(matches[matches.length - 1], 10);
-        if (!isNaN(num) && num > maxIndex) maxIndex = num;
-      }
-    };
-
-    (jobMasters || []).forEach(j => {
-      checkStringForNum(j.skuCode);
-      checkStringForNum(j.sku);
-      checkStringForNum(j.cylinderSku);
-    });
-
-    (cylinders || []).forEach(c => {
-      checkStringForNum(c.sku);
-      checkStringForNum(c.skuCode);
-    });
-
-    (orders || []).forEach(o => {
-      checkStringForNum(o.skuCode);
-      checkStringForNum(o.sku);
-    });
-
-    const nextNum = maxIndex + 1;
-    return `SKU-2026-${String(nextNum).padStart(3, '0')}`;
-  };
-
   const isSkuDuplicate = useMemo(() => {
     const code = (skuCode || '').trim().toLowerCase();
     if (!code) return false;
@@ -878,9 +911,23 @@ export default function JobMasterDirectory({
     }
   };
 
-  const handleOpenCreateModal = () => {
+  const handleOpenCreateModal = async () => {
+    let issued = '';
+    try {
+      const [sku] = await allocateCylinderSkusFromServer(1);
+      issued = sku || '';
+    } catch (err) {
+      alert(`A cylinder code was not issued by the database: ${err?.message || err}`);
+      return;
+    }
+    if (!issued) {
+      alert('A cylinder code was not issued by the database.');
+      return;
+    }
+    await releaseAllocatedSku();
+    allocatedSkuRef.current = issued;
     setEditingJobId(null);
-    setSkuCode(getNextSerialSkuCode());
+    setSkuCode(issued);
     setJobName('');
     setClientName('');
     setPrintWidthMm('1000');
@@ -1076,6 +1123,8 @@ export default function JobMasterDirectory({
       return;
     }
 
+    const reservedSku = allocatedSkuRef.current;
+
     let jobMasterId = '';
     try {
       const [issued] = await allocateJobMasterIdsFromServer(1);
@@ -1128,6 +1177,7 @@ export default function JobMasterDirectory({
         await onAddCylinder({
           id: Date.now(),
           sku: skuCode.trim(),
+          skuAllocated: Boolean(reservedSku) && reservedSku === skuCode.trim(),
           jobName: jobName.trim(),
           clientGroup: clientName.trim(),
           colorsCount: parseInt(colorsCount) || 6,
@@ -1154,6 +1204,13 @@ export default function JobMasterDirectory({
       }
     }
 
+    if (reservedSku && reservedSku === skuCode.trim()) {
+      allocatedSkuRef.current = '';
+    } else if (reservedSku) {
+      releaseCylinderSkuReservation(reservedSku).catch((err) => {
+        reportBackgroundFailure(err, 'A cylinder code reservation was not released');
+      });
+    }
     setIsCreateModalOpen(false);
     setSelectedJob(newJobMaster);
     alert(`Job Master ${jobMasterId} created successfully!`);
@@ -1178,9 +1235,11 @@ export default function JobMasterDirectory({
   };
 
   const handleOpenJobCard = (job) => {
-    const linkedCyl = getLinkedCylinder(job);
+    const explicit = cylindersLinkedToJobMaster(cylinders, job);
+    const linkedCyl = explicit.length === 1 ? explicit[0] : null;
     const cardData = {
       jobMasterId: job.id,
+      ...(linkedCyl ? { id: linkedCyl.id, cylinderId: linkedCyl.id } : {}),
       skuCode: job.skuCode,
       jobName: job.jobName,
       clientName: job.clientName,
@@ -1304,14 +1363,14 @@ export default function JobMasterDirectory({
     <>
       {/* CREATE / EDIT JOB MASTER MODAL */}
       {isCreateModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
+        <div className="modal-overlay" onClick={closeCreateModal}>
           <div className="modal-content" style={{ width: '920px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.2rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <FileCode size={20} style={{ color: 'var(--primary-brand)' }} />
                 {editingJobId ? 'Edit Job Master' : 'Create New Job Master'}
               </h3>
-              <button className="btn-secondary" style={{ padding: '4px' }} onClick={() => setIsCreateModalOpen(false)}><X size={18} /></button>
+              <button className="btn-secondary" style={{ padding: '4px' }} onClick={closeCreateModal}><X size={18} /></button>
             </div>
 
             <form onSubmit={handleCreateJobMaster}>
@@ -1323,7 +1382,13 @@ export default function JobMasterDirectory({
                     type="text"
                     className="form-control"
                     value={skuCode}
-                    onChange={e => setSkuCode(e.target.value.toUpperCase())}
+                    onChange={e => {
+                      const next = e.target.value.toUpperCase();
+                      if (allocatedSkuRef.current && next.trim() !== allocatedSkuRef.current) {
+                        releaseAllocatedSku();
+                      }
+                      setSkuCode(next);
+                    }}
                     required
                     disabled={!!editingJobId}
                     style={editingJobId ? { backgroundColor: '#f1f5f9', cursor: 'not-allowed' } : {}}
@@ -1855,7 +1920,7 @@ export default function JobMasterDirectory({
               </div>
 
               <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
+                <button type="button" className="btn-secondary" onClick={closeCreateModal}>Cancel</button>
                 <button type="submit" className="btn-primary" disabled={isSkuDuplicate} style={isSkuDuplicate ? { opacity: 0.6, cursor: 'not-allowed' } : {}}>
                   <CheckCircle2 size={16} /> {editingJobId ? 'Save Changes' : 'Save Job Master'}
                 </button>
@@ -2034,7 +2099,7 @@ export default function JobMasterDirectory({
                     {bulkPreviewJobs.map((job, idx) => (
                       <tr key={idx}>
                         <td>{idx + 1}</td>
-                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{job.skuCode}</td>
+                        <td style={{ fontWeight: '700', color: 'var(--primary-brand)' }}>{job.skuPending ? 'Assigned on import' : job.skuCode}</td>
                         <td style={{ fontWeight: '700' }}>{job.jobName}</td>
                         <td>{job.clientName}</td>
                         <td>🎨 {job.colorsCount} C</td>

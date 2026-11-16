@@ -305,6 +305,9 @@ export function getNextDocRefNumber(type) {
   if (type === 'order') {
     throw new Error('Order numbers are issued by the database (allocate_order_id). They are not taken from this browser.');
   }
+  if (type === 'jm' || type === 'job_master' || type === 'jobMaster') {
+    throw new Error('Job master ids are issued by the database (allocate_job_master_id). They are not taken from this browser.');
+  }
   const config = getDocumentPrefixes();
   let num = 101;
   let key = '';

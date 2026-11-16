@@ -2,17 +2,18 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
-import { getAuthorisedSignature, getCompanyLogo, getNextDocRefNumber, generateDocRefNumber } from './services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo } from './services/settingsService';
 import { FILM_DENSITIES } from './factoryStore';
 import { loadLetterhead } from './services/companyProfile';
 import CompanyProfileNotice from './components/CompanyProfileNotice';
-import { saveJobMasterToSupabase, saveCylinderToSupabase } from './services/supabaseDataService';
+import { allocateCylinderSkusFromServer, allocateJobMasterIdsFromServer, releaseCylinderSkuReservation, saveJobMasterToSupabase, saveCylinderToSupabase } from './services/supabaseDataService';
 import { supabase } from './services/supabaseClient';
 import { fetchJobCardSpec, saveJobCardSpec } from './services/businessRecords';
 import ArtworkModal from './components/ArtworkModal';
 import StorageImage from './components/StorageImage';
 import SearchableSelect from './components/SearchableSelect';
 import { applySavedJobCardSpec, buildCylinderJobCardDraft, findMatchingJobMaster, parseStructureToLayers } from './utils/cylinderJobCardDraft';
+import { planCylinderJobCardRecords } from './utils/cylinderJobCardSave';
 import { DEFAULT_CYLINDER_RATE_PER_SQ_CM, storedEngravingRate } from './utils/cylinderCost';
 import { rawRoleNames, userHasAnyRole } from './assignedRoles';
 import { formatPlantDate } from './utils/dbDates';
@@ -513,6 +514,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
   };
 
   const saveJobCardSpecs = async (customData = formData, customNotification = null) => {
+    const reserved = { sku: '' };
     try {
       const derivedStruct = (layers && layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
@@ -528,133 +530,84 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
       const pouchHeightNum = Number(String(customData.pouchHeight).replace(/\D/g, '')) || 0;
       const colorsCountNum = Number(customData.numberOfCylinders) || 6;
 
-      const existingJM = (jobMasters || []).find(j => 
-        (j.id && j.id === customData.jobMasterId) ||
-        (j.skuCode && j.skuCode.toLowerCase() === (customData.skuCode || '').toLowerCase().trim()) ||
-        (j.jobName && j.jobName.toLowerCase() === (customData.jobName || '').toLowerCase().trim())
-      );
-
-      let targetJobMaster;
-      if (existingJM) {
-        targetJobMaster = {
-          ...existingJM,
-          skuCode: customData.skuCode || existingJM.skuCode,
-          jobName: customData.jobName || existingJM.jobName,
-          clientName: customData.partyName || existingJM.clientName,
-          structure: derivedStruct,
-          filmStructure: derivedStruct,
-          layers: layers,
-          printWidthMm: printWidthNum,
-          faceLengthMm: faceLengthNum,
-          repeatLengthMm: repeatLengthNum,
-          circumferenceMm: repeatLengthNum,
-          pouchOpenWidth: pouchOpenWidthNum,
-          pouchHeight: pouchHeightNum,
-          colorsCount: colorsCountNum,
-          engravuresName: customData.engravure || existingJM.engravuresName || '',
-          costBorneBy: customData.costBorneBy || existingJM.costBorneBy,
-          cylinderCost: customData.cylinderCost || existingJM.cylinderCost || '',
-          costPerCylinder: customData.costPerCylinder || existingJM.costPerCylinder || '',
-          ratePerSqInch: storedEngravingRate(customData.ratePerSqInch, existingJM.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
-          utilisationLimit: Number(customData.utilisationLimit) || existingJM.utilisationLimit || 10000,
-          jobCardFileUrl: fileUrl,
-          jobCardFileName: fileName,
-          artworkUrl: fileUrl,
-          silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : (existingJM.silLogo || ''),
-          arcMark: customData.arcMark || 'Yes',
-          slittingMark: customData.slittingMark || 'Yes',
-          trackerLine: customData.trackerLine || 'Yes',
-          specialInstructions: customData.specialInstructions || '',
-          variant: customData.variant || 'Standard',
-          printing: customData.printing || 'Reverse',
-          invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
-          shellSize: customData.shellSize || `${faceLengthNum} mm`,
-          petSize: customData.petSize || `${faceLengthNum + 10} mm`,
-          chkEyemark: customData.chkEyemark ?? false,
-          chkBarcode: customData.chkBarcode ?? false,
-          chkOrientation: customData.chkOrientation ?? false,
-          chkClientApproval: customData.chkClientApproval ?? false,
-          approvedByHead: customData.approvedByHead ?? false,
-          approvedHeadName: customData.approvedHeadName || '',
-          approvedHeadDate: customData.approvedHeadDate || ''
-        };
-      } else {
-        const jmId = getNextDocRefNumber('jm');
-        targetJobMaster = {
-          id: jmId,
-          skuCode: customData.skuCode || jmId.replace('JM', 'SKU'),
-          jobName: customData.jobName || 'New Job',
-          clientName: customData.partyName || 'General Client',
-          structure: derivedStruct,
-          filmStructure: derivedStruct,
-          layers: layers,
-          printWidthMm: printWidthNum,
-          faceLengthMm: faceLengthNum,
-          repeatLengthMm: repeatLengthNum,
-          circumferenceMm: repeatLengthNum,
-          pouchOpenWidth: pouchOpenWidthNum,
-          pouchHeight: pouchHeightNum,
-          colorsCount: colorsCountNum,
-          engravuresName: customData.engravure || '',
-          costBorneBy: customData.costBorneBy || 'Client (100%)',
-          cylinderCost: customData.cylinderCost || '',
-          costPerCylinder: customData.costPerCylinder || '',
-          ratePerSqInch: storedEngravingRate(customData.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
-          utilisationLimit: Number(customData.utilisationLimit) || 10000,
-          jobCardFileUrl: fileUrl,
-          jobCardFileName: fileName,
-          artworkUrl: fileUrl,
-          silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : '',
-          arcMark: customData.arcMark || 'Yes',
-          slittingMark: customData.slittingMark || 'Yes',
-          trackerLine: customData.trackerLine || 'Yes',
-          specialInstructions: customData.specialInstructions || '',
-          variant: customData.variant || 'Standard',
-          printing: customData.printing || 'Reverse',
-          invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
-          shellSize: customData.shellSize || `${faceLengthNum} mm`,
-          petSize: customData.petSize || `${faceLengthNum + 10} mm`,
-          chkEyemark: customData.chkEyemark ?? false,
-          chkBarcode: customData.chkBarcode ?? false,
-          chkOrientation: customData.chkOrientation ?? false,
-          chkClientApproval: customData.chkClientApproval ?? false,
-          approvedByHead: customData.approvedByHead ?? false,
-          approvedHeadName: customData.approvedHeadName || '',
-          approvedHeadDate: customData.approvedHeadDate || '',
-          creationDate: customData.creationDate || new Date().toISOString().split('T')[0]
-        };
+      const matchedJobMasterId = String(customData.jobMasterId || '').trim();
+      const jobMasterAlreadyStored = Boolean(matchedJobMasterId) && (jobMasters || []).some((job) => job && String(job.id) === matchedJobMasterId);
+      const cylinderAlreadyStored = [initialData?.cylinderId, initialData?.id].some((id) => {
+        const wanted = String(id ?? '').trim();
+        return Boolean(wanted) && (cylinders || []).some((row) => row && String(row.id) === wanted);
+      });
+      let allocatedJobMasterId = '';
+      let allocatedSku = '';
+      if (!jobMasterAlreadyStored) {
+        const issuedIds = await allocateJobMasterIdsFromServer(1);
+        allocatedJobMasterId = issuedIds?.[0] || '';
       }
-
-      // Robustly locate existing cylinder to update in place rather than creating new duplicate rows
-      const targetSku = (customData.skuCode || targetJobMaster.skuCode || initialData?.sku || initialData?.skuCode || '').trim();
-      const targetJobName = (customData.jobName || targetJobMaster.jobName || initialData?.jobName || '').trim();
-
-      const existingCylinder = (cylinders || []).find(c => 
-        (initialData?.id && c.id === initialData.id) ||
-        (initialData?.cylinderId && c.id === initialData.cylinderId) ||
-        (targetJobMaster.id && c.jobMasterId && c.jobMasterId === targetJobMaster.id) ||
-        (targetSku && c.sku && c.sku.toLowerCase() === targetSku.toLowerCase()) ||
-        (targetJobName && c.jobName && c.jobName.toLowerCase() === targetJobName.toLowerCase())
-      );
-
-      let cylId = existingCylinder?.id;
-      if (!cylId) {
-        if (initialData?.id && String(initialData.id).startsWith('CYL-')) {
-          cylId = initialData.id;
-        } else if (initialData?.cylinderId) {
-          cylId = initialData.cylinderId;
-        } else if (targetSku) {
-          cylId = `CYL-${targetSku.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-        } else if (targetJobMaster?.id) {
-          cylId = `CYL-${targetJobMaster.id}`;
-        } else {
-          cylId = `CYL-${Date.now()}`;
-        }
+      if (!cylinderAlreadyStored) {
+        const issuedSkus = await allocateCylinderSkusFromServer(1);
+        allocatedSku = issuedSkus?.[0] || '';
+        reserved.sku = allocatedSku;
       }
+      const plan = planCylinderJobCardRecords({
+        jobMasters,
+        cylinders,
+        jobMasterId: customData.jobMasterId,
+        cylinderIds: [initialData?.cylinderId, initialData?.id],
+        allocatedJobMasterId,
+        allocatedSku,
+        now: Date.now()
+      });
+      const existingJM = plan.existingJobMaster;
+      const existingCylinder = plan.existingCylinder;
+
+      const targetJobMaster = {
+        ...(existingJM || {}),
+        id: plan.jobMasterId,
+        skuCode: existingJM ? (customData.skuCode || existingJM.skuCode) : plan.sku,
+        cylinderSku: existingJM ? (existingJM.cylinderSku || existingJM.skuCode || customData.skuCode || '') : plan.sku,
+        jobName: customData.jobName || existingJM?.jobName || 'New Job',
+        clientName: customData.partyName || existingJM?.clientName || 'General Client',
+        structure: derivedStruct,
+        filmStructure: derivedStruct,
+        layers: layers,
+        printWidthMm: printWidthNum,
+        faceLengthMm: faceLengthNum,
+        repeatLengthMm: repeatLengthNum,
+        circumferenceMm: repeatLengthNum,
+        pouchOpenWidth: pouchOpenWidthNum,
+        pouchHeight: pouchHeightNum,
+        colorsCount: colorsCountNum,
+        engravuresName: customData.engravure || existingJM?.engravuresName || '',
+        costBorneBy: customData.costBorneBy || existingJM?.costBorneBy || 'Client (100%)',
+        cylinderCost: customData.cylinderCost || existingJM?.cylinderCost || '',
+        costPerCylinder: customData.costPerCylinder || existingJM?.costPerCylinder || '',
+        ratePerSqInch: storedEngravingRate(customData.ratePerSqInch, existingJM?.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
+        utilisationLimit: Number(customData.utilisationLimit) || existingJM?.utilisationLimit || 10000,
+        jobCardFileUrl: fileUrl,
+        jobCardFileName: fileName,
+        artworkUrl: fileUrl,
+        silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : (existingJM?.silLogo || ''),
+        arcMark: customData.arcMark || 'Yes',
+        slittingMark: customData.slittingMark || 'Yes',
+        trackerLine: customData.trackerLine || 'Yes',
+        specialInstructions: customData.specialInstructions || '',
+        variant: customData.variant || 'Standard',
+        printing: customData.printing || 'Reverse',
+        invoiceTo: customData.invoiceTo || 'Samyak International Ltd',
+        shellSize: customData.shellSize || `${faceLengthNum} mm`,
+        petSize: customData.petSize || `${faceLengthNum + 10} mm`,
+        chkEyemark: customData.chkEyemark ?? false,
+        chkBarcode: customData.chkBarcode ?? false,
+        chkOrientation: customData.chkOrientation ?? false,
+        chkClientApproval: customData.chkClientApproval ?? false,
+        approvedByHead: customData.approvedByHead ?? false,
+        approvedHeadName: customData.approvedHeadName || '',
+        approvedHeadDate: customData.approvedHeadDate || '',
+        creationDate: existingJM?.creationDate || customData.creationDate || new Date().toISOString().split('T')[0]
+      };
 
       const targetCylinder = {
-        id: cylId,
-        sku: customData.skuCode || targetJobMaster.skuCode,
+        id: plan.cylinderId,
+        sku: existingCylinder ? (existingCylinder.sku || '') : plan.sku,
         jobName: customData.jobName || targetJobMaster.jobName,
         clientGroup: customData.partyName || targetJobMaster.clientName,
         colorsCount: colorsCountNum,
@@ -676,7 +629,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         artworkUrl: fileUrl,
         jobCardFileUrl: fileUrl,
         jobCardFileName: fileName,
-        jobMasterId: targetJobMaster.id,
+        jobMasterId: plan.jobMasterId,
         silLogo: (customData.silLogo !== undefined && customData.silLogo !== null) ? customData.silLogo : (existingCylinder?.silLogo || ''),
         arcMark: customData.arcMark || 'Yes',
         slittingMark: customData.slittingMark || 'Yes',
@@ -697,9 +650,10 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         creationDate: customData.creationDate || new Date().toISOString().split('T')[0]
       };
 
-      const specPayload = { ...customData, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` };
-      await saveJobMasterToSupabase(targetJobMaster);
-      await saveCylinderToSupabase(targetCylinder);
+      const specPayload = { ...customData, skuCode: targetCylinder.sku || targetJobMaster.skuCode, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` };
+      await saveJobMasterToSupabase(targetJobMaster, { mode: plan.jobMasterMode });
+      await saveCylinderToSupabase(targetCylinder, { mode: plan.cylinderMode });
+      reserved.sku = '';
       await saveJobCardSpec(supabase, `jobcard_${targetJobMaster.skuCode || targetJobMaster.id}`, specPayload);
 
       if (onSave) {
@@ -710,6 +664,11 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
       setTimeout(() => setSaveNotification(null), 4000);
       return true;
     } catch (e) {
+      if (reserved.sku) {
+        try { await releaseCylinderSkuReservation(reserved.sku); } catch (releaseErr) {
+          console.error('A cylinder code reservation was not released', releaseErr);
+        }
+      }
       console.error("Save failed", e);
       alert("Failed to save settings: " + e.message);
       return false;
