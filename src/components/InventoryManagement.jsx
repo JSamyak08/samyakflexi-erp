@@ -89,6 +89,7 @@ import {
 import {
   applyMultiLineQc,
   applyQcApprovalStock,
+  qcApprovalFallbackRolls,
   findDuplicateInvoice,
   grnIdentityProblems,
   grnLineIdentityGaps,
@@ -3626,25 +3627,8 @@ export default function InventoryManagement({
         alert(`GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
         return;
       }
-      const byBarcode = new Map(rollPatches.filter((patch) => patch.barcodeId).map((patch) => [String(patch.barcodeId), patch]));
-      const matchingRolls = (inventoryRolls || []).filter((roll) => (
-        (roll.grnNo && (roll.grnNo === qcInspectingGRN.grnNo || roll.grnNo === qcInspectingGRN.id))
-        || (roll.grnId && (roll.grnId === qcInspectingGRN.id || roll.grnId === qcInspectingGRN.grnNo))
-        || byBarcode.has(String(roll.barcodeId || roll.id))
-      ));
-      if (matchingRolls.length > 0 && onUpdateInventoryRolls) {
-        const updatedRolls = matchingRolls.map((roll) => {
-          const patch = byBarcode.get(String(roll.barcodeId || roll.id))
-            || rollPatches.find((item) => item.grnLineItemId && item.grnLineItemId === roll.grnLineItemId);
-          if (!patch) return roll;
-          return {
-            ...roll,
-            ...patch,
-            availableWeightKg: patch.netWeightKg,
-            grnId: roll.grnId || qcInspectingGRN.id || qcInspectingGRN.grnNo,
-            grnLineItemId: patch.grnLineItemId || roll.grnLineItemId
-          };
-        });
+      const updatedRolls = qcApprovalFallbackRolls(inventoryRolls, rollPatches, qcInspectingGRN);
+      if (updatedRolls.length > 0 && onUpdateInventoryRolls) {
         try {
           await onUpdateInventoryRolls(updatedRolls);
         } catch (err) {
@@ -10279,7 +10263,7 @@ export default function InventoryManagement({
               {/* 4 Summary Ledger KPI Cards */}
               <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', padding: '16px', marginBottom: '20px' }}>
                 <div>
-                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Approved)</span>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Purchases + Returns)</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
                     + {(totalApprovedPurchasedQty ?? 0).toLocaleString()} {unitStr}
                   </div>

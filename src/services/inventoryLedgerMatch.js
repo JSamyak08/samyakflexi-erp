@@ -5,6 +5,8 @@
  * Film, micron, width, and category words are not identifiers.
  */
 
+import { isBalanceSticker } from '../utils/balanceRollDetails.js';
+
 const ITEM_ID_FIELDS = [
   'stockItemId',
   'stock_item_id',
@@ -180,10 +182,16 @@ function pushCode(codes, value) {
 
 function barcodesForLine(line, grn, rolls) {
   const wanted = [];
-  (line?.rolls || []).forEach((roll) => pushCode(wanted, roll?.barcodeId || roll?.barcode_id || roll?.barcode));
+  (line?.rolls || []).forEach((roll) => {
+    if (isBalanceSticker(roll)) return;
+    pushCode(wanted, roll?.barcodeId || roll?.barcode_id || roll?.barcode);
+  });
   const wantedSet = new Set(wanted);
   const grnKeys = new Set([grn?.id, grn?.grnNo, grn?.grn_number].filter(Boolean).map((value) => String(value)));
+  // A balance sticker keeps the parent GRN line, and its own return row.
+  // It is not one of this receipt line's inward barcodes or roll count.
   const matched = (rolls || []).filter((roll) => {
+    if (isBalanceSticker(roll)) return false;
     const code = String(roll?.barcodeId || roll?.barcode || roll?.id || '').trim();
     const lineId = String(roll?.grnLineItemId || roll?.grn_line_item_id || '');
     const gid = String(roll?.grnId || roll?.grn_id || roll?.grnNo || roll?.grn_no || '');

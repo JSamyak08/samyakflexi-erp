@@ -150,6 +150,74 @@ test('a multi-line GRN posts each line onto its own item under the inward barcod
   assert.equal(grnQcDecision({ status: 'Pending QC Approval' }), 'pending');
 });
 
+function grn205Line({ includeLineRolls }) {
+  const lineId = 'SIL/GRN/26-27/205-L1';
+  const parentCodes = Array.from({ length: 8 }, (_, index) => `RM-BC-SIL/GRN/26-27/205-L1-R${index + 1}`);
+  const balanceCode = 'RM-BC-SIL/GRN/26-27/205-L1-R2-BAL';
+  const parentRolls = parentCodes.map((barcodeId) => ({ barcodeId, netWeightKg: 180 }));
+  const balanceRoll = { barcodeId: balanceCode, netWeightKg: 158.08 };
+  return {
+    parentCodes,
+    balanceCode,
+    grn: {
+      id: 'SIL/GRN/26-27/205',
+      grnNo: 'SIL/GRN/26-27/205',
+      status: 'Approved',
+      qcStatus: 'Approved',
+      stockItemId: 'INVT-0010',
+      itemName: 'PET-650-12',
+      lineItems: [{
+        id: lineId,
+        lineNo: 1,
+        itemName: 'PET-650-12',
+        stockItemId: 'INVT-0010',
+        netWeightKg: 1499.4,
+        ...(includeLineRolls ? { rolls: [...parentRolls, balanceRoll] } : {})
+      }]
+    },
+    rolls: [
+      ...parentCodes.map((barcodeId) => ({
+        barcodeId,
+        grnId: 'SIL/GRN/26-27/205',
+        grn_id: 'SIL/GRN/26-27/205',
+        grnLineItemId: lineId,
+        grn_line_item_id: lineId,
+        netWeightKg: 180
+      })),
+      {
+        barcodeId: balanceCode,
+        grnId: 'SIL/GRN/26-27/205',
+        grn_id: 'SIL/GRN/26-27/205',
+        grnLineItemId: lineId,
+        grn_line_item_id: lineId,
+        netWeightKg: 158.08
+      }
+    ]
+  };
+}
+
+function listedBarcodes(entry) {
+  return String(entry?.barcode || '').split(',').map((code) => code.trim()).filter(Boolean);
+}
+
+test('a GRN line lists its receipt rolls and leaves the balance roll off that row', () => {
+  const { grn, rolls, parentCodes, balanceCode } = grn205Line({ includeLineRolls: true });
+  const [entry] = grnInwardLedgerEntries(grn, { id: 'INVT-0010', itemName: 'PET-650-12' }, rolls);
+  assert.deepEqual(listedBarcodes(entry), parentCodes);
+  assert.equal(listedBarcodes(entry).includes(balanceCode), false);
+  assert.equal(entry.rollCount, 8);
+  assert.equal(entry.qty, 1499.4);
+});
+
+test('the GRN id fallback lists receipt rolls and leaves the balance roll off', () => {
+  const { grn, rolls, parentCodes, balanceCode } = grn205Line({ includeLineRolls: false });
+  const [entry] = grnInwardLedgerEntries(grn, { id: 'INVT-0010', itemName: 'PET-650-12' }, rolls);
+  assert.deepEqual(listedBarcodes(entry), parentCodes);
+  assert.equal(listedBarcodes(entry).includes(balanceCode), false);
+  assert.equal(entry.rollCount, 8);
+  assert.equal(entry.qty, 1499.4);
+});
+
 test('a deleted roll is not ledger stock, and a row keeps its own rate', () => {
   assert.deepEqual(rollBelongsOnItemLedger({
     itemId: 'INVT-0010',

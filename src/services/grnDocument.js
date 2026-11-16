@@ -9,6 +9,7 @@ import {
   planReceiptStockLink,
   resolveQcStockTarget
 } from './inventoryIdentity.js';
+import { isBalanceSticker } from '../utils/balanceRollDetails.js';
 
 function asNumber(value, fallback = 0) {
   const n = Number(value);
@@ -787,6 +788,38 @@ export function applyMultiLineQc({ grn, draftsByLineId, status, formatFilmItemNa
       : 'QC Hold Store'
   })));
   return { updatedGRN, stockPosts, rollPatches };
+}
+
+/**
+ * Rolls a QC approval may update from the receipt line patches.
+ * A balance sticker keeps the parent GRN line id. Matching it by that line
+ * would replace its weight with a parent roll's. It is left unchanged.
+ */
+export function qcApprovalFallbackRolls(inventoryRolls, rollPatches, grn) {
+  const patches = (Array.isArray(rollPatches) ? rollPatches : []).filter((patch) => patch && !isBalanceSticker(patch));
+  const byBarcode = new Map(
+    patches.filter((patch) => patch.barcodeId).map((patch) => [String(patch.barcodeId), patch])
+  );
+  const matchingRolls = (inventoryRolls || []).filter((roll) => {
+    if (!roll || isBalanceSticker(roll)) return false;
+    return (
+      (roll.grnNo && (roll.grnNo === grn?.grnNo || roll.grnNo === grn?.id))
+      || (roll.grnId && (roll.grnId === grn?.id || roll.grnId === grn?.grnNo))
+      || byBarcode.has(String(roll.barcodeId || roll.id))
+    );
+  });
+  return matchingRolls.map((roll) => {
+    const patch = byBarcode.get(String(roll.barcodeId || roll.id))
+      || patches.find((item) => item.grnLineItemId && item.grnLineItemId === roll.grnLineItemId);
+    if (!patch) return roll;
+    return {
+      ...roll,
+      ...patch,
+      availableWeightKg: patch.netWeightKg,
+      grnId: roll.grnId || grn?.id || grn?.grnNo,
+      grnLineItemId: patch.grnLineItemId || roll.grnLineItemId
+    };
+  });
 }
 
 export function pdfLinesFromGrn(grn) {

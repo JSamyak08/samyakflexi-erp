@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   applyMultiLineQc,
+  qcApprovalFallbackRolls,
   findDuplicateInvoice,
   grnIdentityProblems,
   grnLineIdentityGaps,
@@ -291,4 +292,55 @@ test('new roll barcodes are inserted into the on-screen list', () => {
   );
   assert.deepEqual(merged.map((roll) => roll.barcodeId), ['NEW', 'OLD']);
   assert.equal(merged.find((roll) => roll.barcodeId === 'OLD').netWeightKg, 2);
+});
+
+test('the QC fallback does not select a balance roll that shares the GRN line', () => {
+  const lineId = 'SIL/GRN/26-27/205-L1';
+  const grn = { id: 'SIL/GRN/26-27/205', grnNo: 'SIL/GRN/26-27/205' };
+  const parentBarcode = 'RM-BC-SIL/GRN/26-27/205-L1-R2';
+  const balanceBarcode = 'RM-BC-SIL/GRN/26-27/205-L1-R2-BAL';
+  const patches = [
+    { barcodeId: balanceBarcode, grnLineItemId: lineId, netWeightKg: 158.08 },
+    { barcodeId: parentBarcode, grnLineItemId: lineId, netWeightKg: 200.5 }
+  ];
+  const parent = {
+    barcodeId: parentBarcode,
+    grnId: grn.id,
+    grnLineItemId: lineId,
+    netWeightKg: 180,
+    availableWeightKg: 180
+  };
+  const lineOnly = {
+    barcodeId: 'RM-BC-SIL/GRN/26-27/205-L1-R9',
+    grnId: grn.id,
+    grnLineItemId: lineId,
+    netWeightKg: 10,
+    availableWeightKg: 10
+  };
+  const balance = {
+    barcodeId: balanceBarcode,
+    grnId: grn.id,
+    grnNo: grn.grnNo,
+    grnLineItemId: lineId,
+    netWeightKg: 158.08,
+    availableWeightKg: 158.08,
+    balanceRoll: true
+  };
+  const flagged = {
+    barcodeId: 'RM-BC-SIL/GRN/26-27/205-L1-R3',
+    balanceRoll: true,
+    grnId: grn.id,
+    grnLineItemId: lineId,
+    netWeightKg: 40,
+    availableWeightKg: 40
+  };
+  const updated = qcApprovalFallbackRolls([parent, lineOnly, balance, flagged], patches, grn);
+  assert.deepEqual(updated.map((roll) => roll.barcodeId), [parentBarcode, parentBarcode]);
+  assert.ok(updated.every((roll) => roll.availableWeightKg === 200.5 && roll.netWeightKg === 200.5));
+  assert.equal(updated.some((roll) => /-BAL$/i.test(String(roll.barcodeId || '')) || roll.balanceRoll === true), false);
+  assert.equal(balance.barcodeId, balanceBarcode);
+  assert.equal(balance.netWeightKg, 158.08);
+  assert.equal(balance.availableWeightKg, 158.08);
+  assert.equal(flagged.netWeightKg, 40);
+  assert.equal(flagged.availableWeightKg, 40);
 });
