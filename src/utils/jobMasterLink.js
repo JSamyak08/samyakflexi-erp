@@ -40,6 +40,14 @@ export function skuAfterJobMasterSync(cylinder) {
  * SKU to store when an operator links this cylinder to a job master.
  * The job master's code is adopted only when no other cylinder already has it.
  */
+/** Cylinder list label, for example Linked to JM-2026-570 (SKU-CYL-514). */
+export function linkedJobMasterLabel(jobMaster) {
+  const id = String(jobMaster?.id || '').trim();
+  if (!id) return '';
+  const sku = String(jobMaster?.skuCode || jobMaster?.sku || jobMaster?.cylinderSku || '').trim();
+  return sku ? `Linked to ${id} (${sku})` : `Linked to ${id}`;
+}
+
 export function skuWhenLinkingCylinder(cylinder, jobMaster, cylinders) {
   const own = cylinder?.sku ?? '';
   const wanted = String(jobMaster?.skuCode || jobMaster?.cylinderSku || '').trim();

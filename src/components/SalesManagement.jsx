@@ -44,7 +44,9 @@ import {
   fetchSalesQuotations, 
   saveSalesQuotationToSupabase, 
   deleteSalesQuotationFromSupabase,
-  allocateOrderIdFromServer
+  allocateOrderIdFromServer,
+  allocateCylinderSkusFromServer,
+  releaseCylinderSkuReservation
 } from '../services/supabaseDataService';
 
 // Standard Material Formats for Flexible Packaging & Cylinders
@@ -952,15 +954,27 @@ export default function SalesManagement({
       let materialRequirements = [];
       let calcResults = null;
       let structure = item.structure || layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') || 'Custom Flexible Packaging';
+      let cylinderSku = '';
 
       if (isCylinderQuote) {
-        const cylinderSku = `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+        try {
+          const [issued] = await allocateCylinderSkusFromServer(1);
+          cylinderSku = issued || '';
+        } catch (err) {
+          alert(`A cylinder code was not issued by the database: ${err?.message || err}`);
+          return;
+        }
+        if (!cylinderSku) {
+          alert('A cylinder code was not issued by the database.');
+          return;
+        }
         const engraverName = item.engraverName || 'Jindal Engravers, Mathura';
         const cylinderCost = `₹ ${parseFloat(item.cylinderCost || 35000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
         const newCyl = {
           id: `CYL-REC-${Date.now()}-${itemIdx}`,
           sku: cylinderSku,
+          skuAllocated: true,
           jobName: item.jobTitle || 'Rotogravure Cylinder Set',
           clientGroup: qtn.clientName,
           colorsCount: parseInt(item.colorsCount) || 8,
@@ -973,7 +987,14 @@ export default function SalesManagement({
         };
 
         if (onAddCylinder) {
-          onAddCylinder(newCyl);
+          try {
+            const saved = await onAddCylinder(newCyl);
+            if (saved?.sku) cylinderSku = saved.sku;
+          } catch (err) {
+            try { await releaseCylinderSkuReservation(cylinderSku); } catch { /* the code stays reserved */ }
+            alert(`The cylinder was not saved: ${err?.message || err}`);
+            return;
+          }
         }
       } else {
         // Run full material calculation engine with confirmed pre-costing rates
@@ -1093,9 +1114,17 @@ export default function SalesManagement({
         layers,
         orderComments: item.orderComments || '',
         comments: item.orderComments || '',
-        jobDetails: { layers, printWidthMm, repeatLengthMm, structure, orderComments: item.orderComments || '', comments: item.orderComments || '' },
+        jobDetails: {
+          layers,
+          printWidthMm,
+          repeatLengthMm,
+          structure,
+          orderComments: item.orderComments || '',
+          comments: item.orderComments || '',
+          ...(isCylinderQuote ? { skuCode: cylinderSku, cylinderSku } : {})
+        },
         cylinderDetails: isCylinderQuote ? {
-          sku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
+          sku: cylinderSku,
           jobName: item.jobTitle,
           description: item.jobTitle,
           quantity: orderQtyKg,

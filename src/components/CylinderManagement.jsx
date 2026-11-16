@@ -45,9 +45,9 @@ import {
   reconcileCylinderCosts,
   storedEngravingRate
 } from '../utils/cylinderCost';
-import { cylinderSkuTaken, nextCylinderSku, planBulkCylinderSkus } from '../utils/cylinderSku';
+import { cylinderSkuTaken, planBulkCylinderSkus } from '../utils/cylinderSku';
 import { allocateJobMasterIds } from '../utils/jobMasterId';
-import { skuWhenLinkingCylinder } from '../utils/jobMasterLink';
+import { linkedJobMasterLabel, skuWhenLinkingCylinder } from '../utils/jobMasterLink';
 import { allocateCylinderSkusFromServer, allocateJobMasterIdsFromServer, releaseCylinderSkuReservation } from '../services/supabaseDataService';
 import { reportBackgroundFailure } from '../utils/backgroundFailure';
 import { cylinderIdentityKey, displayArtworkUrl } from '../utils/cylinderArtwork';
@@ -473,10 +473,9 @@ export default function CylinderManagement({
     try {
       const [issued] = await allocateCylinderSkusFromServer(1);
       if (issued) rememberAllocatedSku(issued);
+      else alert('A cylinder code was not issued by the database.');
     } catch (err) {
-      console.warn('[cylinders] Server SKU allocation is unavailable:', err?.message || err);
-      const fallback = nextCylinderSku(cylinders);
-      if (fallback) setSku(fallback);
+      alert(`A cylinder code was not issued by the database: ${err?.message || err}`);
     }
     } finally {
       allocatingRef.current = false;
@@ -966,7 +965,7 @@ export default function CylinderManagement({
         });
       }
 
-      const isValid = Boolean(computedSku && computedJobName && !plan.collision);
+      const isValid = Boolean(computedJobName && !plan.collision && (computedSku || plan.generated));
 
       return {
         id: `CYL-BULK-${Date.now()}-${idx}`,
@@ -1331,9 +1330,9 @@ export default function CylinderManagement({
                               {linkedJm ? (
                                 <span 
                                   style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', display: 'inline-flex', alignItems: 'center', gap: '3px', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: '700' }}
-                                  title={`Linked to Job Master template ${linkedJm.skuCode || linkedJm.id}`}
+                                  title={linkedJobMasterLabel(linkedJm)}
                                 >
-                                  <Link size={10} /> Linked to JM ({linkedJm.skuCode || linkedJm.id})
+                                  <Link size={10} /> {linkedJobMasterLabel(linkedJm)}
                                 </span>
                               ) : (
                                 <button
@@ -1604,7 +1603,7 @@ export default function CylinderManagement({
                       <tr key={idx} style={{ background: job.isValid ? 'transparent' : '#fef2f2' }}>
                         <td>{idx + 1}</td>
                         <td style={{ fontWeight: '700', color: job.skuCollision ? '#dc2626' : 'var(--primary-brand)' }}>
-                          {job.sku}
+                          {job.sku || (job.skuAllocated ? 'Assigned on import' : '')}
                           {job.skuMessage && (
                             <div style={{ fontSize: '0.68rem', color: '#dc2626', fontWeight: '700' }}>{job.skuMessage}</div>
                           )}

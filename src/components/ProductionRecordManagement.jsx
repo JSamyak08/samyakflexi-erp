@@ -37,6 +37,7 @@ import WeighingScaleInput from './WeighingScaleInput';
 import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
+import { cylindersLinkedToJobMaster } from '../utils/jobMasterLink';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap, getOrderStageInfo } from '../factoryStore';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
@@ -1564,9 +1565,12 @@ export default function ProductionRecordManagement({
         (j.jobName && j.jobName.toLowerCase().includes(String(targetJobCard).toLowerCase()))
       );
       if (matchJm) {
+        const explicit = cylindersLinkedToJobMaster(cylinders, matchJm);
+        const linkedCyl = explicit.length === 1 ? explicit[0] : null;
         setActiveTab('job_cards');
         setActiveJobCardData({
           jobMasterId: matchJm.id,
+          ...(linkedCyl ? { id: linkedCyl.id, cylinderId: linkedCyl.id } : {}),
           skuCode: matchJm.skuCode,
           jobName: matchJm.jobName,
           clientName: matchJm.clientName,
