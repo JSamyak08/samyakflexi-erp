@@ -45,12 +45,14 @@ test('every cylinder-code generator asks the database and does not count in the 
   assert.match(jobCard, /mode: plan\.cylinderMode/);
   assert.doesNotMatch(jobCard, /getNextDocRefNumber|CYL-\$\{targetSku|CYL-\$\{targetJobMaster/);
 
-  const quoteStart = sales.indexOf('if (isCylinderQuote)');
-  const quoteEnd = sales.indexOf('} else {', quoteStart);
-  const quote = sales.slice(quoteStart, quoteEnd);
-  assert.match(quote, /allocateCylinderSkusFromServer\(/);
-  assert.doesNotMatch(quote, /Math\.random|clientName\.substring/);
-  assert.match(sales, /sku: cylinderSku/);
+  const conversion = readSrc('src/utils/quoteConversion.js');
+  const quoteStart = conversion.indexOf('if (isCylinderQuote)');
+  const quoteEnd = conversion.indexOf('} else {', quoteStart);
+  const quote = conversion.slice(quoteStart, quoteEnd);
+  assert.match(quote, /allocateCylinderSku\(/);
+  assert.doesNotMatch(quote, /Math\.random|clientName\.substring|CYL-XXX-001/);
+  assert.match(conversion, /sku: cylinderSku/);
+  assert.match(conversion, /mode: 'insert'/);
 
   const getter = settings.slice(
     settings.indexOf('export function getNextDocRefNumber'),
