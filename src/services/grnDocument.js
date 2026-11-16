@@ -822,6 +822,76 @@ export function qcApprovalFallbackRolls(inventoryRolls, rollPatches, grn) {
   });
 }
 
+/**
+ * Rolls a one-line QC approval may update.
+ * A balance sticker can share the GRN number. Leaving it in the matched list
+ * shifts the index, so a later receipt roll would take the wrong weight.
+ * The balance roll is not returned and is not given an index.
+ */
+export function singleLineQcRollUpdates({
+  inventoryRolls,
+  grn,
+  breakdown,
+  verifiedNetWeight = 0,
+  verifiedGrossWeight = 0,
+  verifiedTareWeight = 0,
+  verifiedWidth,
+  verifiedMicron,
+  verifiedFilmType,
+  verifiedItemName,
+  verifiedBatchNo,
+  isFilm = false,
+  isApproved = false,
+  finalStatus = '',
+  finalQcStatus = '',
+  category = '',
+  inspectorName = '',
+  hasVariances = false,
+  calculateFilmRollLength
+} = {}) {
+  const barcodes = new Set([
+    ...(Array.isArray(grn?.barcodes) ? grn.barcodes : []),
+    ...(Array.isArray(grn?.itemsBreakdown) ? grn.itemsBreakdown.map((item) => item?.barcodeId).filter(Boolean) : [])
+  ]);
+  const patches = (Array.isArray(breakdown) ? breakdown : []).filter((item) => item && !isBalanceSticker(item));
+  const matchingRolls = (inventoryRolls || []).filter((roll) => {
+    if (!roll || isBalanceSticker(roll)) return false;
+    return (
+      (roll.grnNo && (roll.grnNo === grn?.grnNo || roll.grnNo === grn?.id))
+      || (roll.grn_no && (roll.grn_no === grn?.grnNo || roll.grn_no === grn?.id))
+      || (roll.invoiceNo && grn?.invoiceNo && roll.invoiceNo === grn.invoiceNo)
+      || barcodes.has(roll.barcodeId || roll.id)
+    );
+  });
+  const share = matchingRolls.length || 1;
+  return matchingRolls.map((roll, idx) => {
+    const correspondingItem = patches[idx] || patches[0] || {};
+    const rollNet = parseFloat(correspondingItem.netWeightKg) || Number((Number(verifiedNetWeight) / share).toFixed(2));
+    const rollGross = parseFloat(correspondingItem.grossWeightKg) || Number((Number(verifiedGrossWeight) / share).toFixed(2));
+    const rollTare = parseFloat(correspondingItem.tareWeightKg) || Number((Number(verifiedTareWeight) / share).toFixed(2));
+    const rollLength = correspondingItem.lengthMeters || (isFilm && calculateFilmRollLength
+      ? calculateFilmRollLength(rollNet, verifiedWidth, verifiedMicron, verifiedFilmType)
+      : roll.lengthMeters);
+    return {
+      ...roll,
+      status: isApproved ? 'In Stock' : 'QC Hold',
+      qcStatus: finalQcStatus,
+      locationBay: isApproved ? (category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
+      filmType: verifiedFilmType,
+      micron: verifiedMicron,
+      widthMm: verifiedWidth,
+      itemName: verifiedItemName,
+      batchNo: verifiedBatchNo,
+      netWeightKg: rollNet,
+      availableWeightKg: rollNet,
+      grossWeightKg: rollGross,
+      tareWeightKg: rollTare,
+      lengthMeters: rollLength,
+      notes: `${roll.notes || ''} | QC ${finalStatus} by ${inspectorName}${hasVariances ? ' (Specs Revised)' : ''}`.trim()
+    };
+  });
+}
+
 export function pdfLinesFromGrn(grn) {
   const lines = Array.isArray(grn?.lineItems) && grn.lineItems.length > 0
     ? grn.lineItems
