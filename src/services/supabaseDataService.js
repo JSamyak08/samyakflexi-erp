@@ -1416,6 +1416,10 @@ export function cylinderDuplicateMessage(cylinderId) {
   return `Cylinder ${cylinderId} already exists. It was not overwritten.`;
 }
 
+export function orderConfirmationDuplicateMessage(ocnId) {
+  return `Order confirmation ${ocnId} already exists. It was not overwritten.`;
+}
+
 function isPrimaryKeyConflict(error) {
   const message = String(error?.message || error?.details || '').toLowerCase();
   return String(error?.code || '') === '23505' && message.includes('_pkey');
@@ -1458,6 +1462,41 @@ export async function allocateOrderIdFromServer() {
   const [id] = await allocateOrderIdsFromServer(1);
   if (!id) throw new Error('The database did not return an order number.');
   return id;
+}
+
+async function allocateDocumentNumbers(rpcName, count, label) {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured.');
+  }
+  const requested = Math.max(1, Math.min(500, parseInt(count, 10) || 1));
+  const { data, error } = await supabase.rpc(rpcName, { p_count: requested });
+  if (error) handleSupabaseError(error, rpcName);
+  const issued = Array.isArray(data) ? data : (data ? [data] : []);
+  const numbers = issued.map((value) => String(value || '').trim()).filter(Boolean);
+  if (numbers.length < requested) {
+    throw new Error(`The database did not return a ${label}.`);
+  }
+  return numbers;
+}
+
+export async function allocateOcnNumbersFromServer(count = 1) {
+  return allocateDocumentNumbers('allocate_ocn_number', count, 'OCN number');
+}
+
+export async function allocateOcnNumberFromServer() {
+  const [number] = await allocateOcnNumbersFromServer(1);
+  if (!number) throw new Error('The database did not return an OCN number.');
+  return number;
+}
+
+export async function allocateQuotationNumbersFromServer(count = 1) {
+  return allocateDocumentNumbers('allocate_quotation_number', count, 'quotation number');
+}
+
+export async function allocateQuotationNumberFromServer() {
+  const [number] = await allocateQuotationNumbersFromServer(1);
+  if (!number) throw new Error('The database did not return a quotation number.');
+  return number;
 }
 
 export async function allocateDeliveryChallanNo() {
@@ -3109,6 +3148,7 @@ export async function saveJobMasterToSupabase(jobMaster, options = {}) {
         : `Job master ${id} was not updated.`
     );
   }
+  return { id };
 }
 
 export async function deleteJobMasterFromSupabase(jobMasterId) {
@@ -4796,12 +4836,13 @@ export async function fetchOrderConfirmations() {
 /**
  * Save or update an Order Confirmation Note in Supabase and cache
  */
-export async function saveOrderConfirmation(ocn) {
+export async function saveOrderConfirmation(ocn, options = {}) {
   if (!ocn || !ocn.ocnNumber) {
     console.warn('Cannot save order confirmation without ocnNumber');
     return ocn;
   }
 
+  const mode = options.mode === 'insert' ? 'insert' : 'upsert';
   const id = ocn.id || ocn.ocnNumber;
   const ocnNumber = ocn.ocnNumber || id;
   const fullOcn = {
@@ -4816,17 +4857,6 @@ export async function saveOrderConfirmation(ocn) {
     updatedAt: new Date().toISOString()
   };
 
-  // 1. Update local cache immediately
-  const existingList = getCachedOrderConfirmations();
-  const idx = existingList.findIndex(x => x.id === id || x.ocnNumber === ocnNumber);
-  if (idx >= 0) {
-    existingList[idx] = fullOcn;
-  } else {
-    existingList.unshift(fullOcn);
-  }
-  cacheOrderConfirmations(existingList);
-
-  // 2. Persist to Supabase if configured
   if (isSupabaseConfigured()) {
     try {
       const row = {
@@ -4845,8 +4875,16 @@ export async function saveOrderConfirmation(ocn) {
         updated_at: fullOcn.updatedAt
       };
 
-      const { error } = await supabase.from('order_confirmations').upsert(row, { onConflict: 'id' });
+      const write = mode === 'insert'
+        ? supabase.from('order_confirmations').insert(row).select('id')
+        : supabase.from('order_confirmations').upsert(row, { onConflict: 'id' });
+      const { error } = await write;
       if (error) {
+        if (mode === 'insert' && (isPrimaryKeyConflict(error) || String(error.code || '') === '23505')) {
+          const duplicate = new Error(orderConfirmationDuplicateMessage(id));
+          duplicate.code = '23505';
+          throw duplicate;
+        }
         throw new Error(error.message || 'The order confirmation was not saved.');
       }
     } catch (err) {
@@ -4854,6 +4892,15 @@ export async function saveOrderConfirmation(ocn) {
       throw err;
     }
   }
+
+  const existingList = getCachedOrderConfirmations();
+  const idx = existingList.findIndex(x => x.id === id || x.ocnNumber === ocnNumber);
+  if (idx >= 0) {
+    existingList[idx] = fullOcn;
+  } else {
+    existingList.unshift(fullOcn);
+  }
+  cacheOrderConfirmations(existingList);
 
   return fullOcn;
 }

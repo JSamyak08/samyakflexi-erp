@@ -28,14 +28,13 @@ import {
 import OrderConfirmationPDF from './OrderConfirmationPDF';
 import OrderConfirmationRegister from './OrderConfirmationRegister';
 import { notifyOrderPunched } from '../services/emailService';
-import { allocateOrderIdFromServer } from '../services/supabaseDataService';
+import { allocateOrderIdFromServer, allocateOcnNumberFromServer } from '../services/supabaseDataService';
+import { buildOrderConfirmationRecord, findClientForOcn } from '../utils/orderConfirmationRecord';
 import { 
   getProcessingRates, 
   saveProcessingRates, 
-  getNextDocRefNumber, 
   getMaterialCostSettings, 
-  fetchMaterialCostSettingsFromSupabase,
-  syncOcnCounterWithRecords
+  fetchMaterialCostSettingsFromSupabase
 } from '../services/settingsService';
 
 export default function JobPunchingForm({ 
@@ -55,13 +54,6 @@ export default function JobPunchingForm({
   // Navigation / View State
   const [activeView, setActiveView] = useState(() => (urlParams?.view === 'ocns' ? 'ocns' : 'form'));
   const [activeOcnForPdf, setActiveOcnForPdf] = useState(null);
-
-  // Sync OCN counter with existing records on mount/change
-  useEffect(() => {
-    if (Array.isArray(ocns) && ocns.length > 0) {
-      syncOcnCounterWithRecords(ocns);
-    }
-  }, [ocns]);
 
   useEffect(() => {
     if (urlParams?.view === 'ocns') {
@@ -379,19 +371,10 @@ export default function JobPunchingForm({
   };
 
   // Lookup matched client in Client Directory
-  const matchedClient = useMemo(() => {
-    if (!clientName) return null;
-    const search = clientName.toLowerCase().trim();
-    if (!search) return null;
-
-    const list = (clients && clients.length > 0) ? clients : [];
-    return list.find(c => (c.name || c.companyName || '').toLowerCase().trim() === search) ||
-           list.find(c => (c.name || c.companyName || '').toLowerCase().includes(search) || search.includes((c.name || c.companyName || '').toLowerCase().trim())) ||
-           list.find(c => {
-             const firstWord = search.split(' ')[0];
-             return firstWord && firstWord.length > 3 && (c.name || c.companyName || '').toLowerCase().includes(firstWord);
-           }) || null;
-  }, [clientName, clients]);
+  const matchedClient = useMemo(
+    () => findClientForOcn(clients, clientName),
+    [clientName, clients]
+  );
 
   // Price Modal / Section toggle
   const [showPDFModal, setShowPDFModal] = useState(false);
@@ -571,7 +554,13 @@ export default function JobPunchingForm({
       alert(`An order number was not issued: ${err.message || err}`);
       return;
     }
-    const ocnNumber = getNextDocRefNumber('ocn');
+    let ocnNumber;
+    try {
+      ocnNumber = await allocateOcnNumberFromServer();
+    } catch (err) {
+      alert(`An OCN number was not issued: ${err.message || err}`);
+      return;
+    }
 
     const newOrder = {
       id: orderId,
@@ -634,44 +623,29 @@ export default function JobPunchingForm({
     };
 
     const ocnMetallocene = finalLayers.find(l => l.metallocenePct)?.metallocenePct || '';
-    const ocnRecord = {
-      id: ocnNumber,
+    const punchedAt = new Date();
+    const ocnRecord = buildOrderConfirmationRecord({
       ocnNumber,
       orderId: newOrder.id,
       jobName,
       clientName,
       clientDetails: matchedClient,
-      orderDate: new Date().toISOString().split('T')[0],
+      orderDate: punchedAt.toISOString().split('T')[0],
       targetDeliveryDate: targetDate.toISOString().split('T')[0],
-      orderQtyKg: parseFloat(orderQtyKg) || 0,
+      orderQtyKg,
       orderType: orderType || 'Reel',
-      printWidthMm: parseFloat(printWidthMm) || 0,
-      repeatLengthMm: parseFloat(repeatLengthMm) || 0,
-      totalLaminateGsm: calculationResults.totalLaminateGsm || 0,
-      totalAreaSqm: calculationResults.totalAreaSqm || 0,
-      wastagePct: parseFloat(calculationResults.wastagePct) || 5,
-      minSellingPricePerKg: calculationResults.minSellingPricePerKg || 0,
-      totalMinSellingAmount: calculationResults.totalMinSellingAmount || 0,
-      conversionChargesPerKg: parseFloat(conversionCharges) || 0,
-      fixedProfitPerKg: parseFloat(fixedProfit) || 0,
+      printWidthMm,
+      repeatLengthMm,
+      calculationResults,
+      conversionCharges,
+      fixedProfit,
       metallocenePct: ocnMetallocene,
       layers: finalLayers,
-      structure: finalLayers.map(l => `${l.filmType} ${l.micron}µ${l.metallocenePct ? ` (${String(l.metallocenePct).endsWith('%') ? l.metallocenePct : `${l.metallocenePct}%`})` : ''}`).join(' / '),
       variants: finalVariants,
       hasVariants,
-      calculationData: { ...calculationResults, clientName, jobName, orderQtyKg, orderType, layers: finalLayers },
-      summary: calculationResults.summary || {},
-      layerResults: calculationResults.layerResults || [],
-      inkDetails: calculationResults.inkDetails || {},
-      adhesiveDetails: calculationResults.adhesiveDetails || {},
       orderComments,
-      status: 'Confirmed',
-      revisionNo: 0,
-      amendmentNo: 'Rev 00',
-      revisions: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+      now: punchedAt
+    });
 
     try {
       if (onSaveOrder) await onSaveOrder(newOrder);

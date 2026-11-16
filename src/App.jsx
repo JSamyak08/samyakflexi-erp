@@ -108,7 +108,7 @@ import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
-import { getDocumentPrefixes, getNextDocRefNumber, syncOcnCounterWithRecords } from './services/settingsService';
+import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, isAuthCallbackLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
@@ -610,7 +610,7 @@ export default function App() {
 
   const handleSaveOcn = async (ocnRecord) => {
     requireDatabaseConnection('save order confirmation');
-    const saved = await saveOrderConfirmation(ocnRecord);
+    const saved = await saveOrderConfirmation(ocnRecord, { mode: 'insert' });
     setOcns(prev => {
       const currentList = Array.isArray(prev) ? prev : [];
       const next = [saved, ...currentList.filter(item => item && item.id !== saved.id && item.ocnNumber !== saved.ocnNumber)];
@@ -1647,7 +1647,6 @@ export default function App() {
           const cleanOcns = recordsAfterDataLoad(supaOcns);
           setOcns(cleanOcns);
           remember('job_punching', 'samyak_cache_order_confirmations', cleanOcns);
-          syncOcnCounterWithRecords(cleanOcns);
         }
 
         if (allow('barcodes')) {
@@ -1977,7 +1976,6 @@ export default function App() {
               const clean = recordsAfterDataLoad(data);
               setOcns(clean);
               safeLocalStorageSet('samyak_cache_order_confirmations', clean);
-              syncOcnCounterWithRecords(clean);
             }
           } else if (table === 'system_settings') {
             const settings = await fetchAllSystemSettings();
@@ -3857,12 +3855,10 @@ export default function App() {
         reportBackgroundFailure(err, 'A cylinder order number was not issued', { toast: false });
         return;
       }
-      const ocnNo = getNextDocRefNumber('ocn');
       const numericCost = parseFloat(String(cyl.cylinderCost || '').replace(/[^0-9.]/g, '')) || 35000;
-      
+
       const cylOrder = {
         id: orderId,
-        ocnNumber: ocnNo,
         jobName: cyl.jobName || 'Rotogravure Cylinder Set',
         clientName: cyl.clientGroup || 'Standard Client',
         orderQtyKg: 1,
@@ -4436,12 +4432,14 @@ export default function App() {
     logAudit('DELETE', 'Clients', `Deleted client directory entry ${clientId}`, clientId);
   };
 
-  const handleAddJobMaster = async (newJobMaster) => {
+  const handleAddJobMaster = async (newJobMaster, options = {}) => {
     requireDatabaseConnection('add job master');
-    await saveJobMasterToSupabase(newJobMaster);
-    setJobMasters(prev => [...prev.filter(j => j.id !== newJobMaster.id), newJobMaster]);
-    logAudit('CREATE', 'Job Masters', `Created job master template "${newJobMaster.jobName}" (${newJobMaster.id})`, newJobMaster.id);
-    await syncJobMasterToCylinder(newJobMaster);
+    const saved = await saveJobMasterToSupabase(newJobMaster, options);
+    const stored = { ...newJobMaster, id: saved?.id || newJobMaster.id };
+    setJobMasters(prev => [...prev.filter(j => j.id !== stored.id), stored]);
+    logAudit('CREATE', 'Job Masters', `Created job master template "${stored.jobName}" (${stored.id})`, stored.id);
+    await syncJobMasterToCylinder(stored);
+    return stored;
   };
 
   const syncJobMasterToOrders = async (updatedJm) => {
@@ -6605,6 +6603,8 @@ export default function App() {
             onAddJobMaster={handleAddJobMaster}
             onAddClient={handleAddClient}
             onAddCylinder={handleAddCylinder}
+            onSaveOcn={handleSaveOcn}
+            onLogAudit={logAudit}
           />
         )}
 
@@ -6702,7 +6702,6 @@ export default function App() {
               const clean = recordsAfterDataLoad(data);
               setOcns(clean);
               safeLocalStorageSet('samyak_cache_order_confirmations', clean);
-              syncOcnCounterWithRecords(clean);
             }}
             urlParams={urlParams}
             activeUsername={currentUser?.username || currentUser?.name || sessionProfile?.username || 'Staff'}

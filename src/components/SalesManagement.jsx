@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { pushSlugState } from '../utils/slugRouter';
 import { anyAssignedRole } from '../assignedRoles';
 import { 
@@ -34,20 +34,23 @@ import SearchableSelect from './SearchableSelect';
 import { applyQuotationLineDescription } from '../utils/quotationLineDescription';
 import { 
   calculateJobRawMaterials,
-  isLDFilm,
   getFilmSlitWidth,
-  DEFAULT_DAILY_RATES,
-  DEFAULT_PROCESSING_RATES
+  DEFAULT_DAILY_RATES
 } from '../factoryStore';
-import { generateDocRefNumber, getNextDocRefNumber } from '../services/settingsService';
+import { getMaterialCostSettings } from '../services/settingsService';
 import { 
   fetchSalesQuotations, 
   saveSalesQuotationToSupabase, 
   deleteSalesQuotationFromSupabase,
   allocateOrderIdFromServer,
   allocateCylinderSkusFromServer,
+  allocateJobMasterIdsFromServer,
+  allocateOcnNumberFromServer,
+  allocateQuotationNumberFromServer,
   releaseCylinderSkuReservation
 } from '../services/supabaseDataService';
+import { confirmQuoteConversion } from '../utils/quoteConversion';
+import { reportBackgroundFailure } from '../utils/backgroundFailure';
 
 // Standard Material Formats for Flexible Packaging & Cylinders
 export const MATERIAL_FORMATS = [
@@ -198,7 +201,9 @@ export default function SalesManagement({
   onAddOrder,
   onAddJobMaster,
   onAddClient,
-  onAddCylinder
+  onAddCylinder,
+  onSaveOcn,
+  onLogAudit
 }) {
   const isSalesAuthorized = useMemo(() => {
     if (!currentUser && !userRole) return true;
@@ -245,8 +250,9 @@ export default function SalesManagement({
 
   // OCN Conversion Confirmation Modal State
   const [ocnConvertModalQtn, setOcnConvertModalQtn] = useState(null);
-  const [ocnDocRefNo, setOcnDocRefNo] = useState('');
   const [ocnConvertFormData, setOcnConvertFormData] = useState([]);
+  const [ocnConvertSaving, setOcnConvertSaving] = useState(false);
+  const ocnConvertLock = useRef(false);
 
   // Form State for Create / Edit / Amend Quotation
   const [editingQuotationId, setEditingQuotationId] = useState(null);
@@ -583,7 +589,7 @@ export default function SalesManagement({
   // Open Create Form — everything blank, no seed data
   const handleOpenCreateForm = () => {
     setEditingQuotationId(null);
-    setQuotationNo(generateDocRefNumber('qtn'));
+    setQuotationNo('');
     setRevisionNo(0);
     setAmendmentNo('Rev 00');
     setEnquiryDate(new Date().toISOString().split('T')[0]);
@@ -741,7 +747,15 @@ export default function SalesManagement({
       });
     });
 
-    const finalQtnNo = editingQuotationId ? quotationNo : getNextDocRefNumber('qtn');
+    let finalQtnNo = quotationNo;
+    if (!editingQuotationId) {
+      try {
+        finalQtnNo = await allocateQuotationNumberFromServer();
+      } catch (err) {
+        alert(`A quotation number was not issued: ${err.message || err}`);
+        return;
+      }
+    }
 
     const newQtn = {
       id: editingQuotationId || `QTN-${Date.now()}`,
@@ -804,8 +818,9 @@ export default function SalesManagement({
       return;
     }
 
-    const ocnNo = getNextDocRefNumber('ocn');
-    setOcnDocRefNo(ocnNo);
+    const costSettings = getMaterialCostSettings();
+    const defaultConversion = costSettings.conversionChargesPerKg !== undefined ? costSettings.conversionChargesPerKg : 45;
+    const defaultProfit = costSettings.fixedProfitPerKg !== undefined ? costSettings.fixedProfitPerKg : 25;
 
     // Build editable form data for each line item in quotation
     const rawItems = (qtn.items && qtn.items.length > 0) ? qtn.items : [qtn];
@@ -849,7 +864,11 @@ export default function SalesManagement({
         printWidthMm: parseFloat(it.printWidthMm) || 1000,
         repeatLengthMm: parseFloat(it.repeatLengthMm) || 400,
         quantityKg: parseFloat(it.quantity) || 1000,
-        ratePerUom: parseFloat(it.ratePerUom) || 250,
+        ratePerUom: it.ratePerUom !== undefined && it.ratePerUom !== null && it.ratePerUom !== ''
+          ? it.ratePerUom
+          : '',
+        conversionCharges: defaultConversion,
+        fixedProfit: defaultProfit,
         materialFormat: it.materialFormat || 'Roll Form',
         targetDeliveryDate: qtn.estimatedDeliveryDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         structure: it.structure || getStructureString(it) || layersData.map(l => `${l.filmType} ${l.micron}µ`).join(' / '),
@@ -925,260 +944,61 @@ export default function SalesManagement({
   };
 
   const handleConfirmAndPunchOCN = async () => {
+    if (ocnConvertLock.current) return;
     if (!ocnConvertModalQtn || !ocnConvertFormData || ocnConvertFormData.length === 0) return;
+    if (typeof onSaveOcn !== 'function') {
+      alert('The order confirmation cannot be saved from this screen.');
+      return;
+    }
 
     const qtn = ocnConvertModalQtn;
-    const ocnNo = ocnDocRefNo || getNextDocRefNumber('ocn');
-
-    const createdOrderIds = [];
-
-    for (let itemIdx = 0; itemIdx < ocnConvertFormData.length; itemIdx += 1) {
-      const item = ocnConvertFormData[itemIdx];
-      const isCylinderQuote = item.isCylinderOrder || item.materialFormat === 'Rotogravure Cylinder';
-      let orderId;
-      try {
-        orderId = await allocateOrderIdFromServer();
-      } catch (err) {
-        alert(`An order number was not issued: ${err.message || err}`);
-        return;
-      }
-      createdOrderIds.push(orderId);
-
-      const printWidthMm = parseFloat(item.printWidthMm) || 1000;
-      const repeatLengthMm = parseFloat(item.repeatLengthMm) || 400;
-      const orderQtyKg = parseFloat(item.quantityKg) || 1000;
-      const sellingPricePerKg = parseFloat(item.ratePerUom) || 250;
-      const orderType = String(item.materialFormat || '').toLowerCase().includes('pouch') ? 'Pouching' : 'Reel';
-
-      let layers = item.layers || [];
-      let materialRequirements = [];
-      let calcResults = null;
-      let structure = item.structure || layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ') || 'Custom Flexible Packaging';
-      let cylinderSku = '';
-
-      if (isCylinderQuote) {
-        try {
-          const [issued] = await allocateCylinderSkusFromServer(1);
-          cylinderSku = issued || '';
-        } catch (err) {
-          alert(`A cylinder code was not issued by the database: ${err?.message || err}`);
-          return;
+    ocnConvertLock.current = true;
+    setOcnConvertSaving(true);
+    let result;
+    try {
+      result = await confirmQuoteConversion({
+        quotation: qtn,
+        items: ocnConvertFormData,
+        jobMasters,
+        clients,
+        deps: {
+          allocateOrderId: () => allocateOrderIdFromServer(),
+          allocateOcnNumber: () => allocateOcnNumberFromServer(),
+          allocateCylinderSku: (count) => allocateCylinderSkusFromServer(count),
+          allocateJobMasterId: (count) => allocateJobMasterIdsFromServer(count),
+          releaseCylinderSku: (sku) => releaseCylinderSkuReservation(sku),
+          saveOrder: async (order) => {
+            try {
+              await onAddOrder(order);
+            } catch (err) {
+              err.alreadyAlerted = true;
+              throw err;
+            }
+          },
+          saveOcn: onSaveOcn,
+          saveQuotation: saveSalesQuotationToSupabase,
+          saveJobMaster: onAddJobMaster,
+          saveCylinder: onAddCylinder,
+          logAudit: onLogAudit,
+          reportFailure: (err, context) => reportBackgroundFailure(err, context, { toast: false })
         }
-        if (!cylinderSku) {
-          alert('A cylinder code was not issued by the database.');
-          return;
-        }
-        const engraverName = item.engraverName || 'Jindal Engravers, Mathura';
-        const cylinderCost = `₹ ${parseFloat(item.cylinderCost || 35000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-        const newCyl = {
-          id: `CYL-REC-${Date.now()}-${itemIdx}`,
-          sku: cylinderSku,
-          skuAllocated: true,
-          jobName: item.jobTitle || 'Rotogravure Cylinder Set',
-          clientGroup: qtn.clientName,
-          colorsCount: parseInt(item.colorsCount) || 8,
-          cylinderCost: cylinderCost,
-          engravuresName: engraverName,
-          costBorneBy: 'Client (100%)',
-          status: 'Under Engraving',
-          poIssued: false,
-          created_at: new Date().toISOString()
-        };
-
-        if (onAddCylinder) {
-          try {
-            const saved = await onAddCylinder(newCyl);
-            if (saved?.sku) cylinderSku = saved.sku;
-          } catch (err) {
-            try { await releaseCylinderSkuReservation(cylinderSku); } catch { /* the code stays reserved */ }
-            alert(`The cylinder was not saved: ${err?.message || err}`);
-            return;
-          }
-        }
-      } else {
-        // Run full material calculation engine with confirmed pre-costing rates
-        calcResults = calculateJobRawMaterials({
-          jobName: item.jobTitle,
-          printWidthMm,
-          repeatLengthMm,
-          orderQtyKg,
-          orderType,
-          inkGsm: parseFloat(item.inkGsm) || 1.5,
-          adhesiveGsm: parseFloat(item.adhesiveGsm) || 1.5,
-          layers: layers.map(l => ({
-            ...l,
-            pricePerKg: parseFloat(l.ratePerKg) || DEFAULT_DAILY_RATES[l.filmType] || 125
-          })),
-          inkPrice: parseFloat(item.inkPrice) || 220,
-          adhesivePrice: parseFloat(item.adhesivePrice) || 240
-        });
-
-        if (calcResults && calcResults.layerResults) {
-          calcResults.layerResults.forEach((layer, idx) => {
-            materialRequirements.push({
-              id: `REQ-${orderId}-${idx + 1}`,
-              filmType: layer.filmType,
-              micron: layer.micron,
-              widthMm: layer.widthMm,
-              qtyKg: parseFloat((layer.grossKg || 0).toFixed(2)),
-              preferredVendor: isLDFilm(layer.filmType) ? 'Malwa Extrusions Pvt Ltd' : 'FlexiPoly Films Ltd',
-              poIssued: false,
-              poNumber: ''
-            });
-          });
-
-          if (calcResults.inkDetails && calcResults.inkDetails.grossKg > 0) {
-            materialRequirements.push({
-              id: `REQ-${orderId}-INK`,
-              filmType: 'Liquid Inks',
-              micron: '-',
-              widthMm: '-',
-              qtyKg: parseFloat(calcResults.inkDetails.grossKg.toFixed(2)),
-              preferredVendor: 'Siegwerk Inks Ltd',
-              poIssued: false,
-              poNumber: ''
-            });
-          }
-
-          if (calcResults.adhesiveDetails && calcResults.adhesiveDetails.grossKg > 0) {
-            materialRequirements.push({
-              id: `REQ-${orderId}-ADH`,
-              filmType: 'Solvent-less Adhesive',
-              micron: '-',
-              widthMm: '-',
-              qtyKg: parseFloat(calcResults.adhesiveDetails.grossKg.toFixed(2)),
-              preferredVendor: 'Siegwerk Inks Ltd',
-              poIssued: false,
-              poNumber: ''
-            });
-          }
-        }
-      }
-
-      // Auto-create / Link Job Master
-      let effectiveJobMaster = null;
-      if (!isCylinderQuote) {
-        const existingJM = (jobMasters || []).find(j => 
-          (item.jobMasterId && j.id === item.jobMasterId) ||
-          (j.jobName && item.jobTitle && j.jobName.toLowerCase().trim() === item.jobTitle.toLowerCase().trim())
-        );
-
-        effectiveJobMaster = existingJM;
-        if (!effectiveJobMaster) {
-          effectiveJobMaster = {
-            id: item.jobMasterId || undefined,
-            skuCode: `SKU-${qtn.clientName.substring(0, 3).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`,
-            jobName: item.jobTitle || 'Custom Flexible Packaging Job',
-            clientName: qtn.clientName,
-            structure,
-            printWidthMm,
-            repeatLengthMm,
-            pouchOpenWidth: 120,
-            pouchHeight: 160,
-            materialFormat: item.materialFormat || 'Roll Form',
-            layers,
-            inkGsm: parseFloat(item.inkGsm) || 1.5,
-            adhesiveGsm: parseFloat(item.adhesiveGsm) || 1.5,
-            cylinderSku: `CYL-${qtn.clientName.substring(0, 3).toUpperCase()}-001`,
-            cylinderCost: qtn.cylinderTerms || '₹ 35,000',
-            colorsCount: 6,
-            engravuresName: 'Acme Rotogravure Engravers',
-            costBorneBy: 'Client (100%)',
-            utilisationLimit: 10000,
-            creationDate: new Date().toISOString().split('T')[0]
-          };
-
-          if (onAddJobMaster) {
-            onAddJobMaster(effectiveJobMaster);
-          }
-        }
-      }
-
-      // Create Order
-      const newOrder = {
-        id: orderId,
-        ocnNumber: ocnNo,
-        jobMasterId: effectiveJobMaster ? effectiveJobMaster.id : null,
-        jobName: item.jobTitle,
-        clientName: qtn.clientName,
-        orderQtyKg,
-        quantityKg: orderQtyKg,
-        orderType: isCylinderQuote ? 'Rotogravure Cylinder' : orderType,
-        materialFormat: item.materialFormat || 'Roll Form',
-        isCylinderOrder: isCylinderQuote,
-        sellingPricePerKg,
-        printWidthMm,
-        repeatLengthMm,
-        structure,
-        layers,
-        orderComments: item.orderComments || '',
-        comments: item.orderComments || '',
-        jobDetails: {
-          layers,
-          printWidthMm,
-          repeatLengthMm,
-          structure,
-          orderComments: item.orderComments || '',
-          comments: item.orderComments || '',
-          ...(isCylinderQuote ? { skuCode: cylinderSku, cylinderSku } : {})
-        },
-        cylinderDetails: isCylinderQuote ? {
-          sku: cylinderSku,
-          jobName: item.jobTitle,
-          description: item.jobTitle,
-          quantity: orderQtyKg,
-          rate: sellingPricePerKg,
-          totalAmount: item.cylinderCost || 35000,
-          engraverName: item.engraverName || 'Jindal Engravers, Mathura',
-          colorsCount: parseInt(item.colorsCount) || 8,
-          status: 'Under Engraving'
-        } : null,
-        engraverName: isCylinderQuote ? (item.engraverName || 'Jindal Engravers, Mathura') : undefined,
-        orderDate: new Date().toISOString().split('T')[0],
-        targetDeliveryDate: item.targetDeliveryDate || qtn.estimatedDeliveryDate,
-        deliveryDate: item.targetDeliveryDate || qtn.estimatedDeliveryDate,
-        poNumber: `PO-QTN-${qtn.quotationNo}`,
-        poIssued: false,
-        status: isCylinderQuote ? 'Under Engraving' : 'Confirmed',
-        materialRequirements,
-        rawMaterialRequirements: materialRequirements,
-        calculationDetails: calcResults
-      };
-
-      if (onAddOrder) {
-        try {
-          await onAddOrder(newOrder);
-        } catch {
-          return;
-        }
-      }
+      });
+    } finally {
+      ocnConvertLock.current = false;
+      setOcnConvertSaving(false);
     }
 
-    // Update Quotation Status
-    let updatedTarget = null;
-    const updatedQuotations = quotations.map(q => {
-      if (q.id === qtn.id) {
-        updatedTarget = {
-          ...q,
-          status: "Confirmed (Converted to OCN)",
-          ocnRefNo: ocnNo,
-          convertedDate: new Date().toISOString().split('T')[0]
-        };
-        return updatedTarget;
+    if (!result?.ok) {
+      if (!result?.alreadyAlerted) {
+        alert(result?.error || 'The quotation was not converted.');
       }
-      return q;
-    });
-
-    if (updatedTarget) {
-      await saveSalesQuotationToSupabase(updatedTarget);
+      return;
     }
-    setQuotations(updatedQuotations);
 
+    setQuotations((prev) => prev.map((row) => (row.id === result.quotation.id ? result.quotation : row)));
     setOcnConvertModalQtn(null);
     setOcnConvertFormData([]);
-
-    alert(`🎉 SUCCESS!\n\nSales Quotation ${qtn.quotationNo} has been CONVERTED to Order Confirmation Note (${ocnNo}).\n\n- Order ${createdOrderIds.join(', ')} is now LIVE across Production, Inventory & Cylinder scheduling!`);
+    alert(result.successMessage);
   };
 
   // Filtered Quotations
@@ -1527,14 +1347,16 @@ export default function SalesManagement({
           {/* Quotation Header Row */}
           <div className="form-grid-4" style={{ marginBottom: '20px' }}>
             <div>
-              <label className="form-label">Quotation Number *</label>
+              <label className="form-label">Quotation Number {editingQuotationId ? '*' : ''}</label>
               <input 
                 type="text" 
                 className="form-control" 
                 style={{ fontWeight: '800', fontFamily: 'monospace', color: 'var(--primary-brand)' }}
                 value={quotationNo} 
                 onChange={e => setQuotationNo(e.target.value)} 
-                required 
+                placeholder={editingQuotationId ? '' : 'Issued when this quotation is saved'}
+                readOnly={!editingQuotationId}
+                required={Boolean(editingQuotationId)}
               />
             </div>
 
@@ -2413,7 +2235,7 @@ export default function SalesManagement({
                     Convert Quotation to OCN & Pre-Costing Job Punching
                   </h3>
                   <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                    Quotation Ref: <strong>{ocnConvertModalQtn.quotationNo}</strong> | Client: <strong>{ocnConvertModalQtn.clientName}</strong> | Generated OCN: <strong style={{ color: '#047857' }}>{ocnDocRefNo}</strong>
+                    Quotation Ref: <strong>{ocnConvertModalQtn.quotationNo}</strong> | Client: <strong>{ocnConvertModalQtn.clientName}</strong> | One OCN number is issued for each job when you confirm.
                   </span>
                 </div>
               </div>
@@ -2442,8 +2264,15 @@ export default function SalesManagement({
                   pricePerKg: parseFloat(l.ratePerKg) || DEFAULT_DAILY_RATES[l.filmType] || 125
                 })),
                 inkPrice: parseFloat(item.inkPrice) || 220,
-                adhesivePrice: parseFloat(item.adhesivePrice) || 240
+                adhesivePrice: parseFloat(item.adhesivePrice) || 240,
+                conversionChargesPerKg: parseFloat(item.conversionCharges) || 0,
+                fixedProfitPerKg: parseFloat(item.fixedProfit) || 0
               }) : null;
+              const shownConversion = parseFloat(item.conversionCharges) || 0;
+              const shownProfit = parseFloat(item.fixedProfit) || 0;
+              const shownMinSelling = calc
+                ? (calc.minSellingPricePerKg || 0)
+                : parseFloat((shownConversion + shownProfit).toFixed(2));
 
               const totalSellingVal = Math.round((parseFloat(item.quantityKg) || 0) * (parseFloat(item.ratePerUom) || 0));
               const totalMatCost = Math.round(calc ? (calc.totalCost || calc.totalRawMaterialCost || (calc.summary && calc.summary.totalRawMaterialCost) || 0) : 0);
@@ -2557,6 +2386,57 @@ export default function SalesManagement({
                           onChange={e => handleUpdateOcnItemField(itemIdx, 'ratePerUom', e.target.value)} 
                         />
                         <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>/kg</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Conversion Charges / kg</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#1e40af' }}>₹</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          className="form-control"
+                          data-testid={`ocn-conversion-charges-${itemIdx}`}
+                          title="Conversion charges per kg for this job (default from Settings)"
+                          style={{ fontWeight: '800', color: '#1e40af', textAlign: 'right' }}
+                          value={item.conversionCharges !== undefined ? item.conversionCharges : ''}
+                          onChange={e => handleUpdateOcnItemField(itemIdx, 'conversionCharges', e.target.value === '' ? '' : (parseFloat(e.target.value) || 0))}
+                        />
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>/kg</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Fixed Profit / kg</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#047857' }}>₹</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          className="form-control"
+                          data-testid={`ocn-fixed-profit-${itemIdx}`}
+                          title="Fixed profit per kg for this job (default from Settings)"
+                          style={{ fontWeight: '800', color: '#047857', textAlign: 'right' }}
+                          value={item.fixedProfit !== undefined ? item.fixedProfit : ''}
+                          onChange={e => handleUpdateOcnItemField(itemIdx, 'fixedProfit', e.target.value === '' ? '' : (parseFloat(e.target.value) || 0))}
+                        />
+                        <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>/kg</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="form-label">Minimum Selling Price / kg</label>
+                      <div
+                        data-testid={`ocn-min-selling-price-${itemIdx}`}
+                        style={{ background: '#ecfdf5', border: '2px solid #059669', borderRadius: '8px', padding: '8px 10px' }}
+                      >
+                        <div style={{ fontSize: '0.72rem', color: '#047857', fontWeight: '600' }}>
+                          ₹{calc?.summary?.costPerKg || 0} (RM) + ₹{shownConversion} (Conv) + ₹{shownProfit} (Profit)
+                        </div>
+                        <strong style={{ fontSize: '1.15rem', color: '#047857' }}>₹{shownMinSelling} / kg</strong>
                       </div>
                     </div>
 
@@ -2805,8 +2685,9 @@ export default function SalesManagement({
                 className="btn-primary" 
                 style={{ padding: '10px 24px', fontWeight: '800', background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
                 onClick={handleConfirmAndPunchOCN}
+                disabled={ocnConvertSaving}
               >
-                <CheckCircle2 size={18} /> Confirm Specs & Punch Order to OCN
+                <CheckCircle2 size={18} /> {ocnConvertSaving ? 'Saving order and OCN…' : 'Confirm Specs & Punch Order to OCN'}
               </button>
             </div>
           </div>

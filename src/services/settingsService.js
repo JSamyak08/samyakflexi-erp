@@ -308,6 +308,12 @@ export function getNextDocRefNumber(type) {
   if (type === 'jm' || type === 'job_master' || type === 'jobMaster') {
     throw new Error('Job master ids are issued by the database (allocate_job_master_id). They are not taken from this browser.');
   }
+  if (type === 'ocn') {
+    throw new Error('OCN numbers are issued by the database (allocate_ocn_number). They are not taken from this browser.');
+  }
+  if (type === 'qtn' || type === 'quotation') {
+    throw new Error('Quotation numbers are issued by the database (allocate_quotation_number). They are not taken from this browser.');
+  }
   const config = getDocumentPrefixes();
   let num = 101;
   let key = '';
@@ -315,15 +321,9 @@ export function getNextDocRefNumber(type) {
   if (type === 'po') {
     num = config.poCounter || 246;
     key = 'poCounter';
-  } else if (type === 'ocn') {
-    num = config.ocnCounter || 108;
-    key = 'ocnCounter';
   } else if (type === 'grn') {
     num = config.grnCounter || 104;
     key = 'grnCounter';
-  } else if (type === 'qtn') {
-    num = config.qtnCounter || 501;
-    key = 'qtnCounter';
   } else if (type === 'dispatch') {
     num = config.dispatchCounter || 301;
     key = 'dispatchCounter';
