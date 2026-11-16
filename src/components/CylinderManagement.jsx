@@ -108,6 +108,7 @@ function autoMapHeaders(headers = []) {
 export default function CylinderManagement({ 
   urlParams = {},
   cylinders = [], 
+  inks = [],
   clients = [],
   onAddClient,
   jobMasters = [],
@@ -2176,6 +2177,7 @@ export default function CylinderManagement({
               initialData={selectedForPDF} 
               jobMasters={jobMasters}
               cylinders={cylinders}
+              inks={inks}
               currentUser={currentUser}
               onClose={() => setSelectedForPDF(null)} 
               onSave={(updated, targetJobMaster, targetCylinder) => {

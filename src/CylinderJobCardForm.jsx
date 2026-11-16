@@ -2,7 +2,8 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { Save, Printer, UploadCloud, ArrowLeft, CheckCircle2, RefreshCw, Trash2, Check, ExternalLink, Image as ImageIcon, CheckSquare, ShieldCheck, FileCode, Layers, Plus } from 'lucide-react';
 import { uploadArtworkFile, openArtworkViewer } from './services/supabaseStorageService';
-import { getAuthorisedSignature, getCompanyLogo } from './services/settingsService';
+import { getAuthorisedSignature, getCompanyLogo, getMaterialCostSettings } from './services/settingsService';
+import StationWiseInksManager from './components/StationWiseInksManager';
 import { FILM_DENSITIES } from './factoryStore';
 import { loadLetterhead } from './services/companyProfile';
 import CompanyProfileNotice from './components/CompanyProfileNotice';
@@ -179,6 +180,21 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser, fi
               <tr>
                 <td className="label-cell">Utilisation Limit</td><td colSpan="3" className="value-cell">{data.utilisationLimit ? `${(Number(data.utilisationLimit) || 0).toLocaleString()} Kg` : '10,000 Kg'}</td>
               </tr>
+              {Array.isArray(data.stationWiseInks) && data.stationWiseInks.length > 0 && (
+                <tr>
+                  <td className="label-cell">Station-wise Inks</td>
+                  <td colSpan="3" className="value-cell" style={{ padding: '6px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {data.stationWiseInks.map((st, i) => (
+                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '4px', padding: '2px 6px', fontSize: '0.72rem', fontWeight: '700' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: st.colorTag || '#0284c7', display: 'inline-block' }}></span>
+                          <b>St {st.stationNumber || i + 1}:</b> {st.shadeName || `Color ${i + 1}`} {st.solidPercentage ? `(${st.solidPercentage}% S)` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
 
@@ -278,7 +294,7 @@ const PrintableJobCard = React.forwardRef(({ data, imagePreview, currentUser, fi
   );
 });
 
-export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [], cylinders = [] }) {
+export default function CylinderJobCardForm({ onSave, initialData, onClose, currentUser, jobMasters = [], cylinders = [], inks = [] }) {
   const EDIT_ROLES = ['Admin', 'SuperAdmin', 'Plant Manager', 'Production Manager'];
   const userRole = rawRoleNames(currentUser).join(', ');
   const canEdit = userHasAnyRole(currentUser, EDIT_ROLES);
@@ -289,6 +305,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
     if (initialData?.layers && initialData.layers.length > 0) return initialData.layers;
     return [{ id: 1, filmType: 'PET', micron: 12 }];
   });
+
+  const [stationWiseInks, setStationWiseInks] = useState([]);
 
   const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
   const [imagePreview, setImagePreview] = useState(null);
@@ -359,6 +377,23 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
       if (draft.layers.length > 0) setLayers(draft.layers);
       setFormData(draft.formData);
       if (draft.artworkUrl) setImagePreview(draft.artworkUrl);
+      const initialStations = (initialData.stationWiseInks && initialData.stationWiseInks.length > 0)
+        ? initialData.stationWiseInks
+        : (matchingJM && matchingJM.stationWiseInks && matchingJM.stationWiseInks.length > 0)
+          ? matchingJM.stationWiseInks
+          : (Array.isArray(initialData.cylinderColors) && initialData.cylinderColors.length > 0)
+            ? initialData.cylinderColors.map((col, idx) => ({
+                stationNumber: idx + 1,
+                shadeName: typeof col === 'string' ? col : col.colorName || col.name || `Color ${idx + 1}`,
+                itemCode: '',
+                company: '',
+                colorTag: '',
+                solidPercentage: '',
+                pricePerKg: '',
+                cylinderCode: ''
+              }))
+            : [];
+      setStationWiseInks(initialStations);
     }
   }, [initialData, jobMasters]);
 
@@ -470,6 +505,9 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
       if (jm.jobCardFileUrl || jm.artworkUrl) {
         setImagePreview(jm.jobCardFileUrl || jm.artworkUrl);
       }
+      if (jm.stationWiseInks && jm.stationWiseInks.length > 0) {
+        setStationWiseInks(jm.stationWiseInks);
+      }
     }
   };
 
@@ -558,6 +596,8 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
       });
       const existingJM = plan.existingJobMaster;
       const existingCylinder = plan.existingCylinder;
+      const colorNames = stationWiseInks.map(s => s.shadeName).filter(Boolean);
+      const effectiveColorsCount = stationWiseInks.length > 0 ? stationWiseInks.length : colorsCountNum;
 
       const targetJobMaster = {
         ...(existingJM || {}),
@@ -575,7 +615,9 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         circumferenceMm: repeatLengthNum,
         pouchOpenWidth: pouchOpenWidthNum,
         pouchHeight: pouchHeightNum,
-        colorsCount: colorsCountNum,
+        colorsCount: effectiveColorsCount,
+        stationWiseInks,
+        cylinderColors: colorNames,
         engravuresName: customData.engravure || existingJM?.engravuresName || '',
         costBorneBy: customData.costBorneBy || existingJM?.costBorneBy || 'Client (100%)',
         cylinderCost: customData.cylinderCost || existingJM?.cylinderCost || '',
@@ -610,7 +652,9 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         sku: existingCylinder ? (existingCylinder.sku || '') : plan.sku,
         jobName: customData.jobName || targetJobMaster.jobName,
         clientGroup: customData.partyName || targetJobMaster.clientName,
-        colorsCount: colorsCountNum,
+        colorsCount: effectiveColorsCount,
+        stationWiseInks,
+        cylinderColors: colorNames,
         cylinderCost: customData.cylinderCost || targetJobMaster.cylinderCost,
         costPerCylinder: customData.costPerCylinder,
         ratePerSqInch: storedEngravingRate(customData.ratePerSqInch) ?? DEFAULT_CYLINDER_RATE_PER_SQ_CM,
@@ -650,7 +694,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
         creationDate: customData.creationDate || new Date().toISOString().split('T')[0]
       };
 
-      const specPayload = { ...customData, skuCode: targetCylinder.sku || targetJobMaster.skuCode, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` };
+      const specPayload = { ...customData, skuCode: targetCylinder.sku || targetJobMaster.skuCode, jobStructure: derivedStruct, layers, artworkUrl: fileUrl, targetJobMaster, targetCylinder, stationWiseInks, cylinderColors: colorNames, printWidth: `${printWidthNum} mm`, faceLength: `${faceLengthNum} mm` };
       await saveJobMasterToSupabase(targetJobMaster, { mode: plan.jobMasterMode });
       await saveCylinderToSupabase(targetCylinder, { mode: plan.cylinderMode });
       reserved.sku = '';
@@ -957,6 +1001,21 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
           </div>
         </div>
 
+        {/* SECTION: STATION-WISE INKS & CYLINDER STATIONS */}
+        <div style={{ marginBottom: '20px' }}>
+          <StationWiseInksManager 
+            title="Station-wise Inks & Cylinder Stations"
+            stationWiseInks={stationWiseInks}
+            colorsCount={parseInt(formData.numberOfCylinders) || 6}
+            inks={inks}
+            solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+            onSave={(updatedStations) => {
+              setStationWiseInks(updatedStations);
+              setFormData(prev => ({ ...prev, numberOfCylinders: `${updatedStations.length}` }));
+            }}
+          />
+        </div>
+
         {/* SECTION 3: PRESS MARKS & QUALITY GUIDELINES (INPUT ENTRY) */}
         <div style={{ marginBottom: '20px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
           <div style={{ marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
@@ -1199,7 +1258,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
       >
         <PrintableJobCard
           ref={componentRef}
-          data={{ ...formData, layers }}
+          data={{ ...formData, layers, stationWiseInks }}
           imagePreview={imagePreview || formData.artworkUrl}
           currentUser={currentUser}
           fileName={jobCardFileBase}

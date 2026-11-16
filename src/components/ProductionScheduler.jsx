@@ -38,6 +38,9 @@ import {
 import StorageImage from './StorageImage';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { displayArtworkUrl } from '../utils/cylinderArtwork';
+import StationWiseInksManager from './StationWiseInksManager';
+import { getMaterialCostSettings } from '../services/settingsService';
+import { saveJobMasterToSupabase, saveCylinderToSupabase, fetchInks } from '../services/supabaseDataService';
 import { 
   Printer, 
   Play,
@@ -243,6 +246,7 @@ export default function ProductionScheduler({
   schedules = [],
   jobMasters = [],
   cylinders = [],
+  inks: propInks = [],
   productionRecords = [],
   sfgGoods = [],
   deliveryChallans = [],
@@ -336,6 +340,77 @@ export default function ProductionScheduler({
   const [queueSaveStatus, setQueueSaveStatus] = useState('idle');
   const [dropTargetId, setDropTargetId] = useState(null);
   const [activeMachineSelection, setActiveMachineSelectionState] = useState(initialPressMachineAssignments);
+
+  const [localInks, setLocalInks] = useState(propInks);
+  useEffect(() => {
+    if (propInks && propInks.length > 0) {
+      setLocalInks(propInks);
+    } else {
+      fetchInks().then(res => { if (res && res.length) setLocalInks(res); }).catch(() => {});
+    }
+  }, [propInks]);
+
+  const handleSaveStationInksFromRun = async (updatedStations) => {
+    if (!activeRunningJob) return;
+
+    const colorNames = updatedStations.map(s => s.shade || s.colorName || `Station ${s.stationNo}`);
+    const updatedJob = {
+      ...activeRunningJob,
+      stationWiseInks: updatedStations,
+      cylinderColors: colorNames,
+      colorsCount: updatedStations.length
+    };
+    setActiveRunningJobState(updatedJob);
+
+    // 1. Sync to Linked Job Master
+    const matchedJM = resolveJobMaster(activeRunningJob, jobMasters);
+    if (matchedJM) {
+      const updatedJM = {
+        ...matchedJM,
+        stationWiseInks: updatedStations,
+        cylinderColors: colorNames,
+        colorsCount: updatedStations.length
+      };
+      try {
+        await saveJobMasterToSupabase(updatedJM);
+      } catch (err) {
+        console.warn("Could not sync station inks to Job Master:", err);
+      }
+    }
+
+    // 2. Sync to Linked Cylinder
+    const matchedCyl = (cylinders || []).find(c => 
+      (activeRunningJob.cylinderId && c.id === activeRunningJob.cylinderId) ||
+      (matchedJM && (c.id === matchedJM.cylinderId || c.sku === matchedJM.skuCode || c.jobMasterId === matchedJM.id)) ||
+      (activeRunningJob.jobCode && c.sku === activeRunningJob.jobCode)
+    );
+    if (matchedCyl) {
+      const updatedCyl = {
+        ...matchedCyl,
+        stationWiseInks: updatedStations,
+        cylinderColors: colorNames,
+        colorsCount: updatedStations.length
+      };
+      try {
+        await saveCylinderToSupabase(updatedCyl);
+      } catch (err) {
+        console.warn("Could not sync station inks to Cylinder:", err);
+      }
+    }
+
+    // 3. Sync to Order
+    if (onUpdateOrder) {
+      try {
+        await onUpdateOrder(activeRunningJob.id, {
+          stationWiseInks: updatedStations,
+          cylinderColors: colorNames,
+          colorsCount: updatedStations.length
+        });
+      } catch (err) {
+        console.warn("Could not sync station inks to Order:", err);
+      }
+    }
+  };
 
   const settlePressSave = (result) => {
     Promise.resolve(result).catch(() => {
@@ -2908,37 +2983,36 @@ export default function ProductionScheduler({
                   </div>
                 )}
 
-                {/* Cylinder Color Sequence (If Available) */}
-                {Array.isArray(activeRunningJob.cylinderColors) && activeRunningJob.cylinderColors.length > 0 && (
-                  <div style={{ marginTop: '14px' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                      Cylinder Station Sequence:
-                    </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                      {activeRunningJob.cylinderColors.map((col, idx) => (
-                        <div 
-                          key={idx} 
-                          style={{ 
-                            padding: '4px 10px', 
-                            background: '#ffffff', 
-                            border: '1px solid #cbd5e1', 
-                            borderRadius: '6px', 
-                            fontSize: '0.78rem', 
-                            fontWeight: '700',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#0284c7', color: '#ffffff', fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900' }}>
-                            {idx + 1}
-                          </span>
-                          <span>{typeof col === 'string' ? col : col.colorName || col.name || `Color ${idx + 1}`}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Station-wise Inks & Cylinder Stations */}
+                <div style={{ marginTop: '16px' }}>
+                  <StationWiseInksManager 
+                    title="Station-wise Inks & Printing Cylinders"
+                    stationWiseInks={
+                      (activeRunningJob.stationWiseInks && activeRunningJob.stationWiseInks.length > 0)
+                        ? activeRunningJob.stationWiseInks
+                        : (activeRunningJob.jobDetails?.stationWiseInks && activeRunningJob.jobDetails?.stationWiseInks.length > 0)
+                          ? activeRunningJob.jobDetails.stationWiseInks
+                          : (resolveJobMaster(activeRunningJob, jobMasters)?.stationWiseInks && resolveJobMaster(activeRunningJob, jobMasters)?.stationWiseInks.length > 0)
+                            ? resolveJobMaster(activeRunningJob, jobMasters).stationWiseInks
+                            : (Array.isArray(activeRunningJob.cylinderColors) && activeRunningJob.cylinderColors.length > 0)
+                              ? activeRunningJob.cylinderColors.map((col, idx) => ({
+                                  stationNumber: idx + 1,
+                                  shadeName: typeof col === 'string' ? col : col.colorName || col.name || `Color ${idx + 1}`,
+                                  itemCode: '',
+                                  company: '',
+                                  colorTag: '',
+                                  solidPercentage: '',
+                                  pricePerKg: '',
+                                  cylinderCode: ''
+                                }))
+                              : []
+                    }
+                    colorsCount={activeRunningJob.colorsCount || resolveJobMaster(activeRunningJob, jobMasters)?.colorsCount || (activeRunningJob.cylinderColors?.length) || 6}
+                    inks={localInks}
+                    solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+                    onSave={handleSaveStationInksFromRun}
+                  />
+                </div>
 
                 {/* Input Film Substrate Rolls (Consumed) - Live Active Run with Autosave */}
                 <div style={{ marginTop: '16px', background: '#ffffff', padding: '16px', borderRadius: '10px', border: '1.5px solid #0284c7', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.08)' }}>

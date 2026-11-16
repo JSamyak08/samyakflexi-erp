@@ -1559,6 +1559,41 @@ export default function DocumentSettings({
                 </p>
               </div>
 
+              {/* Printing Solvent Price */}
+              <div style={{ background: '#ffffff', border: '1.5px solid #cbd5e1', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#059669' }}>
+                      <Droplet size={18} />
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '1rem' }}>Printing Solvent Price</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>Rate per Kg (Ethyl Acetate / Solvents)</div>
+                    </div>
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontWeight: '800', color: '#059669', fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input 
+                      type="number"
+                      step="5"
+                      min="0"
+                      className="form-control"
+                      style={{ paddingLeft: '32px', fontSize: '1.15rem', fontWeight: '800', color: '#065f46', border: '2px solid #a7f3d0' }}
+                      value={materialCostState.solventPricePerKg !== undefined ? materialCostState.solventPricePerKg : ''}
+                      onChange={e => handleMaterialCostChange('solventPricePerKg', e.target.value)}
+                      placeholder="e.g. 150"
+                    />
+                  </div>
+                </div>
+
+                <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', margin: 0 }}>
+                  Solvent addition cost added over and above average solid rate to compute total liquid ink and solvent cost.
+                </p>
+              </div>
+
               <div style={{ background: '#ffffff', border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
                 <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '1rem', marginBottom: '8px' }}>Ink purchase quantity</div>
                 <p style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>

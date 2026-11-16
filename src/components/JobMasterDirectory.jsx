@@ -45,6 +45,8 @@ import {
 import { calculateUtilisation, parseGsmValue, getJobPrintedQtyKg, productionRecordPrintedKg } from '../dataStore';
 import { FILM_DENSITIES, isLDFilm, getFilmSlitWidth, isMetalloceneEligibleFilm, METALLOCENE_OPTIONS } from '../factoryStore';
 import CylinderJobCardForm from '../CylinderJobCardForm';
+import StationWiseInksManager from './StationWiseInksManager';
+import { getMaterialCostSettings } from '../services/settingsService';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { pushSlugState } from '../utils/slugRouter';
@@ -75,6 +77,7 @@ export default function JobMasterDirectory({
   urlParams = {},
   jobMasters = [], 
   cylinders = [], 
+  inks = [],
   productionRecords = [], 
   orders = [],
   clients = [],
@@ -562,6 +565,7 @@ export default function JobMasterDirectory({
   const availableFilmTypes = useMemo(() => Object.keys(FILM_DENSITIES), []);
 
   const [colorsCount, setColorsCount] = useState(6);
+  const [stationWiseInks, setStationWiseInks] = useState([]);
   const [createCylinder, setCreateCylinder] = useState(true);
   const [layers, setLayers] = useState([
     { id: 1, filmType: 'PET', micron: 12 },
@@ -937,6 +941,7 @@ export default function JobMasterDirectory({
     setPouchHeight('');
     setMaterialForm('Reel Form');
     setColorsCount(6);
+    setStationWiseInks([]);
     setCylinderCost('35000');
     setCostBorneBy('Client (100%)');
     setUtilisationLimit(10000);
@@ -1008,6 +1013,24 @@ export default function JobMasterDirectory({
     const derivedForm = job.materialForm || (Array.isArray(job.processRouting) && job.processRouting.some(s => (s.operation || '').toLowerCase().includes('pouch')) ? 'Pouching Form' : 'Reel Form');
     setMaterialForm(derivedForm);
     setColorsCount(job.colorsCount || 6);
+    const matchedCyl = (cylinders || []).find(c => c.id === job.cylinderId || c.sku === job.cylinderSku || c.sku === job.skuCode);
+    const existingStations = (job.stationWiseInks && job.stationWiseInks.length > 0)
+      ? job.stationWiseInks
+      : (matchedCyl && matchedCyl.stationWiseInks && matchedCyl.stationWiseInks.length > 0)
+        ? matchedCyl.stationWiseInks
+        : (Array.isArray(job.cylinderColors) && job.cylinderColors.length > 0)
+          ? job.cylinderColors.map((col, idx) => ({
+              stationNumber: idx + 1,
+              shadeName: typeof col === 'string' ? col : col.colorName || col.name || `Color ${idx + 1}`,
+              itemCode: '',
+              company: '',
+              colorTag: '',
+              solidPercentage: '',
+              pricePerKg: '',
+              cylinderCode: ''
+            }))
+          : [];
+    setStationWiseInks(existingStations);
     const parsedCylinderCost = parseInrAmount(job.cylinderCost);
     setCylinderCost(parsedCylinderCost == null ? '' : String(parsedCylinderCost));
     setCostBorneBy(job.costBorneBy || 'Client (100%)');
@@ -1100,7 +1123,9 @@ export default function JobMasterDirectory({
         processRouting: sanitizedRouting,
         cylinderSku: skuCode.trim(),
         cylinderCost: formatInrAmount(cylinderCost) || '₹ 0.00',
-        colorsCount: parseInt(colorsCount) || 6,
+        stationWiseInks,
+        cylinderColors: stationWiseInks.map(s => s.shadeName).filter(Boolean),
+        colorsCount: stationWiseInks.length > 0 ? stationWiseInks.length : (parseInt(colorsCount) || 6),
         engravuresName,
         costBorneBy,
         utilisationLimit: parseFloat(utilisationLimit) || 10000,
@@ -1113,6 +1138,19 @@ export default function JobMasterDirectory({
 
       try {
         if (onUpdateJobMaster) await onUpdateJobMaster(updatedJobMaster);
+        const linkedCyl = cylinders.find(c => c.id === existingJob?.cylinderId || c.sku === existingJob?.cylinderSku || c.sku === existingJob?.skuCode);
+        if (linkedCyl && onUpdateCylinder) {
+          try {
+            await onUpdateCylinder({
+              ...linkedCyl,
+              stationWiseInks,
+              cylinderColors: stationWiseInks.map(s => s.shadeName).filter(Boolean),
+              colorsCount: stationWiseInks.length > 0 ? stationWiseInks.length : (parseInt(colorsCount) || 6)
+            });
+          } catch (err) {
+            console.warn("Could not sync station inks to linked cylinder:", err);
+          }
+        }
       } catch (err) {
         alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
         return;
@@ -1153,7 +1191,9 @@ export default function JobMasterDirectory({
       processRouting: sanitizedRouting,
       cylinderSku: skuCode.trim(),
       cylinderCost: formatInrAmount(cylinderCost) || '₹ 0.00',
-      colorsCount: parseInt(colorsCount) || 6,
+      stationWiseInks,
+      cylinderColors: stationWiseInks.map(s => s.shadeName).filter(Boolean),
+      colorsCount: stationWiseInks.length > 0 ? stationWiseInks.length : (parseInt(colorsCount) || 6),
       engravuresName,
       costBorneBy,
       utilisationLimit: parseFloat(utilisationLimit) || 10000,
@@ -1180,7 +1220,9 @@ export default function JobMasterDirectory({
           skuAllocated: Boolean(reservedSku) && reservedSku === skuCode.trim(),
           jobName: jobName.trim(),
           clientGroup: clientName.trim(),
-          colorsCount: parseInt(colorsCount) || 6,
+          stationWiseInks,
+          cylinderColors: stationWiseInks.map(s => s.shadeName).filter(Boolean),
+          colorsCount: stationWiseInks.length > 0 ? stationWiseInks.length : (parseInt(colorsCount) || 6),
           cylinderCost: formatInrAmount(cylinderCost) || '₹ 0.00',
           engravuresName,
           costBorneBy,
@@ -1805,6 +1847,21 @@ export default function JobMasterDirectory({
                 <div className="form-group"><label>Colors Count (No. of Cylinders)</label><input type="number" className="form-control" value={colorsCount} onChange={e => setColorsCount(e.target.value)} /></div>
                 <div className="form-group"><label>Engraver Name</label><input type="text" className="form-control" value={engravuresName} onChange={e => setEngravuresName(e.target.value)} /></div>
 
+                {/* Station-wise Inks Manager */}
+                <div style={{ gridColumn: '1 / -1', marginTop: '4px' }}>
+                  <StationWiseInksManager 
+                    title="Station-wise Inks & Cylinder Stations"
+                    stationWiseInks={stationWiseInks}
+                    colorsCount={parseInt(colorsCount) || 6}
+                    inks={inks}
+                    solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+                    onSave={(updatedStations) => {
+                      setStationWiseInks(updatedStations);
+                      setColorsCount(updatedStations.length);
+                    }}
+                  />
+                </div>
+
                 <div className="form-group"><label>Total Set Cylinder Cost (₹)</label><input type="text" className="form-control" value={cylinderCost} onChange={e => setCylinderCost(e.target.value)} /></div>
                 <div className="form-group"><label>Cost Borne By</label>
                   <SearchableSelect className="form-control" value={costBorneBy} onChange={e => setCostBorneBy(e.target.value)}>
@@ -2250,6 +2307,7 @@ export default function JobMasterDirectory({
                   initialData={activeJobCardData} 
                   jobMasters={jobMasters}
                   cylinders={cylinders}
+                  inks={inks}
                   onSave={handleSaveJobCardData}
                   onClose={() => setActiveJobCardData(null)}
                   currentUser={currentUser}
@@ -2591,6 +2649,57 @@ export default function JobMasterDirectory({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Station-wise Inks Section */}
+        <div style={{ marginTop: '20px' }}>
+          <StationWiseInksManager 
+            title="Station-wise Inks & Cylinder Stations (Synced to Job & Cylinders)"
+            stationWiseInks={
+              (selectedJob.stationWiseInks && selectedJob.stationWiseInks.length > 0)
+                ? selectedJob.stationWiseInks
+                : (linkedCylinder && linkedCylinder.stationWiseInks && linkedCylinder.stationWiseInks.length > 0)
+                  ? linkedCylinder.stationWiseInks
+                  : (Array.isArray(selectedJob.cylinderColors) && selectedJob.cylinderColors.length > 0)
+                    ? selectedJob.cylinderColors.map((col, idx) => ({
+                        stationNumber: idx + 1,
+                        shadeName: typeof col === 'string' ? col : col.colorName || col.name || `Color ${idx + 1}`,
+                        itemCode: '',
+                        company: '',
+                        colorTag: '',
+                        solidPercentage: '',
+                        pricePerKg: '',
+                        cylinderCode: ''
+                      }))
+                    : []
+            }
+            colorsCount={selectedJob.colorsCount || (linkedCylinder && linkedCylinder.colorsCount) || 6}
+            inks={inks}
+            solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+            onSave={async (updatedStations) => {
+              const colorNames = updatedStations.map(s => s.shadeName).filter(Boolean);
+              const updatedJM = {
+                ...selectedJob,
+                stationWiseInks: updatedStations,
+                cylinderColors: colorNames,
+                colorsCount: updatedStations.length
+              };
+              setSelectedJob(updatedJM);
+              if (onUpdateJobMaster) await onUpdateJobMaster(updatedJM);
+              if (linkedCylinder && onUpdateCylinder) {
+                try {
+                  await onUpdateCylinder({
+                    ...linkedCylinder,
+                    stationWiseInks: updatedStations,
+                    cylinderColors: colorNames,
+                    colorsCount: updatedStations.length
+                  });
+                } catch (err) {
+                  console.warn("Could not sync station inks to cylinder:", err);
+                }
+              }
+            }}
+          />
         </div>
 
 

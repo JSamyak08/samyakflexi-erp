@@ -5939,6 +5939,7 @@ export default function App() {
               schedules={schedules}
               jobMasters={jobMasters}
               cylinders={cylinders}
+            inks={inks}
               productionRecords={productionRecords}
               sfgGoods={sfgGoods}
               deliveryChallans={deliveryChallans}
@@ -6597,6 +6598,7 @@ export default function App() {
             clients={clients}
             jobMasters={jobMasters}
             cylinders={cylinders}
+            inks={inks}
             currentUser={currentUser}
             userRole={currentUser?.role}
             onAddOrder={handleAddOrder}
@@ -6622,6 +6624,7 @@ export default function App() {
             orderCloseSettings={orderCloseSettings}
             jobMasters={jobMasters}
             cylinders={cylinders}
+            inks={inks}
             machines={machines}
             currentUser={currentUser}
             storeIssueTransactions={storeIssueTransactions}
@@ -6651,6 +6654,7 @@ export default function App() {
             clients={clients}
             orders={orders}
             cylinders={cylinders}
+            inks={inks}
             jobMasters={jobMasters}
             onAddClient={handleAddClient}
             onUpdateClient={handleUpdateClient}
@@ -6665,6 +6669,7 @@ export default function App() {
             jobMasters={jobMasters}
             orders={orders}
             cylinders={cylinders}
+            inks={inks}
             productionRecords={productionRecords}
             machines={machines}
             currentUser={currentUser}
@@ -6721,6 +6726,7 @@ export default function App() {
             onSavePurchaseOrder={handleSavePurchaseOrder}
             jobMasters={jobMasters}
             cylinders={cylinders}
+            inks={inks}
             currentUser={currentUser}
             productionRecords={productionRecords}
             sfgGoods={sfgGoods}
@@ -6812,6 +6818,7 @@ export default function App() {
             inventoryRolls={inventoryRolls}
             dispatchShipments={dispatchShipments}
             cylinders={cylinders}
+            inks={inks}
             onUpdateCylinder={handleUpdateCylinder}
             onUpdateOrder={handleUpdateOrder}
             onAddRoll={handleAddRoll}
@@ -6948,6 +6955,7 @@ export default function App() {
             jobMasters={jobMasters}
             orders={orders}
             cylinders={cylinders}
+            inks={inks}
             sfgGoods={sfgGoods}
             productionRecords={productionRecords}
             inventoryRolls={inventoryRolls}
@@ -7001,6 +7009,7 @@ export default function App() {
           <CylinderManagement 
             urlParams={urlParams}
             cylinders={cylinders}
+            inks={inks}
             clients={clients}
             onAddClient={handleAddClient}
             jobMasters={jobMasters}
@@ -7029,6 +7038,7 @@ export default function App() {
             schedules={schedules}
             jobMasters={jobMasters}
             cylinders={cylinders}
+            inks={inks}
             productionRecords={productionRecords}
             sfgGoods={sfgGoods}
             deliveryChallans={deliveryChallans}

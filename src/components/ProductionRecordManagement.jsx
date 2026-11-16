@@ -61,6 +61,10 @@ import { codesEqual } from '../utils/barcodeCode';
 import { acceptNewerBarcodeChoice, rollsByBarcode } from '../utils/fifoUtils';
 import MeasureRangeHint from './MeasureRangeHint';
 import RollLineageSummary from './RollLineageSummary';
+import RollToRollVisualFlow from './RollToRollVisualFlow';
+import StationWiseInksManager from './StationWiseInksManager';
+import { calculateStationInksMetrics } from '../utils/inkStationCalculations';
+import { saveProductionRecordToSupabase } from '../services/supabaseDataService';
 import {
   NOT_RECORDED,
   displayQuantity,
@@ -830,6 +834,7 @@ export default function ProductionRecordManagement({
   orderCloseSettings,
   jobMasters = [],
   cylinders = [],
+  inks = [],
   machines = [],
   currentUser,
   storeIssueTransactions = [],
@@ -895,6 +900,52 @@ export default function ProductionRecordManagement({
   const [guardrailPreview, setGuardrailPreview] = useState(null);
   const [guardrailLimits, setGuardrailLimits] = useState(null);
   const [pouchingScrapKg, setPouchingScrapKg] = useState(0); // Stage 6: Pouching Scrap (kg)
+  const [materialRateSaveNotice, setMaterialRateSaveNotice] = useState(null);
+
+  const handleInlineMaterialRateChange = (idx, val) => {
+    if (!selectedRecord) return;
+    const rateNum = parseFloat(val) || 0;
+    const updatedMaterials = (selectedRecord.materialsList || []).map((m, i) => {
+      if (i !== idx) return m;
+      const consumed = parseFloat(m.netConsumedQtyKg ?? m.consumedKg ?? m.issueQtyKg ?? 0) || 0;
+      return {
+        ...m,
+        unitPricePerKg: val === '' ? '' : rateNum,
+        rate: rateNum,
+        ratePerKg: rateNum,
+        totalMaterialCost: Math.round(consumed * rateNum)
+      };
+    });
+
+    const updatedRecord = {
+      ...selectedRecord,
+      materialsList: updatedMaterials
+    };
+    setSelectedRecord(updatedRecord);
+  };
+
+  const handleSaveMaterialRates = async () => {
+    if (!selectedRecord) return;
+    try {
+      const calculatedTotal = (selectedRecord.materialsList || []).reduce((sum, m) => sum + (parseFloat(m.totalMaterialCost) || 0), 0);
+      const updated = {
+        ...selectedRecord,
+        totalMaterialCostRs: calculatedTotal
+      };
+      setSelectedRecord(updated);
+      if (onSaveProductionRecord) {
+        await onSaveProductionRecord(updated);
+      } else {
+        await saveProductionRecordToSupabase(updated);
+      }
+      setMaterialRateSaveNotice('✅ Material rates and costing saved successfully!');
+      setTimeout(() => setMaterialRateSaveNotice(null), 3500);
+    } catch (err) {
+      console.warn("Could not save material rates:", err);
+      setMaterialRateSaveNotice('⚠️ Could not save rates: ' + (err?.message || 'Database error'));
+      setTimeout(() => setMaterialRateSaveNotice(null), 4000);
+    }
+  };
   const [qtyDispatch, setQtyDispatch] = useState(''); // Stage 7: Final Dispatch Ready Quantity (kg)
   const [showSfgConsumptionPreview, setShowSfgConsumptionPreview] = useState(false);
 
@@ -3238,12 +3289,33 @@ export default function ProductionRecordManagement({
           );
           })()}
 
+          {/* Visual Roll to Roll Process Flow & Wastage Tracking */}
+          <RollToRollVisualFlow 
+            record={selectedRecord} 
+            jobMaster={jobMasters.find(j => 
+              (selectedRecord.jobMasterId && String(j.id) === String(selectedRecord.jobMasterId)) ||
+              (selectedRecord.jobCode && String(j.jobCode || '').toUpperCase() === String(selectedRecord.jobCode).toUpperCase()) ||
+              (selectedRecord.jobName && (j.jobName || '').toLowerCase().trim() === (selectedRecord.jobName || '').toLowerCase().trim())
+            ) || {}} 
+          />
+
           <RollLineageSummary record={selectedRecord} />
 
           {/* Ingredient Materials Breakdown Table */}
-          <h4 style={{ fontSize: '1rem', fontWeight: '700', marginBottom: '12px', color: 'var(--text-primary)' }}>
-            📦 Ingredient Materials Issue & Return Record
-          </h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+            <h4 style={{ fontSize: '1rem', fontWeight: '700', margin: 0, color: 'var(--text-primary)' }}>
+              📦 Ingredient Materials Issue & Return Record
+            </h4>
+            <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+              💡 If purchase rates are missing on inward rolls, edit rates directly below to calculate exact costing.
+            </span>
+          </div>
+
+          {materialRateSaveNotice && (
+            <div style={{ background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0', padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem', marginBottom: '8px' }}>
+              {materialRateSaveNotice}
+            </div>
+          )}
           <div className="table-responsive" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', marginBottom: '24px' }}>
             <table className="data-table" style={{ width: '100%', minWidth: '950px', margin: 0 }}>
               <thead>
@@ -3304,7 +3376,35 @@ export default function ProductionRecordManagement({
                     <td>{m.issueQtyKg} kg</td>
                     <td style={{ color: '#dc2626' }}>{m.returnQtyKg} kg</td>
                     <td style={{ fontWeight: '700' }}>{m.netConsumedQtyKg} kg</td>
-                    <td>₹ {m.unitPricePerKg}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#64748b' }}>₹</span>
+                        <input
+                          type="number"
+                          step="0.5"
+                          min="0"
+                          style={{ 
+                            width: '85px', 
+                            padding: '3px 6px', 
+                            fontSize: '0.78rem', 
+                            fontWeight: '700', 
+                            borderRadius: '4px', 
+                            border: (!m.unitPricePerKg || Number(m.unitPricePerKg) <= 0) ? '1.5px solid #f59e0b' : '1px solid #cbd5e1', 
+                            background: (!m.unitPricePerKg || Number(m.unitPricePerKg) <= 0) ? '#fffbeb' : '#ffffff' 
+                          }}
+                          value={m.unitPricePerKg !== undefined && m.unitPricePerKg !== null ? m.unitPricePerKg : ''}
+                          onChange={(e) => handleInlineMaterialRateChange(idx, e.target.value)}
+                          onBlur={handleSaveMaterialRates}
+                          placeholder="Rate ₹"
+                          title="Click to enter/update purchase rate per kg for costing calculation"
+                        />
+                      </div>
+                      {(!m.unitPricePerKg || Number(m.unitPricePerKg) <= 0) && (
+                        <div style={{ fontSize: '0.68rem', color: '#b45309', fontWeight: '800', marginTop: '2px' }}>
+                          Rate missing (Click to set)
+                        </div>
+                      )}
+                    </td>
                     <td style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
                       ₹ {(m?.totalMaterialCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
@@ -3313,6 +3413,71 @@ export default function ProductionRecordManagement({
               </tbody>
             </table>
           </div>
+
+          {/* Station-wise Inks Formulation & Dilution Costing */}
+          {(() => {
+            const recordJobMaster = jobMasters.find(j => 
+              (selectedRecord.jobMasterId && String(j.id) === String(selectedRecord.jobMasterId)) ||
+              (selectedRecord.jobCode && String(j.jobCode || '').toUpperCase() === String(selectedRecord.jobCode).toUpperCase()) ||
+              (selectedRecord.jobName && (j.jobName || '').toLowerCase().trim() === (selectedRecord.jobName || '').toLowerCase().trim())
+            ) || null;
+
+            return (
+              <div style={{ marginBottom: '24px' }}>
+                <StationWiseInksManager 
+                  title="Station-wise Inks Formulation & Dilution Costing"
+                  stationWiseInks={
+                    (selectedRecord.stationWiseInks && selectedRecord.stationWiseInks.length > 0)
+                      ? selectedRecord.stationWiseInks
+                      : (recordJobMaster && recordJobMaster.stationWiseInks && recordJobMaster.stationWiseInks.length > 0)
+                        ? recordJobMaster.stationWiseInks
+                        : (selectedOrder?.jobDetails?.stationWiseInks && selectedOrder.jobDetails.stationWiseInks.length > 0)
+                          ? selectedOrder.jobDetails.stationWiseInks
+                          : (Array.isArray(selectedRecord.cylinderColors) && selectedRecord.cylinderColors.length > 0)
+                            ? selectedRecord.cylinderColors.map((col, idx) => ({
+                                stationNumber: idx + 1,
+                                shadeName: typeof col === 'string' ? col : col.colorName || col.name || `Color ${idx + 1}`,
+                                itemCode: '',
+                                company: '',
+                                colorTag: '',
+                                solidPercentage: '',
+                                pricePerKg: '',
+                                cylinderCode: ''
+                              }))
+                            : []
+                  }
+                  colorsCount={selectedRecord.colorsCount || (recordJobMaster && recordJobMaster.colorsCount) || (selectedRecord.cylinderColors?.length) || 6}
+                  inks={inks}
+                  solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+                  onSave={async (updatedStations) => {
+                    const colorNames = updatedStations.map(s => s.shadeName).filter(Boolean);
+                    const updatedRec = {
+                      ...selectedRecord,
+                      stationWiseInks: updatedStations,
+                      cylinderColors: colorNames,
+                      colorsCount: updatedStations.length
+                    };
+                    setSelectedRecord(updatedRec);
+                    if (onSaveProductionRecord) {
+                      await onSaveProductionRecord(updatedRec);
+                    }
+                    if (recordJobMaster && onUpdateJobMaster) {
+                      try {
+                        await onUpdateJobMaster({
+                          ...recordJobMaster,
+                          stationWiseInks: updatedStations,
+                          cylinderColors: colorNames,
+                          colorsCount: updatedStations.length
+                        });
+                      } catch (err) {
+                        console.warn("Could not sync station inks to Job Master:", err);
+                      }
+                    }
+                  }}
+                />
+              </div>
+            );
+          })()}
 
           {/* SFG / FG Output Barcode Master Rolls & Roll-Wise Input Vs Output Details */}
           <RollWiseInputOutputMasterRolls 
@@ -3612,6 +3777,24 @@ export default function ProductionRecordManagement({
                   .filter(isInkOrSolvent)
                   .reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
 
+                const stationWiseInks = selectedRecord.stationWiseInks || linkedOrder?.jobDetails?.stationWiseInks || linkedJobMaster?.stationWiseInks || [];
+                const solventRateSetting = Number(getMaterialCostSettings()?.solventPricePerKg) || 150;
+                const stationInksMetrics = calculateStationInksMetrics(stationWiseInks, solventRateSetting);
+
+                const dryInkGsm = finiteNumber(selectedRecord.inkGsmInSpeed ?? selectedRecord.calculatedDryInkGsm ?? selectedRecord.actualInkGsm ?? linkedOrder?.inkGsm) || 1.20;
+                const printWidthVal = finiteNumber(selectedRecord.printWidthMm ?? linkedOrder?.printWidthMm ?? linkedJobMaster?.printWidthMm) || 1000;
+                const actualMeters = finiteNumber(selectedRecord.actualMetersPrinted ?? selectedRecord.printedOutputMeters) || 0;
+                const totalPrintAreaSqm = actualMeters > 0 
+                  ? (actualMeters * (printWidthVal / 1000)) 
+                  : (targetOrderQtyKg > 0 ? (targetOrderQtyKg * 1000 / (linkedJobMaster?.totalLaminateGsm || 45)) : 0);
+
+                const dryInkConsumedKg = roundToTwo((totalPrintAreaSqm * dryInkGsm) / 1000);
+                const formulatedInkCost = stationInksMetrics.activeStationsCount > 0 
+                  ? roundToTwo(dryInkConsumedKg * stationInksMetrics.effectiveDryInkRate)
+                  : 0;
+
+                const finalInksSolventsCost = inksSolventsCost > 0 ? inksSolventsCost : (formulatedInkCost > 0 ? formulatedInkCost : 0);
+
                 const adhesiveLoggedCost = materials
                   .filter(isAdhesiveItem)
                   .reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
@@ -3637,7 +3820,7 @@ export default function ProductionRecordManagement({
                 );
                 const actualMaterialCost = selectedRecord.totalMaterialCostRs !== undefined && Number(selectedRecord.totalMaterialCostRs) > 0
                   ? roundToTwo(Number(selectedRecord.totalMaterialCostRs))
-                  : roundToTwo(filmsCost + inksSolventsCost + adhesiveCost + paperCoreCost);
+                  : roundToTwo(filmsCost + finalInksSolventsCost + adhesiveCost + paperCoreCost);
                 const actualProductionCost = roundToTwo(Number(selectedRecord.finalProductionCostRs || selectedRecord.totalProductionCostRs || 0) || (actualMaterialCost + actualProcCost));
 
                 const totalGrossRevenue = actualQtyKg > 0 && sellingPricePerKg > 0 ? Math.round(actualQtyKg * sellingPricePerKg) : 0;
@@ -3791,7 +3974,7 @@ export default function ProductionRecordManagement({
                         {(() => {
                           const rows = [
                             { label: "Film Substrates (PET / LDPE / BOPP)", est: Math.round(estFilmCost), act: Math.round(filmsCost) },
-                            { label: "Printing Inks & Solvents", est: Math.round(estInkCost), act: Math.round(inksSolventsCost) },
+                            { label: "Printing Inks & Solvents", est: Math.round(estInkCost), act: Math.round(finalInksSolventsCost) },
                             { label: `Lamination Adhesives & Hardeners (@ ₹${adhesiveCostPerKgSnap}/kg)`, est: Math.round(estAdhesiveCost), act: Math.round(adhesiveCost) },
                             { label: `Slitting Paper Cores (@ ₹${paperCoreCostPerKgSnap}/kg)`, est: 0, act: Math.round(paperCoreCost) },
                             { label: "Machine Processing & Conversion Overhead", est: Math.round(estProcCost), act: Math.round(actualProcCost) }

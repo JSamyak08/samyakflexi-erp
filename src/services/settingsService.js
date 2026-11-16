@@ -390,6 +390,7 @@ const RATES_STORAGE_KEY = 'samyak_processing_rates';
 
 export const DEFAULT_RATES = {
   liquidInkPrice: 1500,
+  solventPricePerKg: 150,
   adhesivePrice: 270,
   paperCorePrice: 45,
   conversionChargesPerKg: 45,
@@ -402,6 +403,7 @@ export const DEFAULT_MATERIAL_COST_SETTINGS = {
   adhesiveCostPerKg: 270,       // ₹ / kg for Lamination Adhesive
   paperCoreCostPerKg: 45,       // ₹ / kg for Slitting Paper Cores
   liquidInkPrice: 1500,         // ₹ / kg for Inks
+  solventPricePerKg: 150,       // ₹ / kg default Solvent Price for Inks dilution
   conversionChargesPerKg: 45,   // ₹ / kg default Conversion Charges
   fixedProfitPerKg: 25,         // ₹ / kg default Fixed Profit Margin
   minPoQtyKg: 100,              // minimum kilograms on an ink purchase order
@@ -435,6 +437,9 @@ export async function fetchMaterialCostSettingsFromSupabase() {
         adhesiveCostPerKg: Number(remote.adhesiveCostPerKg ?? remote.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
         paperCoreCostPerKg: Number(remote.paperCoreCostPerKg ?? remote.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
         liquidInkPrice: Number(remote.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+        solventPricePerKg: (remote.solventPricePerKg !== undefined && remote.solventPricePerKg !== '')
+          ? Number(remote.solventPricePerKg)
+          : DEFAULT_MATERIAL_COST_SETTINGS.solventPricePerKg,
         conversionChargesPerKg: (remote.conversionChargesPerKg !== undefined && remote.conversionChargesPerKg !== '')
           ? Number(remote.conversionChargesPerKg)
           : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
@@ -467,6 +472,9 @@ export function getMaterialCostSettings() {
       adhesiveCostPerKg: Number(parsed.adhesiveCostPerKg ?? parsed.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
       paperCoreCostPerKg: Number(parsed.paperCoreCostPerKg ?? parsed.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
       liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+      solventPricePerKg: (parsed.solventPricePerKg !== undefined && parsed.solventPricePerKg !== '')
+        ? Number(parsed.solventPricePerKg)
+        : DEFAULT_MATERIAL_COST_SETTINGS.solventPricePerKg,
       conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
         ? Number(parsed.conversionChargesPerKg)
         : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
@@ -514,6 +522,9 @@ export async function saveMaterialCostSettings(settings) {
     adhesiveCostPerKg: Number(settings.adhesiveCostPerKg ?? settings.adhesivePrice) || DEFAULT_MATERIAL_COST_SETTINGS.adhesiveCostPerKg,
     paperCoreCostPerKg: Number(settings.paperCoreCostPerKg ?? settings.paperCorePrice) || DEFAULT_MATERIAL_COST_SETTINGS.paperCoreCostPerKg,
     liquidInkPrice: Number(settings.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice,
+    solventPricePerKg: (settings.solventPricePerKg !== undefined && settings.solventPricePerKg !== '')
+      ? Number(settings.solventPricePerKg)
+      : DEFAULT_MATERIAL_COST_SETTINGS.solventPricePerKg,
     conversionChargesPerKg: (settings.conversionChargesPerKg !== undefined && settings.conversionChargesPerKg !== '')
       ? Number(settings.conversionChargesPerKg)
       : DEFAULT_MATERIAL_COST_SETTINGS.conversionChargesPerKg,
@@ -544,6 +555,7 @@ export function getProcessingRates() {
     const parsed = JSON.parse(saved);
     return {
       liquidInkPrice: Number(parsed.liquidInkPrice) || DEFAULT_RATES.liquidInkPrice,
+      solventPricePerKg: Number(parsed.solventPricePerKg) || DEFAULT_RATES.solventPricePerKg,
       adhesivePrice: Number(parsed.adhesivePrice) || DEFAULT_RATES.adhesivePrice,
       paperCorePrice: Number(parsed.paperCorePrice) || DEFAULT_RATES.paperCorePrice,
       conversionChargesPerKg: (parsed.conversionChargesPerKg !== undefined && parsed.conversionChargesPerKg !== '')
