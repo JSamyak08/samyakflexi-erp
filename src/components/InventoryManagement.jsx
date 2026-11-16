@@ -89,6 +89,8 @@ import {
 import {
   applyMultiLineQc,
   applyQcApprovalStock,
+  qcApprovalFallbackRolls,
+  singleLineQcRollUpdates,
   findDuplicateInvoice,
   grnIdentityProblems,
   grnLineIdentityGaps,
@@ -3626,25 +3628,8 @@ export default function InventoryManagement({
         alert(`GRN ${updatedGRN.grnNo} was not updated: ${err.message || err}`);
         return;
       }
-      const byBarcode = new Map(rollPatches.filter((patch) => patch.barcodeId).map((patch) => [String(patch.barcodeId), patch]));
-      const matchingRolls = (inventoryRolls || []).filter((roll) => (
-        (roll.grnNo && (roll.grnNo === qcInspectingGRN.grnNo || roll.grnNo === qcInspectingGRN.id))
-        || (roll.grnId && (roll.grnId === qcInspectingGRN.id || roll.grnId === qcInspectingGRN.grnNo))
-        || byBarcode.has(String(roll.barcodeId || roll.id))
-      ));
-      if (matchingRolls.length > 0 && onUpdateInventoryRolls) {
-        const updatedRolls = matchingRolls.map((roll) => {
-          const patch = byBarcode.get(String(roll.barcodeId || roll.id))
-            || rollPatches.find((item) => item.grnLineItemId && item.grnLineItemId === roll.grnLineItemId);
-          if (!patch) return roll;
-          return {
-            ...roll,
-            ...patch,
-            availableWeightKg: patch.netWeightKg,
-            grnId: roll.grnId || qcInspectingGRN.id || qcInspectingGRN.grnNo,
-            grnLineItemId: patch.grnLineItemId || roll.grnLineItemId
-          };
-        });
+      const updatedRolls = qcApprovalFallbackRolls(inventoryRolls, rollPatches, qcInspectingGRN);
+      if (updatedRolls.length > 0 && onUpdateInventoryRolls) {
         try {
           await onUpdateInventoryRolls(updatedRolls);
         } catch (err) {
@@ -3758,45 +3743,31 @@ export default function InventoryManagement({
       return;
     }
 
-    // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight
-    const grnBarcodes = new Set([
-      ...(Array.isArray(qcInspectingGRN.barcodes) ? qcInspectingGRN.barcodes : []),
-      ...(Array.isArray(qcInspectingGRN.itemsBreakdown) ? qcInspectingGRN.itemsBreakdown.map((item) => item.barcodeId).filter(Boolean) : [])
-    ]);
-    const matchingRolls = (inventoryRolls || []).filter(r => 
-      (r.grnNo && (r.grnNo === qcInspectingGRN.grnNo || r.grnNo === qcInspectingGRN.id)) ||
-      (r.grn_no && (r.grn_no === qcInspectingGRN.grnNo || r.grn_no === qcInspectingGRN.id)) ||
-      (r.invoiceNo && qcInspectingGRN.invoiceNo && r.invoiceNo === qcInspectingGRN.invoiceNo) ||
-      grnBarcodes.has(r.barcodeId || r.id)
-    );
+    // Update associated child rolls/barcodes in inventoryRolls with verified dimensions and weight.
+    // A balance sticker that shares this GRN number is left out, so R1..Rn keep their own indexes.
+    const updatedRollsList = singleLineQcRollUpdates({
+      inventoryRolls,
+      grn: qcInspectingGRN,
+      breakdown: updatedBreakdown,
+      verifiedNetWeight,
+      verifiedGrossWeight,
+      verifiedTareWeight,
+      verifiedWidth,
+      verifiedMicron,
+      verifiedFilmType,
+      verifiedItemName,
+      verifiedBatchNo,
+      isFilm,
+      isApproved,
+      finalStatus,
+      finalQcStatus,
+      category: updatedGRN.category,
+      inspectorName,
+      hasVariances,
+      calculateFilmRollLength
+    });
 
-    if (matchingRolls.length > 0) {
-      const updatedRollsList = matchingRolls.map((r, idx) => {
-        const correspondingItem = updatedBreakdown[idx] || updatedBreakdown[0] || {};
-        const rollNet = parseFloat(correspondingItem.netWeightKg) || Number((verifiedNetWeight / matchingRolls.length).toFixed(2));
-        const rollGross = parseFloat(correspondingItem.grossWeightKg) || Number((verifiedGrossWeight / matchingRolls.length).toFixed(2));
-        const rollTare = parseFloat(correspondingItem.tareWeightKg) || Number((verifiedTareWeight / matchingRolls.length).toFixed(2));
-        const rollLength = correspondingItem.lengthMeters || (isFilm ? calculateFilmRollLength(rollNet, verifiedWidth, verifiedMicron, verifiedFilmType) : r.lengthMeters);
-
-        return {
-          ...r,
-          status: isApproved ? 'In Stock' : 'QC Hold',
-          qcStatus: finalQcStatus,
-          locationBay: isApproved ? (updatedGRN.category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
-          filmType: verifiedFilmType,
-          micron: verifiedMicron,
-          widthMm: verifiedWidth,
-          itemName: verifiedItemName,
-          batchNo: verifiedBatchNo,
-          netWeightKg: rollNet,
-          availableWeightKg: rollNet,
-          grossWeightKg: rollGross,
-          tareWeightKg: rollTare,
-          lengthMeters: rollLength,
-          notes: `${r.notes || ''} | QC ${finalStatus} by ${inspectorName}${hasVariances ? ' (Specs Revised)' : ''}`.trim()
-        };
-      });
-
+    if (updatedRollsList.length > 0) {
       try {
         if (onUpdateInventoryRolls) {
           await onUpdateInventoryRolls(updatedRollsList);
@@ -10279,7 +10250,7 @@ export default function InventoryManagement({
               {/* 4 Summary Ledger KPI Cards */}
               <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', padding: '16px', marginBottom: '20px' }}>
                 <div>
-                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Approved)</span>
+                  <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Purchases + Returns)</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
                     + {(totalApprovedPurchasedQty ?? 0).toLocaleString()} {unitStr}
                   </div>

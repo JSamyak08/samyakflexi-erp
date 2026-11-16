@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   applyMultiLineQc,
+  qcApprovalFallbackRolls,
+  singleLineQcRollUpdates,
   findDuplicateInvoice,
   grnIdentityProblems,
   grnLineIdentityGaps,
@@ -291,4 +293,105 @@ test('new roll barcodes are inserted into the on-screen list', () => {
   );
   assert.deepEqual(merged.map((roll) => roll.barcodeId), ['NEW', 'OLD']);
   assert.equal(merged.find((roll) => roll.barcodeId === 'OLD').netWeightKg, 2);
+});
+
+test('the QC fallback does not select a balance roll that shares the GRN line', () => {
+  const lineId = 'SIL/GRN/26-27/205-L1';
+  const grn = { id: 'SIL/GRN/26-27/205', grnNo: 'SIL/GRN/26-27/205' };
+  const parentBarcode = 'RM-BC-SIL/GRN/26-27/205-L1-R2';
+  const balanceBarcode = 'RM-BC-SIL/GRN/26-27/205-L1-R2-BAL';
+  const patches = [
+    { barcodeId: balanceBarcode, grnLineItemId: lineId, netWeightKg: 158.08 },
+    { barcodeId: parentBarcode, grnLineItemId: lineId, netWeightKg: 200.5 }
+  ];
+  const parent = {
+    barcodeId: parentBarcode,
+    grnId: grn.id,
+    grnLineItemId: lineId,
+    netWeightKg: 180,
+    availableWeightKg: 180
+  };
+  const lineOnly = {
+    barcodeId: 'RM-BC-SIL/GRN/26-27/205-L1-R9',
+    grnId: grn.id,
+    grnLineItemId: lineId,
+    netWeightKg: 10,
+    availableWeightKg: 10
+  };
+  const balance = {
+    barcodeId: balanceBarcode,
+    grnId: grn.id,
+    grnNo: grn.grnNo,
+    grnLineItemId: lineId,
+    netWeightKg: 158.08,
+    availableWeightKg: 158.08,
+    balanceRoll: true
+  };
+  const flagged = {
+    barcodeId: 'RM-BC-SIL/GRN/26-27/205-L1-R3',
+    balanceRoll: true,
+    grnId: grn.id,
+    grnLineItemId: lineId,
+    netWeightKg: 40,
+    availableWeightKg: 40
+  };
+  const updated = qcApprovalFallbackRolls([parent, lineOnly, balance, flagged], patches, grn);
+  assert.deepEqual(updated.map((roll) => roll.barcodeId), [parentBarcode, parentBarcode]);
+  assert.ok(updated.every((roll) => roll.availableWeightKg === 200.5 && roll.netWeightKg === 200.5));
+  assert.equal(updated.some((roll) => /-BAL$/i.test(String(roll.barcodeId || '')) || roll.balanceRoll === true), false);
+  assert.equal(balance.barcodeId, balanceBarcode);
+  assert.equal(balance.netWeightKg, 158.08);
+  assert.equal(balance.availableWeightKg, 158.08);
+  assert.equal(flagged.netWeightKg, 40);
+  assert.equal(flagged.availableWeightKg, 40);
+});
+
+test('a single-line QC approval leaves the balance roll untouched and keeps R1 to R3 on their own weights', () => {
+  const grnNo = 'SIL/GRN/26-27/310';
+  const codes = [1, 2, 3].map((n) => `RM-BC-${grnNo}-R${n}`);
+  const balanceCode = `RM-BC-${grnNo}-R2-BAL`;
+  const weights = [111.11, 222.22, 333.33];
+  const breakdown = [
+    { barcodeId: codes[0], netWeightKg: weights[0], grossWeightKg: 114.11, tareWeightKg: 3, lengthMeters: 1000 },
+    { barcodeId: codes[1], netWeightKg: weights[1], grossWeightKg: 225.22, tareWeightKg: 3, lengthMeters: 2000 },
+    { barcodeId: balanceCode, netWeightKg: 158.08, grossWeightKg: 161.08, tareWeightKg: 3, lengthMeters: 1500 },
+    { barcodeId: codes[2], netWeightKg: weights[2], grossWeightKg: 336.33, tareWeightKg: 3, lengthMeters: 3000 }
+  ];
+  const rolls = [
+    { barcodeId: codes[0], grnNo, netWeightKg: 10, availableWeightKg: 10 },
+    { barcodeId: codes[1], grnNo, netWeightKg: 20, availableWeightKg: 20 },
+    { barcodeId: balanceCode, grnNo, netWeightKg: 158.08, availableWeightKg: 158.08 },
+    { barcodeId: codes[2], grnNo, netWeightKg: 30, availableWeightKg: 30 }
+  ];
+  const balance = rolls[2];
+  const updated = singleLineQcRollUpdates({
+    inventoryRolls: rolls,
+    grn: { id: grnNo, grnNo, invoiceNo: 'GST-310', category: 'Film Substrates', itemsBreakdown: breakdown },
+    breakdown,
+    verifiedNetWeight: 666.66,
+    verifiedGrossWeight: 675.66,
+    verifiedTareWeight: 9,
+    verifiedWidth: 650,
+    verifiedMicron: 12,
+    verifiedFilmType: 'PET',
+    verifiedItemName: 'PET-650-12',
+    verifiedBatchNo: 'GST-310',
+    isFilm: true,
+    isApproved: true,
+    finalStatus: 'Approved',
+    finalQcStatus: 'Approved',
+    category: 'Film Substrates',
+    inspectorName: 'QC Chemist',
+    calculateFilmRollLength: () => {
+      throw new Error('index assignment should use the receipt roll length');
+    }
+  });
+  assert.deepEqual(updated.map((roll) => roll.barcodeId), codes);
+  assert.deepEqual(updated.map((roll) => roll.netWeightKg), weights);
+  assert.deepEqual(updated.map((roll) => roll.availableWeightKg), weights);
+  assert.deepEqual(updated.map((roll) => roll.lengthMeters), [1000, 2000, 3000]);
+  assert.equal(updated.some((roll) => /-BAL$/i.test(String(roll.barcodeId || ''))), false);
+  assert.equal(balance.barcodeId, balanceCode);
+  assert.equal(balance.netWeightKg, 158.08);
+  assert.equal(balance.availableWeightKg, 158.08);
 });

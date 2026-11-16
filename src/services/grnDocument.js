@@ -9,6 +9,7 @@ import {
   planReceiptStockLink,
   resolveQcStockTarget
 } from './inventoryIdentity.js';
+import { isBalanceSticker } from '../utils/balanceRollDetails.js';
 
 function asNumber(value, fallback = 0) {
   const n = Number(value);
@@ -787,6 +788,108 @@ export function applyMultiLineQc({ grn, draftsByLineId, status, formatFilmItemNa
       : 'QC Hold Store'
   })));
   return { updatedGRN, stockPosts, rollPatches };
+}
+
+/**
+ * Rolls a QC approval may update from the receipt line patches.
+ * A balance sticker keeps the parent GRN line id. Matching it by that line
+ * would replace its weight with a parent roll's. It is left unchanged.
+ */
+export function qcApprovalFallbackRolls(inventoryRolls, rollPatches, grn) {
+  const patches = (Array.isArray(rollPatches) ? rollPatches : []).filter((patch) => patch && !isBalanceSticker(patch));
+  const byBarcode = new Map(
+    patches.filter((patch) => patch.barcodeId).map((patch) => [String(patch.barcodeId), patch])
+  );
+  const matchingRolls = (inventoryRolls || []).filter((roll) => {
+    if (!roll || isBalanceSticker(roll)) return false;
+    return (
+      (roll.grnNo && (roll.grnNo === grn?.grnNo || roll.grnNo === grn?.id))
+      || (roll.grnId && (roll.grnId === grn?.id || roll.grnId === grn?.grnNo))
+      || byBarcode.has(String(roll.barcodeId || roll.id))
+    );
+  });
+  return matchingRolls.map((roll) => {
+    const patch = byBarcode.get(String(roll.barcodeId || roll.id))
+      || patches.find((item) => item.grnLineItemId && item.grnLineItemId === roll.grnLineItemId);
+    if (!patch) return roll;
+    return {
+      ...roll,
+      ...patch,
+      availableWeightKg: patch.netWeightKg,
+      grnId: roll.grnId || grn?.id || grn?.grnNo,
+      grnLineItemId: patch.grnLineItemId || roll.grnLineItemId
+    };
+  });
+}
+
+/**
+ * Rolls a one-line QC approval may update.
+ * A balance sticker can share the GRN number. Leaving it in the matched list
+ * shifts the index, so a later receipt roll would take the wrong weight.
+ * The balance roll is not returned and is not given an index.
+ */
+export function singleLineQcRollUpdates({
+  inventoryRolls,
+  grn,
+  breakdown,
+  verifiedNetWeight = 0,
+  verifiedGrossWeight = 0,
+  verifiedTareWeight = 0,
+  verifiedWidth,
+  verifiedMicron,
+  verifiedFilmType,
+  verifiedItemName,
+  verifiedBatchNo,
+  isFilm = false,
+  isApproved = false,
+  finalStatus = '',
+  finalQcStatus = '',
+  category = '',
+  inspectorName = '',
+  hasVariances = false,
+  calculateFilmRollLength
+} = {}) {
+  const barcodes = new Set([
+    ...(Array.isArray(grn?.barcodes) ? grn.barcodes : []),
+    ...(Array.isArray(grn?.itemsBreakdown) ? grn.itemsBreakdown.map((item) => item?.barcodeId).filter(Boolean) : [])
+  ]);
+  const patches = (Array.isArray(breakdown) ? breakdown : []).filter((item) => item && !isBalanceSticker(item));
+  const matchingRolls = (inventoryRolls || []).filter((roll) => {
+    if (!roll || isBalanceSticker(roll)) return false;
+    return (
+      (roll.grnNo && (roll.grnNo === grn?.grnNo || roll.grnNo === grn?.id))
+      || (roll.grn_no && (roll.grn_no === grn?.grnNo || roll.grn_no === grn?.id))
+      || (roll.invoiceNo && grn?.invoiceNo && roll.invoiceNo === grn.invoiceNo)
+      || barcodes.has(roll.barcodeId || roll.id)
+    );
+  });
+  const share = matchingRolls.length || 1;
+  return matchingRolls.map((roll, idx) => {
+    const correspondingItem = patches[idx] || patches[0] || {};
+    const rollNet = parseFloat(correspondingItem.netWeightKg) || Number((Number(verifiedNetWeight) / share).toFixed(2));
+    const rollGross = parseFloat(correspondingItem.grossWeightKg) || Number((Number(verifiedGrossWeight) / share).toFixed(2));
+    const rollTare = parseFloat(correspondingItem.tareWeightKg) || Number((Number(verifiedTareWeight) / share).toFixed(2));
+    const rollLength = correspondingItem.lengthMeters || (isFilm && calculateFilmRollLength
+      ? calculateFilmRollLength(rollNet, verifiedWidth, verifiedMicron, verifiedFilmType)
+      : roll.lengthMeters);
+    return {
+      ...roll,
+      status: isApproved ? 'In Stock' : 'QC Hold',
+      qcStatus: finalQcStatus,
+      locationBay: isApproved ? (category === 'Film Substrates' ? 'Bay A' : 'Consumables Store') : 'QC Hold Store',
+      filmType: verifiedFilmType,
+      micron: verifiedMicron,
+      widthMm: verifiedWidth,
+      itemName: verifiedItemName,
+      batchNo: verifiedBatchNo,
+      netWeightKg: rollNet,
+      availableWeightKg: rollNet,
+      grossWeightKg: rollGross,
+      tareWeightKg: rollTare,
+      lengthMeters: rollLength,
+      notes: `${roll.notes || ''} | QC ${finalStatus} by ${inspectorName}${hasVariances ? ' (Specs Revised)' : ''}`.trim()
+    };
+  });
 }
 
 export function pdfLinesFromGrn(grn) {
