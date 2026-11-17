@@ -109,6 +109,7 @@ import {
   validatePrintHold
 } from '../utils/printHold';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
+import { validateInputFilmRolls, validateSingleInputFilmRoll } from '../utils/printingFilmIssue';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
   const barcode = String(roll?.barcodeId || roll?.barcode || '').trim().toLowerCase();
@@ -139,6 +140,13 @@ function scannedInputRoll(current, matched, typedId, inventory) {
     if (fromStock !== null && fromStock > 0) return String(fromStock);
     return '';
   };
+  const initialWeight = (matched.netWeightKg || matched.availableWeightKg)
+    ? String(matched.netWeightKg || matched.availableWeightKg)
+    : (current?.initialWeightKg || '');
+  const availableWeight = (matched.availableWeightKg !== undefined && matched.availableWeightKg !== null)
+    ? String(matched.availableWeightKg)
+    : initialWeight;
+
   return {
     ...current,
     barcodeId: matched.barcodeId || matched.id || typedId,
@@ -147,12 +155,10 @@ function scannedInputRoll(current, matched, typedId, inventory) {
     micron: measure(matched?.micron, stock?.micron),
     widthMm: measure(matched?.widthMm, stock?.widthMm),
     density: measure(matched?.density, stock?.density),
-    initialWeightKg: (matched.netWeightKg || matched.availableWeightKg)
-      ? String(matched.netWeightKg || matched.availableWeightKg)
-      : (current?.initialWeightKg || ''),
-    consumedWeightKg: (matched.netWeightKg || matched.availableWeightKg)
-      ? String(matched.netWeightKg || matched.availableWeightKg)
-      : (current?.consumedWeightKg || '')
+    initialWeightKg: initialWeight,
+    consumedWeightKg: (current?.consumedWeightKg && parseFloat(current.consumedWeightKg) > 0)
+      ? String(current.consumedWeightKg)
+      : availableWeight
   };
 }
 
@@ -1162,7 +1168,17 @@ export default function ProductionScheduler({
     const cleanId = bId.trim();
     let updatedList = [];
     if (!cleanId) {
-      updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
+      setFifoPickNote('');
+      updatedList = inputRollsList.map((r, i) => i === index ? {
+        id: r.id || `in-roll-${Date.now()}-${i + 1}`,
+        barcodeId: '',
+        filmType: '',
+        micron: '',
+        widthMm: '',
+        initialWeightKg: '',
+        consumedWeightKg: '',
+        balanceLengthMeters: ''
+      } : r);
     } else {
       const matched = (inventoryRolls || []).find(r => 
         (r.barcodeId && String(r.barcodeId).toLowerCase().trim() === cleanId.toLowerCase()) || 
@@ -1181,7 +1197,16 @@ export default function ProductionScheduler({
         updatedList = inputRollsList.map((r, i) => i === index ? scannedInputRoll(r, matched, bId, inventory) : r);
       } else {
         setFifoPickNote('');
-        updatedList = inputRollsList.map((r, i) => i === index ? { ...r, barcodeId: bId } : r);
+        updatedList = inputRollsList.map((r, i) => i === index ? {
+          ...r,
+          barcodeId: bId,
+          filmType: '',
+          micron: '',
+          widthMm: '',
+          initialWeightKg: '',
+          consumedWeightKg: '',
+          balanceLengthMeters: ''
+        } : r);
       }
     }
     handleAutosaveInputRolls(updatedList);
@@ -1361,6 +1386,18 @@ export default function ProductionScheduler({
 
   // Initiate End Job: Open Pop-up & Prefill Shop Floor Inputs
   const handleInitiateEndJob = (order) => {
+    const rollsToValidate = (Array.isArray(order?.inputRollsList) && order.inputRollsList.length > 0)
+      ? order.inputRollsList
+      : (Array.isArray(activeRunningJob?.inputRollsList) && activeRunningJob.inputRollsList.length > 0)
+        ? activeRunningJob.inputRollsList
+        : inputRollsList;
+
+    const rollErrors = validateInputFilmRolls(rollsToValidate, inventoryRolls);
+    if (rollErrors.length > 0) {
+      alert("⚠️ Cannot complete press run. Please resolve the following Input Film Substrate Rolls errors first:\n\n" + rollErrors.map(err => `• ${err}`).join('\n'));
+      return;
+    }
+
     setEndJobTargetOrder(order);
     setInputActualMeters('');
     setInputInkGsm('');
@@ -1447,9 +1484,9 @@ export default function ProductionScheduler({
       return;
     }
 
-    const totalInputConsumedKg = inputRollsList.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
-    if (inputRollsList.length === 0 || totalInputConsumedKg <= 0) {
-      alert("Please enter valid consumed weight (kg) for at least one input film roll.");
+    const rollErrors = validateInputFilmRolls(inputRollsList, inventoryRolls);
+    if (rollErrors.length > 0) {
+      alert("⚠️ Input Film Substrate Roll validation failed:\n\n" + rollErrors.map(err => `• ${err}`).join('\n'));
       return;
     }
 
@@ -1510,6 +1547,13 @@ export default function ProductionScheduler({
     setIsSubmittingEndJob(true);
 
     try {
+      const rollErrors = validateInputFilmRolls(inputRollsList, inventoryRolls);
+      if (rollErrors.length > 0) {
+        alert("⚠️ Cannot complete press run. Input film roll validation failed:\n\n" + rollErrors.map(err => `• ${err}`).join('\n'));
+        setIsSubmittingEndJob(false);
+        return;
+      }
+
       const guardrailResult = evaluateEndJobGuardrail();
       const guardrailDecision = decideGuardrailSave(guardrailResult, {
         role: currentUser,
@@ -3039,9 +3083,13 @@ export default function ProductionScheduler({
                   {/* List of Input Rolls */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                     {inputRollsList.map((roll, index) => {
-                      const initW = parseFloat(roll.initialWeightKg) || 0;
+                      const rollValidation = validateSingleInputFilmRoll(roll, inventoryRolls);
+                      const cleanBarcode = String(roll.barcodeId || '').trim();
+                      const isBarcodeVerified = Boolean(cleanBarcode && (rollValidation.matchedRoll || (!inventoryRolls || inventoryRolls.length === 0)));
+                      const initW = rollValidation.initWeight || parseFloat(roll.initialWeightKg) || 0;
                       const consW = parseFloat(roll.consumedWeightKg) || 0;
                       const balW = Math.max(0, initW - consW);
+                      const isPrintingCompleted = Boolean(activeRunningJob.isPrintingCompleted);
 
                       return (
                         <div 
@@ -3050,7 +3098,9 @@ export default function ProductionScheduler({
                             background: '#ffffff', 
                             padding: '14px', 
                             borderRadius: '10px', 
-                            border: '1px solid #cbd5e1',
+                            border: !cleanBarcode 
+                              ? '1.5px solid #fca5a5' 
+                              : (!isBarcodeVerified ? '1.5px solid #f87171' : '1px solid #cbd5e1'),
                             boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
                             display: 'flex',
                             flexDirection: 'column',
@@ -3063,12 +3113,30 @@ export default function ProductionScheduler({
                             </div>
                           )}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ background: '#0284c7', color: '#ffffff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem' }}>
-                                {index + 1}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '0.82rem', fontWeight: '900', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ background: '#0284c7', color: '#ffffff', width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.72rem' }}>
+                                  {index + 1}
+                                </span>
+                                Input Roll #{index + 1}
                               </span>
-                              Input Roll #{index + 1}
-                            </span>
+
+                              {cleanBarcode && isBarcodeVerified && rollValidation.matchedRoll && (
+                                <span style={{ background: '#dcfce7', color: '#15803d', border: '1px solid #86efac', borderRadius: '6px', padding: '2px 8px', fontSize: '0.7rem', fontWeight: '800', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle size={12} /> Stock Verified ({rollValidation.availableWeight.toFixed(1)} kg)
+                                </span>
+                              )}
+                              {cleanBarcode && !isBarcodeVerified && (
+                                <span style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', borderRadius: '6px', padding: '2px 8px', fontSize: '0.7rem', fontWeight: '800' }}>
+                                  ❌ Not in Stock
+                                </span>
+                              )}
+                              {!cleanBarcode && (
+                                <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', padding: '2px 8px', fontSize: '0.7rem', fontWeight: '800' }}>
+                                  ⚠️ Barcode Required
+                                </span>
+                              )}
+                            </div>
 
                             {inputRollsList.length > 1 && !activeRunningJob.isPrintingCompleted && (
                               <button
@@ -3083,19 +3151,41 @@ export default function ProductionScheduler({
                           </div>
 
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', alignItems: 'end' }}>
-                            <div style={{ minWidth: '180px' }}>
-                              <label style={{ fontSize: '0.7rem', fontWeight: '800', color: '#0284c7', display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '3px' }}>
-                                <Barcode size={12} /> Barcode ID (Scan Entry) *
+                            <div style={{ minWidth: '180px', flex: 1.2 }}>
+                              <label style={{ fontSize: '0.7rem', fontWeight: '800', color: !cleanBarcode ? '#dc2626' : (isBarcodeVerified ? '#059669' : '#dc2626'), display: 'flex', alignItems: 'center', gap: '3px', marginBottom: '3px' }}>
+                                <Barcode size={12} /> Barcode ID (Scan Entry) <span style={{ color: '#ef4444' }}>* (Mandatory)</span>
                               </label>
                               <input 
                                 type="text" 
                                 className="form-control" 
-                                style={{ fontSize: '0.82rem', fontWeight: '800', color: '#0284c7', border: '1.5px solid #0284c7', background: '#f0f9ff', width: '100%' }} 
+                                style={{ 
+                                  fontSize: '0.82rem', 
+                                  fontWeight: '800', 
+                                  color: isBarcodeVerified ? '#047857' : (cleanBarcode ? '#b91c1c' : '#0284c7'), 
+                                  border: !cleanBarcode ? '2px solid #ef4444' : (isBarcodeVerified ? '1.5px solid #10b981' : '2px solid #dc2626'), 
+                                  background: !cleanBarcode ? '#fef2f2' : (isBarcodeVerified ? '#f0fdf4' : '#fef2f2'), 
+                                  width: '100%' 
+                                }} 
                                 value={roll.barcodeId || ''} 
-                                disabled={activeRunningJob.isPrintingCompleted}
+                                disabled={isPrintingCompleted}
                                 onChange={e => handleInputRollBarcodeChangeActiveRun(e.target.value, index)}
-                                placeholder="Scan Barcode ID..."
+                                placeholder="Scan Barcode ID (Required)..."
                               />
+                              {!cleanBarcode && (
+                                <div style={{ color: '#dc2626', fontSize: '0.68rem', fontWeight: '800', marginTop: '3px' }}>
+                                  ⚠️ Barcode ID is mandatory. Scan roll barcode to populate specifications.
+                                </div>
+                              )}
+                              {cleanBarcode && !isBarcodeVerified && (
+                                <div style={{ color: '#b91c1c', fontSize: '0.68rem', fontWeight: '800', marginTop: '3px' }}>
+                                  ❌ Barcode "{roll.barcodeId}" not found in inventory stock.
+                                </div>
+                              )}
+                              {cleanBarcode && isBarcodeVerified && rollValidation.matchedRoll && (
+                                <div style={{ color: '#15803d', fontSize: '0.68rem', fontWeight: '800', marginTop: '3px' }}>
+                                  ✓ Stock Verified ({rollValidation.availableWeight.toFixed(1)} kg available)
+                                </div>
+                              )}
                             </div>
 
                             <div>
@@ -3103,11 +3193,19 @@ export default function ProductionScheduler({
                               <input 
                                 type="text" 
                                 className="form-control" 
-                                style={{ fontSize: '0.82rem', fontWeight: '700', background: '#ffffff', width: '100%' }} 
+                                style={{ 
+                                  fontSize: '0.82rem', 
+                                  fontWeight: '700', 
+                                  background: !isBarcodeVerified ? '#f8fafc' : '#ffffff', 
+                                  color: !isBarcodeVerified ? '#94a3b8' : '#0f172a',
+                                  cursor: !isBarcodeVerified ? 'not-allowed' : 'default',
+                                  width: '100%' 
+                                }} 
                                 value={roll.filmType || ''} 
-                                disabled={activeRunningJob.isPrintingCompleted}
-                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'filmType', e.target.value)}
-                                placeholder="PET / PE"
+                                disabled={!isBarcodeVerified || isPrintingCompleted}
+                                readOnly={!isBarcodeVerified}
+                                placeholder={!isBarcodeVerified ? 'Scan barcode' : 'PET / PE'}
+                                title={!isBarcodeVerified ? 'Scan a valid barcode first to populate substrate details' : 'Substrate'}
                               />
                             </div>
 
@@ -3116,11 +3214,19 @@ export default function ProductionScheduler({
                               <input 
                                 type="number" 
                                 className="form-control" 
-                                style={{ fontSize: '0.82rem', fontWeight: '700', background: '#ffffff', width: '100%' }} 
+                                style={{ 
+                                  fontSize: '0.82rem', 
+                                  fontWeight: '700', 
+                                  background: !isBarcodeVerified ? '#f8fafc' : '#ffffff', 
+                                  color: !isBarcodeVerified ? '#94a3b8' : '#0f172a',
+                                  cursor: !isBarcodeVerified ? 'not-allowed' : 'default',
+                                  width: '100%' 
+                                }} 
                                 value={roll.micron || ''} 
-                                disabled={activeRunningJob.isPrintingCompleted}
-                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'micron', e.target.value)}
-                                placeholder="12"
+                                disabled={!isBarcodeVerified || isPrintingCompleted}
+                                readOnly={!isBarcodeVerified}
+                                placeholder={!isBarcodeVerified ? '—' : '12'}
+                                title={!isBarcodeVerified ? 'Scan a valid barcode first to populate micron' : 'Micron'}
                               />
                             </div>
 
@@ -3129,11 +3235,19 @@ export default function ProductionScheduler({
                               <input 
                                 type="number" 
                                 className="form-control" 
-                                style={{ fontSize: '0.82rem', fontWeight: '800', color: finiteNumber(activeRunningJob.widthMm) !== null && parseFloat(roll.widthMm) > activeRunningJob.widthMm ? '#b45309' : '#0f172a', background: '#ffffff', width: '100%' }} 
+                                style={{ 
+                                  fontSize: '0.82rem', 
+                                  fontWeight: '800', 
+                                  color: finiteNumber(activeRunningJob.widthMm) !== null && parseFloat(roll.widthMm) > activeRunningJob.widthMm ? '#b45309' : (!isBarcodeVerified ? '#94a3b8' : '#0f172a'), 
+                                  background: !isBarcodeVerified ? '#f8fafc' : '#ffffff', 
+                                  cursor: !isBarcodeVerified ? 'not-allowed' : 'default',
+                                  width: '100%' 
+                                }} 
                                 value={roll.widthMm || ''} 
-                                disabled={activeRunningJob.isPrintingCompleted}
-                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'widthMm', e.target.value)}
-                                placeholder="460"
+                                disabled={!isBarcodeVerified || isPrintingCompleted}
+                                readOnly={!isBarcodeVerified}
+                                placeholder={!isBarcodeVerified ? '—' : '460'}
+                                title={!isBarcodeVerified ? 'Scan a valid barcode first to populate width' : 'Width'}
                               />
                             </div>
 
@@ -3143,11 +3257,19 @@ export default function ProductionScheduler({
                                 type="number" 
                                 step="0.1"
                                 className="form-control" 
-                                style={{ fontSize: '0.82rem', fontWeight: '700', background: '#ffffff', width: '100%' }} 
+                                style={{ 
+                                  fontSize: '0.82rem', 
+                                  fontWeight: '700', 
+                                  background: '#f8fafc', 
+                                  color: !isBarcodeVerified ? '#94a3b8' : '#0f172a',
+                                  cursor: 'not-allowed',
+                                  width: '100%' 
+                                }} 
                                 value={roll.initialWeightKg || ''} 
-                                disabled={activeRunningJob.isPrintingCompleted}
-                                onChange={e => handleInputRollFieldChangeActiveRun(index, 'initialWeightKg', e.target.value)}
-                                placeholder="100.0"
+                                disabled={true}
+                                readOnly={true}
+                                placeholder="0.0"
+                                title="Initial weight from inward inventory roll"
                               />
                             </div>
 
@@ -3156,13 +3278,27 @@ export default function ProductionScheduler({
                               <input 
                                 type="number" 
                                 step="0.1"
+                                min="0.1"
                                 className="form-control" 
-                                style={{ fontSize: '0.88rem', fontWeight: '900', color: '#059669', border: '1.5px solid #10b981', background: '#ecfdf5', width: '100%' }} 
+                                style={{ 
+                                  fontSize: '0.88rem', 
+                                  fontWeight: '900', 
+                                  color: rollValidation.quantityError ? '#b91c1c' : '#059669', 
+                                  border: !isBarcodeVerified ? '1px solid #cbd5e1' : (rollValidation.quantityError ? '2px solid #ef4444' : '1.5px solid #10b981'), 
+                                  background: !isBarcodeVerified ? '#f8fafc' : (rollValidation.quantityError ? '#fef2f2' : '#ecfdf5'), 
+                                  cursor: !isBarcodeVerified ? 'not-allowed' : 'text',
+                                  width: '100%' 
+                                }} 
                                 value={roll.consumedWeightKg || ''} 
-                                disabled={activeRunningJob.isPrintingCompleted}
+                                disabled={!isBarcodeVerified || isPrintingCompleted}
                                 onChange={e => handleInputRollFieldChangeActiveRun(index, 'consumedWeightKg', e.target.value)}
-                                placeholder="85.0"
+                                placeholder={!isBarcodeVerified ? 'Scan roll first' : '85.0'}
                               />
+                              {isBarcodeVerified && rollValidation.quantityError && (
+                                <div style={{ color: '#dc2626', fontSize: '0.68rem', fontWeight: '800', marginTop: '3px' }}>
+                                  ⚠️ {rollValidation.quantityError}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -3182,7 +3318,12 @@ export default function ProductionScheduler({
                                   min="0.01"
                                   data-testid={`balance-roll-meters-${index}`}
                                   className="form-control"
-                                  style={{ width: '120px', fontWeight: '800', color: '#0369a1' }}
+                                  style={{ 
+                                    width: '120px', 
+                                    fontWeight: '800', 
+                                    color: '#0369a1',
+                                    border: (!roll.balanceLengthMeters || parseFloat(roll.balanceLengthMeters) <= 0) ? '2px solid #ef4444' : '1px solid #cbd5e1'
+                                  }}
                                   placeholder="meters"
                                   value={roll.balanceLengthMeters || ''}
                                   disabled={activeRunningJob.isPrintingCompleted}

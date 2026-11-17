@@ -751,6 +751,38 @@ export function validateProductionEntry({
     compared.warnings.forEach((item) => warnings.push(item));
   });
 
+  if (context === 'end-press' && (entry.requireBarcode || (Array.isArray(inventoryRolls) && inventoryRolls.length > 0))) {
+    rolls.forEach((roll, index) => {
+      const barcode = String(roll?.barcodeId || roll?.barcode || '').trim();
+      const num = index + 1;
+      if (!barcode) {
+        blocks.push(finding('barcode-required', 'block', `Input Roll #${num}: Barcode ID is mandatory. Please scan the roll barcode.`, { actual: null, expected: 'Barcode ID' }));
+      } else if (Array.isArray(inventoryRolls) && inventoryRolls.length > 0) {
+        const cleanLower = barcode.toLowerCase();
+        const matched = inventoryRolls.find((r) =>
+          (r.barcodeId && String(r.barcodeId).trim().toLowerCase() === cleanLower) ||
+          (r.id && String(r.id).trim().toLowerCase() === cleanLower)
+        );
+        if (!matched) {
+          blocks.push(finding('barcode-not-found', 'block', `Input Roll #${num}: Barcode "${barcode}" was not found in inventory stock.`, { actual: barcode, expected: 'Valid inventory barcode' }));
+        } else {
+          const availW = finiteNumber(matched.availableWeightKg ?? matched.netWeightKg);
+          const consW = finiteNumber(roll.consumedKg ?? roll.consumedWeightKg);
+          if (availW !== null && availW > 0 && consW !== null && consW > availW + 0.05) {
+            blocks.push(finding('consumed-exceeds-stock', 'block', `Input Roll #${num} (${barcode}): Consumed weight (${consW} kg) exceeds available stock weight (${availW} kg).`, { actual: consW, expected: `<= ${availW} kg` }));
+          }
+        }
+      }
+      const consW = finiteNumber(roll?.consumedKg ?? roll?.consumedWeightKg);
+      const initW = finiteNumber(roll?.initialKg ?? roll?.initialWeightKg);
+      if (consW === null || consW <= 0) {
+        blocks.push(finding('consumed-weight', 'block', `Input Roll #${num}: Consumed weight must be greater than 0 kg.`, { actual: consW, expected: '> 0 kg' }));
+      } else if (initW !== null && initW > 0 && consW > initW + 0.05) {
+        blocks.push(finding('consumed-exceeds-initial', 'block', `Input Roll #${num}: Consumed weight (${consW} kg) cannot exceed initial roll weight (${initW} kg).`, { actual: consW, expected: `<= ${initW} kg` }));
+      }
+    });
+  }
+
   if (context === 'sfg-fg') {
     const outputRolls = Array.isArray(entry.outputRolls) ? entry.outputRolls : [];
     outputRolls.forEach((roll, index) => {

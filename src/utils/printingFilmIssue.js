@@ -304,3 +304,109 @@ export function planSubstrateBalanceRolls(rolls, { orderId, jobName, stage } = {
   });
   return balances;
 }
+
+/**
+ * Single input film roll validator for active print runs and end-job confirmations.
+ * Enforces mandatory Barcode ID and validates roll quantities (initial, consumed, available stock, balance).
+ */
+export function validateSingleInputFilmRoll(roll, inventoryRolls = []) {
+  const barcode = String(roll?.barcodeId || roll?.barcode || '').trim();
+  if (!barcode) {
+    return {
+      isValid: false,
+      barcodeError: 'Barcode ID is mandatory. Please scan the barcode on the roll.',
+      quantityError: null,
+      matchedRoll: null,
+      initWeight: 0,
+      consumedWeight: 0,
+      availableWeight: 0
+    };
+  }
+
+  let matchedRoll = null;
+  if (Array.isArray(inventoryRolls) && inventoryRolls.length > 0) {
+    const cleanLower = barcode.toLowerCase();
+    matchedRoll = inventoryRolls.find((r) =>
+      (r.barcodeId && String(r.barcodeId).trim().toLowerCase() === cleanLower) ||
+      (r.id && String(r.id).trim().toLowerCase() === cleanLower)
+    ) || null;
+
+    if (!matchedRoll) {
+      return {
+        isValid: false,
+        barcodeError: `Barcode ID "${barcode}" was not found in inventory stock.`,
+        quantityError: null,
+        matchedRoll: null,
+        initWeight: 0,
+        consumedWeight: 0,
+        availableWeight: 0
+      };
+    }
+  }
+
+  const consW = finite(roll?.consumedWeightKg ?? roll?.consumedKg);
+  const initW = finite(roll?.initialWeightKg ?? roll?.initialKg ?? matchedRoll?.netWeightKg ?? matchedRoll?.availableWeightKg);
+  const availW = finite(matchedRoll?.availableWeightKg ?? matchedRoll?.netWeightKg ?? initW);
+
+  let quantityError = null;
+  if (consW === null || consW <= 0) {
+    quantityError = 'Consumed weight must be a valid number greater than 0 kg.';
+  } else if (initW !== null && initW > 0 && consW > (initW + 0.05)) {
+    quantityError = `Consumed weight (${consW.toFixed(2)} kg) cannot exceed roll initial weight (${initW.toFixed(2)} kg).`;
+  } else if (availW !== null && availW > 0 && consW > (availW + 0.05)) {
+    quantityError = `Consumed weight (${consW.toFixed(2)} kg) exceeds available stock weight (${availW.toFixed(2)} kg).`;
+  }
+
+  return {
+    isValid: !quantityError,
+    barcodeError: null,
+    quantityError,
+    matchedRoll,
+    initWeight: initW || 0,
+    consumedWeight: consW || 0,
+    availableWeight: availW || 0
+  };
+}
+
+/**
+ * Validates the full list of input film rolls for an active printing run or end-press job.
+ * Returns an array of user-friendly error strings. An empty array indicates all rolls are valid.
+ */
+export function validateInputFilmRolls(inputRolls = [], inventoryRolls = []) {
+  const errors = [];
+  const rolls = Array.isArray(inputRolls) ? inputRolls : [];
+
+  if (rolls.length === 0) {
+    errors.push('At least one input film substrate roll is required.');
+    return errors;
+  }
+
+  rolls.forEach((roll, idx) => {
+    const num = idx + 1;
+    const result = validateSingleInputFilmRoll(roll, inventoryRolls);
+    const barcode = String(roll?.barcodeId || roll?.barcode || '').trim();
+
+    if (result.barcodeError) {
+      errors.push(`Roll #${num}: ${result.barcodeError}`);
+      return;
+    }
+
+    if (result.quantityError) {
+      errors.push(`Roll #${num} (${barcode}): ${result.quantityError}`);
+      return;
+    }
+
+    const initW = result.initWeight;
+    const consW = result.consumedWeight;
+    const balW = (initW > consW) ? initW - consW : 0;
+    if (balW > 0.05) {
+      const balMeters = finite(roll?.balanceLengthMeters);
+      if (balMeters === null || balMeters <= 0) {
+        errors.push(`Roll #${num} (${barcode}): Unused balance is ${balW.toFixed(2)} kg. Balance length (meters) is required for the balance roll tag.`);
+      }
+    }
+  });
+
+  return errors;
+}
+

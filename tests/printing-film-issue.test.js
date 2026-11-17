@@ -4,7 +4,9 @@ import {
   planPrintingFilmIssue,
   planLaminationFilmIssue,
   planSubstrateBalanceRolls,
-  substrateRollsFromLog
+  substrateRollsFromLog,
+  validateSingleInputFilmRoll,
+  validateInputFilmRolls
 } from '../src/utils/printingFilmIssue.js';
 
 const filmA = { id: 'INVT-3005', category: 'Film Substrates', filmType: 'MATTEBOPP', micron: 18, widthMm: 730, availableQtyKg: 209.5 };
@@ -139,4 +141,103 @@ test('lamination lines replace the same log and substrate leftovers become BAL r
   });
   assert.equal(again.materialsList.length, 3);
   assert.equal(again.inventoryAdjustments.length, 0);
+});
+
+test('validateSingleInputFilmRoll enforces mandatory barcode and stock lookup', () => {
+  const stockRolls = [
+    { barcodeId: 'RM-PET-100', filmType: 'PET', micron: 12, widthMm: 460, netWeightKg: 100, availableWeightKg: 100 }
+  ];
+
+  // 1. Missing barcode
+  const missing = validateSingleInputFilmRoll({ barcodeId: '', consumedWeightKg: 50 }, stockRolls);
+  assert.equal(missing.isValid, false);
+  assert.match(missing.barcodeError, /Barcode ID is mandatory/i);
+
+  // 2. Barcode not in stock
+  const notFound = validateSingleInputFilmRoll({ barcodeId: 'RM-NONEXISTENT', consumedWeightKg: 50 }, stockRolls);
+  assert.equal(notFound.isValid, false);
+  assert.match(notFound.barcodeError, /not found in inventory stock/i);
+
+  // 3. Matched in stock
+  const matched = validateSingleInputFilmRoll({ barcodeId: 'RM-PET-100', consumedWeightKg: 80 }, stockRolls);
+  assert.equal(matched.isValid, true);
+  assert.equal(matched.barcodeError, null);
+  assert.equal(matched.quantityError, null);
+  assert.equal(matched.initWeight, 100);
+  assert.equal(matched.consumedWeight, 80);
+});
+
+test('validateSingleInputFilmRoll enforces quantity validations', () => {
+  const stockRolls = [
+    { barcodeId: 'RM-PET-100', filmType: 'PET', micron: 12, widthMm: 460, netWeightKg: 100, availableWeightKg: 85 }
+  ];
+
+  // 1. Zero consumed weight
+  const zeroCons = validateSingleInputFilmRoll({ barcodeId: 'RM-PET-100', consumedWeightKg: 0 }, stockRolls);
+  assert.equal(zeroCons.isValid, false);
+  assert.match(zeroCons.quantityError, /greater than 0 kg/i);
+
+  // 2. Negative consumed weight
+  const negCons = validateSingleInputFilmRoll({ barcodeId: 'RM-PET-100', consumedWeightKg: -10 }, stockRolls);
+  assert.equal(negCons.isValid, false);
+  assert.match(negCons.quantityError, /greater than 0 kg/i);
+
+  // 3. Consumed exceeds initial weight
+  const exceedsInit = validateSingleInputFilmRoll({ barcodeId: 'RM-PET-100', initialWeightKg: 100, consumedWeightKg: 105 }, stockRolls);
+  assert.equal(exceedsInit.isValid, false);
+  assert.match(exceedsInit.quantityError, /cannot exceed roll initial weight/i);
+
+  // 4. Consumed exceeds available stock
+  const exceedsAvail = validateSingleInputFilmRoll({ barcodeId: 'RM-PET-100', initialWeightKg: 100, consumedWeightKg: 90 }, stockRolls);
+  assert.equal(exceedsAvail.isValid, false);
+  assert.match(exceedsAvail.quantityError, /exceeds available stock weight/i);
+
+  // 5. Valid consumed quantity
+  const valid = validateSingleInputFilmRoll({ barcodeId: 'RM-PET-100', initialWeightKg: 100, consumedWeightKg: 80 }, stockRolls);
+  assert.equal(valid.isValid, true);
+  assert.equal(valid.quantityError, null);
+});
+
+test('validateInputFilmRolls blocks empty rolls, missing barcodes, and missing balance meters', () => {
+  const stockRolls = [
+    { barcodeId: 'RM-PET-100', filmType: 'PET', micron: 12, widthMm: 460, netWeightKg: 100, availableWeightKg: 100 },
+    { barcodeId: 'RM-PET-200', filmType: 'PET', micron: 12, widthMm: 460, netWeightKg: 200, availableWeightKg: 200 }
+  ];
+
+  // 1. Empty list
+  const emptyErrors = validateInputFilmRolls([], stockRolls);
+  assert.equal(emptyErrors.length, 1);
+  assert.match(emptyErrors[0], /At least one input film substrate roll is required/i);
+
+  // 2. Roll missing barcode
+  const noBarcode = validateInputFilmRolls([{ barcodeId: '', filmType: 'PET', micron: 12, widthMm: 460, initialWeightKg: 100, consumedWeightKg: 80 }], stockRolls);
+  assert.equal(noBarcode.length, 1);
+  assert.match(noBarcode[0], /Roll #1: Barcode ID is mandatory/i);
+
+  // 3. Unused balance without balance length
+  const noBalanceMeters = validateInputFilmRolls([{
+    barcodeId: 'RM-PET-100',
+    initialWeightKg: 100,
+    consumedWeightKg: 80,
+    balanceLengthMeters: ''
+  }], stockRolls);
+  assert.equal(noBalanceMeters.length, 1);
+  assert.match(noBalanceMeters[0], /Balance length \(meters\) is required/i);
+
+  // 4. Complete and valid input roll
+  const validRolls = validateInputFilmRolls([{
+    barcodeId: 'RM-PET-100',
+    initialWeightKg: 100,
+    consumedWeightKg: 80,
+    balanceLengthMeters: 550
+  }], stockRolls);
+  assert.equal(validRolls.length, 0);
+
+  // 5. Fully consumed roll does not require balance meters
+  const fullyConsumed = validateInputFilmRolls([{
+    barcodeId: 'RM-PET-100',
+    initialWeightKg: 100,
+    consumedWeightKg: 100
+  }], stockRolls);
+  assert.equal(fullyConsumed.length, 0);
 });

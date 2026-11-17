@@ -646,6 +646,45 @@ test('film substrate settings override the built-in CCPET density', () => {
   assert.equal(kg.kg, 18);
 });
 
+test('end-press guardrail blocks missing barcodes, unlisted barcodes and invalid quantities when inventoryRolls are present', () => {
+  const stock = [
+    { barcodeId: 'RM-PET-REAL', filmType: 'PET', micron: 12, widthMm: 660, availableWeightKg: 50, netWeightKg: 50 }
+  ];
+
+  // 1. Missing barcode
+  const missingBarcode = run(baseEntry({
+    inputRolls: [{ barcodeId: '', filmType: 'PET', micron: 12, widthMm: 660, consumedKg: 40 }]
+  }), { inventoryRolls: stock });
+  assert.equal(rules(missingBarcode, 'block').includes('barcode-required'), true);
+
+  // 2. Unlisted barcode
+  const unlistedBarcode = run(baseEntry({
+    inputRolls: [{ barcodeId: 'RM-PET-FAKE', filmType: 'PET', micron: 12, widthMm: 660, consumedKg: 40 }]
+  }), { inventoryRolls: stock });
+  assert.equal(rules(unlistedBarcode, 'block').includes('barcode-not-found'), true);
+
+  // 3. Consumed exceeds available stock
+  const excessStock = run(baseEntry({
+    inputRolls: [{ barcodeId: 'RM-PET-REAL', filmType: 'PET', micron: 12, widthMm: 660, consumedKg: 65 }]
+  }), { inventoryRolls: stock });
+  assert.equal(rules(excessStock, 'block').includes('consumed-exceeds-stock'), true);
+
+  // 4. Consumed weight <= 0
+  const zeroCons = run(baseEntry({
+    inputRolls: [{ barcodeId: 'RM-PET-REAL', filmType: 'PET', micron: 12, widthMm: 660, consumedKg: 0 }]
+  }), { inventoryRolls: stock });
+  assert.equal(rules(zeroCons, 'block').includes('consumed-weight'), true);
+
+  // 5. Valid roll passes
+  const valid = run(baseEntry({
+    inputRolls: [{ barcodeId: 'RM-PET-REAL', filmType: 'PET', micron: 12, widthMm: 660, consumedKg: 45 }]
+  }), { inventoryRolls: stock });
+  assert.equal(rules(valid, 'block').includes('barcode-required'), false);
+  assert.equal(rules(valid, 'block').includes('barcode-not-found'), false);
+  assert.equal(rules(valid, 'block').includes('consumed-exceeds-stock'), false);
+  assert.equal(rules(valid, 'block').includes('consumed-weight'), false);
+});
+
 function roundAway(expected, percent) {
   return Math.round((expected * (1 + (percent + 0.2) / 100)) * 100) / 100;
 }
