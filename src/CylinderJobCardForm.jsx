@@ -1009,6 +1009,7 @@ export default function CylinderJobCardForm({ onSave, initialData, onClose, curr
             colorsCount={parseInt(formData.numberOfCylinders) || 6}
             inks={inks}
             solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+            fallbackInkRate={getMaterialCostSettings()?.liquidInkPrice || 1500}
             onSave={(updatedStations) => {
               setStationWiseInks(updatedStations);
               setFormData(prev => ({ ...prev, numberOfCylinders: `${updatedStations.length}` }));

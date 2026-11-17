@@ -3449,6 +3449,7 @@ export default function ProductionRecordManagement({
                   colorsCount={selectedRecord.colorsCount || (recordJobMaster && recordJobMaster.colorsCount) || (selectedRecord.cylinderColors?.length) || 6}
                   inks={inks}
                   solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+                  fallbackInkRate={getMaterialCostSettings()?.liquidInkPrice || 1500}
                   onSave={async (updatedStations) => {
                     const colorNames = updatedStations
                       .map(s => String(s.shade || s.shadeName || '').trim())
@@ -3779,9 +3780,12 @@ export default function ProductionRecordManagement({
                   .filter(isInkOrSolvent)
                   .reduce((a, b) => a + (parseFloat(b.totalMaterialCost) || 0), 0);
 
+                const costSettings = getMaterialCostSettings();
+                const defaultInkRate = Number(costSettings?.liquidInkPrice) || DEFAULT_MATERIAL_COST_SETTINGS.liquidInkPrice || 1500;
+                const solventRateSetting = Number(costSettings?.solventPricePerKg) || DEFAULT_MATERIAL_COST_SETTINGS.solventPricePerKg || 150;
+
                 const stationWiseInks = selectedRecord.stationWiseInks || linkedOrder?.jobDetails?.stationWiseInks || linkedJobMaster?.stationWiseInks || [];
-                const solventRateSetting = Number(getMaterialCostSettings()?.solventPricePerKg) || 150;
-                const stationInksMetrics = calculateStationInksMetrics(stationWiseInks, solventRateSetting);
+                const stationInksMetrics = calculateStationInksMetrics(stationWiseInks, solventRateSetting, defaultInkRate);
 
                 const dryInkGsm = finiteNumber(selectedRecord.inkGsmInSpeed ?? selectedRecord.calculatedDryInkGsm ?? selectedRecord.actualInkGsm ?? linkedOrder?.inkGsm) || 1.20;
                 const printWidthVal = finiteNumber(selectedRecord.printWidthMm ?? linkedOrder?.printWidthMm ?? linkedJobMaster?.printWidthMm) || 1000;
@@ -3791,9 +3795,10 @@ export default function ProductionRecordManagement({
                   : (targetOrderQtyKg > 0 ? (targetOrderQtyKg * 1000 / (linkedJobMaster?.totalLaminateGsm || 45)) : 0);
 
                 const dryInkConsumedKg = roundToTwo((totalPrintAreaSqm * dryInkGsm) / 1000);
-                const formulatedInkCost = stationInksMetrics.activeStationsCount > 0 
-                  ? roundToTwo(dryInkConsumedKg * stationInksMetrics.effectiveDryInkRate)
-                  : 0;
+                const activeInkRate = stationInksMetrics.activeStationsCount > 0 
+                  ? stationInksMetrics.effectiveDryInkRate 
+                  : defaultInkRate;
+                const formulatedInkCost = roundToTwo(dryInkConsumedKg * activeInkRate);
 
                 const finalInksSolventsCost = inksSolventsCost > 0 ? inksSolventsCost : (formulatedInkCost > 0 ? formulatedInkCost : 0);
 
@@ -3976,7 +3981,13 @@ export default function ProductionRecordManagement({
                         {(() => {
                           const rows = [
                             { label: "Film Substrates (PET / LDPE / BOPP)", est: Math.round(estFilmCost), act: Math.round(filmsCost) },
-                            { label: "Printing Inks & Solvents", est: Math.round(estInkCost), act: Math.round(finalInksSolventsCost) },
+                            { 
+                              label: stationInksMetrics.activeStationsCount > 0 
+                                ? `Printing Inks & Solvents (${stationInksMetrics.activeStationsCount} Stns Formulated @ ₹${stationInksMetrics.effectiveDryInkRate}/kg)` 
+                                : `Printing Inks & Solvents (Default Settings Fallback @ ₹${defaultInkRate}/kg)`, 
+                              est: Math.round(estInkCost), 
+                              act: Math.round(finalInksSolventsCost) 
+                            },
                             { label: `Lamination Adhesives & Hardeners (@ ₹${adhesiveCostPerKgSnap}/kg)`, est: Math.round(estAdhesiveCost), act: Math.round(adhesiveCost) },
                             { label: `Slitting Paper Cores (@ ₹${paperCoreCostPerKgSnap}/kg)`, est: 0, act: Math.round(paperCoreCost) },
                             { label: "Machine Processing & Conversion Overhead", est: Math.round(estProcCost), act: Math.round(actualProcCost) }

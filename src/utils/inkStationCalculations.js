@@ -82,8 +82,10 @@ export function calculateSolidEquivalentRate(liquidPricePerKg, solidContentPct) 
  * Calculates average solid %, average 100% solid rate, solvent addition, and effective cost.
  * Effective Rate = Average Solid Rate + Solvent Rate per kg
  */
-export function calculateStationInksMetrics(stationWiseInks = [], solventPricePerKg = 150) {
+export function calculateStationInksMetrics(stationWiseInks = [], solventPricePerKg = 150, fallbackRate = 1500) {
   const solventRate = Math.max(0, finiteNumber(solventPricePerKg) ?? 150);
+  const fallbackNum = finiteNumber(fallbackRate);
+  const defaultRate = fallbackNum !== null ? fallbackNum : 1500;
   const stations = Array.isArray(stationWiseInks) ? stationWiseInks : [];
   const activeStations = stations.filter(isStationActive);
 
@@ -93,10 +95,12 @@ export function calculateStationInksMetrics(stationWiseInks = [], solventPricePe
       totalStationsCount: stations.length,
       avgSolidsPct: 0,
       averageSolidPercentage: 0,
-      avgSolidEquivalentRate: 0,
-      averageSolidEquivalentRate: 0,
+      avgSolidEquivalentRate: defaultRate,
+      averageSolidEquivalentRate: defaultRate,
       solventPricePerKg: solventRate,
-      effectiveDryInkRate: 0,
+      effectiveDryInkRate: defaultRate,
+      fallbackRateUsed: true,
+      fallbackInkRate: defaultRate,
       avgLiquidPricePerKg: 0,
       averageLiquidPricePerKg: 0,
       stations: []
@@ -149,6 +153,8 @@ export function calculateStationInksMetrics(stationWiseInks = [], solventPricePe
     averageSolidEquivalentRate: avgSolidEquivalentRate,
     solventPricePerKg: solventRate,
     effectiveDryInkRate,
+    fallbackRateUsed: false,
+    fallbackInkRate: defaultRate,
     avgLiquidPricePerKg,
     averageLiquidPricePerKg: avgLiquidPricePerKg,
     stations: enrichedStations

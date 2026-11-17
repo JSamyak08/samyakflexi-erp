@@ -18,6 +18,7 @@ import { attendanceCalendarDate } from './services/employeeAttendance.js';
 import { isPayrollRecoverableAdvance } from './services/salaryAdvance.js';
 import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from './utils/finishedGoods.js';
 import { dispatchedKgForOrder, normalizeAutoCloseSettings } from './utils/orderAutoClose.js';
+import { calculateStationInksMetrics } from './utils/inkStationCalculations.js';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -286,7 +287,9 @@ export const calculateJobRawMaterials = ({
   inkPrice = 1500,
   adhesivePrice = 270,
   conversionChargesPerKg = 0,
-  fixedProfitPerKg = 0
+  fixedProfitPerKg = 0,
+  stationWiseInks = [],
+  solventPricePerKg = 150
 }) => {
   const isPouching = orderType === "Pouching" || String(orderType).toLowerCase().includes('pouch');
   const wastagePct = getWastagePercentage(orderQtyKg, isPouching);
@@ -363,7 +366,17 @@ export const calculateJobRawMaterials = ({
   // Liquid Ink assumes 20% weight gain (solvents included in 1500/kg cost)
   const dryInkNetKg = (totalAreaSqm * (parseFloat(inkGsm) || 0)) / 1000;
   const liquidInkGrossKg = dryInkNetKg * 1.20 * (1 + wastagePct / 100); 
-  const totalInkCost = Math.round(liquidInkGrossKg * (parseFloat(inkPrice) || 1500));
+
+  // If station-wise inks are entered, use formulated rate; otherwise use default fallback rate (from settings or 1500)
+  let effectiveInkRate = parseFloat(inkPrice) || 1500;
+  if (Array.isArray(stationWiseInks) && stationWiseInks.length > 0) {
+    const metrics = calculateStationInksMetrics(stationWiseInks, solventPricePerKg, effectiveInkRate);
+    if (metrics.activeStationsCount > 0 && metrics.effectiveDryInkRate > 0) {
+      effectiveInkRate = metrics.effectiveDryInkRate;
+    }
+  }
+
+  const totalInkCost = Math.round(liquidInkGrossKg * effectiveInkRate);
 
   // Solventless Adhesive assumes 100% weight gain (no volatile solvents lost)
   const adhesiveNetKg = (totalAreaSqm * (parseFloat(adhesiveGsm) || 0)) / 1000;
@@ -408,7 +421,9 @@ export const calculateJobRawMaterials = ({
       gsm: inkGsm,
       netKg: parseFloat(dryInkNetKg.toFixed(2)),
       grossKg: parseFloat(liquidInkGrossKg.toFixed(2)),
-      pricePerKg: inkPrice,
+      pricePerKg: effectiveInkRate,
+      rate: effectiveInkRate,
+      ratePerKg: effectiveInkRate,
       totalCost: totalInkCost
     },
     adhesiveDetails: {

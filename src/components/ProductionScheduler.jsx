@@ -3012,6 +3012,7 @@ export default function ProductionScheduler({
                     colorsCount={activeRunningJob.colorsCount || resolveJobMaster(activeRunningJob, jobMasters)?.colorsCount || (activeRunningJob.cylinderColors?.length) || 6}
                     inks={localInks}
                     solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+                    fallbackInkRate={getMaterialCostSettings()?.liquidInkPrice || 1500}
                     onSave={handleSaveStationInksFromRun}
                   />
                 </div>

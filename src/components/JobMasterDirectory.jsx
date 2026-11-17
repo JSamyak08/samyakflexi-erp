@@ -1855,6 +1855,7 @@ export default function JobMasterDirectory({
                     colorsCount={parseInt(colorsCount) || 6}
                     inks={inks}
                     solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+                    fallbackInkRate={getMaterialCostSettings()?.liquidInkPrice || 1500}
                     onSave={(updatedStations) => {
                       setStationWiseInks(updatedStations);
                       setColorsCount(updatedStations.length);
@@ -2676,6 +2677,7 @@ export default function JobMasterDirectory({
             colorsCount={selectedJob.colorsCount || (linkedCylinder && linkedCylinder.colorsCount) || 6}
             inks={inks}
             solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
+            fallbackInkRate={getMaterialCostSettings()?.liquidInkPrice || 1500}
             onSave={async (updatedStations) => {
               const colorNames = (updatedStations || [])
                 .map(s => String(s.shade || s.shadeName || '').trim())

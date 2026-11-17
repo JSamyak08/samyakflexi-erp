@@ -8,6 +8,7 @@ import {
   calculateStageWastage,
   isStationActive
 } from '../src/utils/inkStationCalculations.js';
+import { calculateJobRawMaterials } from '../src/factoryStore.js';
 
 test('autoGenerateColorTag correctly identifies color families and returns proper styles', () => {
   const whiteTag = autoGenerateColorTag('Flint Super White 55-B');
@@ -145,19 +146,32 @@ test('calculateStationInksMetrics ignores unassigned stations and does not skew 
   assert.equal(metrics.effectiveDryInkRate, 1430.3);
 });
 
-test('calculateStationInksMetrics handles complete reset (0 active stations) cleanly without NaN', () => {
+test('calculateStationInksMetrics handles complete reset (0 active stations) cleanly without NaN and uses default fallback rate', () => {
   const resetStations = [
     { stationNo: 1, shade: '', solidContentPct: '', pricePerKg: '' },
     { stationNo: 2, shade: '', solidContentPct: '', pricePerKg: '' },
     { stationNo: 3, shade: '-- Select from Ink Master --', solidContentPct: '', pricePerKg: '' }
   ];
 
-  const metrics = calculateStationInksMetrics(resetStations, 150);
-  assert.equal(metrics.activeStationsCount, 0);
-  assert.equal(metrics.avgSolidsPct, 0);
-  assert.equal(metrics.avgSolidEquivalentRate, 0);
-  assert.equal(metrics.effectiveDryInkRate, 0);
-  assert.equal(metrics.stations.length, 0);
+  // Default fallback rate from settings (1500)
+  const metricsDefault = calculateStationInksMetrics(resetStations, 150);
+  assert.equal(metricsDefault.activeStationsCount, 0);
+  assert.equal(metricsDefault.avgSolidsPct, 0);
+  assert.equal(metricsDefault.avgSolidEquivalentRate, 1500);
+  assert.equal(metricsDefault.effectiveDryInkRate, 1500);
+  assert.equal(metricsDefault.fallbackRateUsed, true);
+  assert.equal(metricsDefault.stations.length, 0);
+
+  // Custom fallback rate from settings (e.g. 1650)
+  const metricsCustom = calculateStationInksMetrics(resetStations, 150, 1650);
+  assert.equal(metricsCustom.activeStationsCount, 0);
+  assert.equal(metricsCustom.effectiveDryInkRate, 1650);
+  assert.equal(metricsCustom.fallbackRateUsed, true);
+
+  // Explicit zero fallback rate
+  const metricsZero = calculateStationInksMetrics(resetStations, 150, 0);
+  assert.equal(metricsZero.activeStationsCount, 0);
+  assert.equal(metricsZero.effectiveDryInkRate, 0);
 });
 
 test('calculateRollMeters calculates meters from weight, width, and GSM correctly', () => {
@@ -198,4 +212,38 @@ test('calculateStageWastage calculates stage loss in kg and meters correctly', (
   assert.equal(wastage.wastePct, 4);
   // 20 kg waste at GSM 20 and width 1000 mm -> 1000 meters
   assert.equal(wastage.wasteMeters, 1000);
+});
+
+test('calculateJobRawMaterials uses settings fallback rate when stationWiseInks are not entered, and uses formulated rate when entered', () => {
+  const baseParams = {
+    jobName: 'Test Job',
+    printWidthMm: 1000,
+    repeatLengthMm: 400,
+    orderQtyKg: 1000,
+    inkGsm: 1.5,
+    adhesiveGsm: 1.5,
+    layers: [
+      { filmType: 'PET', micron: 12, rate: 150 }
+    ],
+    inkPrice: 1500, // settings fallback rate
+    adhesivePrice: 270
+  };
+
+  // Case 1: Station-wise inks NOT entered (empty array or unassigned)
+  const resultFallback = calculateJobRawMaterials({
+    ...baseParams,
+    stationWiseInks: []
+  });
+  assert.equal(resultFallback.inkDetails.rate, 1500);
+
+  // Case 2: Station-wise inks ENTERED (e.g. 2 stations, formulated rate = 1188.10)
+  const resultWithStations = calculateJobRawMaterials({
+    ...baseParams,
+    stationWiseInks: [
+      { stationNo: 1, shade: 'Flint white 55-B', solidContentPct: 42, pricePerKg: 263 },
+      { stationNo: 2, shade: 'HTI Process Cyan', solidContentPct: 20, pricePerKg: 290 }
+    ],
+    solventPricePerKg: 150
+  });
+  assert.equal(resultWithStations.inkDetails.rate, 1188.1);
 });

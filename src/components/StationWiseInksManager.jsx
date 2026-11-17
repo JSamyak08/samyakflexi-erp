@@ -26,11 +26,14 @@ export default function StationWiseInksManager({
   colorsCount = 6,
   inks = [],
   solventPricePerKg = 150,
+  fallbackInkRate = 1500,
   onChange,
   onSave,
   readOnly = false,
   title = "Station-wise Inks Configuration"
 }) {
+  const effectiveFallbackRate = Number(fallbackInkRate) > 0 ? Number(fallbackInkRate) : 1500;
+
   const createEmptyStation = (stationNo) => ({
     stationNo,
     stationNumber: stationNo,
@@ -94,8 +97,8 @@ export default function StationWiseInksManager({
   }, [stationWiseInks]);
 
   const metrics = useMemo(() => {
-    return calculateStationInksMetrics(stations, solventPricePerKg);
-  }, [stations, solventPricePerKg]);
+    return calculateStationInksMetrics(stations, solventPricePerKg, effectiveFallbackRate);
+  }, [stations, solventPricePerKg, effectiveFallbackRate]);
 
   const handleResetStation = (index) => {
     const newStations = [...stations];
@@ -103,7 +106,7 @@ export default function StationWiseInksManager({
     newStations[index] = createEmptyStation(stationNo);
 
     setStations(newStations);
-    const updatedMetrics = calculateStationInksMetrics(newStations, solventPricePerKg);
+    const updatedMetrics = calculateStationInksMetrics(newStations, solventPricePerKg, effectiveFallbackRate);
     if (onChange) onChange(newStations, updatedMetrics);
 
     setResetNotice(`Station ${stationNo} ink shade reset to unassigned.`);
@@ -124,7 +127,7 @@ export default function StationWiseInksManager({
     });
 
     setStations(reset);
-    const updatedMetrics = calculateStationInksMetrics(reset, solventPricePerKg);
+    const updatedMetrics = calculateStationInksMetrics(reset, solventPricePerKg, effectiveFallbackRate);
     if (onChange) onChange(reset, updatedMetrics);
 
     setResetNotice("All station inks have been reset. Click 'Save Inks to Job Profile' to persist.");
@@ -166,7 +169,7 @@ export default function StationWiseInksManager({
     };
 
     setStations(newStations);
-    if (onChange) onChange(newStations, calculateStationInksMetrics(newStations, solventPricePerKg));
+    if (onChange) onChange(newStations, calculateStationInksMetrics(newStations, solventPricePerKg, effectiveFallbackRate));
   };
 
   const handleUpdateField = (index, field, value) => {
@@ -184,7 +187,7 @@ export default function StationWiseInksManager({
     }
 
     setStations(newStations);
-    if (onChange) onChange(newStations, calculateStationInksMetrics(newStations, solventPricePerKg));
+    if (onChange) onChange(newStations, calculateStationInksMetrics(newStations, solventPricePerKg, effectiveFallbackRate));
   };
 
   const handleAddStation = () => {
@@ -192,7 +195,7 @@ export default function StationWiseInksManager({
     const newStation = createEmptyStation(nextNo);
     const updated = [...stations, newStation];
     setStations(updated);
-    if (onChange) onChange(updated, calculateStationInksMetrics(updated, solventPricePerKg));
+    if (onChange) onChange(updated, calculateStationInksMetrics(updated, solventPricePerKg, effectiveFallbackRate));
   };
 
   const handleRemoveStation = (index) => {
@@ -203,7 +206,7 @@ export default function StationWiseInksManager({
       stationNumber: i + 1
     }));
     setStations(updated);
-    if (onChange) onChange(updated, calculateStationInksMetrics(updated, solventPricePerKg));
+    if (onChange) onChange(updated, calculateStationInksMetrics(updated, solventPricePerKg, effectiveFallbackRate));
   };
 
   const handleSave = async () => {
@@ -331,11 +334,28 @@ export default function StationWiseInksManager({
 
         <div>
           <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Effective Combined Rate</div>
-          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: metrics.activeStationsCount > 0 ? '#0f172a' : '#94a3b8', marginTop: '2px' }}>
-            {metrics.activeStationsCount > 0 ? `₹ ${metrics.effectiveDryInkRate.toFixed(2)}/kg` : '—'}
+          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: metrics.activeStationsCount > 0 ? '#0f172a' : '#d97706', marginTop: '2px' }}>
+            {metrics.activeStationsCount > 0 
+              ? `₹ ${metrics.effectiveDryInkRate.toFixed(2)}/kg` 
+              : `₹ ${effectiveFallbackRate.toFixed(2)}/kg`}
           </div>
+          {metrics.activeStationsCount === 0 && (
+            <span style={{ fontSize: '0.65rem', color: '#b45309', fontWeight: '700', display: 'block', marginTop: '1px' }}>
+              (Default from Settings)
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Fallback Rate Notice Banner when no station inks entered */}
+      {metrics.activeStationsCount === 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fffbeb', border: '1px solid #fde68a', padding: '8px 12px', borderRadius: '8px', fontSize: '0.75rem', color: '#92400e', marginBottom: '14px' }}>
+          <Info size={15} style={{ color: '#d97706', flexShrink: 0 }} />
+          <span>
+            Station-wise inks are not entered for this job. Costing will automatically use the <b>default fallback rate of ₹{effectiveFallbackRate.toFixed(2)}/kg</b> configured in System Settings → Material Costs.
+          </span>
+        </div>
+      )}
 
       {/* Stations Table */}
       <div style={{ overflowX: 'auto' }}>
