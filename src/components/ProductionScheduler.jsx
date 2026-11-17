@@ -353,7 +353,9 @@ export default function ProductionScheduler({
   const handleSaveStationInksFromRun = async (updatedStations) => {
     if (!activeRunningJob) return;
 
-    const colorNames = updatedStations.map(s => s.shade || s.colorName || `Station ${s.stationNo}`);
+    const colorNames = (updatedStations || [])
+      .map(s => String(s.shade || s.shadeName || s.colorName || '').trim())
+      .filter(name => Boolean(name) && !name.startsWith('--') && !/^station\s*\d+$/i.test(name) && !/^color\s*\d+$/i.test(name));
     const updatedJob = {
       ...activeRunningJob,
       stationWiseInks: updatedStations,

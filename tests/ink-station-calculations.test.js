@@ -5,7 +5,8 @@ import {
   calculateSolidEquivalentRate,
   calculateStationInksMetrics,
   calculateRollMeters,
-  calculateStageWastage
+  calculateStageWastage,
+  isStationActive
 } from '../src/utils/inkStationCalculations.js';
 
 test('autoGenerateColorTag correctly identifies color families and returns proper styles', () => {
@@ -34,6 +35,30 @@ test('autoGenerateColorTag correctly identifies color families and returns prope
   const goldTag = autoGenerateColorTag('Rich Pale Gold');
   assert.equal(goldTag.colorFamily, 'Gold');
   assert.equal(goldTag.colorTag, '#d97706');
+
+  // Unassigned / empty / generic station labels return neutral badge
+  const unassignedTag = autoGenerateColorTag('Station 6');
+  assert.equal(unassignedTag.colorTag, '#94a3b8');
+  assert.equal(unassignedTag.bg, '#f1f5f9');
+
+  const emptyTag = autoGenerateColorTag('');
+  assert.equal(emptyTag.colorTag, '#94a3b8');
+
+  const selectTag = autoGenerateColorTag('-- Select from Ink Master --');
+  assert.equal(selectTag.colorTag, '#94a3b8');
+});
+
+test('isStationActive accurately filters active assigned shades vs unassigned/reset placeholders', () => {
+  assert.equal(isStationActive({ shade: 'Flint - SYNTH. GOLD (WCL4-A08)' }), true);
+  assert.equal(isStationActive({ shadeName: 'HTI Process Cyan' }), true);
+  assert.equal(isStationActive({ shade: '' }), false);
+  assert.equal(isStationActive({ shade: '-- Select from Ink Master --' }), false);
+  assert.equal(isStationActive({ shade: '-- Select --' }), false);
+  assert.equal(isStationActive({ shade: 'Unassigned' }), false);
+  assert.equal(isStationActive({ shade: 'Station 6' }), false);
+  assert.equal(isStationActive({ shade: 'Station 6', itemCode: 'FW-55B' }), true);
+  assert.equal(isStationActive(null), false);
+  assert.equal(isStationActive(undefined), false);
 });
 
 test('calculateSolidEquivalentRate calculates 100% solid equivalent rate correctly', () => {
@@ -83,6 +108,56 @@ test('calculateStationInksMetrics aggregates stations and adds solvent cost per 
   assert.equal(metrics.effectiveDryInkRate, 1188.1);
   // Solvent rate per kg preserved
   assert.equal(metrics.solventPricePerKg, 150);
+});
+
+test('calculateStationInksMetrics ignores unassigned stations and does not skew metrics', () => {
+  // Simulates job with 8 stations: 5 assigned, 3 unassigned (matching user screenshot)
+  const stations = [
+    { stationNo: 1, shade: 'Flint - SYNTH. GOLD (WCL4-A08)', solidContentPct: 100, pricePerKg: 370 },
+    { stationNo: 2, shade: 'Flint - PET LAM RED LACQUER', solidContentPct: 25, pricePerKg: 436 },
+    { stationNo: 3, shade: 'Flint - PET LAM BLACK INK', solidContentPct: 21, pricePerKg: 238 },
+    { stationNo: 4, shade: 'Flint - ARSR MAGENTA', solidContentPct: 24, pricePerKg: 432 },
+    { stationNo: 5, shade: 'SPIINC ECOLAM VIOLET 001 CAC', solidContentPct: 24, pricePerKg: 325 },
+    // 3 unassigned stations (must NOT be counted as active or dilute the averages)
+    { stationNo: 6, shade: '', solidContentPct: '', pricePerKg: '', colorTag: { colorName: 'Station 6' } },
+    { stationNo: 7, shade: '-- Select from Ink Master --', solidContentPct: '', pricePerKg: '' },
+    { stationNo: 8, shade: '', itemCode: '', company: '' }
+  ];
+
+  const metrics = calculateStationInksMetrics(stations, 150);
+  assert.equal(metrics.activeStationsCount, 5);
+  assert.equal(metrics.totalStationsCount, 8);
+
+  // Expected averages for the 5 active stations:
+  // Solids: (100 + 25 + 21 + 24 + 24) / 5 = 194 / 5 = 38.8%
+  assert.equal(metrics.avgSolidsPct, 38.8);
+
+  // Solid equiv rates:
+  // 1: 370 / 1.0 = 370.00
+  // 2: 436 / 0.25 = 1744.00
+  // 3: 238 / 0.21 = 1133.33
+  // 4: 432 / 0.24 = 1800.00
+  // 5: 325 / 0.24 = 1354.17
+  // Sum = 6401.50 -> Avg = 1280.30
+  assert.equal(metrics.avgSolidEquivalentRate, 1280.3);
+
+  // Effective rate = 1280.30 + 150 = 1430.30
+  assert.equal(metrics.effectiveDryInkRate, 1430.3);
+});
+
+test('calculateStationInksMetrics handles complete reset (0 active stations) cleanly without NaN', () => {
+  const resetStations = [
+    { stationNo: 1, shade: '', solidContentPct: '', pricePerKg: '' },
+    { stationNo: 2, shade: '', solidContentPct: '', pricePerKg: '' },
+    { stationNo: 3, shade: '-- Select from Ink Master --', solidContentPct: '', pricePerKg: '' }
+  ];
+
+  const metrics = calculateStationInksMetrics(resetStations, 150);
+  assert.equal(metrics.activeStationsCount, 0);
+  assert.equal(metrics.avgSolidsPct, 0);
+  assert.equal(metrics.avgSolidEquivalentRate, 0);
+  assert.equal(metrics.effectiveDryInkRate, 0);
+  assert.equal(metrics.stations.length, 0);
 });
 
 test('calculateRollMeters calculates meters from weight, width, and GSM correctly', () => {

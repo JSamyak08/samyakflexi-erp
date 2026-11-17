@@ -2677,7 +2677,9 @@ export default function JobMasterDirectory({
             inks={inks}
             solventPricePerKg={getMaterialCostSettings()?.solventPricePerKg || 150}
             onSave={async (updatedStations) => {
-              const colorNames = updatedStations.map(s => s.shadeName).filter(Boolean);
+              const colorNames = (updatedStations || [])
+                .map(s => String(s.shade || s.shadeName || '').trim())
+                .filter(name => Boolean(name) && !name.startsWith('--') && !/^station\s*\d+$/i.test(name) && !/^color\s*\d+$/i.test(name));
               const updatedJM = {
                 ...selectedJob,
                 stationWiseInks: updatedStations,

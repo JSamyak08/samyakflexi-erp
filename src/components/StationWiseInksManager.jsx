@@ -8,6 +8,7 @@ import {
   Sparkles, 
   Save, 
   RefreshCw, 
+  RotateCcw,
   Tag, 
   Info, 
   DollarSign,
@@ -16,7 +17,8 @@ import {
 import { 
   autoGenerateColorTag, 
   calculateSolidEquivalentRate, 
-  calculateStationInksMetrics 
+  calculateStationInksMetrics,
+  isStationActive
 } from '../utils/inkStationCalculations';
 
 export default function StationWiseInksManager({
@@ -29,41 +31,65 @@ export default function StationWiseInksManager({
   readOnly = false,
   title = "Station-wise Inks Configuration"
 }) {
+  const createEmptyStation = (stationNo) => ({
+    stationNo,
+    stationNumber: stationNo,
+    shade: '',
+    shadeName: '',
+    itemCode: '',
+    company: '',
+    colorTag: autoGenerateColorTag(`Station ${stationNo}`),
+    solidContentPct: '',
+    solidPercentage: '',
+    pricePerKg: '',
+    solidEquivalentRate: 0
+  });
+
+  const formatStation = (s, idx) => {
+    const stationNo = s.stationNo || s.stationNumber || idx + 1;
+    const active = isStationActive(s);
+    const shade = active ? (s.shade || s.shadeName || '') : '';
+    const shadeName = active ? (s.shadeName || s.shade || '') : '';
+    const solids = active ? (s.solidContentPct ?? s.solidPercentage ?? '') : '';
+    const price = active ? (s.pricePerKg ?? s.ratePerKg ?? '') : '';
+    const solidEquiv = active ? calculateSolidEquivalentRate(price, solids) : 0;
+    const tag = active 
+      ? (s.colorTag || autoGenerateColorTag(shade || `Station ${stationNo}`))
+      : autoGenerateColorTag(`Station ${stationNo}`);
+
+    return {
+      ...s,
+      stationNo,
+      stationNumber: stationNo,
+      shade,
+      shadeName,
+      itemCode: active ? (s.itemCode || s.productCode || '') : '',
+      company: active ? (s.company || s.manufacturer || s.supplierName || '') : '',
+      colorTag: tag,
+      solidContentPct: solids,
+      solidPercentage: solids,
+      pricePerKg: price,
+      solidEquivalentRate: solidEquiv
+    };
+  };
+
   const initialStations = useMemo(() => {
     if (Array.isArray(stationWiseInks) && stationWiseInks.length > 0) {
-      return stationWiseInks.map((s, idx) => ({
-        ...s,
-        stationNo: s.stationNo || idx + 1,
-        colorTag: s.colorTag || autoGenerateColorTag(s.shade || `Color ${idx + 1}`),
-        solidEquivalentRate: calculateSolidEquivalentRate(s.pricePerKg, s.solidContentPct)
-      }));
+      return stationWiseInks.map((s, idx) => formatStation(s, idx));
     }
     // Default to colorsCount
     const count = Math.max(1, parseInt(colorsCount) || 6);
-    return Array.from({ length: count }, (_, idx) => ({
-      stationNo: idx + 1,
-      shade: '',
-      itemCode: '',
-      company: '',
-      colorTag: autoGenerateColorTag(`Station ${idx + 1}`),
-      solidContentPct: 25,
-      pricePerKg: 280,
-      solidEquivalentRate: calculateSolidEquivalentRate(280, 25)
-    }));
+    return Array.from({ length: count }, (_, idx) => createEmptyStation(idx + 1));
   }, [stationWiseInks, colorsCount]);
 
   const [stations, setStations] = useState(initialStations);
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [resetNotice, setResetNotice] = useState(null);
 
   useEffect(() => {
     if (Array.isArray(stationWiseInks) && stationWiseInks.length > 0) {
-      setStations(stationWiseInks.map((s, idx) => ({
-        ...s,
-        stationNo: s.stationNo || idx + 1,
-        colorTag: s.colorTag || autoGenerateColorTag(s.shade || `Color ${idx + 1}`),
-        solidEquivalentRate: calculateSolidEquivalentRate(s.pricePerKg, s.solidContentPct)
-      })));
+      setStations(stationWiseInks.map((s, idx) => formatStation(s, idx)));
     }
   }, [stationWiseInks]);
 
@@ -71,11 +97,54 @@ export default function StationWiseInksManager({
     return calculateStationInksMetrics(stations, solventPricePerKg);
   }, [stations, solventPricePerKg]);
 
+  const handleResetStation = (index) => {
+    const newStations = [...stations];
+    const stationNo = newStations[index]?.stationNo || newStations[index]?.stationNumber || (index + 1);
+    newStations[index] = createEmptyStation(stationNo);
+
+    setStations(newStations);
+    const updatedMetrics = calculateStationInksMetrics(newStations, solventPricePerKg);
+    if (onChange) onChange(newStations, updatedMetrics);
+
+    setResetNotice(`Station ${stationNo} ink shade reset to unassigned.`);
+    setTimeout(() => setResetNotice(null), 3000);
+  };
+
+  const handleResetAllStations = () => {
+    const activeCount = stations.filter(isStationActive).length;
+    const confirmMsg = activeCount > 0
+      ? `Are you sure you want to reset all station inks for this job?\n\n${activeCount} assigned ink shade(s) will be cleared back to unassigned.`
+      : `Reset all stations back to unassigned?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const reset = stations.map((s, idx) => {
+      const stationNo = s.stationNo || s.stationNumber || (idx + 1);
+      return createEmptyStation(stationNo);
+    });
+
+    setStations(reset);
+    const updatedMetrics = calculateStationInksMetrics(reset, solventPricePerKg);
+    if (onChange) onChange(reset, updatedMetrics);
+
+    setResetNotice("All station inks have been reset. Click 'Save Inks to Job Profile' to persist.");
+    setTimeout(() => setResetNotice(null), 4000);
+  };
+
   const handleSelectInk = (index, inkId) => {
+    if (!inkId || inkId === '') {
+      handleResetStation(index);
+      return;
+    }
+
     const selectedInk = (inks || []).find(i => String(i.id) === String(inkId));
-    if (!selectedInk) return;
+    if (!selectedInk) {
+      handleResetStation(index);
+      return;
+    }
 
     const newStations = [...stations];
+    const stationNo = newStations[index]?.stationNo || newStations[index]?.stationNumber || (index + 1);
     const solids = parseFloat(selectedInk.solidContentPct) || 25;
     const price = parseFloat(selectedInk.pricePerKg) || 280;
     const solidRate = calculateSolidEquivalentRate(price, solids);
@@ -83,10 +152,14 @@ export default function StationWiseInksManager({
 
     newStations[index] = {
       ...newStations[index],
+      stationNo,
+      stationNumber: stationNo,
       shade: selectedInk.shade,
+      shadeName: selectedInk.shade,
       itemCode: selectedInk.productCode || selectedInk.itemCode || '',
       company: selectedInk.manufacturer || selectedInk.supplierName || 'Ink Maker',
       solidContentPct: solids,
+      solidPercentage: solids,
       pricePerKg: price,
       solidEquivalentRate: solidRate,
       colorTag: tag
@@ -106,6 +179,7 @@ export default function StationWiseInksManager({
       newStations[index].solidEquivalentRate = calculateSolidEquivalentRate(price, solids);
     }
     if (field === 'shade') {
+      newStations[index].shadeName = value;
       newStations[index].colorTag = autoGenerateColorTag(value);
     }
 
@@ -115,16 +189,7 @@ export default function StationWiseInksManager({
 
   const handleAddStation = () => {
     const nextNo = stations.length + 1;
-    const newStation = {
-      stationNo: nextNo,
-      shade: '',
-      itemCode: '',
-      company: '',
-      colorTag: autoGenerateColorTag(`Station ${nextNo}`),
-      solidContentPct: 25,
-      pricePerKg: 280,
-      solidEquivalentRate: calculateSolidEquivalentRate(280, 25)
-    };
+    const newStation = createEmptyStation(nextNo);
     const updated = [...stations, newStation];
     setStations(updated);
     if (onChange) onChange(updated, calculateStationInksMetrics(updated, solventPricePerKg));
@@ -132,7 +197,11 @@ export default function StationWiseInksManager({
 
   const handleRemoveStation = (index) => {
     if (stations.length <= 1) return;
-    const updated = stations.filter((_, i) => i !== index).map((s, i) => ({ ...s, stationNo: i + 1 }));
+    const updated = stations.filter((_, i) => i !== index).map((s, i) => ({ 
+      ...s, 
+      stationNo: i + 1,
+      stationNumber: i + 1
+    }));
     setStations(updated);
     if (onChange) onChange(updated, calculateStationInksMetrics(updated, solventPricePerKg));
   };
@@ -171,16 +240,37 @@ export default function StationWiseInksManager({
         </div>
 
         {/* Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {!readOnly && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={handleAddStation}
-              style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-            >
-              <Plus size={14} /> Add Station
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleAddStation}
+                style={{ fontSize: '0.75rem', padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Plus size={14} /> Add Station
+              </button>
+
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleResetAllStations}
+                title="Reset all station inks for this job back to unassigned"
+                style={{ 
+                  fontSize: '0.75rem', 
+                  padding: '4px 10px', 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: '4px',
+                  color: '#b91c1c',
+                  backgroundColor: '#fef2f2',
+                  borderColor: '#fca5a5'
+                }}
+              >
+                <RotateCcw size={13} /> Reset All Inks
+              </button>
+            </>
           )}
 
           {onSave && !readOnly && (
@@ -203,6 +293,12 @@ export default function StationWiseInksManager({
         </div>
       )}
 
+      {resetNotice && (
+        <div style={{ background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', padding: '8px 12px', borderRadius: '6px', fontSize: '0.78rem', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <RotateCcw size={16} /> {resetNotice}
+        </div>
+      )}
+
       {/* KPI Metrics Dashboard Card */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', marginBottom: '16px', background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
         <div>
@@ -214,15 +310,15 @@ export default function StationWiseInksManager({
 
         <div>
           <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Avg Solids %</div>
-          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: '#0284c7', marginTop: '2px' }}>
-            {metrics.avgSolidsPct}%
+          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: metrics.activeStationsCount > 0 ? '#0284c7' : '#94a3b8', marginTop: '2px' }}>
+            {metrics.activeStationsCount > 0 ? `${metrics.avgSolidsPct}%` : '—'}
           </div>
         </div>
 
         <div>
           <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Avg 100% Solid Rate</div>
-          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: '#b45309', marginTop: '2px' }}>
-            ₹ {metrics.avgSolidEquivalentRate.toFixed(2)}/kg
+          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: metrics.activeStationsCount > 0 ? '#b45309' : '#94a3b8', marginTop: '2px' }}>
+            {metrics.activeStationsCount > 0 ? `₹ ${metrics.avgSolidEquivalentRate.toFixed(2)}/kg` : '—'}
           </div>
         </div>
 
@@ -235,36 +331,49 @@ export default function StationWiseInksManager({
 
         <div>
           <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Effective Combined Rate</div>
-          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>
-            ₹ {metrics.effectiveDryInkRate.toFixed(2)}/kg
+          <div style={{ fontSize: '1.05rem', fontWeight: '900', color: metrics.activeStationsCount > 0 ? '#0f172a' : '#94a3b8', marginTop: '2px' }}>
+            {metrics.activeStationsCount > 0 ? `₹ ${metrics.effectiveDryInkRate.toFixed(2)}/kg` : '—'}
           </div>
         </div>
       </div>
 
       {/* Stations Table */}
       <div style={{ overflowX: 'auto' }}>
-        <table className="data-table" style={{ fontSize: '0.78rem', width: '100%', minWidth: '780px', margin: 0 }}>
+        <table className="data-table" style={{ fontSize: '0.78rem', width: '100%', minWidth: '820px', margin: 0 }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              <th style={{ width: '65px' }}>Station</th>
-              <th style={{ width: '80px' }}>Color Tag</th>
+              <th style={{ width: '65px', textAlign: 'center' }}>Station</th>
+              <th style={{ width: '85px' }}>Color Tag</th>
               <th>Ink Shade / Master Picker</th>
               <th>Item Code</th>
               <th>Company</th>
               <th style={{ width: '85px' }}>Solids %</th>
               <th style={{ width: '105px' }}>Liquid Price</th>
               <th style={{ width: '120px' }}>100% Solid Equiv</th>
-              {!readOnly && <th style={{ width: '45px' }}></th>}
+              {!readOnly && <th style={{ width: '85px', textAlign: 'center' }}>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {stations.map((st, idx) => {
               const tag = st.colorTag || autoGenerateColorTag(st.shade || `Station ${idx + 1}`);
+              const isActive = isStationActive(st);
+              const stationNo = st.stationNo || idx + 1;
+
               return (
-                <tr key={idx}>
+                <tr key={idx} style={{ background: isActive ? 'transparent' : '#fcfdfe' }}>
                   <td style={{ fontWeight: '800', textAlign: 'center' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '22px', height: '22px', borderRadius: '50%', background: '#0284c7', color: '#ffffff', fontSize: '0.72rem' }}>
-                      {st.stationNo || idx + 1}
+                    <span style={{ 
+                      display: 'inline-flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      width: '22px', 
+                      height: '22px', 
+                      borderRadius: '50%', 
+                      background: isActive ? '#0284c7' : '#94a3b8', 
+                      color: '#ffffff', 
+                      fontSize: '0.72rem' 
+                    }}>
+                      {stationNo}
                     </span>
                   </td>
 
@@ -284,8 +393,8 @@ export default function StationWiseInksManager({
                         border: `1.5px solid ${tag.border || '#cbd5e1'}` 
                       }}
                     >
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.hex || '#0284c7' }} />
-                      {tag.colorName || 'Color'}
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: tag.hex || (isActive ? '#0284c7' : '#94a3b8') }} />
+                      {tag.colorName || `Station ${stationNo}`}
                     </span>
                   </td>
 
@@ -296,7 +405,7 @@ export default function StationWiseInksManager({
                     ) : (
                       <select
                         className="form-control"
-                        style={{ fontSize: '0.76rem', padding: '4px 6px', height: '28px', fontWeight: '600' }}
+                        style={{ fontSize: '0.76rem', padding: '4px 6px', height: '28px', fontWeight: isActive ? '700' : '500' }}
                         value={st.shade ? ((inks || []).find(i => i.shade === st.shade || i.productCode === st.itemCode)?.id || '') : ''}
                         onChange={e => handleSelectInk(idx, e.target.value)}
                       >
@@ -345,8 +454,9 @@ export default function StationWiseInksManager({
                       max="100"
                       className="form-control"
                       style={{ fontSize: '0.75rem', padding: '3px 6px', height: '26px', fontWeight: '700', textAlign: 'right' }}
-                      value={st.solidContentPct || ''}
+                      value={st.solidContentPct !== undefined && st.solidContentPct !== null ? st.solidContentPct : ''}
                       onChange={e => handleUpdateField(idx, 'solidContentPct', e.target.value)}
+                      placeholder="—"
                       disabled={readOnly}
                     />
                   </td>
@@ -361,31 +471,57 @@ export default function StationWiseInksManager({
                         min="0"
                         className="form-control"
                         style={{ fontSize: '0.75rem', padding: '3px 6px 3px 18px', height: '26px', fontWeight: '700', textAlign: 'right' }}
-                        value={st.pricePerKg || ''}
+                        value={st.pricePerKg !== undefined && st.pricePerKg !== null ? st.pricePerKg : ''}
                         onChange={e => handleUpdateField(idx, 'pricePerKg', e.target.value)}
+                        placeholder="—"
                         disabled={readOnly}
                       />
                     </div>
                   </td>
 
                   {/* 100% Solid Equivalent */}
-                  <td style={{ fontWeight: '800', color: '#b45309', textAlign: 'right' }}>
-                    ₹ {(st.solidEquivalentRate || 0).toFixed(2)}/kg
+                  <td style={{ fontWeight: '800', color: st.solidEquivalentRate > 0 ? '#b45309' : '#94a3b8', textAlign: 'right' }}>
+                    {st.solidEquivalentRate > 0 ? `₹ ${(st.solidEquivalentRate || 0).toFixed(2)}/kg` : '—'}
                   </td>
 
                   {!readOnly && (
-                    <td style={{ textAlign: 'center' }}>
-                      {stations.length > 1 && (
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        {/* Individual Station Reset Action */}
                         <button
                           type="button"
-                          className="btn-danger"
-                          style={{ padding: '2px 5px', fontSize: '0.7rem', border: 'none', background: 'transparent', color: '#dc2626' }}
-                          onClick={() => handleRemoveStation(idx)}
-                          title="Remove Station"
+                          onClick={() => handleResetStation(idx)}
+                          title={`Reset / Clear Station ${stationNo} ink shade`}
+                          style={{ 
+                            padding: '2px 6px', 
+                            fontSize: '0.68rem', 
+                            borderRadius: '4px', 
+                            border: '1px solid #cbd5e1', 
+                            background: isActive ? '#f0f9ff' : '#f8fafc', 
+                            color: isActive ? '#0284c7' : '#94a3b8',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}
                         >
-                          <Trash2 size={13} />
+                          <RotateCcw size={11} />
+                          <span style={{ fontWeight: '700' }}>Reset</span>
                         </button>
-                      )}
+
+                        {/* Remove Station Row Action */}
+                        {stations.length > 1 && (
+                          <button
+                            type="button"
+                            className="btn-danger"
+                            style={{ padding: '2px 5px', fontSize: '0.7rem', border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}
+                            onClick={() => handleRemoveStation(idx)}
+                            title={`Remove Station ${stationNo}`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   )}
                 </tr>

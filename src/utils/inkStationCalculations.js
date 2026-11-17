@@ -11,7 +11,9 @@ export function autoGenerateColorTag(shadeName = '') {
   const name = String(shadeName || '').toLowerCase().trim();
 
   let tagObj;
-  if (/white|opaque|milky|blanc/i.test(name)) {
+  if (!name || /^(station|color)\s*\d+$/i.test(name) || /unassigned/i.test(name) || /^--/i.test(name)) {
+    tagObj = { colorName: shadeName || 'Unassigned', hex: '#94a3b8', bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
+  } else if (/white|opaque|milky|blanc/i.test(name)) {
     tagObj = { colorName: 'White', hex: '#f8fafc', bg: '#f8fafc', text: '#0f172a', border: '#94a3b8' };
   } else if (/cyan|blue|azure|navy|process cyan/i.test(name)) {
     tagObj = { colorName: 'Cyan', hex: '#0284c7', bg: '#0284c7', text: '#ffffff', border: '#0369a1' };
@@ -46,6 +48,26 @@ export function autoGenerateColorTag(shadeName = '') {
 }
 
 /**
+ * Determines whether an ink station row has an actively assigned ink shade.
+ * Unassigned placeholders (e.g. "-- Select from Ink Master --", empty shade, or generic "Station 6")
+ * without an actual item code or manufacturer are not considered active.
+ */
+export function isStationActive(station) {
+  if (!station || typeof station !== 'object') return false;
+  const shade = String(station.shade || station.shadeName || station.name || '').trim();
+  if (!shade) return false;
+  if (/^--\s*select/i.test(shade) || /^unassigned$/i.test(shade)) {
+    return false;
+  }
+  if (/^(station|color)\s*\d+$/i.test(shade)) {
+    const hasItemCode = Boolean(String(station.itemCode || station.productCode || '').trim());
+    const hasCompany = Boolean(String(station.company || station.manufacturer || station.supplierName || '').trim());
+    return hasItemCode || hasCompany;
+  }
+  return true;
+}
+
+/**
  * Calculates 100% dry solid equivalent cost for a liquid ink:
  * Solid Equivalent Rate = Liquid Price / (Solid% / 100)
  */
@@ -63,11 +85,12 @@ export function calculateSolidEquivalentRate(liquidPricePerKg, solidContentPct) 
 export function calculateStationInksMetrics(stationWiseInks = [], solventPricePerKg = 150) {
   const solventRate = Math.max(0, finiteNumber(solventPricePerKg) ?? 150);
   const stations = Array.isArray(stationWiseInks) ? stationWiseInks : [];
-  const activeStations = stations.filter(s => s && (s.shade || s.shadeName || s.name || s.itemCode || s.productCode || finiteNumber(s.pricePerKg) > 0));
+  const activeStations = stations.filter(isStationActive);
 
   if (activeStations.length === 0) {
     return {
       activeStationsCount: 0,
+      totalStationsCount: stations.length,
       avgSolidsPct: 0,
       averageSolidPercentage: 0,
       avgSolidEquivalentRate: 0,
@@ -119,6 +142,7 @@ export function calculateStationInksMetrics(stationWiseInks = [], solventPricePe
 
   return {
     activeStationsCount: count,
+    totalStationsCount: stations.length,
     avgSolidsPct,
     averageSolidPercentage: avgSolidsPct,
     avgSolidEquivalentRate,
