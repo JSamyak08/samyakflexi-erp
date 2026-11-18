@@ -1143,6 +1143,16 @@ export default function JobMasterDirectory({
           try {
             await onUpdateCylinder({
               ...linkedCyl,
+              jobName: updatedJobMaster.jobName,
+              clientGroup: updatedJobMaster.clientName,
+              layers: updatedJobMaster.layers,
+              structure: updatedJobMaster.structure,
+              printWidthMm: updatedJobMaster.printWidthMm,
+              faceLengthMm: updatedJobMaster.faceLengthMm,
+              circumferenceMm: updatedJobMaster.repeatLengthMm,
+              pouchOpenWidth: updatedJobMaster.pouchOpenWidth,
+              pouchHeight: updatedJobMaster.pouchHeight,
+              specialInstructions: updatedJobMaster.specialInstructions,
               stationWiseInks,
               cylinderColors: stationWiseInks.map(s => s.shadeName).filter(Boolean),
               colorsCount: stationWiseInks.length > 0 ? stationWiseInks.length : (parseInt(colorsCount) || 6)
@@ -1322,7 +1332,7 @@ export default function JobMasterDirectory({
     setActiveJobCardData(cardData);
   };
 
-  const handleSaveJobCardData = (updatedData, targetJobMaster, targetCylinder) => {
+  const handleSaveJobCardData = async (updatedData, targetJobMaster, targetCylinder) => {
     const targetJob = targetJobMaster || selectedJob || jobMasters.find(j => j.id === updatedData.jobMasterId || j.skuCode === updatedData.skuCode);
     if (!targetJob) return;
 
@@ -1341,20 +1351,25 @@ export default function JobMasterDirectory({
     if (activeJobCardData) {
       setActiveJobCardData(prev => ({ ...prev, ...updatedJob }));
     }
-    if (onUpdateJobMaster) {
-      onUpdateJobMaster(updatedJob);
-    } else if (onAddJobMaster) {
-      onAddJobMaster(updatedJob);
-    }
-
-    saveJobMasterToSupabase(updatedJob);
-    if (targetCylinder) {
-      if (onUpdateCylinder) {
-        onUpdateCylinder(targetCylinder);
-      } else if (onAddCylinder) {
-        onAddCylinder(targetCylinder);
+    try {
+      if (onUpdateJobMaster) {
+        await onUpdateJobMaster(updatedJob);
+      } else if (onAddJobMaster) {
+        await onAddJobMaster(updatedJob);
+      } else {
+        await saveJobMasterToSupabase(updatedJob);
       }
-      saveCylinderToSupabase(targetCylinder);
+      if (targetCylinder) {
+        if (onUpdateCylinder) {
+          await onUpdateCylinder(targetCylinder);
+        } else if (onAddCylinder) {
+          await onAddCylinder(targetCylinder);
+        } else {
+          await saveCylinderToSupabase(targetCylinder);
+        }
+      }
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
     }
   };
 
@@ -1368,7 +1383,7 @@ export default function JobMasterDirectory({
     }
 
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const fileUrl = evt.target.result;
       const updatedJob = {
         ...selectedJob,
@@ -1379,14 +1394,20 @@ export default function JobMasterDirectory({
       };
 
       setSelectedJob(updatedJob);
-      if (onAddJobMaster) onAddJobMaster(updatedJob);
-      saveJobMasterToSupabase(updatedJob);
+      try {
+        if (onUpdateJobMaster) await onUpdateJobMaster(updatedJob);
+        else if (onAddJobMaster) await onAddJobMaster(updatedJob);
+        else await saveJobMasterToSupabase(updatedJob);
+      } catch (err) {
+        alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+        return;
+      }
       alert(`File "${file.name}" linked to Job Master ${selectedJob.id} successfully!`);
     };
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveFile = () => {
+  const handleRemoveFile = async () => {
     if (!selectedJob || !window.confirm("Remove attached Job Card file from this Job Master?")) return;
     const updatedJob = {
       ...selectedJob,
@@ -1397,8 +1418,13 @@ export default function JobMasterDirectory({
     };
 
     setSelectedJob(updatedJob);
-    if (onAddJobMaster) onAddJobMaster(updatedJob);
-    saveJobMasterToSupabase(updatedJob);
+    try {
+      if (onUpdateJobMaster) await onUpdateJobMaster(updatedJob);
+      else if (onAddJobMaster) await onAddJobMaster(updatedJob);
+      else await saveJobMasterToSupabase(updatedJob);
+    } catch (err) {
+      alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+    }
   };
 
   const renderJobMasterModals = () => (

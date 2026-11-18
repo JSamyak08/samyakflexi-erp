@@ -28,6 +28,12 @@ import { syncChallansForShipment, tareEditSummary } from './utils/deliveryChalla
 import { withReconciledCosts } from './utils/cylinderCost';
 import { artworkToApply, cylinderIdentityKey, isExplicitCylinderJobLink } from './utils/cylinderArtwork';
 import { cylindersLinkedToJobMaster, skuAfterJobMasterSync, skuWhenLinkingCylinder } from './utils/jobMasterLink';
+import {
+  isClosedScheduleStatus,
+  jobMasterBaseForSync,
+  nextScheduleCopy,
+  syncJobMasterStructure,
+} from './services/structureSync';
 import { 
   LayoutDashboard, 
   Calculator, 
@@ -104,6 +110,7 @@ import { roleHasModule, roleNeedsAny, canReadPayroll, cachesToDrop, BOOT_NEEDS, 
 import { assignedRolesOf, hasOnlyRole, rawRoleNames, userHasRole } from './assignedRoles';
 import { canRevertConsumption } from './utils/revertConsumption';
 import ConsumptionRevertNotices from './components/ConsumptionRevertNotices';
+import StructureChangeNotices from './components/StructureChangeNotices';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
@@ -2918,16 +2925,25 @@ export default function App() {
       setOrders(prev => prev.map(o => o.id === updatedOrder.id ? updatedOrder : o));
       setSchedules(prev => prev.map(s => {
         if (s.id === `SCHED-${updatedOrder.id}` || s.orderId === updatedOrder.id) {
-          const nextSched = {
+          if (isClosedScheduleStatus(s.status)) return s;
+          const nextSched = nextScheduleCopy(s, updatedOrder);
+          const filmChanged = String(s.filmType || '') !== String(nextSched.filmType || '')
+            || Number(s.micron) !== Number(nextSched.micron)
+            || Number(s.widthMm) !== Number(nextSched.widthMm);
+          const textChanged = String(s.jobName || '') !== String(nextSched.jobName || '')
+            || String(s.clientName || '') !== String(nextSched.clientName || '')
+            || Number(s.orderQtyKg) !== Number(nextSched.orderQtyKg);
+          if (!filmChanged && !textChanged) return s;
+          const savedSched = filmChanged ? nextSched : {
             ...s,
-            orderQtyKg: Number(updatedOrder.orderQtyKg || 0),
-            jobName: updatedOrder.jobName || s.jobName,
-            clientName: updatedOrder.clientName || s.clientName
+            orderQtyKg: nextSched.orderQtyKg,
+            jobName: nextSched.jobName,
+            clientName: nextSched.clientName
           };
-          saveProductionScheduleToSupabase(nextSched).catch((error) => {
+          saveProductionScheduleToSupabase(savedSched).catch((error) => {
             reportBackgroundFailure(error, `The schedule for order ${updatedOrder.id} was not saved`);
           });
-          return nextSched;
+          return savedSched;
         }
         return s;
       }));
@@ -3958,55 +3974,56 @@ export default function App() {
 
     const failedLinks = [];
     for (const jm of matchedJobMasters) {
-      const layers = Array.isArray(cyl.layers) && cyl.layers.length > 0 ? cyl.layers : (jm.layers || []);
+      const base = jobMasterBaseForSync(jm.id) || jm;
+      const layers = Array.isArray(cyl.layers) && cyl.layers.length > 0 ? cyl.layers : (base.layers || []);
       const derivedStructure = (layers.length > 0)
         ? layers.map(l => `${l.filmType} ${l.micron}µ`).join(' / ')
-        : (cyl.structure || jm.structure || '—');
+        : (cyl.structure || base.structure || '—');
 
       const updatedJm = {
-        ...jm,
-        jobName: cyl.jobName || jm.jobName,
-        clientName: cyl.clientGroup || cyl.clientName || jm.clientName,
-        skuCode: cyl.sku || jm.skuCode,
-        cylinderSku: cyl.sku || jm.cylinderSku || jm.skuCode,
-        cylinderId: cyl.id || jm.cylinderId,
+        ...base,
+        jobName: cyl.jobName || base.jobName,
+        clientName: cyl.clientGroup || cyl.clientName || base.clientName,
+        skuCode: cyl.sku || base.skuCode,
+        cylinderSku: cyl.sku || base.cylinderSku || base.skuCode,
+        cylinderId: cyl.id || base.cylinderId,
         structure: derivedStructure,
         layers: layers,
-        printWidthMm: cyl.printWidthMm !== undefined && cyl.printWidthMm !== null ? Number(cyl.printWidthMm) : jm.printWidthMm,
-        faceLengthMm: cyl.faceLengthMm !== undefined && cyl.faceLengthMm !== null ? Number(cyl.faceLengthMm) : jm.faceLengthMm,
-        repeatLengthMm: cyl.circumferenceMm !== undefined && cyl.circumferenceMm !== null ? Number(cyl.circumferenceMm) : (cyl.repeatLengthMm !== undefined ? Number(cyl.repeatLengthMm) : jm.repeatLengthMm),
-        pouchOpenWidth: cyl.pouchOpenWidth !== undefined && cyl.pouchOpenWidth !== null ? Number(cyl.pouchOpenWidth) : jm.pouchOpenWidth,
-        pouchHeight: cyl.pouchHeight !== undefined && cyl.pouchHeight !== null ? Number(cyl.pouchHeight) : jm.pouchHeight,
-        colorsCount: cyl.colorsCount !== undefined && cyl.colorsCount !== null ? Number(cyl.colorsCount) : jm.colorsCount,
-        cylinderCost: withReconciledCosts({ ...jm, ...cyl, circumferenceMm: cyl.circumferenceMm ?? jm.repeatLengthMm }).cylinderCost || jm.cylinderCost,
-        engravuresName: cyl.engravuresName || jm.engravuresName,
-        costBorneBy: cyl.costBorneBy || jm.costBorneBy,
-        utilisationLimit: cyl.utilisationLimit !== undefined && cyl.utilisationLimit !== null ? Number(cyl.utilisationLimit) : jm.utilisationLimit,
-        artworkUrl: artworkToApply({ source: cyl, target: jm, explicit: isExplicitCylinderJobLink(cyl, jm) }),
-        jobCardFileUrl: artworkToApply({ source: cyl, target: jm, explicit: isExplicitCylinderJobLink(cyl, jm) }),
-        jobCardFileName: cyl.jobCardFileName || jm.jobCardFileName,
-        silLogo: cyl.silLogo !== undefined && cyl.silLogo !== null ? cyl.silLogo : jm.silLogo,
-        arcMark: cyl.arcMark || jm.arcMark,
-        slittingMark: cyl.slittingMark || jm.slittingMark,
-        trackerLine: cyl.trackerLine || jm.trackerLine,
-        specialInstructions: cyl.specialInstructions !== undefined ? cyl.specialInstructions : jm.specialInstructions,
-        chkEyemark: cyl.chkEyemark ?? jm.chkEyemark,
-        chkBarcode: cyl.chkBarcode ?? jm.chkBarcode,
-        chkOrientation: cyl.chkOrientation ?? jm.chkOrientation,
-        chkClientApproval: cyl.chkClientApproval ?? jm.chkClientApproval,
-        approvedByHead: cyl.approvedByHead ?? jm.approvedByHead,
-        approvedHeadName: cyl.approvedHeadName || jm.approvedHeadName,
-        approvedHeadDate: cyl.approvedHeadDate || jm.approvedHeadDate,
-        cylinderStatus: cyl.status || jm.cylinderStatus || jm.status,
-        cylinderDetails: { ...(jm.cylinderDetails || {}), ...cyl },
-        cylinderLocation: cyl.assignedPress || cyl.location || jm.cylinderLocation,
-        cylinders: Array.isArray(cyl.cylinders) ? cyl.cylinders : jm.cylinders
+        printWidthMm: cyl.printWidthMm !== undefined && cyl.printWidthMm !== null ? Number(cyl.printWidthMm) : base.printWidthMm,
+        faceLengthMm: cyl.faceLengthMm !== undefined && cyl.faceLengthMm !== null ? Number(cyl.faceLengthMm) : base.faceLengthMm,
+        repeatLengthMm: cyl.circumferenceMm !== undefined && cyl.circumferenceMm !== null ? Number(cyl.circumferenceMm) : (cyl.repeatLengthMm !== undefined ? Number(cyl.repeatLengthMm) : base.repeatLengthMm),
+        pouchOpenWidth: cyl.pouchOpenWidth !== undefined && cyl.pouchOpenWidth !== null ? Number(cyl.pouchOpenWidth) : base.pouchOpenWidth,
+        pouchHeight: cyl.pouchHeight !== undefined && cyl.pouchHeight !== null ? Number(cyl.pouchHeight) : base.pouchHeight,
+        colorsCount: cyl.colorsCount !== undefined && cyl.colorsCount !== null ? Number(cyl.colorsCount) : base.colorsCount,
+        cylinderCost: withReconciledCosts({ ...base, ...cyl, circumferenceMm: cyl.circumferenceMm ?? base.repeatLengthMm }).cylinderCost || base.cylinderCost,
+        engravuresName: cyl.engravuresName || base.engravuresName,
+        costBorneBy: cyl.costBorneBy || base.costBorneBy,
+        utilisationLimit: cyl.utilisationLimit !== undefined && cyl.utilisationLimit !== null ? Number(cyl.utilisationLimit) : base.utilisationLimit,
+        artworkUrl: artworkToApply({ source: cyl, target: base, explicit: isExplicitCylinderJobLink(cyl, base) }),
+        jobCardFileUrl: artworkToApply({ source: cyl, target: base, explicit: isExplicitCylinderJobLink(cyl, base) }),
+        jobCardFileName: cyl.jobCardFileName || base.jobCardFileName,
+        silLogo: cyl.silLogo !== undefined && cyl.silLogo !== null ? cyl.silLogo : base.silLogo,
+        arcMark: cyl.arcMark || base.arcMark,
+        slittingMark: cyl.slittingMark || base.slittingMark,
+        trackerLine: cyl.trackerLine || base.trackerLine,
+        specialInstructions: cyl.specialInstructions !== undefined ? cyl.specialInstructions : base.specialInstructions,
+        chkEyemark: cyl.chkEyemark ?? base.chkEyemark,
+        chkBarcode: cyl.chkBarcode ?? base.chkBarcode,
+        chkOrientation: cyl.chkOrientation ?? base.chkOrientation,
+        chkClientApproval: cyl.chkClientApproval ?? base.chkClientApproval,
+        approvedByHead: cyl.approvedByHead ?? base.approvedByHead,
+        approvedHeadName: cyl.approvedHeadName || base.approvedHeadName,
+        approvedHeadDate: cyl.approvedHeadDate || base.approvedHeadDate,
+        cylinderStatus: cyl.status || base.cylinderStatus || base.status,
+        cylinderDetails: { ...(base.cylinderDetails || {}), ...cyl },
+        cylinderLocation: cyl.assignedPress || cyl.location || base.cylinderLocation,
+        cylinders: Array.isArray(cyl.cylinders) ? cyl.cylinders : base.cylinders
       };
 
       try {
         await writeWithRetry(() => saveJobMasterToSupabase(updatedJm));
         setJobMasters(prev => prev.map(item => item.id === updatedJm.id ? updatedJm : item));
-        await syncJobMasterToOrders(updatedJm);
+        await syncStructureForJobMaster(updatedJm);
       } catch (err) {
         if (err?.name === 'PartialSaveError') throw err;
         failedLinks.push({ label: `job master ${updatedJm.id || updatedJm.jobName}`, error: err });
@@ -4442,106 +4459,105 @@ export default function App() {
     return stored;
   };
 
-  const syncJobMasterToOrders = async (updatedJm) => {
-    if (!updatedJm) return;
-    const targetJmId = updatedJm.id || updatedJm.jobMasterId;
-    const targetJobName = (updatedJm.jobName || '').toLowerCase().trim();
-
-    // Find all matching orders in system
-    const matchingOrders = (orders || []).filter(o => {
-      if (!o) return false;
-      if (targetJmId && (o.jobMasterId === targetJmId || String(o.jobMasterId) === String(targetJmId))) return true;
-      if (targetJobName && (o.jobName || '').toLowerCase().trim() === targetJobName) return true;
-      return false;
-    });
-
-    if (matchingOrders.length === 0) return;
-
-    console.log(`[JOB MASTER SYNC] Syncing updated Job Master "${updatedJm.jobName}" (${updatedJm.id}) to ${matchingOrders.length} orders...`);
-
-    const updatedOrdersList = [];
-    const failedOrders = [];
-    for (const order of matchingOrders) {
-      // Retain existing order's locked structure, layers & rawMaterialRequirements!
-      const lockedStructure = (order.structure && order.structure !== '—' && order.structure !== 'PET / PE') 
-        ? order.structure 
-        : (order.jobDetails?.structure && order.jobDetails.structure !== '—' ? order.jobDetails.structure : updatedJm.structure);
-
-      const lockedLayers = (Array.isArray(order.layers) && order.layers.length > 0)
-        ? order.layers
-        : ((Array.isArray(order.jobDetails?.layers) && order.jobDetails.layers.length > 0) ? order.jobDetails.layers : updatedJm.layers);
-
-      const updatedOrder = {
-        ...order,
-        jobMasterId: updatedJm.id || order.jobMasterId,
-        jobName: updatedJm.jobName || order.jobName,
-        clientName: updatedJm.clientName || order.clientName,
-        structure: lockedStructure,
-        layers: lockedLayers,
-        materialFormat: updatedJm.materialForm || updatedJm.orderType || order.materialFormat || order.orderType,
-        orderType: updatedJm.materialForm || updatedJm.orderType || order.orderType || order.materialFormat,
-        printWidthMm: updatedJm.printWidthMm !== undefined && updatedJm.printWidthMm !== null ? Number(updatedJm.printWidthMm) : order.printWidthMm,
-        repeatLengthMm: updatedJm.repeatLengthMm !== undefined && updatedJm.repeatLengthMm !== null ? Number(updatedJm.repeatLengthMm) : order.repeatLengthMm,
-        pouchOpenWidth: updatedJm.pouchOpenWidth !== undefined && updatedJm.pouchOpenWidth !== null ? Number(updatedJm.pouchOpenWidth) : order.pouchOpenWidth,
-        pouchHeight: updatedJm.pouchHeight !== undefined && updatedJm.pouchHeight !== null ? Number(updatedJm.pouchHeight) : order.pouchHeight,
-        pouchType: updatedJm.pouchType || order.pouchType,
-        colorsCount: updatedJm.colorsCount !== undefined && updatedJm.colorsCount !== null ? Number(updatedJm.colorsCount) : order.colorsCount,
-        cylinderSku: updatedJm.cylinderSku || order.cylinderSku,
-        cylinderCost: updatedJm.cylinderCost || order.cylinderCost,
-        engravuresName: updatedJm.engravuresName || order.engravuresName,
-        costBorneBy: updatedJm.costBorneBy || order.costBorneBy,
-        variant: updatedJm.variant || order.variant,
-        printing: updatedJm.printing || order.printing,
-        invoiceTo: updatedJm.invoiceTo || order.invoiceTo,
-        shellSize: updatedJm.shellSize || order.shellSize,
-        petSize: updatedJm.petSize || order.petSize,
-        inkGsm: updatedJm.inkGsm !== undefined ? Number(updatedJm.inkGsm) : (order.inkGsm ?? 1.5),
-        adhesiveGsm: updatedJm.adhesiveGsm !== undefined ? Number(updatedJm.adhesiveGsm) : (order.adhesiveGsm ?? 1.5),
-        wastagePct: updatedJm.wastagePct !== undefined ? Number(updatedJm.wastagePct) : (order.wastagePct ?? 5),
-        pressMarks: updatedJm.pressMarks || order.pressMarks,
-        artworkUrl: updatedJm.artworkUrl || order.artworkUrl,
-        specialInstructions: updatedJm.specialInstructions !== undefined ? updatedJm.specialInstructions : order.specialInstructions,
-        jobDetails: {
-          ...(order.jobDetails || {}),
-          jobName: updatedJm.jobName || order.jobName,
-          clientName: updatedJm.clientName || order.clientName,
-          structure: lockedStructure,
-          layers: lockedLayers,
-          printWidthMm: updatedJm.printWidthMm !== undefined && updatedJm.printWidthMm !== null ? Number(updatedJm.printWidthMm) : order.jobDetails?.printWidthMm,
-          repeatLengthMm: updatedJm.repeatLengthMm !== undefined && updatedJm.repeatLengthMm !== null ? Number(updatedJm.repeatLengthMm) : order.jobDetails?.repeatLengthMm,
-          pouchOpenWidth: updatedJm.pouchOpenWidth !== undefined && updatedJm.pouchOpenWidth !== null ? Number(updatedJm.pouchOpenWidth) : order.jobDetails?.pouchOpenWidth,
-          pouchHeight: updatedJm.pouchHeight !== undefined && updatedJm.pouchHeight !== null ? Number(updatedJm.pouchHeight) : order.jobDetails?.pouchHeight,
-          pouchType: updatedJm.pouchType || order.jobDetails?.pouchType,
-          colorsCount: updatedJm.colorsCount !== undefined && updatedJm.colorsCount !== null ? Number(updatedJm.colorsCount) : order.jobDetails?.colorsCount,
-          inkGsm: updatedJm.inkGsm !== undefined ? Number(updatedJm.inkGsm) : (order.jobDetails?.inkGsm ?? 1.5),
-          adhesiveGsm: updatedJm.adhesiveGsm !== undefined ? Number(updatedJm.adhesiveGsm) : (order.jobDetails?.adhesiveGsm ?? 1.5),
-          wastagePct: updatedJm.wastagePct !== undefined ? Number(updatedJm.wastagePct) : (order.jobDetails?.wastagePct ?? 5),
-          pressMarks: updatedJm.pressMarks || order.jobDetails?.pressMarks,
-          artworkUrl: updatedJm.artworkUrl || order.jobDetails?.artworkUrl
-        }
-      };
-
+  const persistStructurePlan = async (plan) => {
+    const savedOrders = [];
+    const failures = [];
+    for (const order of plan.orderWrites || []) {
       try {
-        await writeWithRetry(() => saveOrderToSupabase(updatedOrder));
-        updatedOrdersList.push(updatedOrder);
-      } catch (err) {
-        failedOrders.push({ label: `order ${updatedOrder.id}`, error: err });
+        await writeWithRetry(() => saveOrderToSupabase(order));
+        savedOrders.push(order);
+      } catch (error) {
+        failures.push({ label: `order ${order.id}`, error });
+      }
+    }
+    if (savedOrders.length > 0) {
+      const updatedMap = new Map(savedOrders.map((order) => [order.id, order]));
+      setOrders((prev) => prev.map((order) => updatedMap.get(order.id) || order));
+    }
+
+    const savedSchedules = [];
+    for (const schedule of plan.scheduleWrites || []) {
+      try {
+        await writeWithRetry(() => saveProductionScheduleToSupabase(schedule));
+        savedSchedules.push(schedule);
+      } catch (error) {
+        failures.push({ label: `schedule ${schedule.id}`, error });
+      }
+    }
+    if (savedSchedules.length > 0) {
+      const scheduleMap = new Map(savedSchedules.map((schedule) => [schedule.id, schedule]));
+      setSchedules((prev) => prev.map((schedule) => scheduleMap.get(schedule.id) || schedule));
+    }
+
+    const failedOcns = new Set();
+    for (const amendment of plan.ocnAmendments || []) {
+      if (!savedOrders.some((order) => order.id === amendment.orderId)) continue;
+      try {
+        await saveOrderConfirmationAmendment(
+          amendment.ocn.id || amendment.ocn.ocnNumber,
+          amendment.patch,
+          amendment.amendedBy,
+          { skipOrderSync: true }
+        );
+      } catch (error) {
+        failedOcns.add(amendment.orderId);
+        failures.push({ label: `OCN ${amendment.ocn.ocnNumber || amendment.ocn.id}`, error });
       }
     }
 
-    if (updatedOrdersList.length > 0) {
-      const updatedMap = new Map(updatedOrdersList.map(o => [o.id, o]));
-      setOrders(prev => prev.map(o => updatedMap.get(o.id) || o));
+    const ordersAttempted = (plan.orderWrites || []).length;
+    if (plan.notice && (ordersAttempted === 0 || savedOrders.length > 0)) {
+      const savedIds = new Set(savedOrders.map((order) => order.id));
+      const payload = {
+        ...plan.notice,
+        orders: (plan.notice.orders || []).map((entry) => {
+          if (!failedOcns.has(entry.orderId)) return entry;
+          return {
+            ...entry,
+            modules: (entry.modules || []).map((item) => (
+              item.module === 'OCN amendment'
+                ? { ...item, detail: `${item.detail} The amendment was not saved.` }
+                : item
+            )),
+          };
+        }).filter((entry) => entry.skipped || ordersAttempted === 0 || savedIds.has(entry.orderId)),
+      };
+      const { error } = await supabase.rpc('record_structure_change_notice', {
+        p_id: payload.id,
+        p_payload: payload,
+      });
+      if (error) {
+        reportBackgroundFailure(error, 'The structure change notice was not saved');
+      } else if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('structure-changed'));
+      }
     }
-    assertAllSaved('The job master was saved, but these linked orders were not updated.', failedOrders);
+
+    return { orders: savedOrders, schedules: savedSchedules, failures };
   };
+
+  const syncStructureForJobMaster = (updatedJm) => syncJobMasterStructure(updatedJm, {
+    previousJobMaster: (jobMasters || []).find((job) => job && String(job.id) === String(updatedJm?.id)) || null,
+    orders,
+    schedules,
+    inventory,
+    actor: loggedInActorLabel(currentUser) || 'Staff',
+    loadConfirmations: () => fetchOrderConfirmations().catch((error) => {
+      reportBackgroundFailure(error, 'Order confirmations were not loaded. No OCN was amended.');
+      return [];
+    }),
+    apply: persistStructurePlan,
+  });
 
   const handleUpdateJobMaster = async (updatedJobMaster) => {
     requireDatabaseConnection('update job master');
     await saveJobMasterToSupabase(updatedJobMaster);
     setJobMasters(prev => prev.map(j => j.id === updatedJobMaster.id ? updatedJobMaster : j));
-    await syncJobMasterToOrders(updatedJobMaster);
+    const structureSync = await syncStructureForJobMaster(updatedJobMaster);
     await syncJobMasterToCylinder(updatedJobMaster);
+    if (structureSync?.failures?.length) {
+      assertAllSaved('The job master was saved, but these linked orders were not updated.', structureSync.failures);
+    }
     logAudit('UPDATE', 'Job Masters', `Updated job master template "${updatedJobMaster.jobName}" (${updatedJobMaster.id})`, updatedJobMaster.id);
   };
 
@@ -5294,6 +5310,7 @@ export default function App() {
         </div>
 
         <ConsumptionRevertNotices currentUser={currentUser} />
+        <StructureChangeNotices currentUser={currentUser} />
 
         <div className="nav-links" onScroll={() => setNavTooltip(null)}>
           {(isTabAllowed('dashboard') || isTabAllowed('sales') || isTabAllowed('scrap_analytics')) && (
@@ -5955,6 +5972,7 @@ export default function App() {
               onSaveSchedule={handleSaveSchedule}
               onDeleteSchedule={handleDeleteSchedule}
               onUpdateOrder={handleUpdateOrder}
+              onUpdateJobMaster={handleUpdateJobMaster}
               onStartJob={handleStartPrintingJob}
               onHoldJob={handleHoldPrintingJob}
               onRestartHeldJob={handleRestartHeldPrint}
@@ -7054,6 +7072,7 @@ export default function App() {
             onSaveSchedule={handleSaveSchedule}
             onDeleteSchedule={handleDeleteSchedule}
             onUpdateOrder={handleUpdateOrder}
+            onUpdateJobMaster={handleUpdateJobMaster}
             onStartJob={handleStartPrintingJob}
             onHoldJob={handleHoldPrintingJob}
             onRestartHeldJob={handleRestartHeldPrint}

@@ -4908,7 +4908,7 @@ export async function saveOrderConfirmation(ocn, options = {}) {
 /**
  * Apply an amendment to an existing OCN with revision tracking
  */
-export async function saveOrderConfirmationAmendment(ocnIdOrOptions, amendmentPatch = {}, amendedBy = 'Staff') {
+export async function saveOrderConfirmationAmendment(ocnIdOrOptions, amendmentPatch = {}, amendedBy = 'Staff', options = {}) {
   let ocnId = ocnIdOrOptions;
   let patch = amendmentPatch;
   let author = amendedBy;
@@ -4932,9 +4932,12 @@ export async function saveOrderConfirmationAmendment(ocnIdOrOptions, amendmentPa
 
   const amended = buildOcnAmendment(existing, patch, author);
   const saved = await saveOrderConfirmation(amended);
+  const skipOrderSync = options?.skipOrderSync === true || ocnIdOrOptions?.skipOrderSync === true;
 
-  // If there is an associated order in orders table, keep order in sync
-  if (saved.orderId && isSupabaseConfigured()) {
+  // If there is an associated order in orders table, keep order in sync.
+  // Structure sync saves the full order itself and skips this partial write,
+  // because a partial order would replace the job_name envelope.
+  if (!skipOrderSync && saved.orderId && isSupabaseConfigured()) {
     try {
       const orderPatch = {
         id: saved.orderId,

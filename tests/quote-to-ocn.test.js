@@ -384,9 +384,11 @@ function schema() {
 test('OCN and quotation numbers continue from the highest stored serial and ignore the stuck counter', async () => {
   const names = fs.readdirSync(new URL('../supabase/migrations/', import.meta.url)).filter((name) => name.endsWith('.sql'));
   assert.ok(names.includes('20261116130000_allocate_ocn_and_quotation_numbers.sql'));
-  assert.ok(names.every((name) => name.slice(0, 14) <= '20261116130000' || name === '20261116130000_allocate_ocn_and_quotation_numbers.sql' || name < '20261116130000'));
-  const latestOther = names.filter((name) => name !== '20261116130000_allocate_ocn_and_quotation_numbers.sql').sort().at(-1);
-  assert.ok(latestOther < '20261116130000_allocate_ocn_and_quotation_numbers.sql');
+  const later = names.filter((name) => name.slice(0, 14) > '20261116130000');
+  later.forEach((name) => {
+    const sql = fs.readFileSync(new URL(`../supabase/migrations/${name}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(sql, /allocate_ocn_number|allocate_quotation_number/);
+  });
   assert.match(migrationSql, /pg_advisory_xact_lock\(hashtext\('samyak-ocn-number'\)\)/);
   assert.match(migrationSql, /pg_advisory_xact_lock\(hashtext\('samyak-quotation-number'\)\)/);
   const ocnFn = migrationSql.slice(

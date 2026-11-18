@@ -268,6 +268,7 @@ export default function ProductionScheduler({
   onSaveSchedule,
   onDeleteSchedule,
   onUpdateOrder,
+  onUpdateJobMaster,
   onSavePrintProgress,
   onStartJob,
   onHoldJob,
@@ -380,7 +381,8 @@ export default function ProductionScheduler({
         colorsCount: updatedStations.length
       };
       try {
-        await saveJobMasterToSupabase(updatedJM);
+        if (onUpdateJobMaster) await onUpdateJobMaster(updatedJM);
+        else await saveJobMasterToSupabase(updatedJM);
       } catch (err) {
         console.warn("Could not sync station inks to Job Master:", err);
       }

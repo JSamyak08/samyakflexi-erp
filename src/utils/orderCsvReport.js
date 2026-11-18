@@ -36,6 +36,7 @@ import {
   getOrderMaterialRequirements,
   getOrderStageInfo,
   getOrderStatusInfo,
+  isSupersededMaterialLine,
   presentRequirementStock,
 } from '../factoryStore.js';
 import { isInventoryItemActive } from '../services/inventoryArchive.js';
@@ -273,7 +274,8 @@ function choiceFor(order, choices) {
 }
 
 function requirementsFor(order, orders, context) {
-  const stored = getOrderMaterialRequirements(order, context.jobMasters || []);
+  const stored = getOrderMaterialRequirements(order, context.jobMasters || [])
+    .filter((req) => !isSupersededMaterialLine(req));
   const saved = order?.printedSfgUse;
   const base = saved?.printLineId && saved.baseQtyKg !== undefined && saved.baseQtyKg !== null
     ? stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req))
