@@ -36,7 +36,7 @@ import {
   validateProductionEntry
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
-import { buildSfgFgBatchPlan, processKindForType } from '../utils/sfgFgBatchEntry';
+import { buildSfgFgBatchPlan, OPENING_BALANCE_TOGGLE_LABEL, processKindForType, processRecordBlockVisible } from '../utils/sfgFgBatchEntry';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -47,7 +47,8 @@ export const SFG_TYPES = [
 
 export const FG_TYPES = [
   'Laminated Rolls (First Pass) for Roll Form',
-  'Laminated Rolls (Second Pass) for Roll Form'
+  'Laminated Rolls (Second Pass) for Roll Form',
+  'Slitted Rolls'
 ];
 
 export const FILM_TYPE_OPTIONS = [
@@ -129,6 +130,7 @@ export default function SFGFGEntryModal({
   const [stageMeters, setStageMeters] = useState('');
   const [laminationPlainWastageKg, setLaminationPlainWastageKg] = useState('');
   const [laminateWastageKg, setLaminateWastageKg] = useState('');
+  const [isOpeningBalance, setIsOpeningBalance] = useState(false);
 
   // Filtered Job List from Orders & Job Masters (Strictly real data only, zero dummy fallbacks)
   const activeJobsList = useMemo(() => {
@@ -173,6 +175,7 @@ export default function SFGFGEntryModal({
   // Subtype Code Helper for Barcodes
   const getSubtypeShortCode = (typeStr) => {
     if (!typeStr) return isSFG ? 'SFG' : 'FG';
+    if (typeStr.includes('Slit')) return 'SLT';
     if (typeStr.includes('Printed')) return 'PRN';
     if (typeStr.includes('First Pass') && typeStr.includes('Roll')) return 'LAM1-R';
     if (typeStr.includes('First Pass') && typeStr.includes('Pouch')) return 'LAM1-P';
@@ -514,6 +517,9 @@ export default function SFGFGEntryModal({
     mode,
     stageType: selectedType,
     process: processKind,
+    isOpeningBalance,
+    enteredBy: currentUser?.name || currentUser?.fullName || currentUser?.username || '',
+    enteredAt: new Date().toISOString(),
     orderId: currentJob?.orderId || selectedJobId,
     jobName: currentJob?.jobName || '',
     jobCode: currentJob?.jobCode || '',
@@ -531,24 +537,24 @@ export default function SFGFGEntryModal({
     notes: batchRemarks,
     now: Date.now(),
     outputRolls: newRollsToSave,
-    inputRolls,
-    actualMeters,
-    inkGsm,
-    inkKg,
-    inkItemId,
-    inkBarcode,
-    plainSettingKg,
-    printingWastageKg,
-    parentBarcode,
-    parentConsumedKg,
-    substrateRolls,
-    adhesiveGsm,
-    adhesiveKg,
-    adhesiveItemId,
-    adhesiveBarcode,
-    stageMeters,
-    laminationPlainWastageKg,
-    laminateWastageKg,
+    inputRolls: isOpeningBalance ? [] : inputRolls,
+    actualMeters: isOpeningBalance ? '' : actualMeters,
+    inkGsm: isOpeningBalance ? '' : inkGsm,
+    inkKg: isOpeningBalance ? '' : inkKg,
+    inkItemId: isOpeningBalance ? '' : inkItemId,
+    inkBarcode: isOpeningBalance ? '' : inkBarcode,
+    plainSettingKg: isOpeningBalance ? '' : plainSettingKg,
+    printingWastageKg: isOpeningBalance ? '' : printingWastageKg,
+    parentBarcode: isOpeningBalance ? '' : parentBarcode,
+    parentConsumedKg: isOpeningBalance ? '' : parentConsumedKg,
+    substrateRolls: isOpeningBalance ? [] : substrateRolls,
+    adhesiveGsm: isOpeningBalance ? '' : adhesiveGsm,
+    adhesiveKg: isOpeningBalance ? '' : adhesiveKg,
+    adhesiveItemId: isOpeningBalance ? '' : adhesiveItemId,
+    adhesiveBarcode: isOpeningBalance ? '' : adhesiveBarcode,
+    stageMeters: isOpeningBalance ? '' : stageMeters,
+    laminationPlainWastageKg: isOpeningBalance ? '' : laminationPlainWastageKg,
+    laminateWastageKg: isOpeningBalance ? '' : laminateWastageKg,
     inventory,
     inventoryRolls,
     sfgGoods,
@@ -668,9 +674,9 @@ export default function SFGFGEntryModal({
         quantityKg: newNetKg,
         orderQtyKg: order?.orderQtyKg || currentJob.plannedQtyKg,
         goodKg: newNetKg,
-        scrapKg: (parseFloat(plainSettingKg) || 0) + (parseFloat(printingWastageKg) || 0) + (parseFloat(laminationPlainWastageKg) || 0) + (parseFloat(laminateWastageKg) || 0),
-        meters: processKind === 'printing' ? actualMeters : stageMeters,
-        printInputKg: inputRolls.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0)
+        scrapKg: isOpeningBalance ? 0 : (parseFloat(plainSettingKg) || 0) + (parseFloat(printingWastageKg) || 0) + (parseFloat(laminationPlainWastageKg) || 0) + (parseFloat(laminateWastageKg) || 0),
+        meters: isOpeningBalance ? '' : (processKind === 'printing' ? actualMeters : stageMeters),
+        printInputKg: isOpeningBalance ? '' : inputRolls.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0)
       }
     });
     const decision = decideGuardrailSave(guardrail, {
@@ -771,6 +777,40 @@ export default function SFGFGEntryModal({
             <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <Building2 size={15} style={{ color: '#4f46e5' }} /> 1. Active Production Job & Stage Classification
             </div>
+
+            <label data-testid="sfg-opening-balance-toggle" style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', margin: '0 0 12px', padding: '10px 12px', background: isOpeningBalance ? '#fffbeb' : '#ffffff', border: `1px solid ${isOpeningBalance ? '#fcd34d' : '#e2e8f0'}`, borderRadius: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                data-testid="sfg-opening-balance"
+                checked={isOpeningBalance}
+                onChange={(event) => {
+                  const next = event.target.checked;
+                  setIsOpeningBalance(next);
+                  if (next) setFormErrors((prev) => ({ ...prev, process: null }));
+                }}
+                style={{ marginTop: '2px' }}
+              />
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#92400e', lineHeight: 1.4 }}>
+                {OPENING_BALANCE_TOGGLE_LABEL}
+              </span>
+            </label>
+
+            {isOpeningBalance && (
+              <div style={{ marginBottom: '12px', maxWidth: '280px' }}>
+                <label className="form-label" htmlFor="sfg-opening-production-date" style={{ fontWeight: '700', fontSize: '0.82rem', marginBottom: '4px', display: 'block' }}>
+                  Production Date <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <input
+                  id="sfg-opening-production-date"
+                  data-testid="sfg-opening-production-date"
+                  type="date"
+                  className="form-control"
+                  value={productionDate}
+                  onChange={(event) => setProductionDate(event.target.value)}
+                  required
+                />
+              </div>
+            )}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '12px' }}>
               {/* Job Selector */}
@@ -1040,8 +1080,8 @@ export default function SFGFGEntryModal({
             </div>
           </div>
 
-          {selectedType && (
-            <div style={{ background: '#f8fafc', border: formErrors.process ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
+          {processRecordBlockVisible({ selectedType, isOpeningBalance, processKind }) && (
+            <div data-testid="sfg-process-record" style={{ background: '#f8fafc', border: formErrors.process ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
               <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '8px' }}>
                 Process record for this {processKind === 'printing' ? 'printing' : processKind === 'lamination-2' ? 'lamination pass 2' : 'lamination pass 1'} batch
               </div>

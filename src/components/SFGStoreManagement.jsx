@@ -81,7 +81,7 @@ import {
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
 import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIdentity';
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
-import { commitSfgFgBatch } from '../utils/sfgFgBatchEntry';
+import { commitSfgFgBatch, openingBalanceStoreLabel } from '../utils/sfgFgBatchEntry';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
 import RevertConsumptionModal from './RevertConsumptionModal';
@@ -2550,6 +2550,11 @@ export default function SFGStoreManagement({
                                   }}>
                                     {item.status || 'In Stock (WIP)'}
                                   </span>
+                                  {openingBalanceStoreLabel(item) && (
+                                    <span data-testid="sfg-opening-balance-badge" style={{ background: '#fffbeb', color: '#92400e', border: '1px solid #fcd34d', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px' }}>
+                                      {openingBalanceStoreLabel(item)}
+                                    </span>
+                                  )}
                                   {orderClosedStockLabel((orders || []).find((order) => String(order.id) === String(item.orderId))) && (
                                     <span style={{ background: '#fff7ed', color: '#9a3412', border: '1px solid #fdba74', fontSize: '0.66rem', fontWeight: '800', padding: '2px 6px', borderRadius: '4px' }}>
                                       Order closed

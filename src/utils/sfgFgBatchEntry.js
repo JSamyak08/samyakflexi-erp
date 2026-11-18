@@ -6,12 +6,32 @@
  * SFG- or FG- batch and reduce the parent lot. Film, ink, and adhesive
  * become materials_list lines the production-record ledger trigger already
  * posts. There is no second ledger and no inventory master for the batch.
+ *
+ * Opening balance is stock that was already in the plant before this ERP
+ * inventory. It is listed on PR-{orderId} for audit only. It does not change
+ * materials_list, input_rolls_list, sfg_consumptions, process quantity,
+ * meters, or wastage, and it does not reduce a parent lot.
  */
 
 import { planPrintingSfgLot, printingSfgLotCode } from './printingSfgLot.js';
 import { roundFilmKg } from './printingFilmIssue.js';
 
 export const LEDGER_SOURCE = 'sfg-fg-batch';
+
+export const SLITTED_FG_TYPE = 'Slitted Rolls';
+
+export const OPENING_BALANCE_BADGE = 'Opening balance';
+
+export const OPENING_BALANCE_TOGGLE_LABEL = 'Opening balance (stock from before ERP inventory, no inventory deductions)';
+
+export function openingBalanceStoreLabel(item) {
+  return item?.isOpeningBalance === true ? OPENING_BALANCE_BADGE : '';
+}
+
+export function processRecordBlockVisible({ selectedType, isOpeningBalance, processKind } = {}) {
+  if (isOpeningBalance || !selectedType) return false;
+  return processKind === 'printing' || processKind === 'lamination-1' || processKind === 'lamination-2';
+}
 
 const PROCESS_MEASURE_FIELDS = [
   'laminationMetersL1',
@@ -24,6 +44,7 @@ const PROCESS_MEASURE_FIELDS = [
 export function processKindForType(stageType) {
   const text = String(stageType || '');
   if (/printed/i.test(text)) return 'printing';
+  if (/slit/i.test(text)) return 'slitting';
   if (/second pass/i.test(text)) return 'lamination-2';
   if (/first pass|laminat/i.test(text)) return 'lamination-1';
   return '';
@@ -156,7 +177,15 @@ export function validateSfgFgEntry(entry = {}) {
     push('Add at least one output roll with a gross weight and a net weight greater than 0.');
   }
 
-  if (process === 'printing') {
+  const opening = entry.isOpeningBalance === true;
+  if (opening && !text(entry.productionDate)) {
+    push('Production date is required for opening balance.');
+  }
+  if (!opening && process === 'slitting') {
+    push('Slitted Rolls on Add Batch are opening-balance stock. Turn on Opening balance. In-process slitting stays on Consume.');
+  }
+
+  if (!opening && process === 'printing') {
     const inputs = rollLines(entry.inputRolls);
     if (inputs.length === 0 || inputs.every((row) => !row.barcode || !(row.consumedKg > 0))) {
       push('Scan or type each film roll barcode and the kilograms consumed. At least one film roll is required.');
@@ -185,7 +214,7 @@ export function validateSfgFgEntry(entry = {}) {
     if (!ink.stockItemId) push('Choose the ink stock item, by barcode or item, so it posts to that item\'s existing ledger.');
   }
 
-  if (process === 'lamination-1' || process === 'lamination-2') {
+  if (!opening && (process === 'lamination-1' || process === 'lamination-2')) {
     const pass = process === 'lamination-2' ? 'pass 2' : 'pass 1';
     if (!text(entry.parentBarcode)) push('Scan or type the parent lot barcode that this pass consumes.');
     push(requiredNumber(entry.parentConsumedKg, 'Parent lot consumed (kg)'));
@@ -705,10 +734,156 @@ function outputBatchFrom(entry, batchCode, outputs) {
   };
 }
 
+function openingAuditRecord(existing, entry, batch) {
+  const batches = (Array.isArray(existing?.sfgFgBatches) ? existing.sfgFgBatches : [])
+    .filter((row) => !sameCode(row?.batchCode, batch.batchCode))
+    .concat(batch);
+  const record = {
+    ...(existing || {}),
+    id: productionRecordId(entry.orderId, existing),
+    orderId: entry.orderId,
+    jobName: existing?.jobName || entry.jobName || '',
+    jobCode: existing?.jobCode || entry.jobCode || '',
+    clientName: existing?.clientName || entry.clientName || '',
+    sfgFgBatches: batches
+  };
+  if (!existing) {
+    record.status = 'In Progress';
+    record.materialsList = [];
+    record.inputRollsList = [];
+    record.sfgConsumptions = [];
+    record.outputRolls = [];
+    record.machineName = entry.machineName || '';
+    record.operatorName = entry.operatorName || '';
+    record.shift = entry.shift || '';
+    record.dateFilled = entry.productionDate || '';
+    record.productionDate = entry.productionDate || '';
+    record.notes = entry.notes || '';
+  }
+  return record;
+}
+
+function openingPrintedLot(entry, outputs, enteredBy, enteredAt) {
+  const existingLot = entry.existingLot || null;
+  const children = mergeChildren(existingLot?.childRolls, outputs);
+  const openingCodes = new Set(outputs.map((roll) => roll.barcodeId));
+  const printedLot = planPrintingSfgLot({
+    orderId: entry.orderId,
+    jobName: entry.jobName,
+    jobCode: entry.jobCode,
+    jobMasterId: entry.jobMasterId,
+    clientName: entry.clientName,
+    filmType: entry.filmType,
+    micron: entry.micron,
+    widthMm: entry.widthMm,
+    outputRolls: children,
+    inputRolls: (existingLot?.inputBarcodeIds || []).map((barcodeId) => ({ barcodeId })),
+    meters: null,
+    existingLot
+  });
+  printedLot.childRolls = (printedLot.childRolls || []).map((child) => {
+    const source = children.find((roll) => roll.barcodeId === child.barcodeId);
+    const opening = openingCodes.has(child.barcodeId) || Boolean(source?.isOpeningBalance);
+    const next = source
+      ? { ...child, grossWeightKg: source.grossWeightKg, tareWeightKg: source.tareWeightKg }
+      : { ...child };
+    if (opening) next.isOpeningBalance = true;
+    return next;
+  });
+  if (existingLot?.id) printedLot.id = existingLot.id;
+  printedLot.machineName = existingLot?.machineName || entry.machineName;
+  printedLot.operatorName = existingLot?.operatorName || entry.operatorName;
+  printedLot.shift = existingLot?.shift || entry.shift;
+  printedLot.storageBay = entry.storageBay || existingLot?.storageBay || '';
+  printedLot.productionDate = entry.productionDate || existingLot?.productionDate || '';
+  printedLot.structure = entry.structure || existingLot?.structure || '';
+  printedLot.isOpeningBalance = true;
+  printedLot.openingBalanceEnteredBy = text(existingLot?.openingBalanceEnteredBy) || enteredBy;
+  printedLot.openingBalanceEnteredAt = text(existingLot?.openingBalanceEnteredAt) || enteredAt;
+  const addedMeters = outputs.reduce((sum, roll) => sum + (Number(roll.lengthMeters) || 0), 0);
+  if ((kg(existingLot?.totalMeters) || 0) > 0) {
+    printedLot.totalMeters = roundFilmKg((kg(existingLot.totalMeters) || 0) + addedMeters);
+  }
+  const previousGross = kg(existingLot?.totalGrossKg) || kg(existingLot?.totalNetKg) || 0;
+  const addedGross = outputs.reduce((sum, roll) => sum + (roll.grossWeightKg ?? roll.netWeightKg), 0);
+  printedLot.totalGrossKg = roundFilmKg(Math.max(printedLot.totalNetKg, previousGross + addedGross));
+  printedLot.grossWeightKg = printedLot.totalGrossKg;
+  printedLot.category = existingLot?.category || 'Semi-Finished Goods (SFG)';
+  printedLot.rollType = existingLot?.rollType || 'SFG';
+  return printedLot;
+}
+
+function buildOpeningBalancePlan(entry, process, batchCode) {
+  const outputs = outputRollsOf(entry.outputRolls);
+  const net = roundFilmKg(outputs.reduce((sum, roll) => sum + roll.netWeightKg, 0));
+  const gross = roundFilmKg(outputs.reduce((sum, roll) => sum + (roll.grossWeightKg ?? roll.netWeightKg), 0));
+  const isFG = process === 'slitting' || entry.mode === 'FG';
+  const enteredAt = text(entry.enteredAt) || new Date().toISOString();
+  const enteredBy = text(entry.enteredBy);
+  const batch = {
+    batchCode,
+    orderId: entry.orderId,
+    process,
+    isFG,
+    isOpeningBalance: true,
+    stageType: entry.stageType,
+    netKg: net,
+    grossKg: gross,
+    meters: 0,
+    plainSettingKg: 0,
+    printingWastageKg: 0,
+    laminationPlainWastageKg: 0,
+    laminateWastageKg: 0,
+    adhesiveKg: 0,
+    adhesiveGsm: null,
+    inkGsm: null,
+    inkKg: 0,
+    parentBarcode: '',
+    parentConsumedKg: 0,
+    ledgerLines: [],
+    outputRolls: outputs,
+    enteredBy,
+    enteredAt,
+    productionDate: text(entry.productionDate)
+  };
+  const productionRecord = openingAuditRecord(entry.existingRecord || null, entry, batch);
+  let printedLot = null;
+  let outputBatch = null;
+  if (process === 'printing') {
+    printedLot = openingPrintedLot(entry, outputs, enteredBy, enteredAt);
+  } else {
+    outputBatch = outputBatchFrom({
+      ...entry,
+      mode: isFG ? 'FG' : entry.mode,
+      parentBarcode: '',
+      stageMeters: ''
+    }, batchCode, outputs);
+    outputBatch.isOpeningBalance = true;
+    outputBatch.openingBalanceEnteredBy = enteredBy;
+    outputBatch.openingBalanceEnteredAt = enteredAt;
+    delete outputBatch.parentSfgBatchCode;
+    delete outputBatch.parentBarcode;
+  }
+  return {
+    ok: true,
+    errors: [],
+    process,
+    batchCode,
+    inventoryMaster: null,
+    printedLot,
+    outputBatch,
+    parentLot: null,
+    productionRecord,
+    outputRolls: outputs,
+    stockRows: [printedLot, outputBatch].filter(Boolean),
+    createsInventoryMaster: false
+  };
+}
+
 export function buildSfgFgBatchPlan(entry = {}) {
   const process = entry.process || processKindForType(entry.stageType);
   const batchCode = text(entry.batchCode) || manualBatchCode({
-    mode: entry.mode,
+    mode: process === 'slitting' ? 'FG' : entry.mode,
     jobCode: entry.jobCode,
     orderId: entry.orderId,
     now: entry.now
@@ -723,6 +898,10 @@ export function buildSfgFgBatchPlan(entry = {}) {
       inventoryMaster: null,
       stockRows: []
     };
+  }
+
+  if (entry.isOpeningBalance === true) {
+    return buildOpeningBalancePlan(entry, process, batchCode);
   }
 
   const outputs = outputRollsOf(entry.outputRolls);
