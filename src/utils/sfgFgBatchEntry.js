@@ -1,0 +1,843 @@
+/**
+ * Manual SFG / FG batch entry.
+ *
+ * One production record per order (PR-{orderId} when none exists).
+ * Printing updates the existing SFG-LOT-{orderId}. Later passes write one
+ * SFG- or FG- batch and reduce the parent lot. Film, ink, and adhesive
+ * become materials_list lines the production-record ledger trigger already
+ * posts. There is no second ledger and no inventory master for the batch.
+ */
+
+import { planPrintingSfgLot, printingSfgLotCode } from './printingSfgLot.js';
+import { roundFilmKg } from './printingFilmIssue.js';
+
+export const LEDGER_SOURCE = 'sfg-fg-batch';
+
+const PROCESS_MEASURE_FIELDS = [
+  'laminationMetersL1',
+  'laminationMetersL2',
+  'slittingMeters',
+  'pouchingMeters',
+  'actualAdhesiveGsmL2'
+];
+
+export function processKindForType(stageType) {
+  const text = String(stageType || '');
+  if (/printed/i.test(text)) return 'printing';
+  if (/second pass/i.test(text)) return 'lamination-2';
+  if (/first pass|laminat/i.test(text)) return 'lamination-1';
+  return '';
+}
+
+export function productionRecordId(orderId, existing) {
+  const current = String(existing?.id || '').trim();
+  if (current) return current;
+  return `PR-${String(orderId || '').trim()}`;
+}
+
+export function manualBatchCode({ mode, jobCode, orderId, now = Date.now() }) {
+  const prefix = mode === 'FG' ? 'FG' : 'SFG';
+  const clean = String(jobCode || orderId || 'JOB').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'JOB';
+  const tail = String(now).slice(-4);
+  return `${prefix}-${clean}-${tail}`;
+}
+
+function text(value) {
+  return String(value ?? '').trim();
+}
+
+function kg(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? roundFilmKg(number) : null;
+}
+
+function requiredNumber(value, label, { allowZero = false } = {}) {
+  const number = kg(value);
+  if (number === null) return `${label} is required.`;
+  if (number < 0) return `${label} cannot be negative.`;
+  if (!allowZero && !(number > 0)) return `${label} must be greater than 0.`;
+  return '';
+}
+
+function ledgerBarcode(raw) {
+  const code = text(raw);
+  if (!code) return '';
+  if (/^(sfg-|fg-|mat-)/i.test(code)) return `stk-${code}`;
+  return code;
+}
+
+function sameCode(left, right) {
+  const a = text(left).toLowerCase();
+  const b = text(right).toLowerCase();
+  return Boolean(a) && a === b;
+}
+
+function findInventoryItem(inventory, itemId) {
+  const id = text(itemId);
+  if (!id) return null;
+  return (inventory || []).find((item) => item && (sameCode(item.id, id) || sameCode(item.itemCode, id))) || null;
+}
+
+function findRoll(rolls, barcode) {
+  const code = text(barcode);
+  if (!code) return null;
+  return (rolls || []).find((roll) => roll && (sameCode(roll.barcodeId, code) || sameCode(roll.id, code) || sameCode(roll.sfgBatchCode, code))) || null;
+}
+
+export function resolveConsumable({ inventory = [], inventoryRolls = [], barcode = '', itemId = '' } = {}) {
+  const typed = text(barcode);
+  const item = findInventoryItem(inventory, itemId)
+    || (inventory || []).find((row) => row && (
+      sameCode(row.id, typed)
+      || sameCode(row.itemCode, typed)
+      || sameCode(row.lastBatch, typed)
+      || sameCode(row.barcodeId, typed)
+    ));
+  const roll = findRoll(inventoryRolls, typed);
+  const rollItem = roll ? findInventoryItem(inventory, roll.itemId || roll.stockItemId) : null;
+  const chosen = item || rollItem;
+  const stockItemId = chosen?.id || text(roll?.itemId || roll?.stockItemId);
+  const rawBarcode = typed || text(chosen?.itemCode) || text(chosen?.lastBatch) || text(chosen?.id) || text(roll?.barcodeId);
+  return {
+    item: chosen || null,
+    stockItemId: stockItemId || '',
+    barcode: ledgerBarcode(rawBarcode),
+    rawBarcode,
+    roll: roll || null
+  };
+}
+
+function rollLines(rows) {
+  return (rows || []).map((row) => ({
+    barcode: text(row?.barcode || row?.barcodeId),
+    consumedKg: kg(row?.consumedKg ?? row?.consumedWeightKg),
+    initialKg: kg(row?.initialKg ?? row?.initialWeightKg)
+  })).filter((row) => row.barcode || row.consumedKg !== null);
+}
+
+function outputRollsOf(rolls) {
+  return (rolls || []).map((roll) => {
+    const gross = kg(roll?.grossWeightKg);
+    const tare = kg(roll?.tareWeightKg) || 0;
+    const net = kg(roll?.netWeightKg);
+    const computedNet = net !== null ? net : (gross !== null ? roundFilmKg(Math.max(0, gross - tare)) : null);
+    return {
+      barcodeId: text(roll?.barcodeId || roll?.barcode),
+      grossWeightKg: gross,
+      tareWeightKg: tare,
+      netWeightKg: computedNet,
+      lengthMeters: kg(roll?.lengthMeters) || 0,
+      jointCount: Number(roll?.jointCount) || 0
+    };
+  }).filter((roll) => roll.barcodeId && roll.netWeightKg > 0);
+}
+
+export function validateSfgFgEntry(entry = {}) {
+  const errors = [];
+  const process = entry.process || processKindForType(entry.stageType);
+  const push = (message) => {
+    if (message) errors.push(message);
+  };
+
+  if (!text(entry.orderId)) push('Select the job order. A production record needs an order.');
+  if (!text(entry.stageType) || !process) push('Select the SFG or FG process type.');
+  if (!text(entry.machineName)) push('Machine is required.');
+  if (!text(entry.operatorName)) push('Operator is required.');
+  if (!text(entry.shift)) push('Shift is required.');
+  if (!text(entry.storageBay)) push('Storage bay is required.');
+  const width = kg(entry.widthMm);
+  const micron = kg(entry.micron);
+  if (!(width > 0)) push('Roll width (mm) must be greater than 0.');
+  if (!(micron > 0)) push('Film micron must be greater than 0.');
+
+  const outputs = outputRollsOf(entry.outputRolls);
+  if (outputs.length === 0) {
+    push('Add at least one output roll with a gross weight and a net weight greater than 0.');
+  }
+
+  if (process === 'printing') {
+    const inputs = rollLines(entry.inputRolls);
+    if (inputs.length === 0 || inputs.every((row) => !row.barcode || !(row.consumedKg > 0))) {
+      push('Scan or type each film roll barcode and the kilograms consumed. At least one film roll is required.');
+    }
+    inputs.forEach((row, index) => {
+      if (!row.barcode) push(`Film roll ${index + 1}: barcode is required.`);
+      else if (!(row.consumedKg > 0)) push(`Film roll ${row.barcode}: consumed kg must be greater than 0.`);
+      if (row.consumedKg > 0 && row.initialKg !== null && row.consumedKg > row.initialKg + 0.05) {
+        push(`Film roll ${row.barcode}: consumed ${row.consumedKg} kg is above the roll balance ${row.initialKg} kg.`);
+      }
+      if (row.barcode && Array.isArray(entry.inventoryRolls) && entry.inventoryRolls.length > 0 && !findRoll(entry.inventoryRolls, row.barcode)) {
+        push(`Film roll ${row.barcode} was not found in inventory.`);
+      }
+    });
+    push(requiredNumber(entry.actualMeters, 'Actual meters printed'));
+    push(requiredNumber(entry.inkGsm, 'Ink GSM'));
+    push(requiredNumber(entry.inkKg, 'Ink consumed (kg)'));
+    push(requiredNumber(entry.plainSettingKg, 'Printing plain setting wastage (kg)', { allowZero: true }));
+    push(requiredNumber(entry.printingWastageKg, 'Printing wastage (kg)', { allowZero: true }));
+    const ink = resolveConsumable({
+      inventory: entry.inventory,
+      inventoryRolls: entry.inventoryRolls,
+      barcode: entry.inkBarcode,
+      itemId: entry.inkItemId
+    });
+    if (!ink.stockItemId) push('Choose the ink stock item, by barcode or item, so it posts to that item\'s existing ledger.');
+  }
+
+  if (process === 'lamination-1' || process === 'lamination-2') {
+    const pass = process === 'lamination-2' ? 'pass 2' : 'pass 1';
+    if (!text(entry.parentBarcode)) push('Scan or type the parent lot barcode that this pass consumes.');
+    push(requiredNumber(entry.parentConsumedKg, 'Parent lot consumed (kg)'));
+    const parent = entry.parentLot || findRoll(entry.sfgGoods, entry.parentBarcode);
+    if (text(entry.parentBarcode) && !parent) {
+      push(`Parent lot ${text(entry.parentBarcode)} was not found in SFG / FG stock.`);
+    }
+    const substrates = rollLines(entry.substrateRolls);
+    if (substrates.length === 0 || substrates.every((row) => !row.barcode || !(row.consumedKg > 0))) {
+      push(`Scan or type the substrate barcode and kilograms for lamination ${pass}.`);
+    }
+    substrates.forEach((row, index) => {
+      if (!row.barcode) push(`Substrate roll ${index + 1}: barcode is required.`);
+      else if (!(row.consumedKg > 0)) push(`Substrate roll ${row.barcode}: consumed kg must be greater than 0.`);
+      if (row.consumedKg > 0 && row.initialKg !== null && row.consumedKg > row.initialKg + 0.05) {
+        push(`Substrate roll ${row.barcode}: consumed ${row.consumedKg} kg is above the roll balance ${row.initialKg} kg.`);
+      }
+      if (row.barcode && Array.isArray(entry.inventoryRolls) && entry.inventoryRolls.length > 0 && !findRoll(entry.inventoryRolls, row.barcode)) {
+        push(`Substrate roll ${row.barcode} was not found in inventory.`);
+      }
+    });
+    push(requiredNumber(entry.adhesiveKg, `Adhesive consumed (kg) for ${pass}`));
+    push(requiredNumber(entry.adhesiveGsm, `Adhesive GSM for ${pass}`));
+    push(requiredNumber(entry.stageMeters, `Meters for lamination ${pass}`));
+    push(requiredNumber(entry.laminationPlainWastageKg, `Lamination plain substrate wastage (kg) for ${pass}`, { allowZero: true }));
+    push(requiredNumber(entry.laminateWastageKg, `Laminate wastage (kg) for ${pass}`, { allowZero: true }));
+    const adhesive = resolveConsumable({
+      inventory: entry.inventory,
+      inventoryRolls: entry.inventoryRolls,
+      barcode: entry.adhesiveBarcode,
+      itemId: entry.adhesiveItemId
+    });
+    if (!adhesive.stockItemId) push('Choose the adhesive stock item, by barcode or item, so it posts to that item\'s existing ledger.');
+    if (parent && kg(entry.parentConsumedKg) > 0) {
+      const room = parentRoomKg(parent, entry.batchCode);
+      if (kg(entry.parentConsumedKg) > room + 0.05) {
+        push(`Parent lot ${parent.sfgBatchCode || parent.barcodeId} has ${room} kg available. This batch consumes ${kg(entry.parentConsumedKg)} kg.`);
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors, process };
+}
+
+function parentRoomKg(parent, batchCode) {
+  const total = kg(parent?.totalNetKg ?? parent?.netWeightKg) || 0;
+  const consumed = kg(parent?.consumedKg) || 0;
+  const dispatched = kg(parent?.dispatchedKg) || 0;
+  const previous = previousParentKg(parent, batchCode);
+  return roundFilmKg(Math.max(0, total - consumed - dispatched + previous));
+}
+
+function previousParentKg(parent, batchCode) {
+  const history = Array.isArray(parent?.consumptionHistory) ? parent.consumptionHistory : [];
+  const prior = history.find((row) => row && sameCode(row.batchCode, batchCode));
+  return kg(prior?.consumedKg) || 0;
+}
+
+function replaceContribution(existingTotal, previous, next) {
+  return roundFilmKg(Math.max(0, (kg(existingTotal) || 0) - (kg(previous) || 0) + (kg(next) || 0)));
+}
+
+function childFromOutput(roll, index) {
+  return {
+    barcodeId: roll.barcodeId,
+    rollNo: index + 1,
+    netWeightKg: roll.netWeightKg,
+    grossWeightKg: roll.grossWeightKg ?? roll.netWeightKg,
+    tareWeightKg: roll.tareWeightKg || 0,
+    lengthMeters: roll.lengthMeters || 0,
+    jointCount: roll.jointCount || 0
+  };
+}
+
+function mergeChildren(existingChildren, outputs) {
+  const map = new Map();
+  (existingChildren || []).forEach((roll) => {
+    const code = text(roll?.barcodeId || roll?.id);
+    if (code) map.set(code, { ...roll, barcodeId: code, netWeightKg: kg(roll.netWeightKg) || 0 });
+  });
+  outputs.forEach((roll) => {
+    map.set(roll.barcodeId, childFromOutput(roll, map.size));
+  });
+  return [...map.values()].map((roll, index) => ({ ...roll, rollNo: index + 1 }));
+}
+
+function ledgerLine({ orderId, batchCode, role, barcode, consumedKg, initialKg, stockItemId, itemName, stage }) {
+  const safeBarcode = ledgerBarcode(barcode);
+  const consumed = kg(consumedKg) || 0;
+  const initial = kg(initialKg);
+  return {
+    id: `sfg-fg-batch:${batchCode}:${role}:${safeBarcode.toLowerCase()}`,
+    ledgerSource: LEDGER_SOURCE,
+    orderId,
+    batchCode,
+    role,
+    stage,
+    barcode: safeBarcode,
+    itemId: stockItemId || '',
+    stockItemId: stockItemId || '',
+    itemName: itemName || role,
+    issueQtyKg: consumed,
+    returnQtyKg: 0,
+    netConsumedQtyKg: consumed,
+    consumedWeightKg: consumed,
+    initialKg: initial !== null ? initial : consumed,
+    initialWeightKg: initial !== null ? initial : consumed,
+    unit: 'Kg'
+  };
+}
+
+function batchLedgerLines(entry, batchCode, process) {
+  const lines = [];
+  const orderId = entry.orderId;
+  if (process === 'printing') {
+    rollLines(entry.inputRolls).forEach((row) => {
+      if (!row.barcode || !(row.consumedKg > 0)) return;
+      const resolved = resolveConsumable({
+        inventory: entry.inventory,
+        inventoryRolls: entry.inventoryRolls,
+        barcode: row.barcode
+      });
+      lines.push(ledgerLine({
+        orderId,
+        batchCode,
+        role: 'film',
+        barcode: row.barcode,
+        consumedKg: row.consumedKg,
+        initialKg: row.initialKg,
+        stockItemId: resolved.stockItemId,
+        itemName: resolved.item?.itemName || 'Printing film',
+        stage: 'Printing'
+      }));
+    });
+    const ink = resolveConsumable({
+      inventory: entry.inventory,
+      inventoryRolls: entry.inventoryRolls,
+      barcode: entry.inkBarcode,
+      itemId: entry.inkItemId
+    });
+    if (ink.barcode && kg(entry.inkKg) > 0) {
+      lines.push(ledgerLine({
+        orderId,
+        batchCode,
+        role: 'ink',
+        barcode: ink.rawBarcode || ink.barcode,
+        consumedKg: entry.inkKg,
+        initialKg: entry.inkKg,
+        stockItemId: ink.stockItemId,
+        itemName: ink.item?.itemName || 'Ink',
+        stage: 'Printing'
+      }));
+    }
+  }
+  if (process === 'lamination-1' || process === 'lamination-2') {
+    const stage = process === 'lamination-2' ? 'Lamination (Pass 2)' : 'Lamination (Pass 1)';
+    rollLines(entry.substrateRolls).forEach((row) => {
+      if (!row.barcode || !(row.consumedKg > 0)) return;
+      const resolved = resolveConsumable({
+        inventory: entry.inventory,
+        inventoryRolls: entry.inventoryRolls,
+        barcode: row.barcode
+      });
+      lines.push(ledgerLine({
+        orderId,
+        batchCode,
+        role: 'substrate',
+        barcode: row.barcode,
+        consumedKg: row.consumedKg,
+        initialKg: row.initialKg,
+        stockItemId: resolved.stockItemId,
+        itemName: resolved.item?.itemName || (process === 'lamination-2' ? 'Substrate 3' : 'Substrate 2'),
+        stage
+      }));
+    });
+    const adhesive = resolveConsumable({
+      inventory: entry.inventory,
+      inventoryRolls: entry.inventoryRolls,
+      barcode: entry.adhesiveBarcode,
+      itemId: entry.adhesiveItemId
+    });
+    if (adhesive.barcode && kg(entry.adhesiveKg) > 0) {
+      lines.push(ledgerLine({
+        orderId,
+        batchCode,
+        role: 'adhesive',
+        barcode: adhesive.rawBarcode || adhesive.barcode,
+        consumedKg: entry.adhesiveKg,
+        initialKg: entry.adhesiveKg,
+        stockItemId: adhesive.stockItemId,
+        itemName: adhesive.item?.itemName || 'Adhesive',
+        stage
+      }));
+    }
+  }
+  return lines;
+}
+
+/**
+ * One materials_list line per barcode. Legacy kilograms for that barcode
+ * are kept on the line so a later batch does not drop them or post them twice.
+ */
+export function mergeLedgerMaterials(existingMaterials, batches) {
+  const existing = Array.isArray(existingMaterials) ? existingMaterials : [];
+  const ownedIds = new Set();
+  const legacyIncluded = new Map();
+  existing.forEach((row) => {
+    if (String(row?.id || '').startsWith('sfg-fg-ledger:')) {
+      const code = text(row.barcode).toLowerCase();
+      if (code) legacyIncluded.set(code, kg(row.includedLegacyKg) || 0);
+      ownedIds.add(row.id);
+    }
+  });
+  const legacy = existing.filter((row) => row && !ownedIds.has(row.id) && !String(row.id || '').startsWith('sfg-fg-batch:'));
+  const sums = new Map();
+  (batches || []).forEach((batch) => {
+    (batch.ledgerLines || []).forEach((line) => {
+      const code = text(line.barcode).toLowerCase();
+      if (!code || !(kg(line.netConsumedQtyKg) > 0)) return;
+      const current = sums.get(code) || {
+        barcode: line.barcode,
+        kg: 0,
+        initialKg: 0,
+        stockItemId: '',
+        itemName: '',
+        stage: line.stage || 'Production'
+      };
+      current.kg = roundFilmKg(current.kg + (kg(line.netConsumedQtyKg) || 0));
+      current.initialKg = roundFilmKg(current.initialKg + (kg(line.initialKg ?? line.initialWeightKg ?? line.netConsumedQtyKg) || 0));
+      current.stockItemId = current.stockItemId || line.stockItemId || line.itemId || '';
+      current.itemName = current.itemName || line.itemName || '';
+      current.stage = line.stage || current.stage;
+      sums.set(code, current);
+    });
+  });
+
+  const kept = [];
+  legacy.forEach((row) => {
+    const code = text(row.barcode || row.barcodeId).toLowerCase();
+    if (code && sums.has(code)) {
+      const sum = sums.get(code);
+      const legacyKg = kg(row.netConsumedQtyKg ?? row.consumedWeightKg) || 0;
+      sum.legacyKg = roundFilmKg((sum.legacyKg || 0) + legacyKg);
+      sum.stockItemId = sum.stockItemId || row.stockItemId || row.itemId || '';
+      sum.itemName = sum.itemName || row.itemName || '';
+      return;
+    }
+    kept.push(row);
+  });
+
+  const owned = [];
+  sums.forEach((sum, code) => {
+    const fromLegacy = sum.legacyKg !== undefined ? sum.legacyKg : (legacyIncluded.get(code) || 0);
+    const consumed = roundFilmKg(fromLegacy + sum.kg);
+    owned.push({
+      id: `sfg-fg-ledger:${text(batches[0]?.orderId || '')}:${code}`,
+      ledgerSource: LEDGER_SOURCE,
+      barcode: sum.barcode,
+      itemId: sum.stockItemId,
+      stockItemId: sum.stockItemId,
+      itemName: sum.itemName,
+      stage: sum.stage,
+      issueQtyKg: consumed,
+      returnQtyKg: 0,
+      netConsumedQtyKg: consumed,
+      consumedWeightKg: consumed,
+      initialKg: roundFilmKg(Math.max(sum.initialKg, consumed)),
+      initialWeightKg: roundFilmKg(Math.max(sum.initialKg, consumed)),
+      includedLegacyKg: fromLegacy,
+      unit: 'Kg'
+    });
+  });
+  return kept.concat(owned);
+}
+
+export function planParentLotReduction(parent, { batchCode, consumedKg } = {}) {
+  if (!parent) return null;
+  const nextKg = kg(consumedKg) || 0;
+  const previous = previousParentKg(parent, batchCode);
+  const delta = roundFilmKg(nextKg - previous);
+  const total = kg(parent.totalNetKg ?? parent.netWeightKg) || 0;
+  const dispatched = kg(parent.dispatchedKg) || 0;
+  const consumed = roundFilmKg(Math.max(0, (kg(parent.consumedKg) || 0) + delta));
+  const available = roundFilmKg(Math.max(0, total - consumed - dispatched));
+  const history = (Array.isArray(parent.consumptionHistory) ? parent.consumptionHistory : [])
+    .filter((row) => !sameCode(row?.batchCode, batchCode));
+  history.push({
+    batchCode,
+    consumedKg: nextKg,
+    at: new Date().toISOString()
+  });
+  const locked = parent.status === 'Dispatched' || parent.status === 'Partially Dispatched' || parent.status === 'Ready for Dispatch';
+  let status = parent.status;
+  if (!locked) {
+    if (consumed > 0 && available <= 0) status = 'Fully Consumed';
+    else if (consumed > 0) status = 'Partially Consumed';
+  }
+  return {
+    ...parent,
+    consumedKg: consumed,
+    availableKg: available,
+    consumptionHistory: history,
+    status
+  };
+}
+
+function previousBatch(record, batchCode) {
+  const batches = Array.isArray(record?.sfgFgBatches) ? record.sfgFgBatches : [];
+  return batches.find((batch) => sameCode(batch?.batchCode, batchCode)) || null;
+}
+
+function consumptionEvent(entry, batch, outputs) {
+  const substrates = rollLines(entry.substrateRolls).filter((row) => row.barcode && row.consumedKg > 0);
+  const first = substrates[0] || null;
+  const rolls = substrates.map((row) => ({
+    barcode: row.barcode,
+    consumedKg: row.consumedKg,
+    initialKg: row.initialKg ?? row.consumedKg
+  }));
+  const pass2 = batch.process === 'lamination-2';
+  return {
+    id: `sfg-fg-batch:${batch.batchCode}`,
+    batchCode: batch.batchCode,
+    timestamp: new Date().toISOString(),
+    shift: entry.shift,
+    operatorName: entry.operatorName,
+    machineName: entry.machineName,
+    sfgBatchCode: text(entry.parentBarcode),
+    consumedKg: kg(entry.parentConsumedKg) || 0,
+    targetProcess: pass2 ? 'Lamination (Pass 2)' : 'Lamination (Pass 1)',
+    substrate2: !pass2 && first ? first : null,
+    substrate2Rolls: !pass2 ? rolls : [],
+    substrate3: pass2 && first ? first : null,
+    substrate3Rolls: pass2 ? rolls : [],
+    scrapBreakdown: {
+      laminationPlainSubstrateWastageKg: pass2 ? 0 : (kg(entry.laminationPlainWastageKg) || 0),
+      laminationPlainSubstrateWastageL2Kg: pass2 ? (kg(entry.laminationPlainWastageKg) || 0) : 0,
+      laminateWastageKg: kg(entry.laminateWastageKg) || 0,
+      adhesiveConsumedL1Kg: pass2 ? 0 : (kg(entry.adhesiveKg) || 0),
+      adhesiveConsumedL2Kg: pass2 ? (kg(entry.adhesiveKg) || 0) : 0
+    },
+    outputRolls: outputs.map((roll) => ({
+      barcode: roll.barcodeId,
+      netWeightKg: roll.netWeightKg,
+      outputType: entry.mode === 'FG' ? 'FG' : 'SFG'
+    })),
+    outputRoll: outputs[0] ? {
+      barcode: outputs[0].barcodeId,
+      netWeightKg: outputs.reduce((sum, roll) => sum + roll.netWeightKg, 0),
+      type: entry.mode === 'FG' ? 'FG' : 'SFG'
+    } : null
+  };
+}
+
+function buildRecord(entry, batch, outputs, printedLot) {
+  const existing = entry.existingRecord || null;
+  const prior = previousBatch(existing, batch.batchCode);
+  const batches = (Array.isArray(existing?.sfgFgBatches) ? existing.sfgFgBatches : [])
+    .filter((row) => !sameCode(row?.batchCode, batch.batchCode))
+    .concat(batch);
+  const net = outputs.reduce((sum, roll) => sum + roll.netWeightKg, 0);
+  const isFG = entry.mode === 'FG';
+  const record = {
+    ...(existing || {}),
+    id: productionRecordId(entry.orderId, existing),
+    orderId: entry.orderId,
+    jobName: entry.jobName || existing?.jobName || '',
+    jobCode: entry.jobCode || existing?.jobCode || '',
+    clientName: entry.clientName || existing?.clientName || '',
+    machineName: entry.machineName,
+    operatorName: entry.operatorName,
+    shift: entry.shift,
+    dateFilled: entry.productionDate || existing?.dateFilled || '',
+    productionDate: entry.productionDate || existing?.productionDate || '',
+    status: existing?.status || 'In Progress',
+    sfgFgBatches: batches,
+    outputRolls: mergeOutputHistory(existing?.outputRolls, outputs, batch.batchCode, isFG),
+    notes: entry.notes || existing?.notes || ''
+  };
+  record.rollsBreakdown = record.outputRolls;
+
+  if (batch.process === 'printing') {
+    const lotNet = kg(printedLot?.totalNetKg) || net;
+    record.qtyPrinting = lotNet;
+    record.qtyFirstPassL1 = lotNet;
+    record.printedOutputKg = lotNet;
+    record.actualMetersPrinted = kg(entry.actualMeters);
+    record.actualInkGsm = kg(entry.inkGsm);
+    record.inkGsmInSpeed = kg(entry.inkGsm);
+    record.printingPlainSettingWastageKg = replaceContribution(existing?.printingPlainSettingWastageKg, prior?.plainSettingKg, entry.plainSettingKg);
+    record.printingWastageKg = replaceContribution(existing?.printingWastageKg, prior?.printingWastageKg, entry.printingWastageKg);
+    record.materialsList = mergeLedgerMaterials(existing?.materialsList, batches.map((row) => ({ ...row, orderId: entry.orderId })));
+    record.inputRollsList = printingInputRolls(existing?.inputRollsList, record.materialsList, batches);
+  } else {
+    record.qtyPouching = existing?.qtyPouching ?? null;
+  }
+
+  if (batch.process === 'lamination-1') {
+    record.qtyLaminationL1 = replaceContribution(existing?.qtyLaminationL1, prior?.netKg, net);
+    record.adhesiveConsumedL1Kg = replaceContribution(existing?.adhesiveConsumedL1Kg, prior?.adhesiveKg, entry.adhesiveKg);
+    record.actualAdhesiveGsm = kg(entry.adhesiveGsm);
+    record.laminationMetersL1 = replaceContribution(existing?.laminationMetersL1, prior?.meters, entry.stageMeters);
+    record.laminationPlainSubstrateWastageKg = replaceContribution(existing?.laminationPlainSubstrateWastageKg, prior?.laminationPlainWastageKg, entry.laminationPlainWastageKg);
+    record.laminateWastageKg = replaceContribution(existing?.laminateWastageKg, prior?.laminateWastageKg, entry.laminateWastageKg);
+  }
+  if (batch.process === 'lamination-2') {
+    record.qtySecondPassL2 = replaceContribution(existing?.qtySecondPassL2, prior?.netKg, net);
+    record.adhesiveConsumedL2Kg = replaceContribution(existing?.adhesiveConsumedL2Kg, prior?.adhesiveKg, entry.adhesiveKg);
+    record.actualAdhesiveGsmL2 = kg(entry.adhesiveGsm);
+    record.laminationMetersL2 = replaceContribution(existing?.laminationMetersL2, prior?.meters, entry.stageMeters);
+    record.laminationPlainSubstrateWastageL2Kg = replaceContribution(existing?.laminationPlainSubstrateWastageL2Kg, prior?.laminationPlainWastageKg, entry.laminationPlainWastageKg);
+    record.laminateWastageKg = replaceContribution(existing?.laminateWastageKg, prior?.laminateWastageKg, entry.laminateWastageKg);
+  }
+  if (isFG) {
+    const fgNet = batches.filter((row) => row.isFG).reduce((sum, row) => sum + (kg(row.netKg) || 0), 0);
+    const priorFg = (Array.isArray(existing?.sfgFgBatches) ? existing.sfgFgBatches : [])
+      .filter((row) => row.isFG)
+      .reduce((sum, row) => sum + (kg(row.netKg) || 0), 0);
+    record.qtyDispatch = replaceContribution(existing?.qtyDispatch, priorFg, fgNet);
+  } else if (existing && Object.prototype.hasOwnProperty.call(existing, 'qtyDispatch')) {
+    record.qtyDispatch = existing.qtyDispatch;
+  }
+
+  const consumptions = (Array.isArray(existing?.sfgConsumptions) ? existing.sfgConsumptions : [])
+    .filter((log) => !sameCode(log?.batchCode, batch.batchCode) && !sameCode(log?.id, `sfg-fg-batch:${batch.batchCode}`));
+  if (batch.process !== 'printing') consumptions.push(consumptionEvent(entry, batch, outputs));
+  record.sfgConsumptions = consumptions;
+  if (batch.process !== 'printing') {
+    record.materialsList = mergeLedgerMaterials(existing?.materialsList, batches.map((row) => ({ ...row, orderId: entry.orderId })));
+  }
+  const scrap = [
+    record.printingPlainSettingWastageKg,
+    record.printingWastageKg,
+    record.laminationPlainSubstrateWastageKg,
+    record.laminationPlainSubstrateWastageL2Kg,
+    record.laminateWastageKg,
+    record.printedWastageKg,
+    record.trimWastageKg,
+    record.pouchingScrapKg
+  ].reduce((sum, value) => sum + (kg(value) || 0), 0);
+  record.totalScrapQtyKg = roundFilmKg(scrap);
+  record.totalWastageKg = record.totalScrapQtyKg;
+  return record;
+}
+
+function mergeOutputHistory(existingRolls, outputs, batchCode, isFG) {
+  const kept = (existingRolls || []).filter((roll) => !sameCode(roll?.batchCode, batchCode));
+  return kept.concat(outputs.map((roll) => ({
+    ...roll,
+    batchCode,
+    rollType: isFG ? 'FG' : 'SFG',
+    category: isFG ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)'
+  })));
+}
+
+function printingInputRolls(existing, materialsList, batches) {
+  const filmCodes = new Set();
+  (batches || []).forEach((batch) => {
+    (batch.ledgerLines || []).forEach((line) => {
+      if (line.role === 'film') filmCodes.add(text(line.barcode).toLowerCase());
+    });
+  });
+  const others = (existing || []).filter((roll) => !filmCodes.has(text(roll?.barcodeId || roll?.barcode).toLowerCase()));
+  const ours = (materialsList || []).filter((line) => filmCodes.has(text(line.barcode).toLowerCase())).map((line) => ({
+    barcodeId: line.barcode,
+    barcode: line.barcode,
+    consumedWeightKg: line.netConsumedQtyKg,
+    consumedKg: line.netConsumedQtyKg,
+    initialWeightKg: line.initialKg,
+    initialKg: line.initialKg,
+    itemId: line.stockItemId,
+    stockItemId: line.stockItemId,
+    stage: 'Printing'
+  }));
+  return others.concat(ours);
+}
+
+function outputBatchFrom(entry, batchCode, outputs) {
+  const net = roundFilmKg(outputs.reduce((sum, roll) => sum + roll.netWeightKg, 0));
+  const gross = roundFilmKg(outputs.reduce((sum, roll) => sum + (roll.grossWeightKg ?? roll.netWeightKg), 0));
+  const tare = roundFilmKg(outputs.reduce((sum, roll) => sum + (roll.tareWeightKg || 0), 0));
+  const meters = kg(entry.stageMeters) || roundFilmKg(outputs.reduce((sum, roll) => sum + (roll.lengthMeters || 0), 0));
+  const isFG = entry.mode === 'FG';
+  return {
+    sfgBatchCode: batchCode,
+    sfgType: entry.stageType,
+    category: isFG ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
+    rollType: isFG ? 'FG' : 'SFG',
+    isPrintedLot: false,
+    orderId: entry.orderId,
+    jobId: entry.jobMasterId || '',
+    jobName: entry.jobName || '',
+    jobCode: entry.jobCode || '',
+    clientName: entry.clientName || '',
+    structure: entry.structure || '',
+    filmType: entry.filmType || '',
+    micron: kg(entry.micron) || 0,
+    widthMm: kg(entry.widthMm) || 0,
+    totalGrossKg: gross,
+    grossWeightKg: gross,
+    tareWeightKg: tare,
+    totalNetKg: net,
+    netWeightKg: net,
+    consumedKg: 0,
+    availableKg: net,
+    totalMeters: meters,
+    rollsCount: outputs.length,
+    machineName: entry.machineName,
+    operatorName: entry.operatorName,
+    shift: entry.shift,
+    storageBay: entry.storageBay,
+    productionDate: entry.productionDate || '',
+    status: isFG ? 'In Stock (Ready for Dispatch)' : 'In Stock (WIP)',
+    notes: entry.notes || '',
+    childRolls: outputs.map(childFromOutput),
+    parentSfgBatchCode: text(entry.parentBarcode)
+  };
+}
+
+export function buildSfgFgBatchPlan(entry = {}) {
+  const process = entry.process || processKindForType(entry.stageType);
+  const batchCode = text(entry.batchCode) || manualBatchCode({
+    mode: entry.mode,
+    jobCode: entry.jobCode,
+    orderId: entry.orderId,
+    now: entry.now
+  });
+  const checked = validateSfgFgEntry({ ...entry, process, batchCode });
+  if (!checked.ok) {
+    return {
+      ok: false,
+      errors: checked.errors,
+      process,
+      batchCode,
+      inventoryMaster: null,
+      stockRows: []
+    };
+  }
+
+  const outputs = outputRollsOf(entry.outputRolls);
+  const net = roundFilmKg(outputs.reduce((sum, roll) => sum + roll.netWeightKg, 0));
+  const gross = roundFilmKg(outputs.reduce((sum, roll) => sum + (roll.grossWeightKg ?? roll.netWeightKg), 0));
+  const ledgerLines = batchLedgerLines({ ...entry, process }, batchCode, process);
+  const batch = {
+    batchCode,
+    orderId: entry.orderId,
+    process,
+    isFG: entry.mode === 'FG',
+    stageType: entry.stageType,
+    netKg: net,
+    grossKg: gross,
+    meters: process === 'printing' ? (kg(entry.actualMeters) || 0) : (kg(entry.stageMeters) || 0),
+    plainSettingKg: kg(entry.plainSettingKg) || 0,
+    printingWastageKg: kg(entry.printingWastageKg) || 0,
+    laminationPlainWastageKg: kg(entry.laminationPlainWastageKg) || 0,
+    laminateWastageKg: kg(entry.laminateWastageKg) || 0,
+    adhesiveKg: kg(entry.adhesiveKg) || 0,
+    adhesiveGsm: kg(entry.adhesiveGsm),
+    inkGsm: kg(entry.inkGsm),
+    inkKg: kg(entry.inkKg) || 0,
+    parentBarcode: text(entry.parentBarcode),
+    parentConsumedKg: kg(entry.parentConsumedKg) || 0,
+    ledgerLines
+  };
+
+  let printedLot = null;
+  let outputBatch = null;
+  if (process === 'printing') {
+    const existingLot = entry.existingLot || null;
+    const children = mergeChildren(existingLot?.childRolls, outputs);
+    printedLot = planPrintingSfgLot({
+      orderId: entry.orderId,
+      jobName: entry.jobName,
+      jobCode: entry.jobCode,
+      jobMasterId: entry.jobMasterId,
+      clientName: entry.clientName,
+      filmType: entry.filmType,
+      micron: entry.micron,
+      widthMm: entry.widthMm,
+      outputRolls: children,
+      inputRolls: rollLines(entry.inputRolls).map((row) => ({ barcodeId: row.barcode })),
+      meters: kg(entry.actualMeters),
+      existingLot
+    });
+    printedLot.childRolls = (printedLot.childRolls || []).map((child) => {
+      const source = children.find((roll) => roll.barcodeId === child.barcodeId);
+      return source ? { ...child, grossWeightKg: source.grossWeightKg, tareWeightKg: source.tareWeightKg } : child;
+    });
+    if (existingLot?.id) printedLot.id = existingLot.id;
+    printedLot.machineName = entry.machineName;
+    printedLot.operatorName = entry.operatorName;
+    printedLot.shift = entry.shift;
+    printedLot.storageBay = entry.storageBay;
+    printedLot.productionDate = entry.productionDate || printedLot.productionDate;
+    printedLot.structure = entry.structure || '';
+    const previousGross = previousBatch(entry.existingRecord, batchCode)?.grossKg || 0;
+    const grossTotal = roundFilmKg((kg(existingLot?.totalGrossKg) || kg(existingLot?.totalNetKg) || 0) + gross - previousGross);
+    printedLot.totalGrossKg = roundFilmKg(Math.max(printedLot.totalNetKg, grossTotal));
+    printedLot.grossWeightKg = printedLot.totalGrossKg;
+  } else {
+    outputBatch = outputBatchFrom(entry, batchCode, outputs);
+  }
+
+  const parentSource = entry.parentLot || findRoll(entry.sfgGoods, entry.parentBarcode);
+  const parentLot = process === 'printing'
+    ? null
+    : planParentLotReduction(parentSource, { batchCode, consumedKg: entry.parentConsumedKg });
+
+  const productionRecord = buildRecord(entry, batch, outputs, printedLot);
+  const stockRows = [printedLot, outputBatch].filter(Boolean);
+
+  return {
+    ok: true,
+    errors: [],
+    process,
+    batchCode,
+    inventoryMaster: null,
+    printedLot,
+    outputBatch,
+    parentLot,
+    productionRecord,
+    outputRolls: outputs,
+    stockRows,
+    createsInventoryMaster: false
+  };
+}
+
+export function carryProcessMeasures(record) {
+  if (!record) return {};
+  const carried = {};
+  if (Array.isArray(record.sfgFgBatches)) carried.sfgFgBatches = record.sfgFgBatches;
+  PROCESS_MEASURE_FIELDS.forEach((field) => {
+    if (record[field] !== undefined && record[field] !== null && record[field] !== '') {
+      carried[field] = record[field];
+    }
+  });
+  return carried;
+}
+
+export async function commitSfgFgBatch({ plan, saveProductionRecord, saveSfgGood } = {}) {
+  if (!plan?.ok) {
+    throw new Error((plan?.errors || ['This batch is not ready to save.']).join('\n'));
+  }
+  if (typeof saveProductionRecord !== 'function') {
+    throw new Error('This screen cannot write the job production record.');
+  }
+  if (typeof saveSfgGood !== 'function') {
+    throw new Error('This screen cannot write SFG / FG stock.');
+  }
+  await saveProductionRecord(plan.productionRecord);
+  if (plan.printedLot) await saveSfgGood(plan.printedLot);
+  if (plan.outputBatch) await saveSfgGood(plan.outputBatch);
+  if (plan.parentLot) await saveSfgGood(plan.parentLot);
+  return plan;
+}

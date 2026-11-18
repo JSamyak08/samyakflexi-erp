@@ -36,6 +36,7 @@ import {
   validateProductionEntry
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
+import { buildSfgFgBatchPlan, processKindForType } from '../utils/sfgFgBatchEntry';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -69,11 +70,12 @@ export default function SFGFGEntryModal({
   jobMasters = [],
   inventory = [],
   inventoryRolls = [],
+  sfgGoods = [],
   productionRecords = [],
   machines = [],
   currentUser,
   onClose,
-  onSave, // (inventoryItem, rolls, productionRecordLink) => void
+  onSave, // (plan) => void. plan is the production-record and stock write from buildSfgFgBatchPlan
   onPrintRolls // (rolls) => void
 }) {
   const isSFG = mode === 'SFG';
@@ -109,6 +111,24 @@ export default function SFGFGEntryModal({
   const [coreDia, setCoreDia] = useState('3 Inch (76mm)');
   const [batchRemarks, setBatchRemarks] = useState('');
   const [formErrors, setFormErrors] = useState({});
+  const [inputRolls, setInputRolls] = useState([{ barcode: '', consumedKg: '', initialKg: '' }]);
+  const [actualMeters, setActualMeters] = useState('');
+  const [inkGsm, setInkGsm] = useState('');
+  const [inkKg, setInkKg] = useState('');
+  const [inkItemId, setInkItemId] = useState('');
+  const [inkBarcode, setInkBarcode] = useState('');
+  const [plainSettingKg, setPlainSettingKg] = useState('');
+  const [printingWastageKg, setPrintingWastageKg] = useState('');
+  const [parentBarcode, setParentBarcode] = useState('');
+  const [parentConsumedKg, setParentConsumedKg] = useState('');
+  const [substrateRolls, setSubstrateRolls] = useState([{ barcode: '', consumedKg: '', initialKg: '' }]);
+  const [adhesiveGsm, setAdhesiveGsm] = useState('');
+  const [adhesiveKg, setAdhesiveKg] = useState('');
+  const [adhesiveItemId, setAdhesiveItemId] = useState('');
+  const [adhesiveBarcode, setAdhesiveBarcode] = useState('');
+  const [stageMeters, setStageMeters] = useState('');
+  const [laminationPlainWastageKg, setLaminationPlainWastageKg] = useState('');
+  const [laminateWastageKg, setLaminateWastageKg] = useState('');
 
   // Filtered Job List from Orders & Job Masters (Strictly real data only, zero dummy fallbacks)
   const activeJobsList = useMemo(() => {
@@ -476,7 +496,65 @@ export default function SFGFGEntryModal({
 
   // Cumulative Totals (Existing + New)
   const cumulativeNetKg = masterRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-  const internalValuationRate = parseFloat(currentJob?.unitPrice || 0);
+
+  const processKind = processKindForType(selectedType);
+  const inkChoices = (inventory || []).filter((item) => /ink/i.test(`${item.category || ''} ${item.itemName || ''} ${item.filmType || ''}`));
+  const adhesiveChoices = (inventory || []).filter((item) => /adhesive|hardener/i.test(`${item.category || ''} ${item.itemName || ''} ${item.filmType || ''}`));
+
+  const fillRollBalance = (barcode) => {
+    const code = String(barcode || '').trim().toLowerCase();
+    if (!code) return '';
+    const roll = (inventoryRolls || []).find((item) => String(item.barcodeId || item.id || '').trim().toLowerCase() === code);
+    if (!roll) return '';
+    const balance = roll.availableWeightKg ?? roll.netWeightKg;
+    return balance === undefined || balance === null || balance === '' ? '' : String(balance);
+  };
+
+  const entryDraft = () => ({
+    mode,
+    stageType: selectedType,
+    process: processKind,
+    orderId: currentJob?.orderId || selectedJobId,
+    jobName: currentJob?.jobName || '',
+    jobCode: currentJob?.jobCode || '',
+    clientName: currentJob?.clientName || '',
+    jobMasterId: currentJob?.jobMasterId || '',
+    structure: jobStructure,
+    filmType: jobFilmType,
+    micron: jobMicron,
+    widthMm: jobWidthMm,
+    machineName,
+    operatorName: operatorName.trim(),
+    shift,
+    storageBay,
+    productionDate,
+    notes: batchRemarks,
+    now: Date.now(),
+    outputRolls: newRollsToSave,
+    inputRolls,
+    actualMeters,
+    inkGsm,
+    inkKg,
+    inkItemId,
+    inkBarcode,
+    plainSettingKg,
+    printingWastageKg,
+    parentBarcode,
+    parentConsumedKg,
+    substrateRolls,
+    adhesiveGsm,
+    adhesiveKg,
+    adhesiveItemId,
+    adhesiveBarcode,
+    stageMeters,
+    laminationPlainWastageKg,
+    laminateWastageKg,
+    inventory,
+    inventoryRolls,
+    sfgGoods,
+    existingLot: (sfgGoods || []).find((item) => item?.sfgBatchCode === `SFG-LOT-${currentJob?.orderId || selectedJobId}`) || null,
+    existingRecord: (productionRecords || []).find((record) => String(record?.orderId) === String(currentJob?.orderId || selectedJobId)) || null
+  });
 
   // Validate all fields before submission
   const validateForm = () => {
@@ -517,96 +595,58 @@ export default function SFGFGEntryModal({
       }
     }
 
+    const draftCheck = buildSfgFgBatchPlan(entryDraft());
+    if (!draftCheck.ok) {
+      errors.process = draftCheck.errors;
+    }
+
     setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return errors;
   };
 
   // Submit Handler
   const handleSaveAndSubmit = async (e) => {
     e.preventDefault();
 
-    if (!validateForm()) {
-      alert("Please fill in all required fields accurately before submitting.");
+    const fieldErrors = validateForm();
+    if (Object.keys(fieldErrors).length > 0) {
+      const detail = Array.isArray(fieldErrors.process) ? `\n\n${fieldErrors.process.join('\n')}` : '';
+      alert(`Please fill in all required fields accurately before submitting.${detail}`);
       return;
     }
 
-    const batchCode = `${isSFG ? 'SFG' : 'FG'}-${currentJob.jobCode || currentJob.id}-${Date.now().toString().slice(-4)}`;
-    const batchId = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const plan = buildSfgFgBatchPlan(entryDraft());
+    if (!plan.ok) {
+      setFormErrors((prev) => ({ ...prev, process: plan.errors }));
+      alert(plan.errors.join('\n'));
+      return;
+    }
 
-    // 1. Construct Inventory Summary Item (For the new batch)
-    const inventoryItem = {
-      id: batchId,
-      itemCode: batchCode,
-      itemName: `${selectedType} - ${currentJob.jobName}`,
+    const formattedNewRolls = plan.outputRolls.map((roll, index) => ({
+      ...roll,
+      rollType: isSFG ? 'SFG' : 'FG',
       category: categoryName,
-      subCategory: selectedType,
+      subType: selectedType,
+      itemName: `${selectedType} - ${currentJob.jobName} (Roll #${index + 1})`,
       jobName: currentJob.jobName,
       jobCode: currentJob.jobCode,
       orderId: currentJob.orderId,
       clientName: currentJob.clientName,
       structure: jobStructure || currentJob.structure,
       filmType: jobFilmType || currentJob.filmType,
-      micron: parseFloat(jobMicron) || 0,
       widthMm: parseFloat(jobWidthMm) || 0,
-      availableQtyKg: newNetKg,
-      totalQtyKg: newNetKg,
-      unitPrice: internalValuationRate,
-      purchaseRatePerKg: internalValuationRate,
-      unit: 'Kg',
-      rollsCount: newRollsToSave.length,
-      storageBay,
-      machineName,
-      operatorName: operatorName.trim(),
+      micron: parseFloat(jobMicron) || 0,
+      coreDia,
+      stationId: machineName,
+      machine: machineName,
+      operator: operatorName.trim(),
       shift,
+      locationBay: storageBay,
+      batchNo: plan.batchCode,
       productionDate,
-      lastBatch: batchCode,
-      status: 'In Stock',
-      notes: batchRemarks || `${selectedType} generated from ${machineName}`
-    };
-
-    // 2. Construct Child Inventory Roll Objects (for new rolls ONLY)
-    const formattedNewRolls = newRollsToSave.map((r) => {
-      const rollBarcode = r.barcodeId || generateRollBarcode(r.rollIndex, currentJob.jobCode, selectedType);
-      return {
-        id: `roll-${Date.now()}-${r.rollIndex}`,
-        barcodeId: rollBarcode,
-        rollType: isSFG ? 'SFG' : 'FG',
-        category: categoryName,
-        subType: selectedType,
-        sfgType: isSFG ? selectedType : undefined,
-        fgType: !isSFG ? selectedType : undefined,
-        itemId: batchId,
-        itemName: `${selectedType} - ${currentJob.jobName} (Roll #${r.rollIndex})`,
-        jobName: currentJob.jobName,
-        jobCode: currentJob.jobCode,
-        orderId: currentJob.orderId,
-        clientName: currentJob.clientName,
-        structure: jobStructure || currentJob.structure,
-        filmType: jobFilmType || currentJob.filmType,
-        widthMm: parseFloat(jobWidthMm) || 0,
-        micron: parseFloat(jobMicron) || 0,
-        grossWeightKg: parseFloat(r.grossWeightKg) || 0,
-        tareWeightKg: parseFloat(r.tareWeightKg) || 0,
-        netWeightKg: parseFloat(r.netWeightKg) || 0,
-        availableWeightKg: parseFloat(r.netWeightKg) || 0,
-        lengthMeters: r.lengthMeters,
-        coreDia,
-        jointCount: r.jointCount || 0,
-        qcStatus: r.qcStatus || 'Passed',
-        stationId: machineName,
-        machine: machineName,
-        operator: operatorName.trim(),
-        shift,
-        locationBay: storageBay,
-        batchNo: batchCode,
-        inwardDatetime: new Date().toISOString(),
-        productionDate,
-        purchaseRatePerKg: internalValuationRate,
-        unitPrice: internalValuationRate,
-        unit: 'Kg',
-        status: isSFG ? 'In Stock (WIP)' : 'In Stock (Ready for Dispatch)'
-      };
-    });
+      qcStatus: 'Passed',
+      status: isSFG ? 'In Stock (WIP)' : 'In Stock (Ready for Dispatch)'
+    }));
 
     // 3. Construct Production Record Linkage Object
     const order = (orders || []).find((item) => item.id === currentJob.orderId) || null;
@@ -628,7 +668,9 @@ export default function SFGFGEntryModal({
         quantityKg: newNetKg,
         orderQtyKg: order?.orderQtyKg || currentJob.plannedQtyKg,
         goodKg: newNetKg,
-        scrapKg: 0
+        scrapKg: (parseFloat(plainSettingKg) || 0) + (parseFloat(printingWastageKg) || 0) + (parseFloat(laminationPlainWastageKg) || 0) + (parseFloat(laminateWastageKg) || 0),
+        meters: processKind === 'printing' ? actualMeters : stageMeters,
+        printInputKg: inputRolls.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0)
       }
     });
     const decision = decideGuardrailSave(guardrail, {
@@ -642,28 +684,13 @@ export default function SFGFGEntryModal({
       return;
     }
 
-    const productionRecordLink = {
-      orderId: currentJob.orderId,
-      jobName: currentJob.jobName,
-      jobCode: decision.fields.jobCode || currentJob.jobCode,
-      stageType: selectedType,
-      isSFG,
-      isFG: !isSFG,
-      outputNetKg: newNetKg,
-      outputRollsCount: newRollsToSave.length,
-      rolls: formattedNewRolls,
-      machineName,
-      operatorName: operatorName.trim(),
-      shift,
-      productionDate: productionDate || factoryCalendarDate(),
-      storageBay,
-      widthMm: parseFloat(jobWidthMm) || 0,
-      micron: parseFloat(jobMicron) || 0,
-      guardrail: decision.fields
-    };
+    if (decision.fields?.jobCode) {
+      plan.productionRecord.jobCode = decision.fields.jobCode;
+    }
+    plan.productionRecord.guardrail = decision.fields;
 
     try {
-      if (onSave) await onSave(inventoryItem, formattedNewRolls, productionRecordLink);
+      if (onSave) await onSave(plan);
     } catch (err) {
       setGuardrailMessages([err?.message || 'The production record was not saved.']);
       return;
@@ -1012,6 +1039,84 @@ export default function SFGFGEntryModal({
               </div>
             </div>
           </div>
+
+          {selectedType && (
+            <div style={{ background: '#f8fafc', border: formErrors.process ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '8px' }}>
+                Process record for this {processKind === 'printing' ? 'printing' : processKind === 'lamination-2' ? 'lamination pass 2' : 'lamination pass 1'} batch
+              </div>
+              <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 10px' }}>
+                These fields are written onto the job production record. Film, ink, and adhesive kilograms post through the existing item ledger.
+              </p>
+              {processKind === 'printing' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>Film rolls consumed *</div>
+                  {inputRolls.map((row, index) => (
+                    <div key={`in-${index}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr auto', gap: '8px' }}>
+                      <input className="form-control" placeholder="Scan or type film barcode *" value={row.barcode} onChange={(event) => {
+                        const barcode = event.target.value;
+                        setInputRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, barcode, initialKg: fillRollBalance(barcode) || item.initialKg } : item));
+                      }} />
+                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Consumed kg *" value={row.consumedKg} onChange={(event) => setInputRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, consumedKg: event.target.value } : item))} />
+                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Roll balance kg" value={row.initialKg} onChange={(event) => setInputRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, initialKg: event.target.value } : item))} />
+                      <button type="button" className="btn-secondary" onClick={() => setInputRolls((prev) => prev.length === 1 ? [{ barcode: '', consumedKg: '', initialKg: '' }] : prev.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+                    </div>
+                  ))}
+                  <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setInputRolls((prev) => prev.concat({ barcode: '', consumedKg: '', initialKg: '' }))}>Add film roll</button>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
+                    <input className="form-control" type="number" step="1" min="0" placeholder="Actual meters printed *" value={actualMeters} onChange={(event) => setActualMeters(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Ink GSM *" value={inkGsm} onChange={(event) => setInkGsm(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Ink kg *" value={inkKg} onChange={(event) => setInkKg(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Plain setting wastage kg *" value={plainSettingKg} onChange={(event) => setPlainSettingKg(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Printing wastage kg *" value={printingWastageKg} onChange={(event) => setPrintingWastageKg(event.target.value)} />
+                  </div>
+                  <SearchableSelect className="form-control" value={inkItemId} onChange={(event) => setInkItemId(event.target.value)} placeholder="Ink stock item *">
+                    <option value="">Ink stock item *</option>
+                    {inkChoices.map((item) => <option key={item.id} value={item.id}>{item.itemName || item.itemCode} ({item.itemCode || item.id})</option>)}
+                  </SearchableSelect>
+                  <input className="form-control" placeholder="Or scan the ink barcode" value={inkBarcode} onChange={(event) => setInkBarcode(event.target.value)} />
+                </div>
+              )}
+              {(processKind === 'lamination-1' || processKind === 'lamination-2') && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr', gap: '8px' }}>
+                    <input className="form-control" placeholder="Parent lot barcode *" value={parentBarcode} onChange={(event) => setParentBarcode(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Parent kg consumed *" value={parentConsumedKg} onChange={(event) => setParentConsumedKg(event.target.value)} />
+                  </div>
+                  <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>{processKind === 'lamination-2' ? 'Substrate 3' : 'Substrate 2'} *</div>
+                  {substrateRolls.map((row, index) => (
+                    <div key={`sub-${index}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr auto', gap: '8px' }}>
+                      <input className="form-control" placeholder="Substrate barcode *" value={row.barcode} onChange={(event) => {
+                        const barcode = event.target.value;
+                        setSubstrateRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, barcode, initialKg: fillRollBalance(barcode) || item.initialKg } : item));
+                      }} />
+                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Consumed kg *" value={row.consumedKg} onChange={(event) => setSubstrateRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, consumedKg: event.target.value } : item))} />
+                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Roll balance kg" value={row.initialKg} onChange={(event) => setSubstrateRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, initialKg: event.target.value } : item))} />
+                      <button type="button" className="btn-secondary" onClick={() => setSubstrateRolls((prev) => prev.length === 1 ? [{ barcode: '', consumedKg: '', initialKg: '' }] : prev.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
+                    </div>
+                  ))}
+                  <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setSubstrateRolls((prev) => prev.concat({ barcode: '', consumedKg: '', initialKg: '' }))}>Add substrate roll</button>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Adhesive kg *" value={adhesiveKg} onChange={(event) => setAdhesiveKg(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Adhesive GSM *" value={adhesiveGsm} onChange={(event) => setAdhesiveGsm(event.target.value)} />
+                    <input className="form-control" type="number" step="1" min="0" placeholder="Stage meters *" value={stageMeters} onChange={(event) => setStageMeters(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Plain substrate wastage kg *" value={laminationPlainWastageKg} onChange={(event) => setLaminationPlainWastageKg(event.target.value)} />
+                    <input className="form-control" type="number" step="0.01" min="0" placeholder="Laminate wastage kg *" value={laminateWastageKg} onChange={(event) => setLaminateWastageKg(event.target.value)} />
+                  </div>
+                  <SearchableSelect className="form-control" value={adhesiveItemId} onChange={(event) => setAdhesiveItemId(event.target.value)} placeholder="Adhesive stock item *">
+                    <option value="">Adhesive stock item *</option>
+                    {adhesiveChoices.map((item) => <option key={item.id} value={item.id}>{item.itemName || item.itemCode} ({item.itemCode || item.id})</option>)}
+                  </SearchableSelect>
+                  <input className="form-control" placeholder="Or scan the adhesive barcode" value={adhesiveBarcode} onChange={(event) => setAdhesiveBarcode(event.target.value)} />
+                </div>
+              )}
+              {Array.isArray(formErrors.process) && formErrors.process.length > 0 && (
+                <div style={{ marginTop: '8px', color: '#b91c1c', fontSize: '0.78rem', fontWeight: 600 }}>
+                  {formErrors.process.map((message) => <div key={message}>{message}</div>)}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Section 2: Master Rolls Multi-Weighing Table */}
           <div style={{ marginBottom: '16px' }}>

@@ -53,6 +53,7 @@ import ModalOverlay from './ModalOverlay';
 import SearchableSelect from './SearchableSelect';
 import GrnPoSuggestion from './GrnPoSuggestion';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
+import { commitSfgFgBatch } from '../utils/sfgFgBatchEntry';
 import { getNextDocRefNumber, generateDocRefNumber, getInventoryAgeingSettings, getDocumentPrefixes } from '../services/settingsService';
 import {
   acceptNewerBarcodeChoice,
@@ -319,6 +320,8 @@ export default function InventoryManagement({
   onReactivateInventoryItems,
   onWriteOffInventoryItems,
   onSaveProductionRecord,
+  onSaveSFGGood,
+  sfgGoods = [],
   onAddVendor,
   inventoryRolls = [],
   dispatchShipments = [],
@@ -2047,54 +2050,13 @@ export default function InventoryManagement({
     alert(`✅ Rate discrepancy on PO ${po.poNumber} has been successfully resolved!\n\nAction: ${resolutionObj.summary}\nResolution note has been permanently attached to both PO and GRN.`);
   };
 
-  const handleSaveSFGFG = (inventoryItem, rolls, prodLink) => {
-    // 1. Add / Update Inventory item
-    if (onSaveInventoryItem) {
-      onSaveInventoryItem(inventoryItem);
-    } else if (onUpdateInventory) {
-      onUpdateInventory([inventoryItem, ...(inventory || [])]);
-    }
-
-    // 2. Add each roll to inventoryRolls (and sync to Supabase)
-    if (Array.isArray(rolls)) {
-      rolls.forEach(r => {
-        if (onAddRoll) {
-          onAddRoll(r);
-        }
-      });
-    }
-
-    // 3. Link to Production Record
-    if (prodLink && prodLink.orderId && onSaveProductionRecord) {
-      const existingRecord = (productionRecords || []).find(pr => String(pr.orderId) === String(prodLink.orderId) || String(pr.id) === String(prodLink.orderId));
-      
-      const existingRolls = existingRecord?.outputRolls || [];
-      const updatedRolls = [...existingRolls, ...(rolls || [])];
-      const totalOutputKg = updatedRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-
-      const updatedRecord = {
-        ...(existingRecord || {
-          id: `PROD-${prodLink.orderId}-${Date.now().toString().slice(-4)}`,
-          orderId: prodLink.orderId,
-          jobName: prodLink.jobName,
-          jobCode: prodLink.jobCode,
-          operatorName: prodLink.operatorName,
-          shift: prodLink.shift,
-          productionDate: prodLink.productionDate,
-          status: 'In Progress',
-          machineName: prodLink.machineName
-        }),
-        outputRolls: updatedRolls,
-        actualOutputKg: totalOutputKg,
-        netUsableKg: totalOutputKg,
-        lastUpdated: new Date().toISOString()
-      };
-
-      onSaveProductionRecord(updatedRecord);
-    }
-
-    // 4. Open Barcode Printer Modal for all rolls
-    setSelectedRollForBarcodeModal(rolls);
+  const handleSaveSFGFG = async (plan) => {
+    await commitSfgFgBatch({
+      plan,
+      saveProductionRecord: onSaveProductionRecord,
+      saveSfgGood: onSaveSFGGood
+    });
+    setSelectedRollForBarcodeModal(plan.outputRolls);
     setIsSfgFgModalOpen(false);
   };
 
@@ -5055,6 +5017,7 @@ export default function InventoryManagement({
           jobMasters={jobMasters}
           inventory={inventory}
           inventoryRolls={inventoryRolls}
+          sfgGoods={sfgGoods}
           productionRecords={productionRecords}
           machines={machines}
           currentUser={currentUser}
