@@ -39,6 +39,7 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import CylinderJobCardForm from '../CylinderJobCardForm';
 import { cylindersLinkedToJobMaster } from '../utils/jobMasterLink';
 import SFGFGEntryModal from './SFGFGEntryModal';
+import { carryProcessMeasures, commitSfgFgBatch } from '../utils/sfgFgBatchEntry';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap, getOrderStageInfo } from '../factoryStore';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
@@ -839,6 +840,7 @@ export default function ProductionRecordManagement({
   currentUser,
   storeIssueTransactions = [],
   onSaveProductionRecord,
+  onSaveSFGGood,
   onApproveProductionRecord,
   onUpdateJobMaster,
   onUpdateCylinder,
@@ -2163,6 +2165,7 @@ export default function ProductionRecordManagement({
       printingDurationFormatted: selectedRecord?.printingDurationFormatted || selectedOrder?.printingDurationFormatted || '',
       stages: selectedRecord?.stages || selectedOrder?.stages || {},
       sfgConsumptions: selectedRecord?.sfgConsumptions || selectedOrder?.sfgConsumptions || [],
+      ...carryProcessMeasures(selectedRecord),
       
       // Stage-wise Quantities & Consumables (7 Stages)
       qtyFirstPassL1: finiteNumber(qtyFirstPassL1),
@@ -2295,59 +2298,13 @@ export default function ProductionRecordManagement({
            String(o.clientName || '').toLowerCase().includes(q);
   });
 
-  const handleSaveSFGFG = async (inventoryItem, rolls, prodLink) => {
-    if (Array.isArray(rolls)) {
-      for (const roll of rolls) {
-        if (onAddRoll) await onAddRoll(roll);
-      }
-    }
-
-    if (prodLink && prodLink.orderId && onSaveProductionRecord) {
-      const order = (orders || []).find((item) => item.id === prodLink.orderId);
-      if (!order) {
-        alert('This entry is not linked to an order. The production record was not saved.');
-        throw new Error('A production record needs an order.');
-      }
-      const existingRecord = (productionRecords || []).find(pr => String(pr.orderId) === String(prodLink.orderId));
-      const existingRolls = existingRecord?.outputRolls || [];
-      const updatedRolls = [...existingRolls, ...(rolls || [])];
-      const totalOutputKg = updatedRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-      const stageType = String(prodLink.stageType || '');
-      const stageQty = {};
-      if (prodLink.isFG) stageQty.qtyDispatch = totalOutputKg;
-      else if (stageType.includes('Pouch')) stageQty.qtyPouching = totalOutputKg;
-      else if (stageType.includes('Slit')) stageQty.qtySlitting = totalOutputKg;
-
-      const updatedRecord = applyGuardrailFields(rollSfgScrapIntoRecord({
-        ...(existingRecord || {
-          id: `PROD-${prodLink.orderId}-${Date.now().toString().slice(-4)}`,
-          status: 'In Progress'
-        }),
-        orderId: order.id,
-        jobName: prodLink.jobName,
-        jobCode: prodLink.jobCode,
-        operatorName: prodLink.operatorName,
-        shift: prodLink.shift,
-        machineName: prodLink.machineName,
-        dateFilled: prodLink.productionDate || factoryCalendarDate(),
-        productionDate: prodLink.productionDate || factoryCalendarDate(),
-        outputRolls: updatedRolls,
-        actualOutputKg: totalOutputKg,
-        ...stageQty,
-        ...prodLink.guardrail,
-        deriveNetFromStages: Boolean(prodLink.isFG || stageType.includes('Pouch') || stageType.includes('Slit')),
-        lastUpdated: new Date().toISOString()
-      }), { fields: prodLink.guardrail || {} });
-
-      try {
-        await onSaveProductionRecord(updatedRecord);
-      } catch (err) {
-        alert(`The production record was not saved: ${err.message || err}`);
-        throw err;
-      }
-    }
-
-    setSelectedRollForBarcodeModal(rolls);
+  const handleSaveSFGFG = async (plan) => {
+    await commitSfgFgBatch({
+      plan,
+      saveProductionRecord: onSaveProductionRecord,
+      saveSfgGood: onSaveSFGGood
+    });
+    setSelectedRollForBarcodeModal(plan.outputRolls);
     setIsSfgFgModalOpen(false);
   };
 
@@ -2360,7 +2317,9 @@ export default function ProductionRecordManagement({
           mode={sfgFgModalMode}
           jobMasters={jobMasters}
           orders={orders}
+          inventory={inventory}
           inventoryRolls={inventoryRolls}
+          sfgGoods={sfgGoods}
           productionRecords={productionRecords}
           machines={machines}
           currentUser={currentUser}

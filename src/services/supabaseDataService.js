@@ -1882,6 +1882,12 @@ export async function fetchProductionRecords() {
         excessFilmWastagePct: Number(extra.excessFilmWastagePct) || 0,
         actualInkGsm: Number(r.actual_ink_gsm ?? extra.actualInkGsm ?? 0),
         actualAdhesiveGsm: Number(r.actual_adhesive_gsm ?? extra.actualAdhesiveGsm ?? 0),
+        actualAdhesiveGsmL2: storedMeasure(r.actual_adhesive_gsm_l2, extra.actualAdhesiveGsmL2),
+        laminationMetersL1: storedMeasure(r.lamination_meters_l1, extra.laminationMetersL1),
+        laminationMetersL2: storedMeasure(r.lamination_meters_l2, extra.laminationMetersL2),
+        slittingMeters: storedMeasure(r.slitting_meters, extra.slittingMeters),
+        pouchingMeters: storedMeasure(r.pouching_meters, extra.pouchingMeters),
+        sfgFgBatches: Array.isArray(extra.sfgFgBatches) ? extra.sfgFgBatches : [],
         targetInkGsm: Number(r.target_ink_gsm ?? extra.targetInkGsm ?? 1.5),
         targetAdhesiveGsm: Number(r.target_adhesive_gsm ?? extra.targetAdhesiveGsm ?? 1.5),
         qtyDispatch: storedMeasure(extra.qtyDispatch, r.qty_dispatch),
@@ -1958,6 +1964,12 @@ export async function saveProductionRecordToSupabase(record) {
     jobName: record.jobName,
     clientName: record.clientName,
     sfgConsumptions: Array.isArray(record.sfgConsumptions) ? record.sfgConsumptions : [],
+    sfgFgBatches: Array.isArray(record.sfgFgBatches) ? record.sfgFgBatches : [],
+    laminationMetersL1: finiteNumber(record.laminationMetersL1),
+    laminationMetersL2: finiteNumber(record.laminationMetersL2),
+    slittingMeters: finiteNumber(record.slittingMeters),
+    pouchingMeters: finiteNumber(record.pouchingMeters),
+    actualAdhesiveGsmL2: finiteNumber(record.actualAdhesiveGsmL2),
     materialsList: record.materialsList || [],
     outputRolls: record.outputRolls || record.rollsBreakdown || [],
     rollsBreakdown: record.rollsBreakdown || record.outputRolls || [],
@@ -2093,16 +2105,31 @@ export async function saveProductionRecordToSupabase(record) {
     approval_date: record.approvalDate || '',
     notes: record.notes || '',
     status: record.status || 'Filled by Plant Manager',
+    sfg_consumptions: Array.isArray(record.sfgConsumptions) ? record.sfgConsumptions : [],
     materials_list: Array.isArray(record.materialsList) ? record.materialsList : [],
     input_rolls_list: Array.isArray(record.inputRollsList) ? record.inputRollsList : [],
     process_logs: extra
   };
-  
+
+  const PROCESS_METER_COLUMNS = [
+    ['lamination_meters_l1', 'laminationMetersL1'],
+    ['lamination_meters_l2', 'laminationMetersL2'],
+    ['slitting_meters', 'slittingMeters'],
+    ['pouching_meters', 'pouchingMeters'],
+    ['actual_adhesive_gsm_l2', 'actualAdhesiveGsmL2']
+  ];
+  PROCESS_METER_COLUMNS.forEach(([column, field]) => {
+    if (Object.prototype.hasOwnProperty.call(record, field) && record[field] !== undefined && record[field] !== null && record[field] !== '') {
+      fullPayload[column] = finiteNumber(record[field]);
+    }
+  });
+
+  const OPTIONAL_RECORD_COLUMNS = GUARDRAIL_RECORD_COLUMNS.concat(PROCESS_METER_COLUMNS.map(([column]) => column));
   let payload = fullPayload;
   let { error: fullErr } = await supabase.from('production_records').upsert(payload, { onConflict: 'id' });
-  if (fullErr && GUARDRAIL_RECORD_COLUMNS.some((column) => String(fullErr.message || '').includes(column))) {
+  if (fullErr && OPTIONAL_RECORD_COLUMNS.some((column) => String(fullErr.message || '').includes(column))) {
     payload = { ...payload };
-    GUARDRAIL_RECORD_COLUMNS.forEach((column) => { delete payload[column]; });
+    OPTIONAL_RECORD_COLUMNS.forEach((column) => { delete payload[column]; });
     ({ error: fullErr } = await supabase.from('production_records').upsert(payload, { onConflict: 'id' }));
   }
   const fkFailed = fullErr && (fullErr.code === '23503' || String(fullErr.message || '').toLowerCase().includes('foreign key'));

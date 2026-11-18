@@ -6647,6 +6647,7 @@ export default function App() {
             currentUser={currentUser}
             storeIssueTransactions={storeIssueTransactions}
             onSaveProductionRecord={handleSaveProductionRecord}
+            onSaveSFGGood={handleSaveSFGGood}
             onApproveProductionRecord={handleApproveProductionRecord}
             onUpdateJobMaster={handleUpdateJobMaster}
             onUpdateCylinder={handleUpdateCylinder}
@@ -6842,6 +6843,8 @@ export default function App() {
             onAddRoll={handleAddRoll}
             onUpdateRoll={handleUpdateRoll}
             onUpdateInventoryRolls={handleUpdateInventoryRolls}
+            onSaveSFGGood={handleSaveSFGGood}
+            sfgGoods={sfgGoods}
             onInwardQcDeleted={handleInwardQcDeleted}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}
@@ -6864,6 +6867,7 @@ export default function App() {
             dispatchShipments={dispatchShipments}
             currentUser={currentUser}
             onSaveSFGGood={handleSaveSFGGood}
+            onSaveProductionRecord={handleSaveProductionRecord}
             onConsumeSFG={handleConsumeSFG}
             onDeleteSFGGood={handleDeleteSFGGood}
             onConsumptionReverted={refreshAfterConsumptionRevert}

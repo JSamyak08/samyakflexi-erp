@@ -81,6 +81,7 @@ import {
 import { orderClosedStockLabel } from '../utils/orderAutoClose';
 import { finiteRate, scrapValueRs, withoutScrapBarcode } from '../utils/scrapIdentity';
 import { isPrintedLotChild, omitPrintedLotChildren } from '../utils/printingSfgLot';
+import { commitSfgFgBatch } from '../utils/sfgFgBatchEntry';
 import { pushSlugState } from '../utils/slugRouter';
 import { sfgStoreUi } from '../sfgStoreAccess';
 import RevertConsumptionModal from './RevertConsumptionModal';
@@ -214,6 +215,7 @@ export default function SFGStoreManagement({
   currentUser,
   urlParams = {},
   onSaveSFGGood,
+  onSaveProductionRecord,
   onConsumeSFG,
   onDeleteSFGGood,
   onConsumptionReverted,
@@ -4837,10 +4839,16 @@ export default function SFGStoreManagement({
           machines={machines}
           currentUser={currentUser}
           onClose={() => setNewGoodModalMode(null)}
-          onSave={(inventoryItem, rolls) => {
-            if (onSaveSFGGood) {
-              onSaveSFGGood(inventoryItem);
-            }
+          inventory={inventory}
+          inventoryRolls={inventoryRolls}
+          sfgGoods={sfgGoods}
+          productionRecords={productionRecords}
+          onSave={async (plan) => {
+            await commitSfgFgBatch({
+              plan,
+              saveProductionRecord: onSaveProductionRecord,
+              saveSfgGood: onSaveSFGGood
+            });
             setNewGoodModalMode(null);
           }}
         />
