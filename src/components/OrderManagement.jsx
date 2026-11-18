@@ -39,7 +39,8 @@ import {
   getOrderMaterialRequirements as getOrderMaterialRequirementsFromStore,
   calculateOrderStockReservations,
   presentRequirementStock,
-  requirementStockKey
+  requirementStockKey,
+  isSupersededMaterialLine
 } from '../factoryStore';
 import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { anyAssignedRole } from '../assignedRoles';
@@ -748,6 +749,7 @@ export default function OrderManagement({
       const statusInfo = getOrderStatusInfo(order);
 
       reqs.forEach(req => {
+        if (isSupersededMaterialLine(req)) return;
         const stockInfo = presentRequirementStock(req, getStockCheckForReq(req, order.id));
         const filmLow = (req.filmType || '').toLowerCase();
         let category = 'Film';
@@ -940,11 +942,12 @@ export default function OrderManagement({
   };
 
   const toggleSelectAllForOrder = (order) => {
-    const reqs = getOrderMaterialRequirements(order);
+    const reqs = getOrderMaterialRequirements(order).filter((req) => !isSupersededMaterialLine(req));
     const allSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[requirementStockKey(order.id, r)]);
 
     const newMap = { ...selectedReqIds };
     reqs.forEach(r => {
+      if (isSupersededMaterialLine(r)) return;
       const key = requirementStockKey(order.id, r);
       if (allSelected) delete newMap[key];
       else newMap[key] = true;
@@ -986,6 +989,7 @@ export default function OrderManagement({
     const list = [];
     orders.forEach(order => {
       getOrderMaterialRequirements(order).forEach(req => {
+        if (isSupersededMaterialLine(req)) return;
         if (selectedReqIds[requirementStockKey(order.id, req)]) {
           list.push({
             orderId: order.id,
@@ -1890,7 +1894,8 @@ export default function OrderManagement({
                 const printedSfgPlan = materialPlanFor(order);
                 const reqs = printedSfgPlan.requirements;
                 const allocationChoice = choiceForOrder(order);
-                const allReqsSelected = reqs.length > 0 && reqs.every(r => selectedReqIds[requirementStockKey(order.id, r)]);
+                const selectableReqs = reqs.filter((req) => !isSupersededMaterialLine(req));
+                const allReqsSelected = selectableReqs.length > 0 && selectableReqs.every(r => selectedReqIds[requirementStockKey(order.id, r)]);
 
                 const cardBorder = isOverdue ? '2px solid #ef4444' : (isNearing ? '2px solid #f59e0b' : '1px solid var(--border-color)');
                 const cardBg = isOverdue ? '#fef2f2' : (isNearing ? '#fffbeb' : 'transparent');
@@ -2529,6 +2534,24 @@ export default function OrderManagement({
                                 </thead>
                                 <tbody>
                                   {reqs.map(req => {
+                                    if (isSupersededMaterialLine(req)) {
+                                      return (
+                                        <tr key={requirementStockKey(order.id, req)} style={{ background: '#f8fafc', color: '#64748b' }}>
+                                          <td />
+                                          <td style={{ fontWeight: '700' }}>
+                                            {req.filmType}
+                                            <div style={{ fontSize: '0.72rem', color: '#9a3412', fontWeight: '800' }}>PO issued – superseded spec</div>
+                                          </td>
+                                          <td>{req.micron}</td>
+                                          <td>{req.widthMm && req.widthMm !== '-' ? `${req.widthMm} mm` : '—'}</td>
+                                          <td>Not counted ({req.qtyKg} kg was the old gross)</td>
+                                          <td>Not reserved</td>
+                                          <td><span className="badge" style={{ background: '#f1f5f9', color: '#64748b', fontWeight: '800' }}>0 kg</span></td>
+                                          <td>{req.preferredVendor || '—'}</td>
+                                          <td>{req.poNumber || 'PO issued'}</td>
+                                        </tr>
+                                      );
+                                    }
                                     const isChecked = !!selectedReqIds[requirementStockKey(order.id, req)];
                                     const stockInfo = presentRequirementStock(req, getStockCheckForReq(req, order.id));
 

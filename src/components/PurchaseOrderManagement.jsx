@@ -55,7 +55,7 @@ import { loggedInActorLabel } from '../utils/recordedPerson';
 import { findDuplicateInvoice, oneLineFromReceipt, prepareMultiLineReceipt } from '../services/grnDocument';
 import { isGrnDeleted, receiptKg } from '../services/grnLifecycle';
 import { planReceiptStockLink } from '../services/inventoryIdentity';
-import { calculateOrderStockReservations, generateInventoryId, linkedRequirementMatches, presentRequirementStock, requirementStockKey } from '../factoryStore';
+import { calculateOrderStockReservations, generateInventoryId, isSupersededMaterialLine, linkedRequirementMatches, presentRequirementStock, requirementStockKey } from '../factoryStore';
 import { calculateGSTBreakdown, formatINR } from '../utils/pdfHelpers';
 
 export default function PurchaseOrderManagement({
@@ -1454,7 +1454,7 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
       .flatMap(o => {
         const reqList = (o && (o.materialRequirements || o.rawMaterialRequirements)) || [];
         return (Array.isArray(reqList) ? reqList : [])
-          .filter(r => r && !r.poIssued)
+          .filter(r => r && !r.poIssued && !isSupersededMaterialLine(r))
           .map(r => {
             const stock = presentRequirementStock(r, orderStockReservations.getReqStockInfo(r, o.id));
             return { order: o, req: r, stock };

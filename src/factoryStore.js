@@ -452,6 +452,59 @@ export const calculateJobRawMaterials = ({
 };
 
 /**
+ * A purchase line kept after the job structure moved on.
+ * It stays on the order so the PO is still visible, and it does not
+ * reserve stock or count toward Gross Required / Balance Qty for PO.
+ */
+export function isSupersededMaterialLine(line) {
+  if (!line || typeof line !== 'object') return false;
+  if (line.superseded === true) return true;
+  return String(line.status || '').toLowerCase().includes('superseded');
+}
+
+function canonicalMeasure(value) {
+  if (value === undefined || value === null || value === '' || value === '-') return '';
+  const number = Number(String(value).replace(/µ|mm/gi, '').trim());
+  if (!Number.isFinite(number)) return '';
+  return String(Math.round(number * 100) / 100);
+}
+
+function filmToken(line) {
+  return String(line?.filmType || line?.itemName || '').trim().toLowerCase();
+}
+
+function metalloceneToken(line) {
+  return String(line?.metallocenePct || line?.metallocene || '')
+    .trim()
+    .toLowerCase()
+    .replace('%', '');
+}
+
+/**
+ * Same film, micron and width. A metallocene percentage is compared only
+ * when both lines have one, so a stored line that never recorded it still
+ * matches the film it was raised for. Array position is not an identity.
+ */
+export function materialLinesMatch(left, right) {
+  const filmLeft = filmToken(left);
+  const filmRight = filmToken(right);
+  if (!filmLeft || filmLeft !== filmRight) return false;
+  if (canonicalMeasure(left?.micron) !== canonicalMeasure(right?.micron)) return false;
+  const widthLeft = canonicalMeasure(left?.widthMm ?? left?.width);
+  const widthRight = canonicalMeasure(right?.widthMm ?? right?.width);
+  if (widthLeft !== widthRight) return false;
+  const metaLeft = metalloceneToken(left);
+  const metaRight = metalloceneToken(right);
+  if (metaLeft && metaRight && metaLeft !== metaRight) return false;
+  return true;
+}
+
+export function matchMaterialLine(lines, layer) {
+  const active = (Array.isArray(lines) ? lines : []).filter((line) => line && !isSupersededMaterialLine(line));
+  return active.find((line) => materialLinesMatch(line, layer)) || null;
+}
+
+/**
  * Universal Raw Material Requirements Extractor for an Order
  */
 export const getOrderMaterialRequirements = (order, jobMasters = []) => {
@@ -466,7 +519,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
   let existingIsConsistent = false;
   if (Array.isArray(existing) && existing.length > 0) {
     if (orderQtyKg > 0) {
-      const filmReqs = existing.filter(r => r && r.micron && r.micron !== '-' && r.filmType !== 'Liquid Inks' && r.filmType !== 'Solvent-less Adhesive');
+      const filmReqs = existing.filter(r => r && !isSupersededMaterialLine(r) && r.micron && r.micron !== '-' && r.filmType !== 'Liquid Inks' && r.filmType !== 'Solvent-less Adhesive');
       const sumFilmKg = filmReqs.reduce((sum, r) => sum + (parseFloat(r.qtyKg) || 0), 0);
       const sfgAllocatedKg = parseFloat(order?.printedSfgUse?.allocatedKg) || 0;
       const totalEffectiveKg = sumFilmKg + sfgAllocatedKg;
@@ -516,10 +569,15 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
     ];
   }
 
-  // Merge any custom widths, rates, or metallocene from existing requirements if present
-  const mergedLayers = layers.map((layer, idx) => {
-    const oldReq = Array.isArray(existing) ? (existing[idx] || existing.find(r => r.filmType === layer.filmType)) : null;
-    const widthMm = (oldReq && oldReq.widthMm && oldReq.widthMm !== '-') ? parseFloat(oldReq.widthMm) : layer.widthMm;
+  // Width, rate and vendor follow the same film. They must not follow array position,
+  // or a PO raised for one film lands on whichever film now sits in that slot.
+  const activeExisting = Array.isArray(existing) ? existing.filter(r => r && !isSupersededMaterialLine(r)) : [];
+  const mergedLayers = layers.map((layer) => {
+    const oldReq = matchMaterialLine(activeExisting, layer);
+    const layerWidth = canonicalMeasure(layer?.widthMm ?? layer?.width);
+    const widthMm = layerWidth !== ''
+      ? parseFloat(layerWidth)
+      : (oldReq && oldReq.widthMm && oldReq.widthMm !== '-' ? parseFloat(oldReq.widthMm) : undefined);
     const rate = (oldReq && (oldReq.rate !== undefined || oldReq.ratePerKg !== undefined))
       ? parseFloat(oldReq.rate ?? oldReq.ratePerKg)
       : (layer.rate ?? layer.ratePerKg);
@@ -547,10 +605,14 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
 
   const reqs = [];
   if (calc && calc.layerResults) {
+    const takenIds = new Set(activeExisting.map(r => String(r.id || '')));
     calc.layerResults.forEach((layer, idx) => {
-      const oldReq = Array.isArray(existing) ? (existing[idx] || existing.find(r => r.filmType === layer.filmType)) : null;
+      const oldReq = matchMaterialLine(activeExisting, layer);
+      let id = oldReq?.id || `REQ-${order?.id || 'ORD'}-${idx + 1}`;
+      if (!oldReq && takenIds.has(String(id))) id = `${id}-new`;
+      takenIds.add(String(id));
       reqs.push({
-        id: oldReq?.id || `REQ-${order?.id || 'ORD'}-${idx + 1}`,
+        id,
         filmType: layer.filmType,
         micron: layer.micron,
         widthMm: layer.widthMm || parseFloat(order?.printWidthMm || jm?.printWidthMm) || 1000,
@@ -561,11 +623,12 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
         assignedVendor: oldReq?.assignedVendor || '',
         poIssued: Boolean(oldReq?.poIssued),
         poNumber: oldReq?.poNumber || '',
-        status: oldReq?.status || 'Required'
+        status: oldReq?.status || 'Required',
+        superseded: false
       });
     });
 
-    const hadInks = Array.isArray(existing) && existing.some(r => r.filmType === 'Liquid Inks');
+    const hadInks = activeExisting.some(r => r.filmType === 'Liquid Inks');
     if (hadInks && calc.inkDetails && calc.inkDetails.grossKg > 0) {
       reqs.push({
         id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
@@ -579,7 +642,7 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
       });
     }
 
-    const hadAdhesive = Array.isArray(existing) && existing.some(r => r.filmType === 'Solvent-less Adhesive');
+    const hadAdhesive = activeExisting.some(r => r.filmType === 'Solvent-less Adhesive');
     if (hadAdhesive && calc.adhesiveDetails && calc.adhesiveDetails.grossKg > 0) {
       reqs.push({
         id: `REQ-${order?.id || 'ORD'}-${reqs.length + 1}`,
@@ -593,6 +656,14 @@ export const getOrderMaterialRequirements = (order, jobMasters = []) => {
       });
     }
   }
+
+  const superseded = (Array.isArray(existing) ? existing : []).filter(isSupersededMaterialLine);
+  const seen = new Set(reqs.map(r => String(r.id || '')));
+  superseded.forEach((line) => {
+    const id = String(line.id || '');
+    if (id && seen.has(id)) return;
+    reqs.push({ ...line, superseded: true });
+  });
 
   return reqs;
 };
@@ -705,6 +776,22 @@ export function lineMaterialBalance(grossKg, reservedKg) {
  * another row, so its reserved kilograms are not applied.
  */
 export function presentRequirementStock(req, stockInfo) {
+  if (isSupersededMaterialLine(req)) {
+    const gross = roundKg(Math.max(0, Number(req?.qtyKg) || 0));
+    return {
+      grossKg: gross,
+      reqQty: gross,
+      reservedKg: 0,
+      balanceKg: 0,
+      isFullyAvailable: false,
+      isPartiallyAvailable: false,
+      totalInStock: 0,
+      matchedItemId: null,
+      matchedItem: null,
+      poStatus: 'PO issued – superseded spec',
+      superseded: true
+    };
+  }
   const gross = Number(req?.qtyKg) || 0;
   const reportedGross = stockInfo && stockInfo.reqQty !== undefined && stockInfo.reqQty !== null
     ? Number(stockInfo.reqQty)
@@ -773,6 +860,7 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
   activeOrders.forEach(order => {
     const reqs = getOrderMaterialRequirements(order, jobMasters);
     reqs.forEach((req, idx) => {
+      if (isSupersededMaterialLine(req)) return;
       const reqQty = parseFloat(req.qtyKg) || 0;
       const matchedInv = matchRequirementToInventoryItem(req, inventory);
       const reqKey = requirementStockKey(order.id, req, idx);
@@ -831,6 +919,7 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
     reqStockInfoMap,
     getReqStockInfo: (req, orderId) => {
       if (!req) return { reqQty: 0, grossKg: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false, poStatus: 'Pending PO' };
+      if (isSupersededMaterialLine(req)) return presentRequirementStock(req, null);
       const reqKey = requirementStockKey(orderId, req);
       const stored = reqKey && reqStockInfoMap[reqKey];
       if (stored) {

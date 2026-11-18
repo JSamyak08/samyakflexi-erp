@@ -2231,13 +2231,19 @@ export default function CylinderManagement({
                 };
 
                 if (onUpdateCylinder) {
-                  onUpdateCylinder(fullUpdatedCyl);
+                  Promise.resolve(onUpdateCylinder(fullUpdatedCyl)).catch((err) => {
+                    alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder was not saved: ${err.message || err}`);
+                  });
                 }
                 setSelectedForPDF(fullUpdatedCyl);
 
                 if (targetJobMaster) {
-                  if (onUpdateJobMaster) onUpdateJobMaster(targetJobMaster);
-                  else if (onAddJobMaster) onAddJobMaster(targetJobMaster);
+                  const saveJob = onUpdateJobMaster
+                    ? onUpdateJobMaster(targetJobMaster)
+                    : (onAddJobMaster ? onAddJobMaster(targetJobMaster) : null);
+                  Promise.resolve(saveJob).catch((err) => {
+                    alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+                  });
                 }
               }}
             />

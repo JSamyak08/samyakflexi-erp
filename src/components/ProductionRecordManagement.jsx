@@ -2476,10 +2476,14 @@ export default function ProductionRecordManagement({
                 onSave={(updatedData, targetJobMaster, targetCylinder) => {
                   setActiveJobCardData(prev => ({ ...prev, ...updatedData }));
                   if (targetJobMaster && onUpdateJobMaster) {
-                    onUpdateJobMaster(targetJobMaster);
+                    Promise.resolve(onUpdateJobMaster(targetJobMaster)).catch((err) => {
+                      alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+                    });
                   }
                   if (targetCylinder && onUpdateCylinder) {
-                    onUpdateCylinder(targetCylinder);
+                    Promise.resolve(onUpdateCylinder(targetCylinder)).catch((err) => {
+                      alert(err?.name === 'PartialSaveError' ? err.message : `The cylinder was not saved: ${err.message || err}`);
+                    });
                   }
                 }}
               />
