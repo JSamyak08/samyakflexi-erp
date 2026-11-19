@@ -56,13 +56,13 @@ export function finiteNumber(...values) {
 
 export function formatPackingKg(value) {
   if (value == null || !Number.isFinite(Number(value))) return '';
-  return Number(value).toFixed(1);
+  return Number(value).toFixed(2);
 }
 
 function sumKnown(values) {
   const numbers = values.filter((value) => value != null && Number.isFinite(value));
   if (!numbers.length) return null;
-  return Math.round(numbers.reduce((sum, value) => sum + value, 0) * 10) / 10;
+  return Math.round(numbers.reduce((sum, value) => sum + value, 0) * 100) / 100;
 }
 
 function exactText(value) {
@@ -274,7 +274,7 @@ function packingLine(item, index, context = {}) {
   const grossDirect = finiteNumber(item?.grossWeightKg);
   const gross = grossDirect != null
     ? grossDirect
-    : (net != null && tare != null ? Math.round((net + tare) * 10) / 10 : null);
+    : (net != null && tare != null ? Math.round((net + tare) * 100) / 100 : null);
   const unit = printableText(item?.unit) || 'Kg';
   return {
     key: `${printableText(item?.barcodeId) || 'roll'}-${index}`,

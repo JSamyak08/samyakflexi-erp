@@ -59,7 +59,11 @@ test('packing list print keeps real rows and drops form fillers', () => {
   assert.equal(model.jobName, 'Masti Atta 5 Kg');
   assert.equal(model.lines[0].substrate, 'CCPET 12μ / MGP 90μ');
   assert.equal(model.lines[0].tare, 2.2);
-  assert.equal(formatPackingKg(model.lines[0].net), '51.0');
+  assert.equal(formatPackingKg(model.lines[0].tare), '2.20');
+  assert.equal(formatPackingKg(model.lines[0].gross), '53.20');
+  assert.equal(formatPackingKg(model.lines[0].net), '51.00');
+  assert.equal(formatPackingKg(model.totals.tare), '2.20');
+  assert.equal(formatPackingKg(model.totals.net), '91.00');
   assert.equal(model.lines[1].substrate, '');
   assert.equal(model.lines[1].tare, null);
   assert.equal(model.lines[1].gross, null);
@@ -145,6 +149,9 @@ test('the packing list sheet uses the shared letterhead and printable boxes', as
   assert.match(html, /Plant Manager \/ HOD Signature/);
   assert.match(html, /Verified By \(QC Inspector\)/);
   assert.match(html, /Received By \(Driver \/ Customer\)/);
+  assert.match(html, /<strong>TOTAL SHIPMENT \(2 ROLLS\):<\/strong>/);
+  assert.match(html, /<strong>2\.20 Kg<\/strong>/);
+  assert.match(html, /<strong>91\.00 Kg<\/strong>/);
   assert.match(html, /pdf-modal-overlay/);
   assert.match(html, /Back to Dispatch Management/);
   assert.doesNotMatch(html, /onClick=\{onClose\}/);

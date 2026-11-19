@@ -85,6 +85,10 @@
   line-height: 1.2;
 }
 
+#printable-packing-list table.pl-rolls tfoot td {
+  font-weight: 700;
+}
+
 #printable-packing-list .pl-num {
   text-align: right;
   white-space: nowrap;
@@ -177,6 +181,10 @@
     font-size: 7.5pt !important;
     font-weight: 700 !important;
     text-align: center !important;
+  }
+
+  #printable-packing-list table.pl-rolls tfoot td {
+    font-weight: 700 !important;
   }
 
   #printable-packing-list .pl-num {

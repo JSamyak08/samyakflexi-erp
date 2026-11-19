@@ -172,10 +172,10 @@ export default function DispatchPackingListPDF({
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan="3" className="pl-num">TOTAL SHIPMENT ({rollLabel}):</td>
-                <td className="pl-center">{model.totals.tare == null ? '' : `${formatPackingKg(model.totals.tare)} Kg`}</td>
-                <td className="pl-num">{model.totals.gross == null ? '' : `${formatPackingKg(model.totals.gross)} Kg`}</td>
-                <td className="pl-num">{model.totals.net == null ? '' : `${formatPackingKg(model.totals.net)} Kg`}</td>
+                <td colSpan="3" className="pl-num" style={{ fontWeight: 700 }}><strong>TOTAL SHIPMENT ({rollLabel}):</strong></td>
+                <td className="pl-center" style={{ fontWeight: 700 }}>{model.totals.tare == null ? '' : <strong>{formatPackingKg(model.totals.tare)} Kg</strong>}</td>
+                <td className="pl-num" style={{ fontWeight: 700 }}>{model.totals.gross == null ? '' : <strong>{formatPackingKg(model.totals.gross)} Kg</strong>}</td>
+                <td className="pl-num" style={{ fontWeight: 700 }}>{model.totals.net == null ? '' : <strong>{formatPackingKg(model.totals.net)} Kg</strong>}</td>
                 <td className="pl-center">
                   <LoadCheck label="Verified" /> Verified
                 </td>
