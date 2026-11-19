@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Printer, ArrowLeft, Edit3, Plus, Trash2 } from 'lucide-react';
+import { Printer, ArrowLeft, Edit3 } from 'lucide-react';
 import { loadLetterhead } from '../services/companyProfile';
 import CompanyProfileNotice from './CompanyProfileNotice';
 import { numberToWords, formatINR, calculateGSTBreakdown } from '../utils/pdfHelpers';
@@ -8,6 +8,7 @@ import { formatPlantDateTime } from '../utils/dbDates';
 import { displayAmendmentLabel, revisionNumber } from '../utils/poAmendment';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import QRCode2D from './QRCode2D';
+import './purchaseOrderPrint.css';
 
 export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   const defaultPoNum = poData?.poNumber || generateDocRefNumber('po');
@@ -61,7 +62,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   };
 
   const handleAddTerm = () => {
-    setCurrentTerms(prev => [...prev, "New term condition..."]);
+    setCurrentTerms(prev => [...prev, "New purchase order condition..."]);
   };
 
   const handleRemoveTerm = (index) => {
@@ -125,160 +126,175 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
       </div>
 
       <div className="pdf-paper-container">
-        <div className="printable-document" id="printable-po" data-pdf-file-name={poFileBase} style={{ fontFamily: "'Inter', 'Segoe UI', sans-serif", color: '#0f172a' }}>
+        <div className="printable-document" id="printable-po" data-pdf-file-name={poFileBase}>
           
           {/* Executive Header Banner */}
-          <div className="letterhead-header" style={{ borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="letterhead-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="samyak-logo-img" style={{ height: '36px', maxWidth: '188px', objectFit: 'contain' }} />
-              <p className="letterhead-company-sub" style={{ marginTop: '4px', fontSize: '8.5px', fontWeight: '800', color: '#475569', letterSpacing: '0.5px' }}>
-                {COMPANY_DETAILS.tagline}
-              </p>
+          <div className="po-header">
+            <div className="po-brand">
+              <img src={logoImage} alt="Samyak International Ltd Logo" className="po-logo-img" />
+              {COMPANY_DETAILS.tagline ? (
+                <div className="po-tagline">
+                  {COMPANY_DETAILS.tagline}
+                </div>
+              ) : null}
             </div>
 
-            <div className="letterhead-doc-title" style={{ display: 'flex', alignItems: 'center', gap: '14px', justifyContent: 'flex-end' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ display: 'inline-block', background: '#0f172a', color: '#ffffff', padding: '4px 14px', borderRadius: '4px', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: '900', fontSize: '18px', marginBottom: '6px' }}>
-                  PURCHASE ORDER
-                </div>
-                <div className="doc-ref-no" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px', fontSize: '13px', fontWeight: '800', color: '#1e293b' }}>
-                  Ref #: {isEditingRef ? (
+            <div className="po-title-block">
+              <div>
+                <div className="po-title-text">PURCHASE ORDER</div>
+                <div className="po-meta-item">
+                  <span>PO Ref #: </span>
+                  {isEditingRef ? (
                     <input
                       type="text"
                       value={currentPoNumber}
                       onChange={(e) => setCurrentPoNumber(e.target.value)}
                       onBlur={() => setIsEditingRef(false)}
                       autoFocus
-                      style={{ fontSize: '13px', fontWeight: 'bold', border: '1px solid #2563eb', padding: '2px 6px', borderRadius: '4px', textAlign: 'right' }}
+                      style={{ fontSize: '8.5pt', fontWeight: 'bold', border: '1px solid #2563eb', padding: '1px 5px', borderRadius: '3px', textAlign: 'right' }}
                     />
                   ) : (
                     <span 
                       onClick={() => setIsEditingRef(true)}
                       title="Click to edit reference number"
-                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#4f46e5', background: '#eef2ff', padding: '2px 8px', borderRadius: '4px' }}
+                      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '3px', color: '#1e40af', fontWeight: '800' }}
                     >
                       {currentPoNumber}
-                      <Edit3 size={12} className="no-print" style={{ opacity: 0.8, color: '#4f46e5' }} />
+                      <Edit3 size={11} className="no-print" style={{ opacity: 0.7, color: '#3b82f6' }} />
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: '4px', fontSize: '11px', fontWeight: '800', color: '#1e293b' }}>
-                  Amendment: {amendmentLabel}{amendmentDate ? ` · ${amendmentDate}` : ''}
+                <div className="po-meta-item">
+                  <span>Date: </span><strong>{poDate}</strong>
+                </div>
+                <div className="po-meta-item" style={{ marginTop: '2px' }}>
+                  <span style={{
+                    display: 'inline-block',
+                    fontSize: '7.2pt',
+                    fontWeight: '800',
+                    padding: '1px 6px',
+                    borderRadius: '3px',
+                    background: amendmentRevision > 0 ? '#fffbeb' : '#f1f5f9',
+                    color: amendmentRevision > 0 ? '#b45309' : '#334155',
+                    border: `1px solid ${amendmentRevision > 0 ? '#fde68a' : '#cbd5e1'}`
+                  }}>
+                    {amendmentLabel}{amendmentDate ? ` · ${amendmentDate}` : ''}
+                  </span>
                 </div>
               </div>
-              <div style={{ background: '#ffffff', padding: '2px', border: '1px solid #e2e8f0', borderRadius: '4px' }}>
-                <QRCode2D value={`SAMYAK-ERP-PO:${currentPoNumber || 'PO-000'}`} size={48} showLabel={false} margin={0} />
+              <div className="po-qr-box">
+                <QRCode2D value={`SAMYAK-ERP-PO:${currentPoNumber || 'PO-000'}`} size={44} showLabel={false} margin={0} />
               </div>
             </div>
           </div>
 
           {/* 3-Column Address Grid */}
-          <table className="address-grid-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '14px', fontSize: '9.5pt' }}>
+          <table className="po-address-table">
             <thead>
-              <tr style={{ background: '#1e293b', color: '#ffffff' }}>
-                <th style={{ border: '1px solid #0f172a', padding: '6px 10px', textTransform: 'uppercase', fontSize: '8.5pt', letterSpacing: '0.5px' }}>🏢 Buyer (Bill To)</th>
-                <th style={{ border: '1px solid #0f172a', padding: '6px 10px', textTransform: 'uppercase', fontSize: '8.5pt', letterSpacing: '0.5px' }}>🏭 Supplier / Vendor</th>
-                <th style={{ border: '1px solid #0f172a', padding: '6px 10px', textTransform: 'uppercase', fontSize: '8.5pt', letterSpacing: '0.5px' }}>🚚 Shipping Details (Ship To)</th>
+              <tr>
+                <th>Buyer (Bill To)</th>
+                <th>Supplier / Vendor</th>
+                <th>Shipping Details (Ship To)</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td style={{ border: '1px solid #cbd5e1', padding: '8px 10px', verticalAlign: 'top', width: '33.33%', background: '#fafafa' }}>
-                  <div className="address-box-title" style={{ fontWeight: '800', color: '#0f172a', fontSize: '10pt', marginBottom: '4px', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>{COMPANY_DETAILS.name}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}>{COMPANY_DETAILS.address}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Contact Person:</strong> {COMPANY_DETAILS.contactPerson}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Email:</strong> {COMPANY_DETAILS.email}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Contact No:</strong> {COMPANY_DETAILS.phones}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>GSTIN:</strong> {COMPANY_DETAILS.gstin}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Place of Supply:</strong> {COMPANY_DETAILS.placeOfSupply}</div>
+                <td>
+                  <div className="po-party-name">{COMPANY_DETAILS.name}</div>
+                  <div style={{ color: '#334155', fontSize: '8pt', marginBottom: '3px', lineHeight: '1.3' }}>{COMPANY_DETAILS.address}</div>
+                  <div className="po-kv-line"><span className="po-kv-label">Contact Person: </span><strong>{COMPANY_DETAILS.contactPerson}</strong></div>
+                  <div className="po-kv-line"><span className="po-kv-label">Email: </span>{COMPANY_DETAILS.email}</div>
+                  <div className="po-kv-line"><span className="po-kv-label">Contact No: </span>{COMPANY_DETAILS.phones}</div>
+                  <div className="po-kv-line"><span className="po-kv-label">GSTIN: </span><strong>{COMPANY_DETAILS.gstin}</strong></div>
+                  <div className="po-kv-line"><span className="po-kv-label">Place of Supply: </span>{COMPANY_DETAILS.placeOfSupply}</div>
                 </td>
-                <td style={{ border: '1px solid #cbd5e1', padding: '8px 10px', verticalAlign: 'top', width: '33.33%', background: '#ffffff' }}>
-                  <div className="address-box-title" style={{ fontWeight: '800', color: '#0f172a', fontSize: '10pt', marginBottom: '4px', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>{supplier.name}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}>{supplier.address}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Email:</strong> {supplier.email}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Contact No:</strong> {supplier.contactNo}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>GSTIN:</strong> {supplier.gstin}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>Kind Attention:</strong> {supplier.contactPerson}</div>
+                <td>
+                  <div className="po-party-name">{supplier.name}</div>
+                  <div style={{ color: '#334155', fontSize: '8pt', marginBottom: '3px', lineHeight: '1.3' }}>{supplier.address}</div>
+                  <div className="po-kv-line"><span className="po-kv-label">Contact No: </span><strong>{supplier.contactNo}</strong></div>
+                  <div className="po-kv-line"><span className="po-kv-label">Email: </span>{supplier.email}</div>
+                  <div className="po-kv-line"><span className="po-kv-label">GSTIN: </span><strong>{supplier.gstin}</strong></div>
+                  <div className="po-kv-line"><span className="po-kv-label">Kind Attention: </span>{supplier.contactPerson}</div>
                 </td>
-                <td style={{ border: '1px solid #cbd5e1', padding: '8px 10px', verticalAlign: 'top', width: '33.33%', background: '#fafafa' }}>
-                  <div className="address-box-title" style={{ fontWeight: '800', color: '#0f172a', fontSize: '10pt', marginBottom: '4px', borderBottom: '1px solid #cbd5e1', paddingBottom: '3px' }}>Factory - {COMPANY_DETAILS.name}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}>{COMPANY_DETAILS.address}</div>
-                  <div className="address-line" style={{ fontSize: '9pt', color: '#334155', margin: '2px 0' }}><strong>GSTIN:</strong> {COMPANY_DETAILS.gstin}</div>
+                <td>
+                  <div className="po-party-name">Factory - {COMPANY_DETAILS.name}</div>
+                  <div style={{ color: '#334155', fontSize: '8pt', marginBottom: '3px', lineHeight: '1.3' }}>{COMPANY_DETAILS.address}</div>
+                  <div className="po-kv-line"><span className="po-kv-label">GSTIN: </span><strong>{COMPANY_DETAILS.gstin}</strong></div>
                 </td>
               </tr>
             </tbody>
           </table>
 
           {/* PO Details Grid */}
-          <div className="details-section-container" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', marginBottom: '14px', overflow: 'hidden' }}>
-            <div className="details-section-header" style={{ background: '#f1f5f9', padding: '6px 12px', fontWeight: '800', fontSize: '9.5pt', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #cbd5e1' }}>
-              📋 Purchase Order Details
+          <div className="po-details-card">
+            <div className="po-section-header">
+              Purchase Order & Logistics Details
             </div>
-            <table className="details-grid-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt' }}>
+            <table className="po-details-table">
               <tbody>
                 <tr>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', width: '16%', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>PO Number</td>
-                  <td className="value-col" style={{ fontWeight: '800', color: '#0f172a', width: '34%', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{currentPoNumber}</td>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', width: '16%', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>PO Date</td>
-                  <td className="value-col" style={{ fontWeight: '800', color: '#0f172a', width: '34%', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{poDate}</td>
-                </tr>
-
-                <tr>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Delivery Date</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{deliveryDate}</td>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Amendment</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>
-                    {amendmentLabel}{amendmentDate ? ` · ${amendmentDate}` : ''}
-                  </td>
+                  <td className="label-col">PO Number</td>
+                  <td className="value-col">{currentPoNumber}</td>
+                  <td className="label-col">PO Date</td>
+                  <td className="value-col">{poDate}</td>
                 </tr>
                 <tr>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>OC Date</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{ocDate}</td>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>PO Amount</td>
-                  <td className="value-col" style={{ fontWeight: '800', color: '#047857', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{formatINR(grandTotal)}</td>
+                  <td className="label-col">Delivery Date</td>
+                  <td className="value-col">{deliveryDate}</td>
+                  <td className="label-col">Amendment</td>
+                  <td className="value-col">{amendmentLabel}{amendmentDate ? ` · ${amendmentDate}` : ''}</td>
                 </tr>
                 <tr>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>No of Items</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{poItems.length} SKUs</td>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Indent Date</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{indentDate}</td>
+                  <td className="label-col">OC Date</td>
+                  <td className="value-col">{ocDate}</td>
+                  <td className="label-col">PO Amount</td>
+                  <td className="value-col" style={{ color: '#0f172a', fontWeight: '900' }}>{formatINR(grandTotal)}</td>
                 </tr>
                 <tr>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Payment Terms</td>
-                  <td className="value-col" style={{ padding: '5px 8px', border: '1px solid #e2e8f0' }}>
+                  <td className="label-col">No of Items</td>
+                  <td className="value-col">{poItems.length} SKUs</td>
+                  <td className="label-col">Indent Date</td>
+                  <td className="value-col">{indentDate}</td>
+                </tr>
+                <tr>
+                  <td className="label-col">Payment Terms</td>
+                  <td className="value-col">
                     <input
                       type="text"
                       value={currentPaymentTerms}
                       onChange={(e) => setCurrentPaymentTerms(e.target.value)}
                       className="no-border-print"
-                      style={{ width: '100%', background: 'transparent', border: 'none', fontWeight: '800', fontSize: '9pt', color: '#4f46e5' }}
+                      style={{ width: '100%', background: 'transparent', border: 'none', fontWeight: '800', fontSize: '8pt', color: '#1e40af', padding: 0 }}
                     />
                   </td>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Indent Number</td>
-                  <td className="value-col" style={{ fontWeight: '700', color: '#0f172a', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{indentNumber}</td>
+                  <td className="label-col">Indent Number</td>
+                  <td className="value-col">{indentNumber}</td>
                 </tr>
-
                 <tr>
-                  <td className="label-col" style={{ fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '5px 8px', border: '1px solid #e2e8f0' }}>Logistic Details</td>
-                  <td className="value-col" colSpan="3" style={{ fontWeight: '600', color: '#334155', padding: '5px 8px', border: '1px solid #e2e8f0' }}>{logisticDetails}</td>
+                  <td className="label-col">Logistic Details</td>
+                  <td className="value-col" colSpan="3" style={{ color: '#334155', fontWeight: '600' }}>{logisticDetails}</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           {/* Line Items Table */}
-          <table className="items-table" style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '14px', fontSize: '9.5pt' }}>
+          <table className="po-items-table">
             <thead>
-              <tr style={{ background: '#0f172a', color: '#ffffff' }}>
-                <th style={{ width: '4%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'center' }}>#</th>
-                <th style={{ width: '30%', padding: '8px 8px', border: '1px solid #0f172a', textAlign: 'left' }}>Item Description & Make</th>
-                <th style={{ width: '10%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'center' }}>HSN Code</th>
-                <th style={{ width: '12%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Quantity</th>
-                <th style={{ width: '10%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Unit Rate</th>
-                <th style={{ width: '12%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Taxable Amt</th>
-                <th style={{ width: '11%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>CGST<br/><span style={{ fontSize: '7.5pt', opacity: 0.8 }}>Rate / Amt</span></th>
-                <th style={{ width: '11%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>SGST<br/><span style={{ fontSize: '7.5pt', opacity: 0.8 }}>Rate / Amt</span></th>
-                <th style={{ width: '10%', padding: '8px 6px', border: '1px solid #0f172a', textAlign: 'right' }}>Line Total</th>
+              <tr>
+                <th style={{ width: '3.5%', textAlign: 'center' }}>#</th>
+                <th style={{ width: '31.5%', textAlign: 'left' }}>Item Description & Make</th>
+                <th style={{ width: '7%', textAlign: 'center' }}>HSN Code</th>
+                <th style={{ width: '9%', textAlign: 'right' }}>Quantity</th>
+                <th style={{ width: '9%', textAlign: 'right' }}>Unit Rate</th>
+                <th style={{ width: '12%', textAlign: 'right' }}>Taxable Amt</th>
+                <th style={{ width: '9%', textAlign: 'right' }}>
+                  CGST<br/><span style={{ fontSize: '6.5pt', fontWeight: 500, opacity: 0.9 }}>Rate / Amt</span>
+                </th>
+                <th style={{ width: '9%', textAlign: 'right' }}>
+                  SGST<br/><span style={{ fontSize: '6.5pt', fontWeight: 500, opacity: 0.9 }}>Rate / Amt</span>
+                </th>
+                <th style={{ width: '10%', textAlign: 'right' }}>Line Total</th>
               </tr>
             </thead>
             <tbody>
@@ -301,100 +317,112 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
 
                 return (
                   <tr key={index} style={{ background: index % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
-                    <td className="center" style={{ border: '1px solid #cbd5e1', textAlign: 'center', padding: '6px' }}>{index + 1}</td>
-                    <td style={{ border: '1px solid #cbd5e1', padding: '6px 8px' }}>
-                      <div className="item-name" style={{ color: '#0f172a', fontWeight: '800', fontSize: '9.5pt', lineHeight: '1.3' }}>
+                    <td className="center" style={{ fontWeight: '700', color: '#64748b' }}>{index + 1}</td>
+                    <td>
+                      <div style={{ color: '#0f172a', fontWeight: '800', fontSize: '8.5pt', lineHeight: '1.25' }}>
                         {itemNameText}
                       </div>
-                      {itemSpecText && <div className="item-meta" style={{ fontSize: '8.5pt', color: '#475569', marginTop: '2px', fontWeight: '600' }}>{itemSpecText}</div>}
-                      {item.itemId && <div className="item-meta" style={{ fontSize: '8pt', color: '#4f46e5', fontFamily: 'monospace', fontWeight: '700', marginTop: '1px' }}>Product Code: {item.itemId}</div>}
-                      {item.make && <div className="item-meta" style={{ fontSize: '8pt', color: '#64748b' }}>Make: {item.make}</div>}
+                      {itemSpecText && <div style={{ fontSize: '7.5pt', color: '#475569', marginTop: '1px', fontWeight: '600' }}>{itemSpecText}</div>}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+                        {item.itemId && (
+                          <span style={{ fontSize: '7.2pt', color: '#1e40af', background: '#eff6ff', padding: '1px 5px', borderRadius: '3px', fontFamily: 'monospace', fontWeight: '700', border: '1px solid #bfdbfe' }}>
+                            Product Code: {item.itemId}
+                          </span>
+                        )}
+                        {item.make && (
+                          <span style={{ fontSize: '7.2pt', color: '#64748b', fontWeight: '600' }}>
+                            Make: {item.make}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
-                    <td className="center" style={{ border: '1px solid #cbd5e1', textAlign: 'center', padding: '6px', fontWeight: '600' }}>{item.hsnCode || '3215'}</td>
-                    <td className="right" style={{ border: '1px solid #cbd5e1', textAlign: 'right', padding: '6px', fontWeight: '700', color: '#0f172a' }}>{qty.toFixed(2)} Kg</td>
-                    <td className="right" style={{ border: '1px solid #cbd5e1', textAlign: 'right', padding: '6px' }}>{formatINR(rate)}</td>
-                    <td className="right" style={{ border: '1px solid #cbd5e1', textAlign: 'right', padding: '6px', fontWeight: '600' }}>{formatINR(taxable)}</td>
-                    <td className="right" style={{ border: '1px solid #cbd5e1', textAlign: 'right', padding: '6px', fontSize: '8.5pt' }}>
-                      {cgstRate}%<br/><span style={{ fontWeight: '600' }}>{formatINR(cgstAmt)}</span>
+                    <td className="center" style={{ fontWeight: '700', color: '#334155' }}>{item.hsnCode || '3215'}</td>
+                    <td className="right po-num" style={{ fontWeight: '700', color: '#0f172a' }}>{qty.toFixed(2)} Kg</td>
+                    <td className="right po-num">{formatINR(rate)}</td>
+                    <td className="right po-num" style={{ fontWeight: '700' }}>{formatINR(taxable)}</td>
+                    <td className="right po-num" style={{ fontSize: '7.5pt' }}>
+                      <span style={{ fontSize: '6.8pt', color: '#64748b', display: 'block' }}>{cgstRate}%</span>
+                      <span style={{ fontWeight: '700' }}>{formatINR(cgstAmt)}</span>
                     </td>
-                    <td className="right" style={{ border: '1px solid #cbd5e1', textAlign: 'right', padding: '6px', fontSize: '8.5pt' }}>
-                      {sgstRate}%<br/><span style={{ fontWeight: '600' }}>{formatINR(sgstAmt)}</span>
+                    <td className="right po-num" style={{ fontSize: '7.5pt' }}>
+                      <span style={{ fontSize: '6.8pt', color: '#64748b', display: 'block' }}>{sgstRate}%</span>
+                      <span style={{ fontWeight: '700' }}>{formatINR(sgstAmt)}</span>
                     </td>
-                    <td className="right" style={{ border: '1px solid #cbd5e1', textAlign: 'right', padding: '6px', fontWeight: '800', color: '#0f172a' }}>{formatINR(totalAmt)}</td>
+                    <td className="right po-num" style={{ fontWeight: '800', color: '#0f172a' }}>{formatINR(totalAmt)}</td>
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
-              <tr style={{ background: '#e2e8f0', fontWeight: 'bold' }}>
-                <td colSpan="3" className="right" style={{ textAlign: 'right', border: '1px solid #94a3b8', padding: '6px 8px', fontWeight: '800' }}>Total Quantity Order:</td>
-                <td className="right" style={{ textAlign: 'right', border: '1px solid #94a3b8', padding: '6px 8px', fontWeight: '900', color: '#0f172a' }}>{(totalQtyKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Kg</td>
-                <td colSpan="5" style={{ border: '1px solid #94a3b8' }}></td>
+              <tr>
+                <td colSpan="3" style={{ textAlign: 'right', fontWeight: '800', color: '#334155' }}>Total Quantity Order:</td>
+                <td className="right po-num" style={{ fontWeight: '900', color: '#0f172a' }}>{(totalQtyKg || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} Kg</td>
+                <td colSpan="5" style={{ background: '#f8fafc' }}></td>
               </tr>
             </tfoot>
           </table>
 
           {/* Totals & Amounts in Words */}
-          <div className="totals-and-words-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '14px', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '4px', marginBottom: '14px', background: '#ffffff' }}>
-            <div className="words-block" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ fontWeight: '800', fontSize: '9pt', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px', marginBottom: '4px' }}>
-                🔤 Amount in Words
+          <div className="po-summary-grid">
+            <div className="po-words-block">
+              <div className="po-words-title">
+                Amount In Words (INR)
               </div>
-              <div className="word-line" style={{ display: 'grid', gridTemplateColumns: '110px 1fr', fontSize: '8.5pt' }}>
-                <span className="word-label" style={{ fontWeight: '700', color: '#475569' }}>PO Total Amount:</span>
-                <span className="word-value" style={{ fontWeight: '800', color: '#0f172a' }}>{numberToWords(grandTotal)}</span>
+              <div className="po-word-row">
+                <span className="po-word-label">PO Total Amount:</span>
+                <span className="po-word-value">{numberToWords(grandTotal)}</span>
               </div>
-              <div className="word-line" style={{ display: 'grid', gridTemplateColumns: '110px 1fr', fontSize: '8.5pt' }}>
-                <span className="word-label" style={{ fontWeight: '700', color: '#475569' }}>CGST Amount:</span>
-                <span className="word-value" style={{ fontWeight: '700', color: '#334155' }}>{numberToWords(totalCgst)}</span>
+              <div className="po-word-row">
+                <span className="po-word-label">CGST Amount:</span>
+                <span className="po-word-value" style={{ color: '#475569', fontWeight: '600' }}>{numberToWords(totalCgst)}</span>
               </div>
-              <div className="word-line" style={{ display: 'grid', gridTemplateColumns: '110px 1fr', fontSize: '8.5pt' }}>
-                <span className="word-label" style={{ fontWeight: '700', color: '#475569' }}>SGST Amount:</span>
-                <span className="word-value" style={{ fontWeight: '700', color: '#334155' }}>{numberToWords(totalSgst)}</span>
+              <div className="po-word-row">
+                <span className="po-word-label">SGST Amount:</span>
+                <span className="po-word-value" style={{ color: '#475569', fontWeight: '600' }}>{numberToWords(totalSgst)}</span>
               </div>
             </div>
 
             <div>
-              <table className="totals-summary-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt' }}>
+              <table className="po-totals-table">
                 <tbody>
                   <tr>
-                    <td className="label" style={{ fontWeight: '700', color: '#475569', padding: '3px 6px' }}>Item Subtotal :</td>
-                    <td className="amount" style={{ textAlign: 'right', fontWeight: '700', color: '#0f172a', padding: '3px 6px' }}>{formatINR(totalTaxable)}</td>
+                    <td className="label">Item Subtotal :</td>
+                    <td className="amount">{formatINR(totalTaxable)}</td>
                   </tr>
                   <tr>
-                    <td className="label" style={{ fontWeight: '700', color: '#475569', padding: '3px 6px' }}>Total (before Tax) :</td>
-                    <td className="amount" style={{ textAlign: 'right', fontWeight: '700', color: '#0f172a', padding: '3px 6px' }}>{formatINR(totalTaxable)}</td>
+                    <td className="label">Total (before Tax) :</td>
+                    <td className="amount">{formatINR(totalTaxable)}</td>
                   </tr>
                   <tr>
-                    <td colSpan="2" style={{ padding: '4px 0' }}>
-                      <table className="tax-subtable" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '8pt', textAlign: 'center' }}>
+                    <td colSpan="2" style={{ padding: '3px 0' }}>
+                      <table className="po-tax-subtable">
                         <thead>
-                          <tr style={{ background: '#f1f5f9', fontWeight: '700', color: '#334155' }}>
-                            <th style={{ border: '1px solid #cbd5e1', padding: '3px' }}>CGST ({gstInfo.cgstRatePct}%)</th>
-                            <th style={{ border: '1px solid #cbd5e1', padding: '3px' }}>SGST ({gstInfo.sgstRatePct}%)</th>
-                            <th style={{ border: '1px solid #cbd5e1', padding: '3px' }}>IGST ({gstInfo.igstRatePct}%)</th>
-                            <th style={{ border: '1px solid #cbd5e1', padding: '3px' }}>Cess</th>
+                          <tr>
+                            <th>CGST ({gstInfo.cgstRatePct}%)</th>
+                            <th>SGST ({gstInfo.sgstRatePct}%)</th>
+                            <th>IGST ({gstInfo.igstRatePct}%)</th>
+                            <th>Cess</th>
                           </tr>
                         </thead>
                         <tbody>
                           <tr>
-                            <td style={{ border: '1px solid #cbd5e1', padding: '3px', fontWeight: '600' }}>{formatINR(totalCgst)}</td>
-                            <td style={{ border: '1px solid #cbd5e1', padding: '3px', fontWeight: '600' }}>{formatINR(totalSgst)}</td>
-                            <td style={{ border: '1px solid #cbd5e1', padding: '3px', fontWeight: '600' }}>{formatINR(totalIgst)}</td>
-                            <td style={{ border: '1px solid #cbd5e1', padding: '3px' }}>₹0.00</td>
+                            <td>{formatINR(totalCgst)}</td>
+                            <td>{formatINR(totalSgst)}</td>
+                            <td>{formatINR(totalIgst)}</td>
+                            <td>₹0.00</td>
                           </tr>
                         </tbody>
                       </table>
                     </td>
                   </tr>
                   <tr>
-                    <td className="label" style={{ fontWeight: '700', color: '#475569', padding: '3px 6px' }}>Total Tax Amount :</td>
-                    <td className="amount" style={{ textAlign: 'right', fontWeight: '700', color: '#0f172a', padding: '3px 6px' }}>{formatINR(totalTax)}</td>
+                    <td className="label">Total Tax Amount :</td>
+                    <td className="amount">{formatINR(totalTax)}</td>
                   </tr>
-                  <tr style={{ borderTop: '2px solid #0f172a', background: '#f8fafc' }}>
-                    <td className="label" style={{ fontSize: '10.5pt', fontWeight: '900', color: '#0f172a', padding: '6px' }}>Grand Total :</td>
-                    <td className="amount" style={{ fontSize: '11pt', fontWeight: '900', color: '#047857', padding: '6px', textAlign: 'right' }}>{formatINR(grandTotal)}</td>
+                  <tr className="po-grand-total-row">
+                    <td className="label">Grand Total :</td>
+                    <td className="amount">{formatINR(grandTotal)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -403,53 +431,53 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
 
           {/* Rate Discrepancy / Resolution Audit Callout if present */}
           {poData.priceDiscrepancyResolution && (
-            <div style={{ margin: '12px 0', padding: '8px 12px', background: '#f0fdf4', border: '1.5px solid #86efac', borderRadius: '4px', fontSize: '8.5pt' }}>
+            <div style={{ margin: '8px 0', padding: '6px 10px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '4px', fontSize: '8pt' }}>
               <div style={{ fontWeight: '800', color: '#047857', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <span>⚖️ INWARD RATE MISMATCH & RESOLUTION AUDIT NOTICE</span>
+                <span>INWARD RATE MISMATCH & RESOLUTION AUDIT NOTICE</span>
               </div>
-              <div style={{ color: '#0f172a', fontWeight: '600', marginTop: '3px' }}>
+              <div style={{ color: '#0f172a', fontWeight: '600', marginTop: '2px' }}>
                 {poData.priceDiscrepancyResolution.summary}
               </div>
               {poData.priceDiscrepancyResolution.notes && (
-                <div style={{ color: '#334155', fontStyle: 'italic', marginTop: '2px', fontSize: '8pt' }}>
+                <div style={{ color: '#334155', fontStyle: 'italic', marginTop: '1.5px', fontSize: '7.5pt' }}>
                   Admin Notes: "{poData.priceDiscrepancyResolution.notes}"
                 </div>
               )}
-              <div style={{ fontSize: '7.5pt', color: '#64748b', marginTop: '3px' }}>
+              <div style={{ fontSize: '7pt', color: '#64748b', marginTop: '2px' }}>
                 Authorized by: <strong>{poData.priceDiscrepancyResolution.resolvedBy}</strong> on {formatPlantDateTime(poData.priceDiscrepancyResolution.resolvedAt)} • Linked GRN: <strong>{poData.priceDiscrepancyResolution.grnNo || 'Inward GRN'}</strong>
               </div>
             </div>
           )}
 
           {/* Terms & Conditions */}
-          <div className="letterhead-terms-box" style={{ border: '1px solid #cbd5e1', borderRadius: '4px', padding: '10px 12px', marginBottom: '14px', background: '#fafafa' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>
-              <h4 style={{ margin: 0, fontSize: '9pt', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase', letterSpacing: '0.5px' }}>📜 Terms And Conditions</h4>
+          <div className="po-terms-card">
+            <div className="po-terms-header">
+              <h4 className="po-terms-title">Terms And Conditions</h4>
               <button 
                 type="button" 
                 onClick={handleAddTerm}
                 className="no-print"
-                style={{ background: '#eef2ff', border: 'none', color: '#4f46e5', fontSize: '8.5pt', cursor: 'pointer', fontWeight: '700', padding: '2px 8px', borderRadius: '4px' }}
+                style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: '7.5pt', cursor: 'pointer', fontWeight: '700', padding: '1px 6px', borderRadius: '3px' }}
               >
                 + Add Bullet
               </button>
             </div>
-            <ul style={{ margin: 0, paddingLeft: '16px' }}>
+            <ol className="po-terms-list">
               {(currentTerms || []).map((term, idx) => (
-                <li key={idx} style={{ marginBottom: '3px' }}>
+                <li key={idx}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input
                       type="text"
                       value={term}
                       onChange={(e) => handleUpdateTerm(idx, e.target.value)}
                       className="no-border-print"
-                      style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '8.5pt', color: '#334155', fontWeight: '500' }}
+                      style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '7.8pt', color: '#334155', fontWeight: '500', padding: '1px 0' }}
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveTerm(idx)}
                       className="no-print"
-                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '11pt', fontWeight: 'bold' }}
+                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '10pt', fontWeight: 'bold' }}
                       title="Remove term bullet"
                     >
                       ×
@@ -457,20 +485,22 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                   </div>
                 </li>
               ))}
-            </ul>
+            </ol>
           </div>
 
           {/* Authorised Signatory */}
-          <div className="letterhead-signatory-block pdf-signature-block">
-            <div style={{ fontWeight: '800', fontSize: '9.5pt', color: '#0f172a' }}>For {COMPANY_DETAILS.name}</div>
-            <div className="pdf-sign-slot">
-              {signatureImage ? (
-                <img src={signatureImage} alt="Authorised Signature" style={{ maxHeight: '38px', maxWidth: '156px', objectFit: 'contain' }} />
-              ) : (
-                <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '20px', fontWeight: 'bold', color: '#1e293b' }}>Sy</span>
-              )}
+          <div className="po-sign-container">
+            <div className="po-sign-box">
+              <div className="po-sign-company">For {COMPANY_DETAILS.name}</div>
+              <div className="po-sign-img-slot">
+                {signatureImage ? (
+                  <img src={signatureImage} alt="Authorised Signature" className="po-sign-img" />
+                ) : (
+                  <span style={{ fontStyle: 'italic', fontFamily: 'serif', fontSize: '18px', fontWeight: 'bold', color: '#1e293b' }}>Sy</span>
+                )}
+              </div>
+              <div className="po-sign-role">Authorised Signatory</div>
             </div>
-            <div className="pdf-sign-role">Authorised Signatory</div>
           </div>
 
         </div>
@@ -478,4 +508,3 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
     </div>
   );
 }
-

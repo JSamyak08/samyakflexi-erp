@@ -1,0 +1,467 @@
+/*
+ * Purchase Order Print Stylesheet
+ * Scoped to #printable-po to provide executive, professional corporate styling
+ * and ensure numbers and currency NEVER wrap onto multiple lines.
+ */
+
+#printable-po {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+  color: #0f172a !important;
+  font-size: 8.5pt !important;
+  line-height: 1.35 !important;
+  background: #ffffff !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Header */
+#printable-po .po-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  padding-bottom: 8px !important;
+  margin-bottom: 10px !important;
+  border-bottom: 2px solid #0f172a !important;
+}
+
+#printable-po .po-brand {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  max-width: 58% !important;
+}
+
+#printable-po .po-logo-img {
+  height: 38px !important;
+  max-height: 38px !important;
+  max-width: 200px !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+#printable-po .po-tagline {
+  margin-top: 4px !important;
+  font-size: 7.5pt !important;
+  font-weight: 700 !important;
+  color: #475569 !important;
+  letter-spacing: 0.04em !important;
+  line-height: 1.25 !important;
+}
+
+#printable-po .po-title-block {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  text-align: right !important;
+  max-width: 42% !important;
+  justify-content: flex-end !important;
+}
+
+#printable-po .po-title-text {
+  font-size: 15pt !important;
+  font-weight: 900 !important;
+  color: #0f172a !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  line-height: 1.1 !important;
+  margin-bottom: 3px !important;
+}
+
+#printable-po .po-meta-item {
+  font-size: 8pt !important;
+  font-weight: 600 !important;
+  color: #334155 !important;
+  line-height: 1.3 !important;
+}
+
+#printable-po .po-meta-item strong {
+  color: #0f172a !important;
+  font-weight: 800 !important;
+}
+
+#printable-po .po-qr-box {
+  background: #ffffff !important;
+  padding: 2px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 4px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+
+/* 3-Column Address Grid */
+#printable-po .po-address-table {
+  width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+  margin-bottom: 8px !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+#printable-po .po-address-table th {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+  font-size: 7.5pt !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  padding: 4px 8px !important;
+  border: 1px solid #cbd5e1 !important;
+  text-align: left !important;
+}
+
+#printable-po .po-address-table td {
+  padding: 6px 8px !important;
+  vertical-align: top !important;
+  border: 1px solid #cbd5e1 !important;
+  font-size: 8pt !important;
+  line-height: 1.3 !important;
+  width: 33.33% !important;
+}
+
+#printable-po .po-party-name {
+  font-size: 9pt !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  margin-bottom: 3px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding-bottom: 2px !important;
+}
+
+#printable-po .po-kv-line {
+  margin: 1.5px 0 !important;
+  font-size: 8pt !important;
+  color: #334155 !important;
+}
+
+#printable-po .po-kv-label {
+  font-weight: 700 !important;
+  color: #64748b !important;
+}
+
+/* PO Details Section */
+#printable-po .po-details-card {
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 4px !important;
+  margin-bottom: 8px !important;
+  overflow: hidden !important;
+}
+
+#printable-po .po-section-header {
+  background: #f1f5f9 !important;
+  padding: 3.5px 8px !important;
+  font-size: 7.5pt !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+
+#printable-po .po-details-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  font-size: 8pt !important;
+}
+
+#printable-po .po-details-table td {
+  padding: 3px 6px !important;
+  border: 1px solid #e2e8f0 !important;
+  vertical-align: middle !important;
+}
+
+#printable-po .po-details-table td.label-col {
+  background: #f8fafc !important;
+  color: #475569 !important;
+  font-weight: 700 !important;
+  font-size: 7.2pt !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.03em !important;
+  width: 14% !important;
+}
+
+#printable-po .po-details-table td.value-col {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  font-size: 8pt !important;
+  width: 36% !important;
+}
+
+/* Items Table - Strict NO WRAPPING for numbers */
+#printable-po .po-items-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin-bottom: 8px !important;
+  font-size: 8pt !important;
+  table-layout: fixed !important;
+}
+
+#printable-po .po-items-table thead th {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  font-size: 7.2pt !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  padding: 5px 4px !important;
+  border: 1px solid #0f172a !important;
+  line-height: 1.15 !important;
+  vertical-align: middle !important;
+}
+
+#printable-po .po-items-table tbody td {
+  border: 1px solid #cbd5e1 !important;
+  padding: 4px 4px !important;
+  font-size: 8pt !important;
+  line-height: 1.25 !important;
+  vertical-align: middle !important;
+}
+
+#printable-po .po-items-table tfoot td {
+  border: 1px solid #94a3b8 !important;
+  padding: 4px 6px !important;
+  font-size: 8pt !important;
+  background: #f1f5f9 !important;
+  font-weight: 800 !important;
+  vertical-align: middle !important;
+}
+
+/* Critical number styling override to prevent pdfA4.css wrapping */
+#printable-po .nowrap,
+#printable-po .po-num,
+#printable-po .po-items-table td.po-num,
+#printable-po .po-items-table td.right {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+  font-variant-numeric: tabular-nums !important;
+  text-align: right !important;
+}
+
+#printable-po .center {
+  text-align: center !important;
+}
+
+#printable-po .right {
+  text-align: right !important;
+}
+
+/* Totals & Words Grid */
+#printable-po .po-summary-grid {
+  display: grid !important;
+  grid-template-columns: 1.15fr 1fr !important;
+  gap: 10px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 4px !important;
+  padding: 6px 8px !important;
+  margin-bottom: 8px !important;
+  background: #ffffff !important;
+  align-items: start !important;
+}
+
+#printable-po .po-words-block {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+}
+
+#printable-po .po-words-title {
+  font-size: 7.5pt !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding-bottom: 2px !important;
+  margin-bottom: 2px !important;
+}
+
+#printable-po .po-word-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1px !important;
+}
+
+#printable-po .po-word-label {
+  font-size: 7.2pt !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.03em !important;
+}
+
+#printable-po .po-word-value {
+  font-size: 8pt !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  line-height: 1.25 !important;
+}
+
+#printable-po .po-totals-table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  font-size: 8pt !important;
+}
+
+#printable-po .po-totals-table td {
+  padding: 2px 4px !important;
+  border: none !important;
+}
+
+#printable-po .po-totals-table .label {
+  color: #475569 !important;
+  font-weight: 600 !important;
+}
+
+#printable-po .po-totals-table .amount {
+  text-align: right !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+#printable-po .po-tax-subtable {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  font-size: 7.2pt !important;
+  text-align: center !important;
+  margin: 2px 0 !important;
+}
+
+#printable-po .po-tax-subtable th {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  font-weight: 700 !important;
+  border: 1px solid #cbd5e1 !important;
+  padding: 2px 3px !important;
+}
+
+#printable-po .po-tax-subtable td {
+  border: 1px solid #cbd5e1 !important;
+  padding: 2px 3px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+#printable-po .po-grand-total-row {
+  border-top: 1.5px solid #0f172a !important;
+  background: #0f172a !important;
+  color: #ffffff !important;
+}
+
+#printable-po .po-grand-total-row td {
+  padding: 4px 6px !important;
+}
+
+#printable-po .po-grand-total-row .label {
+  font-size: 9pt !important;
+  font-weight: 900 !important;
+  color: #ffffff !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+#printable-po .po-grand-total-row .amount {
+  font-size: 10pt !important;
+  font-weight: 900 !important;
+  color: #ffffff !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+}
+
+/* Terms and Conditions */
+#printable-po .po-terms-card {
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 4px !important;
+  padding: 6px 8px !important;
+  margin-bottom: 8px !important;
+  background: #fafafa !important;
+}
+
+#printable-po .po-terms-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding-bottom: 2px !important;
+  margin-bottom: 3px !important;
+}
+
+#printable-po .po-terms-title {
+  font-size: 7.5pt !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  margin: 0 !important;
+}
+
+#printable-po .po-terms-list {
+  margin: 0 !important;
+  padding-left: 16px !important;
+  font-size: 7.8pt !important;
+  color: #334155 !important;
+  line-height: 1.3 !important;
+}
+
+#printable-po .po-terms-list li {
+  margin-bottom: 1.5px !important;
+}
+
+/* Signatory */
+#printable-po .po-sign-container {
+  display: flex !important;
+  justify-content: flex-end !important;
+  margin-top: 6px !important;
+  page-break-inside: avoid !important;
+  break-inside: avoid !important;
+}
+
+#printable-po .po-sign-box {
+  width: 210px !important;
+  text-align: center !important;
+}
+
+#printable-po .po-sign-company {
+  font-size: 8.5pt !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  margin-bottom: 2px !important;
+}
+
+#printable-po .po-sign-img-slot {
+  height: 38px !important;
+  min-height: 38px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+#printable-po .po-sign-img {
+  max-height: 36px !important;
+  max-width: 140px !important;
+  object-fit: contain !important;
+}
+
+#printable-po .po-sign-role {
+  border-top: 1px solid #0f172a !important;
+  padding-top: 2px !important;
+  font-size: 7.5pt !important;
+  font-weight: 800 !important;
+  color: #1e293b !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+@media print {
+  #printable-po {
+    font-size: 8pt !important;
+    line-height: 1.25 !important;
+  }
+  #printable-po .no-print {
+    display: none !important;
+  }
+}
