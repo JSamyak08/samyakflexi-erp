@@ -7,10 +7,13 @@ import {
   buildGainLossReport,
   canSeePackingGainLoss,
   consumptionFromLog,
+  findRelatedOrderShipments,
   formatGainLossKg,
   formatGainLossPct,
   gainLossForShipment,
+  groupPackingListsByOrder,
   isDispatchPacking,
+  liveGainLossForShipment,
   mergeConsumptionsIntoShipments,
   nextDispatchQuantity,
   packingGainLoss,
@@ -259,4 +262,78 @@ test('consumption rows from the table replace a missing payload copy', () => {
   assert.equal(merged[0].dispatchConsumptions.length, 1);
   assert.equal(merged[0].dispatchConsumptions[0].consumedKg, 12.5);
   assert.equal(merged[0].dispatchConsumptions[0].barcode, 'FG-1');
+});
+
+test('multiple packing lists for the same order combine dispatch net weight and calculate combined gain/loss', () => {
+  const prodRecords = [
+    { orderId: 'ORD-NYRA', jobName: 'Nyra Mylove Inner (Pearl)', qtySlitting: '939.50' }
+  ];
+  const pl1 = {
+    id: 'DISP-PL-1',
+    dispatchId: 'PL-2026-b8dd2a72',
+    orderId: 'ORD-NYRA',
+    jobName: 'Nyra Mylove Inner (Pearl)',
+    clientName: 'Nyra Chocolates Pvt Ltd',
+    dispatchDate: '2026-11-16T13:59:00.000Z',
+    items: [
+      { netWeightKg: 365.63, grossWeightKg: 376.13, unit: 'Kg', orderId: 'ORD-NYRA', jobName: 'Nyra Mylove Inner (Pearl)' }
+    ]
+  };
+  const pl2 = {
+    id: 'DISP-PL-2',
+    dispatchId: 'PL-2026-7c3c3354',
+    orderId: 'ORD-NYRA',
+    jobName: 'Nyra Mylove Inner (Pearl)',
+    clientName: 'Nyra Chocolates Pvt Ltd',
+    dispatchDate: '2026-11-16T14:49:00.000Z',
+    items: [
+      { netWeightKg: 611.86, grossWeightKg: 629.86, unit: 'Kg', orderId: 'ORD-NYRA', jobName: 'Nyra Mylove Inner (Pearl)' }
+    ]
+  };
+  const unrelated = {
+    id: 'DISP-PL-3',
+    dispatchId: 'PL-2026-2139008b',
+    orderId: 'ORD-AMRIT',
+    jobName: 'Amrit Premium Besan 1kg',
+    clientName: 'Amrit Absorbent',
+    dispatchDate: '2026-11-16T14:48:00.000Z',
+    items: [
+      { netWeightKg: 592.95, grossWeightKg: 610.15, unit: 'Kg', orderId: 'ORD-AMRIT', jobName: 'Amrit Premium Besan 1kg' }
+    ]
+  };
+
+  const allShipments = [pl1, pl2, unrelated];
+
+  // 1. Related shipments detection
+  const related = findRelatedOrderShipments(pl2, allShipments);
+  assert.equal(related.length, 2);
+  assert.deepEqual(related.map(s => s.dispatchId).sort(), ['PL-2026-7c3c3354', 'PL-2026-b8dd2a72']);
+
+  // 2. Combined Gain/Loss calculation on pl2
+  const gain2 = liveGainLossForShipment(pl2, prodRecords, pl2.items, { allShipments });
+  assert.equal(gain2.isCombined, true);
+  assert.equal(gain2.combinedShipmentsCount, 2);
+  assert.equal(gain2.consumedKg, 939.50);
+  assert.equal(gain2.thisListPackedNetKg, 611.86);
+  assert.equal(gain2.combinedPackedNetKg, 977.49);
+  assert.equal(gain2.differenceKg, 37.99);
+  assert.equal(gain2.differencePct, 4.04);
+  assert.equal(gain2.direction, 'gain');
+
+  // 3. Combined Gain/Loss calculation on pl1
+  const gain1 = liveGainLossForShipment(pl1, prodRecords, pl1.items, { allShipments });
+  assert.equal(gain1.isCombined, true);
+  assert.equal(gain1.combinedShipmentsCount, 2);
+  assert.equal(gain1.consumedKg, 939.50);
+  assert.equal(gain1.thisListPackedNetKg, 365.63);
+  assert.equal(gain1.combinedPackedNetKg, 977.49);
+  assert.equal(gain1.differenceKg, 37.99);
+  assert.equal(gain1.differencePct, 4.04);
+  assert.equal(gain1.direction, 'gain');
+
+  // 4. Grouping order packing lists together
+  const grouped = groupPackingListsByOrder([pl1, unrelated, pl2]);
+  assert.equal(grouped[0].dispatchId, 'PL-2026-b8dd2a72');
+  assert.equal(grouped[1].dispatchId, 'PL-2026-7c3c3354');
+  assert.equal(grouped[2].dispatchId, 'PL-2026-2139008b');
 });

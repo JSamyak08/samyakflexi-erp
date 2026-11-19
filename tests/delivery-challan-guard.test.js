@@ -120,14 +120,14 @@ test('a returnable challan does not block a sale challan', () => {
   assert.equal(saleChallanConflicts([orders[0]], challans, []).length, 0);
 });
 
-test('tare edits keep the scale net and recompute gross', () => {
+test('tare edits keep the scale gross and recompute net: Gross - Tare = Net', () => {
   const next = rollWithTare({ netWeightKg: 18.1, tareWeightKg: 0.53, grossWeightKg: 18.63 }, '0.80');
-  assert.equal(next.netWeightKg, 18.1);
+  assert.equal(next.grossWeightKg, 18.63);
   assert.equal(next.tareWeightKg, 0.8);
   assert.equal(next.coreWeightKg, 0.8);
-  assert.equal(next.grossWeightKg, 18.9);
+  assert.equal(next.netWeightKg, 17.83); // 18.63 - 0.80 = 17.83
   const notes = tareEditSummary(
-    { items: [{ barcodeId: 'FG-1', tareWeightKg: 0.53, netWeightKg: 18.1 }] },
+    { items: [{ barcodeId: 'FG-1', tareWeightKg: 0.53, netWeightKg: 18.1, grossWeightKg: 18.63 }] },
     { items: [{ barcodeId: 'FG-1', ...next }] }
   );
   assert.match(notes[0], /FG-1: core\/tare 0.53 kg → 0.8 kg/);

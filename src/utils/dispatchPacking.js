@@ -1,5 +1,6 @@
 import { toDatabaseTimestamp } from './dbDates.js';
 import { rawRoleNames } from '../assignedRoles.js';
+import { matchPackingOrder } from './packingListPrint.js';
 
 export const DISPATCH_PACKING_PROCESS = 'Dispatch Packing';
 export const GAIN_LOSS_THRESHOLD_SETTING = 'dispatch_packing_gain_loss_threshold_pct';
@@ -65,11 +66,93 @@ export function packingGainLoss({ consumedKg = 0, packedNetKg = 0 } = {}) {
   return { consumedKg: consumed, packedNetKg: packed, differenceKg, differencePct, direction };
 }
 
-export function gainLossForShipment(shipment, items = shipment?.items) {
-  return packingGainLoss({
-    consumedKg: consumedKgForList(shipment),
-    packedNetKg: packedNetKgFromItems(items)
+export function findRelatedOrderShipments(targetShipment, allShipments = [], orders = []) {
+  if (!targetShipment) return [];
+  const list = Array.isArray(allShipments) && allShipments.length > 0 ? allShipments : [targetShipment];
+
+  const targetIds = new Set();
+  const targetNames = new Set();
+  const remember = (id, name) => {
+    const cleanId = cleanRecordId(id);
+    if (cleanId && cleanId !== 'n/a') targetIds.add(cleanId);
+    const cleanName = cleanRecordName(name);
+    if (cleanName) targetNames.add(cleanName);
+  };
+
+  remember(targetShipment?.orderId, targetShipment?.jobName);
+  (targetShipment?.items || []).forEach(item => remember(item?.orderId, item?.jobName));
+
+  if (Array.isArray(orders) && orders.length > 0) {
+    const matched = matchPackingOrder(orders, { orderId: targetShipment?.orderId, jobName: targetShipment?.jobName });
+    if (matched) {
+      remember(matched.id, matched.jobName);
+    }
+  }
+
+  if (targetIds.size === 0 && targetNames.size === 0) {
+    return [targetShipment];
+  }
+
+  const matches = list.filter(s => {
+    if (!s) return false;
+    const sameKey = (targetShipment.id && s.id && String(s.id) === String(targetShipment.id)) ||
+                    (targetShipment.dispatchId && s.dispatchId && String(s.dispatchId) === String(targetShipment.dispatchId));
+    if (sameKey) return true;
+
+    const sIds = new Set();
+    const sNames = new Set();
+    const rememberS = (id, name) => {
+      const cleanId = cleanRecordId(id);
+      if (cleanId && cleanId !== 'n/a') sIds.add(cleanId);
+      const cleanName = cleanRecordName(name);
+      if (cleanName) sNames.add(cleanName);
+    };
+    rememberS(s.orderId, s.jobName);
+    (s.items || []).forEach(item => rememberS(item?.orderId, item?.jobName));
+    if (Array.isArray(orders) && orders.length > 0) {
+      const matched = matchPackingOrder(orders, { orderId: s.orderId, jobName: s.jobName });
+      if (matched) {
+        rememberS(matched.id, matched.jobName);
+      }
+    }
+
+    for (const id of sIds) {
+      if (targetIds.has(id)) return true;
+    }
+    for (const name of sNames) {
+      if (targetNames.has(name)) return true;
+    }
+    return false;
   });
+
+  return matches.length > 0 ? matches : [targetShipment];
+}
+
+export function gainLossForShipment(shipment, items = shipment?.items, options = {}) {
+  const allShipments = Array.isArray(options) ? options : (options?.allShipments || [shipment]);
+  const orders = Array.isArray(options) ? [] : (options?.orders || []);
+  const related = findRelatedOrderShipments(shipment, allShipments, orders);
+
+  let combinedNet = 0;
+  let combinedConsumed = 0;
+  related.forEach(s => {
+    const isThisShipment = s === shipment || (s.id && s.id === shipment?.id) || (s.dispatchId && s.dispatchId === shipment?.dispatchId);
+    const itms = isThisShipment && Array.isArray(items) ? items : (s.items || []);
+    combinedNet += packedNetKgFromItems(itms) || Number(s.totalNetWeightKg) || 0;
+    combinedConsumed += consumedKgForList(s);
+  });
+
+  return {
+    ...packingGainLoss({
+      consumedKg: combinedConsumed,
+      packedNetKg: combinedNet
+    }),
+    thisListPackedNetKg: packedNetKgFromItems(items),
+    combinedPackedNetKg: round2(combinedNet),
+    isCombined: related.length > 1,
+    combinedShipmentsCount: related.length,
+    relatedShipments: related,
+  };
 }
 
 function cleanRecordId(value) {
@@ -143,25 +226,112 @@ export function packedRollCount(items) {
   }).length;
 }
 
-export function liveConsumedKgForShipment(shipment, productionRecords = []) {
+export function liveConsumedKgForShipment(shipment, productionRecords = [], options = {}) {
   const produced = productionFinishedKgForShipment(shipment, productionRecords);
   if (produced > 0) return produced;
+
+  const orders = Array.isArray(options) ? [] : (options?.orders || []);
+  if (Array.isArray(orders) && orders.length > 0) {
+    const matched = matchPackingOrder(orders, { orderId: shipment?.orderId, jobName: shipment?.jobName });
+    const orderQty = Number(matched?.orderQtyKg || matched?.quantityKg || matched?.order_qty_kg);
+    if (Number.isFinite(orderQty) && orderQty > 0) return round2(orderQty);
+  }
+
+  const allShipments = Array.isArray(options) ? options : (options?.allShipments || [shipment]);
+  const related = findRelatedOrderShipments(shipment, allShipments, orders);
+  if (related.length > 1) {
+    const totalConsumed = related.reduce((sum, s) => sum + consumedKgForList(s), 0);
+    if (totalConsumed > 0) return round2(totalConsumed);
+  }
+
   return consumedKgForList(shipment);
 }
 
-export function liveGainLossForShipment(shipment, productionRecords = [], items = shipment?.items) {
+export function liveGainLossForShipment(shipment, productionRecords = [], items = shipment?.items, options = {}) {
   const packedNetKg = packedNetKgFromItems(items);
-  const hasRolls = packedRollCount(items) > 0 && packedNetKg > 0;
+  const allShipments = Array.isArray(options) ? options : (options?.allShipments || [shipment]);
+  const orders = Array.isArray(options) ? [] : (options?.orders || []);
+
+  const related = findRelatedOrderShipments(shipment, allShipments, orders);
+  let combinedPackedNetKg = 0;
+  let totalRollsCount = 0;
+
+  related.forEach(s => {
+    const isThisShipment = s === shipment || (s.id && s.id === shipment?.id) || (s.dispatchId && s.dispatchId === shipment?.dispatchId);
+    const itms = isThisShipment && Array.isArray(items) ? items : (s.items || []);
+    const net = packedNetKgFromItems(itms);
+    if (net > 0) {
+      combinedPackedNetKg += net;
+    } else if (Number(s.totalNetWeightKg) > 0) {
+      combinedPackedNetKg += Number(s.totalNetWeightKg);
+    }
+    totalRollsCount += packedRollCount(itms) || (Number(s.totalRolls) || (s.items?.length || 0));
+  });
+  combinedPackedNetKg = round2(combinedPackedNetKg);
+
+  const thisListRolls = packedRollCount(items);
+  const hasRolls = (thisListRolls > 0 && packedNetKg > 0) || (totalRollsCount > 0 && combinedPackedNetKg > 0);
   if (!hasRolls) {
-    return { ...packingGainLoss({ consumedKg: 0, packedNetKg: 0 }), hasRolls: false };
+    return {
+      ...packingGainLoss({ consumedKg: 0, packedNetKg: 0 }),
+      thisListPackedNetKg: 0,
+      combinedPackedNetKg: 0,
+      combinedRollsCount: totalRollsCount,
+      combinedShipmentsCount: related.length,
+      isCombined: related.length > 1,
+      relatedShipments: related,
+      hasRolls: false,
+    };
   }
+
+  const consumedKg = liveConsumedKgForShipment(shipment, productionRecords, { allShipments, orders });
+  const result = packingGainLoss({
+    consumedKg,
+    packedNetKg: combinedPackedNetKg,
+  });
+
   return {
-    ...packingGainLoss({
-      consumedKg: liveConsumedKgForShipment(shipment, productionRecords),
-      packedNetKg,
-    }),
+    ...result,
+    thisListPackedNetKg: packedNetKg,
+    combinedPackedNetKg,
+    combinedRollsCount: totalRollsCount,
+    combinedShipmentsCount: related.length,
+    isCombined: related.length > 1,
+    relatedShipments: related,
     hasRolls: true,
   };
+}
+
+export function groupPackingListsByOrder(packingLists = [], orders = []) {
+  if (!Array.isArray(packingLists) || packingLists.length <= 1) return packingLists || [];
+
+  const orderGroups = [];
+  const assigned = new Set();
+
+  packingLists.forEach(shipment => {
+    const sKey = String(shipment.dispatchId || shipment.id);
+    if (assigned.has(sKey)) return;
+
+    const related = findRelatedOrderShipments(shipment, packingLists, orders);
+    // Sort related chronologically so dispatch 1 is first, dispatch 2 is next
+    related.sort((a, b) => {
+      const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
+      const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
+      return timeA - timeB;
+    });
+
+    related.forEach(r => assigned.add(String(r.dispatchId || r.id)));
+    orderGroups.push(related);
+  });
+
+  // Sort groups by the most recent dispatch date of the group (latest first)
+  orderGroups.sort((groupA, groupB) => {
+    const maxA = Math.max(...groupA.map(s => new Date(s.dispatchDate || s.createdAt || 0).getTime()));
+    const maxB = Math.max(...groupB.map(s => new Date(s.dispatchDate || s.createdAt || 0).getTime()));
+    return maxB - maxA;
+  });
+
+  return orderGroups.flat();
 }
 
 export function normalizeThresholdPct(value) {
@@ -387,7 +557,7 @@ export function buildGainLossReport(shipments, filters = {}) {
   const threshold = normalizeThresholdPct(filters.thresholdPct);
   return (shipments || [])
     .map((shipment) => {
-      const gain = gainLossForShipment(shipment);
+      const gain = gainLossForShipment(shipment, shipment?.items, { allShipments: shipments });
       const statusName = packingListStatus(shipment);
       const packageCount = Array.isArray(shipment.items) ? shipment.items.length : 0;
       return {
@@ -406,7 +576,9 @@ export function buildGainLossReport(shipments, filters = {}) {
         alerted: shouldAlertGainLoss(gain, threshold, { packageCount, packingStatus: statusName }),
         openedAt: shipment.createdAt || shipment.dispatchDate || null,
         updatedAt: shipment.updatedAt || shipment.dispatchDate || shipment.createdAt || null,
-        hasConsumption: listConsumptions(shipment).length > 0
+        hasConsumption: listConsumptions(shipment).length > 0,
+        isCombined: gain.isCombined,
+        combinedShipmentsCount: gain.combinedShipmentsCount
       };
     })
     .filter((row) => row.hasConsumption && row.fgConsumedKg > 0)

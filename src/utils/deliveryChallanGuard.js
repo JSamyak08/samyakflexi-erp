@@ -195,24 +195,36 @@ export function packingListDcAction(shipment, { orders = [], challans = [], ship
     shipments,
     { settings, exceptShipmentIds: shipmentKeys(shipment) }
   );
-  if (blocks.length) return { action: 'blocked', blocks };
+  if (blocks.length) {
+    const orderList = ordersOnShipment(shipment, orders);
+    for (const order of orderList) {
+      const existing = activeSaleChallansForOrder(order, challans, shipments);
+      if (existing.length > 0) {
+        return { action: 'edit', challan: existing[0], isCombined: true };
+      }
+    }
+    return { action: 'blocked', blocks };
+  }
   return { action: 'issue' };
 }
 
 /**
- * Net stays as weighed. Tare is the editable core/package weight.
- * Gross is net plus tare.
+ * Gross stays as weighed on the physical scale. Tare is the editable core/package weight.
+ * Net is Gross minus Tare: Gross Weight - Core/Pkg Wt (entered manually) = Net Weight.
  */
 export function rollWithTare(roll, tareInput) {
   const tare = Number(tareInput);
   const safeTare = Number.isFinite(tare) && tare >= 0 ? round2(tare) : 0;
-  const net = round2(Number(roll?.netWeightKg) || 0);
+  const gross = Number(roll?.grossWeightKg) > 0
+    ? round2(Number(roll.grossWeightKg))
+    : round2((Number(roll?.netWeightKg) || 0) + (Number(roll?.tareWeightKg ?? roll?.coreWeightKg) || 0));
+  const net = round2(Math.max(0, gross - safeTare));
   return {
     ...roll,
     tareWeightKg: safeTare,
     coreWeightKg: safeTare,
+    grossWeightKg: gross,
     netWeightKg: net,
-    grossWeightKg: round2(net + safeTare),
   };
 }
 

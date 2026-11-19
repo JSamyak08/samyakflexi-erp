@@ -3,14 +3,16 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { resolvePackingRollWeight } from '../src/utils/packingRollWeight.js';
 
-const liveScale = (netWeight, extra = {}) => ({
+const liveScale = (weight, extra = {}) => ({
   isConnected: true,
   isSimulated: true,
-  netWeight,
+  grossWeight: weight,
+  currentWeight: weight,
+  netWeight: weight,
   ...extra
 });
 
-test('Add Roll/Box records the live scale net, not a stale 0 in the Net Qty field', () => {
+test('Add Roll/Box records the live scale gross, not a stale 0 in the field', () => {
   const weights = resolvePackingRollWeight({
     fieldNetKg: 0,
     tareKg: 0,
@@ -18,27 +20,24 @@ test('Add Roll/Box records the live scale net, not a stale 0 in the Net Qty fiel
     scaleStatus: liveScale(54.7)
   });
   assert.equal(weights.source, 'scale');
-  assert.equal(weights.netKg, 54.7);
   assert.equal(weights.grossKg, 54.7);
-  assert.notEqual(weights.netKg, 0);
+  assert.equal(weights.netKg, 54.7);
+  assert.notEqual(weights.grossKg, 0);
 });
 
 test('a stale typed 50 is not kept while the scale reads 54.70 kg', () => {
-  // Screenshot: Net Qty showed 050 / the button said 50 Kg, header said 54.70 kg.
   const weights = resolvePackingRollWeight({
     fieldNetKg: 50,
     tareKg: 0,
     unit: 'Kg',
     scaleStatus: liveScale(54.7)
   });
-  assert.equal(weights.netKg, 54.7);
   assert.equal(weights.grossKg, 54.7);
-  assert.notEqual(weights.netKg, 0);
-  assert.notEqual(weights.netKg, 50);
-  assert.notEqual(weights.netKg, 4.7);
+  assert.equal(weights.netKg, 54.7);
+  assert.notEqual(weights.grossKg, 50);
 });
 
-test('a connected scale that truly reads zero is recorded as 0 kg', () => {
+test('a connected scale that truly reads zero is recorded as 0 kg gross and 0 kg net', () => {
   const weights = resolvePackingRollWeight({
     fieldNetKg: 50,
     tareKg: 2,
@@ -46,41 +45,56 @@ test('a connected scale that truly reads zero is recorded as 0 kg', () => {
     scaleStatus: liveScale(0)
   });
   assert.equal(weights.source, 'scale');
+  assert.equal(weights.grossKg, 0);
   assert.equal(weights.netKg, 0);
-  assert.equal(weights.grossKg, 2);
+  assert.equal(weights.tareKg, 2);
 });
 
-test('gross weight is the scale net plus the form core / package tare', () => {
+test('Gross weight is the scale reading, and net is gross minus core tare: Gross - Tare = Net', () => {
   const weights = resolvePackingRollWeight({
     fieldNetKg: 0,
     tareKg: 4.5,
     unit: 'Kg',
     scaleStatus: liveScale(54.7)
   });
-  assert.equal(weights.netKg, 54.7);
+  assert.equal(weights.grossKg, 54.7);
   assert.equal(weights.tareKg, 4.5);
-  assert.equal(weights.grossKg, 59.2);
+  assert.equal(weights.netKg, 50.2); // 54.7 - 4.5 = 50.2
 });
 
-test('without a connected scale the typed net is kept, including zero', () => {
-  const typed = resolvePackingRollWeight({
-    fieldNetKg: '050',
-    tareKg: 0,
+test('user screenshot scenario: scale reads 28.77 kg, core tare 0.60 kg -> gross 28.77 kg, net 28.17 kg', () => {
+  const weights = resolvePackingRollWeight({
+    fieldNetKg: 0,
+    tareKg: 0.6,
     unit: 'Kg',
-    scaleStatus: { isConnected: false, netWeight: 54.7 }
+    scaleStatus: liveScale(28.77)
+  });
+  assert.equal(weights.grossKg, 28.77);
+  assert.equal(weights.tareKg, 0.6);
+  assert.equal(weights.netKg, 28.17); // 28.77 - 0.60 = 28.17
+});
+
+test('without a connected scale the typed gross is kept, and net is gross minus tare', () => {
+  const typed = resolvePackingRollWeight({
+    fieldNetKg: '50',
+    tareKg: 5,
+    unit: 'Kg',
+    scaleStatus: { isConnected: false, grossWeight: 54.7 }
   });
   assert.equal(typed.source, 'manual');
-  assert.equal(typed.netKg, 50);
   assert.equal(typed.grossKg, 50);
+  assert.equal(typed.tareKg, 5);
+  assert.equal(typed.netKg, 45); // 50 - 5 = 45
 
   const empty = resolvePackingRollWeight({
     fieldNetKg: 0,
     tareKg: 1,
     unit: 'Kg',
-    scaleStatus: { isConnected: false, netWeight: 0 }
+    scaleStatus: { isConnected: false, grossWeight: 0 }
   });
+  assert.equal(empty.grossKg, 0);
+  assert.equal(empty.tareKg, 1);
   assert.equal(empty.netKg, 0);
-  assert.equal(empty.grossKg, 1);
 });
 
 test('a piece count is not replaced by the kilogram reading', () => {

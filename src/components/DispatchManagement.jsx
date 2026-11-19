@@ -43,6 +43,7 @@ import {
   formatSaleChallanConflicts,
   isSaleOfGoodsChallan,
   ordersCoveredByChallan,
+  ordersOnShipment,
   packingListDcAction,
   packingListIdsOf,
   rollWithTare,
@@ -52,9 +53,11 @@ import PackingGainLossReport from './PackingGainLossReport';
 import {
   canSeePackingGainLoss,
   consumedKgForList,
+  findRelatedOrderShipments,
   formatGainLossKg,
   formatGainLossPct,
   gainLossForShipment,
+  groupPackingListsByOrder,
   isKgUnit,
   liveGainLossForShipment,
   isOpenPackingList,
@@ -293,7 +296,7 @@ export default function DispatchManagement({
       return undefined;
     }
     const applyLiveScale = (status) => {
-      const live = Number(status?.netWeight);
+      const live = Number(status?.grossWeight ?? status?.currentWeight ?? status?.netWeight);
       const following = Boolean(status?.isConnected) && isKgUnit(pktUom) && Number.isFinite(live);
       if (!following) {
         setScaleFollowKg(null);
@@ -307,6 +310,7 @@ export default function DispatchManagement({
   }, [isPackingModalOpen, pktUom]);
 
   const pendingPackingWeight = resolvePackingRollWeight({
+    fieldGrossKg: scaleFollowKg ?? currentPktNetWeight,
     fieldNetKg: scaleFollowKg ?? currentPktNetWeight,
     tareKg: pktCoreWeight,
     unit: pktUom,
@@ -704,29 +708,50 @@ export default function DispatchManagement({
     setDcChallanNo(dc.challanNo);
     setDcInvoiceNo(dc.invoiceNo || '');
     setDcLrNo(dc.lrNo || dc.lrNumber || '');
-    setDcSelectedPackingListIds(Array.isArray(dc.linkedPackingListIds) ? dc.linkedPackingListIds : (dc.linkedPackingListId ? [dc.linkedPackingListId] : []));
-    setDcDispatchDateTime(dc.dispatchDateTime || '');
-    setDcPartyType(dc.partyType || 'Client');
-    setDcSelectedClientName(dc.clientName || dc.partyName || '');
-    setDcClientAddress(dc.clientAddress || '');
-    setDcClientGstin(dc.clientGstin || '');
-    setDcClientContactPerson(dc.clientContactPerson || '');
-    setDcClientPhone(dc.clientPhone || '');
-    setDcVehicleNo(dc.vehicleNo || '');
-    setDcVehicleError('');
-    setDcTransporterName(dc.transporterName || '');
-    setDcDriverPhone(dc.driverPhone || '');
-    setDcPoRefNo(dc.poRefNo || '');
-    setDcDebitNoteNo(dc.debitNoteNo || '');
-    setDcJobName(dc.jobName || '');
-    setDcChallanNature(dc.challanNature || dc.movementType || 'Sale of Goods');
-    setDcFreightCharges(dc.freightCharges || 0);
-    setDcGstRatePct(dc.gstRatePct || 18);
-    setDcTaxType(dc.taxType || 'auto');
-    setDcDispatchedBy(dc.dispatchedBy || '');
-    setDcRemarks(dc.remarks || '');
-    setDcItems(Array.isArray(dc.items) && dc.items.length > 0 ? dc.items.map(i => ({ ...i, itemDetails: i.itemDetails || '' })) : []);
-    setDcTerms(Array.isArray(dc.termsAndConditions) ? dc.termsAndConditions : (getDocumentTerms().dcTerms || []));
+    const existingPlIds = Array.isArray(dc.linkedPackingListIds) ? dc.linkedPackingListIds.map(String) : (dc.linkedPackingListId ? [String(dc.linkedPackingListId)] : []);
+
+    // Check if additional packing lists for the same order exist in dispatchShipments:
+    const matchedOrders = ordersCoveredByChallan(dc, orders, dispatchShipments);
+    const relatedShipments = [];
+    (dispatchShipments || []).forEach(s => {
+      const sOrders = ordersOnShipment(s, orders);
+      const isMatch = sOrders.some(so => matchedOrders.some(mo => String(mo.id).toLowerCase() === String(so.id).toLowerCase())) ||
+                      (dc.jobName && s.jobName && String(dc.jobName).trim().toLowerCase() === String(s.jobName).trim().toLowerCase());
+      if (isMatch) relatedShipments.push(s);
+    });
+
+    const allRelatedPlIds = [...new Set([...existingPlIds, ...relatedShipments.map(s => String(s.dispatchId || s.id))])];
+
+    if (allRelatedPlIds.length > existingPlIds.length && existingPlIds.length > 0) {
+      handleImportMultiplePackingLists(allRelatedPlIds);
+      setEditingDcId(dc.id);
+      setDcChallanNo(dc.challanNo);
+      if (dc.invoiceNo) setDcInvoiceNo(dc.invoiceNo);
+    } else {
+      setDcSelectedPackingListIds(existingPlIds);
+      setDcDispatchDateTime(dc.dispatchDateTime || '');
+      setDcPartyType(dc.partyType || 'Client');
+      setDcSelectedClientName(dc.clientName || dc.partyName || '');
+      setDcClientAddress(dc.clientAddress || '');
+      setDcClientGstin(dc.clientGstin || '');
+      setDcClientContactPerson(dc.clientContactPerson || '');
+      setDcClientPhone(dc.clientPhone || '');
+      setDcVehicleNo(dc.vehicleNo || '');
+      setDcVehicleError('');
+      setDcTransporterName(dc.transporterName || '');
+      setDcDriverPhone(dc.driverPhone || '');
+      setDcPoRefNo(dc.poRefNo || '');
+      setDcDebitNoteNo(dc.debitNoteNo || '');
+      setDcJobName(dc.jobName || '');
+      setDcChallanNature(dc.challanNature || dc.movementType || 'Sale of Goods');
+      setDcFreightCharges(dc.freightCharges || 0);
+      setDcGstRatePct(dc.gstRatePct || 18);
+      setDcTaxType(dc.taxType || 'auto');
+      setDcDispatchedBy(dc.dispatchedBy || '');
+      setDcRemarks(dc.remarks || '');
+      setDcItems(Array.isArray(dc.items) && dc.items.length > 0 ? dc.items.map(i => ({ ...i, itemDetails: i.itemDetails || '' })) : []);
+      setDcTerms(Array.isArray(dc.termsAndConditions) ? dc.termsAndConditions : (getDocumentTerms().dcTerms || []));
+    }
 
     setIsDcModalOpen(true);
   };
@@ -1386,14 +1411,15 @@ export default function DispatchManagement({
 
   const filteredPackingLists = useMemo(() => {
     const term = searchTerm.toLowerCase();
-    return (dispatchShipments || []).filter(ds => 
+    const matched = (dispatchShipments || []).filter(ds => 
       String(ds.dispatchId || ds.id || '').toLowerCase().includes(term) ||
       (ds.clientName || '').toLowerCase().includes(term) ||
       (ds.jobName || '').toLowerCase().includes(term) ||
       (ds.vehicleNo || '').toLowerCase().includes(term) ||
       (ds.lrNo || '').toLowerCase().includes(term)
     );
-  }, [dispatchShipments, searchTerm]);
+    return groupPackingListsByOrder(matched, orders);
+  }, [dispatchShipments, searchTerm, orders]);
 
   const challanPagination = usePagination(filteredChallans, 10);
   const coaPagination = usePagination(filteredCoAs, 10);
@@ -1595,8 +1621,9 @@ export default function DispatchManagement({
         }
       }
     }
-    const plId = String(source.dispatchId || source.id);
-    handleImportMultiplePackingLists([plId]);
+    const related = findRelatedOrderShipments(source, dispatchShipments, orders);
+    const plIds = related.map(s => String(s.dispatchId || s.id));
+    handleImportMultiplePackingLists(plIds.length > 0 ? plIds : [String(source.dispatchId || source.id)]);
     handleTabSwitch('challans');
     setIsDcModalOpen(true);
   };
@@ -1692,7 +1719,8 @@ export default function DispatchManagement({
   const handleLoadFgToScale4 = (fg) => {
     if (!isFinishedGoodsStock(fg)) return;
     setSelectedFgRollForWeighing(fg);
-    setCurrentPktNetWeight(Number(fg.availableKg ?? fg.totalNetKg) || 0);
+    const grossVal = Number(fg.totalGrossKg ?? fg.grossWeightKg) || round2((Number(fg.availableKg ?? fg.totalNetKg) || 0) + (Number(fg.tareWeightKg) || 0));
+    setCurrentPktNetWeight(grossVal);
     if (fg.tareWeightKg) setPktCoreWeight(Number(fg.tareWeightKg));
   };
 
@@ -2148,6 +2176,12 @@ export default function DispatchManagement({
                               <strong style={{ color: '#0f172a' }}>{dc.clientName || dc.partyName}</strong>
                             </div>
                             {dc.clientGstin && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>GST: {dc.clientGstin}</div>}
+                            {Array.isArray(dc.linkedPackingListIds) && dc.linkedPackingListIds.length > 0 && (
+                              <div style={{ fontSize: '0.72rem', color: '#0284c7', fontWeight: '700', marginTop: '2px' }}>
+                                {dc.linkedPackingListIds.length > 1 ? `Combined PLs (${dc.linkedPackingListIds.length}): ` : 'PL: '}
+                                {dc.linkedPackingListIds.join(', ')}
+                              </div>
+                            )}
                           </td>
                           <td style={{ padding: '12px 14px', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                             {(() => {
@@ -2357,7 +2391,7 @@ export default function DispatchManagement({
                       const openList = isOpenPackingList(ds);
                       const party = packingListParty(ds, orders);
                       const consumptions = listConsumptions(ds);
-                      const liveGain = liveGainLossForShipment(ds, productionRecords);
+                      const liveGain = liveGainLossForShipment(ds, productionRecords, ds.items, { allShipments: dispatchShipments, orders });
                       const showGain = liveGain.hasRolls && liveGain.consumedKg > 0;
                       const rollCount = openList
                         ? (Array.isArray(ds.items) ? ds.items.length : 0)
@@ -2384,6 +2418,31 @@ export default function DispatchManagement({
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontWeight: '600' }}>
                           {party.jobName}
+                          {liveGain.isCombined && (() => {
+                            const sortedRel = [...(liveGain.relatedShipments || [])].sort((a, b) => {
+                              const timeA = new Date(a.dispatchDate || a.createdAt || 0).getTime();
+                              const timeB = new Date(b.dispatchDate || b.createdAt || 0).getTime();
+                              return timeA - timeB;
+                            });
+                            const curKey = String(ds.dispatchId || ds.id);
+                            const seq = sortedRel.findIndex(s => String(s.dispatchId || s.id) === curKey) + 1;
+                            return (
+                              <div style={{ marginTop: '2px' }}>
+                                <span style={{
+                                  fontSize: '0.68rem',
+                                  fontWeight: 800,
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  background: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                  display: 'inline-block'
+                                }}>
+                                  Dispatch {seq > 0 ? `${seq} of ${liveGain.combinedShipmentsCount}` : 'Combined'}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                           {ds.vehicleNo || '-'} {ds.lrNo ? `| LR: ${ds.lrNo}` : ''}
@@ -2396,13 +2455,29 @@ export default function DispatchManagement({
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#047857' }}>
                           {(Number(ds.totalNetWeightKg) || 0).toLocaleString()} kg
+                          {liveGain.isCombined && (
+                            <div style={{ fontSize: '0.72rem', color: '#475569', fontWeight: '600', marginTop: '2px' }} title={`Combined dispatched net weight across ${liveGain.combinedShipmentsCount} packing lists for this order`}>
+                              Combined: {liveGain.combinedPackedNetKg.toLocaleString()} kg ({liveGain.combinedShipmentsCount} lists)
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800', color: '#4338ca' }}>
                           {grossKg.toLocaleString()} kg
                         </td>
                         {isAdmin && (
                           <td data-testid="packing-gain-loss" style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'right', fontWeight: '800' }}>
-                            {showGain ? `${formatGainLossKg(liveGain.differenceKg)} (${formatGainLossPct(liveGain.differencePct)})` : '—'}
+                            {showGain ? (
+                              <>
+                                <span style={{ color: liveGain.direction === 'gain' ? '#047857' : (liveGain.direction === 'loss' ? '#b91c1c' : '#334155') }}>
+                                  {formatGainLossKg(liveGain.differenceKg)} ({formatGainLossPct(liveGain.differencePct)})
+                                </span>
+                                {liveGain.isCombined && (
+                                  <div style={{ fontSize: '0.70rem', color: '#059669', fontWeight: '700', marginTop: '2px' }} title={`Calculated on combined dispatch net weight (${liveGain.combinedPackedNetKg} kg) vs total order quantity (${liveGain.consumedKg} kg)`}>
+                                    Combined Dispatch ({liveGain.combinedShipmentsCount} PLs)
+                                  </div>
+                                )}
+                              </>
+                            ) : '—'}
                           </td>
                         )}
                         <td style={{ padding: '12px 14px', verticalAlign: 'middle', textAlign: 'center' }}>
@@ -2432,10 +2507,10 @@ export default function DispatchManagement({
                                     className="btn-primary"
                                     data-testid="edit-dc"
                                     style={{ padding: '5px 10px', fontSize: '0.78rem', background: '#0369a1', borderColor: '#0369a1', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                                    title={`Edit ${decision.challan.challanNo || 'the linked delivery challan'}. The same number is kept.`}
+                                    title={decision.isCombined ? `Edit Delivery Challan ${decision.challan.challanNo} and combine this packing list.` : `Edit ${decision.challan.challanNo || 'the linked delivery challan'}. The same number is kept.`}
                                     onClick={() => handleEditDc(decision.challan)}
                                   >
-                                    <Edit3 size={14} /> Edit DC
+                                    <Edit3 size={14} /> {decision.isCombined ? 'Edit DC (Combined)' : 'Edit DC'}
                                   </button>
                                 );
                               }
@@ -4396,26 +4471,33 @@ export default function DispatchManagement({
                 </div>
 
                 <div className="form-group">
-                  <label>Net Qty / Weight ({pktUom}) *</label>
+                  <label>
+                    {isKgUnit(pktUom) ? 'Gross Weight (Scale Reading in Kg) *' : `Net Qty / Weight (${pktUom}) *`}
+                  </label>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <input
                       type="number"
                       step="0.01"
                       min="0"
                       className="form-control"
-                      value={pendingPackingWeight.source === 'scale' ? pendingPackingWeight.netKg : currentPktNetWeight}
+                      value={pendingPackingWeight.source === 'scale' ? pendingPackingWeight.grossKg : (scaleFollowKg ?? currentPktNetWeight)}
                       onChange={e => {
                         if (pendingPackingWeight.source === 'scale') return;
                         setCurrentPktNetWeight(parseFloat(e.target.value) || 0);
                       }}
                       readOnly={pendingPackingWeight.source === 'scale'}
-                      title={pendingPackingWeight.source === 'scale' ? 'Live net weight from the connected scale' : 'Type the net weight when the scale is offline'}
+                      title={pendingPackingWeight.source === 'scale' ? 'Live gross weight from the connected scale' : 'Type the gross weight from the scale when offline'}
                     />
                     <WeighingScaleCaptureButton
                       onCaptureWeight={(w) => setCurrentPktNetWeight(Number(w) || 0)}
                       label="Scale #4"
                     />
                   </div>
+                  {isKgUnit(pktUom) && (
+                    <div style={{ fontSize: '0.75rem', color: '#047857', fontWeight: '700', marginTop: '4px' }}>
+                      Calculated Net Weight: {pendingPackingWeight.netKg} Kg (Gross {pendingPackingWeight.grossKg} - Core {pendingPackingWeight.tareKg} kg)
+                    </div>
+                  )}
                 </div>
 
                 {selectedFgRollForWeighing && (
@@ -4522,7 +4604,7 @@ export default function DispatchManagement({
                     style={{ fontSize: '0.75rem', padding: '5px 12px', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '800' }}
                     onClick={() => handleAddRollToPackingList()}
                   >
-                    + Add Roll / Box ({pendingPackingWeight.netKg} {pktUom} Net / {pendingPackingWeight.grossKg.toFixed(1)} Kg Gross)
+                    + Add Roll / Box ({pendingPackingWeight.netKg.toFixed(2)} {pktUom} Net / {pendingPackingWeight.grossKg.toFixed(2)} Kg Gross)
                   </button>
                 </div>
 
@@ -4568,8 +4650,8 @@ export default function DispatchManagement({
                               style={{ width: '88px', textAlign: 'right', fontWeight: 700 }}
                             />
                           </td>
-                          <td style={{ fontWeight: '700', color: '#1e293b', textAlign: 'right' }}>{r.grossWeightKg} kg</td>
-                          <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{r.netWeightKg} {r.unit || pktUom}</td>
+                          <td style={{ fontWeight: '700', color: '#1e293b', textAlign: 'right' }}>{Number(r.grossWeightKg).toFixed(2)} kg</td>
+                          <td style={{ fontWeight: '700', color: '#047857', textAlign: 'right' }}>{Number(r.netWeightKg).toFixed(2)} {r.unit || pktUom}</td>
                           <td style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                             <button
                               type="button"
