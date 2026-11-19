@@ -1,16 +1,22 @@
 /*
  * Purchase Order Print Stylesheet
- * Scoped to #printable-po to provide executive, professional corporate styling
- * and ensure numbers and currency NEVER wrap onto multiple lines.
+ * Scoped to #printable-po to guarantee executive, professional styling
+ * and ensure words and numbers NEVER overflow or flow outside table borders.
  */
 
 #printable-po {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
   color: #0f172a !important;
-  font-size: 8.5pt !important;
-  line-height: 1.35 !important;
+  font-size: 8pt !important;
+  line-height: 1.3 !important;
   background: #ffffff !important;
   width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+#printable-po * {
   box-sizing: border-box !important;
 }
 
@@ -20,40 +26,51 @@
   justify-content: space-between !important;
   align-items: flex-start !important;
   padding-bottom: 8px !important;
-  margin-bottom: 10px !important;
+  margin-bottom: 8px !important;
   border-bottom: 2px solid #0f172a !important;
+  width: 100% !important;
 }
 
 #printable-po .po-brand {
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
-  max-width: 58% !important;
+  max-width: 55% !important;
+  flex: 1 1 auto !important;
 }
 
 #printable-po .po-logo-img {
-  height: 38px !important;
-  max-height: 38px !important;
-  max-width: 200px !important;
+  height: 36px !important;
+  max-height: 36px !important;
+  max-width: 190px !important;
   object-fit: contain !important;
+  object-position: left center !important;
   display: block !important;
 }
 
+#printable-po .po-company-fallback {
+  font-size: 13pt !important;
+  font-weight: 900 !important;
+  color: #0f172a !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.1 !important;
+}
+
 #printable-po .po-tagline {
-  margin-top: 4px !important;
-  font-size: 7.5pt !important;
+  margin-top: 3px !important;
+  font-size: 7.2pt !important;
   font-weight: 700 !important;
   color: #475569 !important;
   letter-spacing: 0.04em !important;
-  line-height: 1.25 !important;
+  line-height: 1.2 !important;
 }
 
 #printable-po .po-title-block {
   display: flex !important;
-  align-items: flex-start !important;
-  gap: 12px !important;
+  align-items: center !important;
+  gap: 10px !important;
   text-align: right !important;
-  max-width: 42% !important;
+  flex: 0 0 auto !important;
   justify-content: flex-end !important;
 }
 
@@ -61,17 +78,17 @@
   font-size: 15pt !important;
   font-weight: 900 !important;
   color: #0f172a !important;
-  letter-spacing: 0.06em !important;
+  letter-spacing: 0.05em !important;
   text-transform: uppercase !important;
   line-height: 1.1 !important;
-  margin-bottom: 3px !important;
+  margin-bottom: 2px !important;
 }
 
 #printable-po .po-meta-item {
-  font-size: 8pt !important;
+  font-size: 7.8pt !important;
   font-weight: 600 !important;
   color: #334155 !important;
-  line-height: 1.3 !important;
+  line-height: 1.25 !important;
 }
 
 #printable-po .po-meta-item strong {
@@ -79,6 +96,7 @@
   font-weight: 800 !important;
 }
 
+/* 2D QR Code Container & SVG/IMG sizing */
 #printable-po .po-qr-box {
   background: #ffffff !important;
   padding: 2px !important;
@@ -88,11 +106,59 @@
   align-items: center !important;
   justify-content: center !important;
   flex-shrink: 0 !important;
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  min-height: 46px !important;
+  box-sizing: border-box !important;
+}
+
+#printable-po .po-qr-box .po-qr-img,
+#printable-po .po-qr-img {
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  min-height: 42px !important;
+  max-width: 42px !important;
+  max-height: 42px !important;
+  display: block !important;
+  image-rendering: pixelated !important;
+  object-fit: contain !important;
+  visibility: visible !important;
+}
+
+#printable-po .po-qr-box .qr-code-2d-container,
+#printable-po .po-qr-box .qr-code-svg-wrapper {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  max-width: 40px !important;
+  max-height: 40px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: #ffffff !important;
+  overflow: visible !important;
+}
+
+#printable-po .po-qr-box svg {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  min-height: 40px !important;
+  max-width: 40px !important;
+  max-height: 40px !important;
+  display: block !important;
+  visibility: visible !important;
 }
 
 /* 3-Column Address Grid */
 #printable-po .po-address-table {
   width: 100% !important;
+  max-width: 100% !important;
   table-layout: fixed !important;
   border-collapse: collapse !important;
   margin-bottom: 8px !important;
@@ -102,37 +168,41 @@
 #printable-po .po-address-table th {
   background: #f1f5f9 !important;
   color: #1e293b !important;
-  font-size: 7.5pt !important;
+  font-size: 7.2pt !important;
   font-weight: 800 !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
-  padding: 4px 8px !important;
+  padding: 3.5px 6px !important;
   border: 1px solid #cbd5e1 !important;
   text-align: left !important;
 }
 
 #printable-po .po-address-table td {
-  padding: 6px 8px !important;
+  padding: 5px 7px !important;
   vertical-align: top !important;
   border: 1px solid #cbd5e1 !important;
-  font-size: 8pt !important;
-  line-height: 1.3 !important;
+  font-size: 7.6pt !important;
+  line-height: 1.25 !important;
   width: 33.33% !important;
+  word-break: break-word !important;
+  overflow-wrap: break-word !important;
 }
 
 #printable-po .po-party-name {
-  font-size: 9pt !important;
+  font-size: 8.5pt !important;
   font-weight: 800 !important;
   color: #0f172a !important;
-  margin-bottom: 3px !important;
+  margin-bottom: 2px !important;
   border-bottom: 1px solid #e2e8f0 !important;
   padding-bottom: 2px !important;
+  line-height: 1.2 !important;
 }
 
 #printable-po .po-kv-line {
-  margin: 1.5px 0 !important;
-  font-size: 8pt !important;
+  margin: 1px 0 !important;
+  font-size: 7.6pt !important;
   color: #334155 !important;
+  line-height: 1.22 !important;
 }
 
 #printable-po .po-kv-label {
@@ -146,12 +216,13 @@
   border-radius: 4px !important;
   margin-bottom: 8px !important;
   overflow: hidden !important;
+  width: 100% !important;
 }
 
 #printable-po .po-section-header {
   background: #f1f5f9 !important;
-  padding: 3.5px 8px !important;
-  font-size: 7.5pt !important;
+  padding: 3px 6px !important;
+  font-size: 7.2pt !important;
   font-weight: 800 !important;
   color: #0f172a !important;
   text-transform: uppercase !important;
@@ -161,21 +232,25 @@
 
 #printable-po .po-details-table {
   width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;
   border-collapse: collapse !important;
-  font-size: 8pt !important;
+  font-size: 7.6pt !important;
 }
 
 #printable-po .po-details-table td {
-  padding: 3px 6px !important;
+  padding: 2.5px 5px !important;
   border: 1px solid #e2e8f0 !important;
   vertical-align: middle !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 #printable-po .po-details-table td.label-col {
   background: #f8fafc !important;
   color: #475569 !important;
   font-weight: 700 !important;
-  font-size: 7.2pt !important;
+  font-size: 7pt !important;
   text-transform: uppercase !important;
   letter-spacing: 0.03em !important;
   width: 14% !important;
@@ -184,59 +259,63 @@
 #printable-po .po-details-table td.value-col {
   color: #0f172a !important;
   font-weight: 700 !important;
-  font-size: 8pt !important;
+  font-size: 7.8pt !important;
   width: 36% !important;
 }
 
-/* Items Table - Strict NO WRAPPING for numbers */
+/* Items Table - Strict NO OVERFLOW */
 #printable-po .po-items-table {
   width: 100% !important;
+  max-width: 100% !important;
   border-collapse: collapse !important;
   margin-bottom: 8px !important;
-  font-size: 8pt !important;
+  font-size: 7.6pt !important;
   table-layout: fixed !important;
+  box-sizing: border-box !important;
 }
 
 #printable-po .po-items-table thead th {
   background: #0f172a !important;
   color: #ffffff !important;
-  font-size: 7.2pt !important;
+  font-size: 7pt !important;
   font-weight: 700 !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.04em !important;
-  padding: 5px 4px !important;
+  letter-spacing: 0.03em !important;
+  padding: 4px 3px !important;
   border: 1px solid #0f172a !important;
   line-height: 1.15 !important;
   vertical-align: middle !important;
+  overflow: hidden !important;
 }
 
 #printable-po .po-items-table tbody td {
   border: 1px solid #cbd5e1 !important;
-  padding: 4px 4px !important;
-  font-size: 8pt !important;
-  line-height: 1.25 !important;
+  padding: 3.5px 3px !important;
+  font-size: 7.6pt !important;
+  line-height: 1.2 !important;
   vertical-align: middle !important;
 }
 
 #printable-po .po-items-table tfoot td {
   border: 1px solid #94a3b8 !important;
-  padding: 4px 6px !important;
-  font-size: 8pt !important;
+  padding: 3.5px 4px !important;
+  font-size: 7.8pt !important;
   background: #f1f5f9 !important;
   font-weight: 800 !important;
   vertical-align: middle !important;
 }
 
-/* Critical number styling override to prevent pdfA4.css wrapping */
+/* Strict numeric cell styling - prevents wrapping and overflow */
 #printable-po .nowrap,
 #printable-po .po-num,
 #printable-po .po-items-table td.po-num,
 #printable-po .po-items-table td.right {
   white-space: nowrap !important;
-  overflow-wrap: normal !important;
-  word-break: normal !important;
+  overflow: hidden !important;
+  text-overflow: clip !important;
   font-variant-numeric: tabular-nums !important;
   text-align: right !important;
+  font-size: 7.6pt !important;
 }
 
 #printable-po .center {
@@ -251,30 +330,34 @@
 #printable-po .po-summary-grid {
   display: grid !important;
   grid-template-columns: 1.15fr 1fr !important;
-  gap: 10px !important;
+  gap: 8px !important;
   border: 1px solid #cbd5e1 !important;
   border-radius: 4px !important;
   padding: 6px 8px !important;
   margin-bottom: 8px !important;
   background: #ffffff !important;
   align-items: start !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 #printable-po .po-words-block {
   display: flex !important;
   flex-direction: column !important;
-  gap: 4px !important;
+  gap: 3px !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
 }
 
 #printable-po .po-words-title {
-  font-size: 7.5pt !important;
+  font-size: 7.2pt !important;
   font-weight: 800 !important;
   color: #0f172a !important;
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   border-bottom: 1px solid #e2e8f0 !important;
   padding-bottom: 2px !important;
-  margin-bottom: 2px !important;
+  margin-bottom: 1px !important;
 }
 
 #printable-po .po-word-row {
@@ -284,7 +367,7 @@
 }
 
 #printable-po .po-word-label {
-  font-size: 7.2pt !important;
+  font-size: 6.8pt !important;
   font-weight: 700 !important;
   color: #64748b !important;
   text-transform: uppercase !important;
@@ -292,20 +375,22 @@
 }
 
 #printable-po .po-word-value {
-  font-size: 8pt !important;
+  font-size: 7.6pt !important;
   font-weight: 700 !important;
   color: #0f172a !important;
-  line-height: 1.25 !important;
+  line-height: 1.22 !important;
+  word-break: break-word !important;
 }
 
 #printable-po .po-totals-table {
   width: 100% !important;
+  max-width: 100% !important;
   border-collapse: collapse !important;
-  font-size: 8pt !important;
+  font-size: 7.6pt !important;
 }
 
 #printable-po .po-totals-table td {
-  padding: 2px 4px !important;
+  padding: 1.5px 3px !important;
   border: none !important;
 }
 
@@ -325,9 +410,9 @@
 #printable-po .po-tax-subtable {
   width: 100% !important;
   border-collapse: collapse !important;
-  font-size: 7.2pt !important;
+  font-size: 7pt !important;
   text-align: center !important;
-  margin: 2px 0 !important;
+  margin: 1.5px 0 !important;
 }
 
 #printable-po .po-tax-subtable th {
@@ -335,12 +420,12 @@
   color: #334155 !important;
   font-weight: 700 !important;
   border: 1px solid #cbd5e1 !important;
-  padding: 2px 3px !important;
+  padding: 1.5px 2px !important;
 }
 
 #printable-po .po-tax-subtable td {
   border: 1px solid #cbd5e1 !important;
-  padding: 2px 3px !important;
+  padding: 1.5px 2px !important;
   font-weight: 600 !important;
   white-space: nowrap !important;
   font-variant-numeric: tabular-nums !important;
@@ -353,11 +438,11 @@
 }
 
 #printable-po .po-grand-total-row td {
-  padding: 4px 6px !important;
+  padding: 3.5px 5px !important;
 }
 
 #printable-po .po-grand-total-row .label {
-  font-size: 9pt !important;
+  font-size: 8.5pt !important;
   font-weight: 900 !important;
   color: #ffffff !important;
   text-transform: uppercase !important;
@@ -365,7 +450,7 @@
 }
 
 #printable-po .po-grand-total-row .amount {
-  font-size: 10pt !important;
+  font-size: 9.5pt !important;
   font-weight: 900 !important;
   color: #ffffff !important;
   text-align: right !important;
@@ -376,9 +461,11 @@
 #printable-po .po-terms-card {
   border: 1px solid #cbd5e1 !important;
   border-radius: 4px !important;
-  padding: 6px 8px !important;
+  padding: 5px 8px !important;
   margin-bottom: 8px !important;
   background: #fafafa !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 #printable-po .po-terms-header {
@@ -391,7 +478,7 @@
 }
 
 #printable-po .po-terms-title {
-  font-size: 7.5pt !important;
+  font-size: 7.2pt !important;
   font-weight: 800 !important;
   color: #0f172a !important;
   text-transform: uppercase !important;
@@ -401,55 +488,57 @@
 
 #printable-po .po-terms-list {
   margin: 0 !important;
-  padding-left: 16px !important;
-  font-size: 7.8pt !important;
+  padding-left: 14px !important;
+  font-size: 7.5pt !important;
   color: #334155 !important;
-  line-height: 1.3 !important;
+  line-height: 1.25 !important;
 }
 
 #printable-po .po-terms-list li {
   margin-bottom: 1.5px !important;
+  word-break: break-word !important;
 }
 
 /* Signatory */
 #printable-po .po-sign-container {
   display: flex !important;
   justify-content: flex-end !important;
-  margin-top: 6px !important;
+  margin-top: 4px !important;
   page-break-inside: avoid !important;
   break-inside: avoid !important;
+  width: 100% !important;
 }
 
 #printable-po .po-sign-box {
-  width: 210px !important;
+  width: 200px !important;
   text-align: center !important;
 }
 
 #printable-po .po-sign-company {
-  font-size: 8.5pt !important;
+  font-size: 8pt !important;
   font-weight: 800 !important;
   color: #0f172a !important;
-  margin-bottom: 2px !important;
+  margin-bottom: 1px !important;
 }
 
 #printable-po .po-sign-img-slot {
-  height: 38px !important;
-  min-height: 38px !important;
+  height: 34px !important;
+  min-height: 34px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
 }
 
 #printable-po .po-sign-img {
-  max-height: 36px !important;
-  max-width: 140px !important;
+  max-height: 32px !important;
+  max-width: 130px !important;
   object-fit: contain !important;
 }
 
 #printable-po .po-sign-role {
   border-top: 1px solid #0f172a !important;
   padding-top: 2px !important;
-  font-size: 7.5pt !important;
+  font-size: 7.2pt !important;
   font-weight: 800 !important;
   color: #1e293b !important;
   text-transform: uppercase !important;
@@ -457,11 +546,68 @@
 }
 
 @media print {
-  #printable-po {
-    font-size: 8pt !important;
-    line-height: 1.25 !important;
+  @page {
+    size: A4 portrait !important;
+    margin: 8mm 10mm !important;
   }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #printable-po {
+    font-size: 7.5pt !important;
+    line-height: 1.22 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-sizing: border-box !important;
+    position: static !important;
+    overflow: visible !important;
+  }
+
+  #printable-po * {
+    box-sizing: border-box !important;
+  }
+
   #printable-po .no-print {
     display: none !important;
+  }
+
+  #printable-po .po-print-term {
+    display: block !important;
+  }
+
+  #printable-po .po-print-only {
+    display: inline !important;
+  }
+
+  #printable-po .po-qr-box {
+    visibility: visible !important;
+    display: flex !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+
+  #printable-po .po-qr-box .po-qr-img,
+  #printable-po .po-qr-img {
+    display: block !important;
+    visibility: visible !important;
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    min-height: 42px !important;
+    max-width: 42px !important;
+    max-height: 42px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }

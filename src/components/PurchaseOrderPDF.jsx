@@ -7,7 +7,7 @@ import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdf
 import { formatPlantDateTime } from '../utils/dbDates';
 import { displayAmendmentLabel, revisionNumber } from '../utils/poAmendment';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import QRCode2D from './QRCode2D';
+import { generateSyncQrSvg } from '../utils/qrCodeSvg';
 import './purchaseOrderPrint.css';
 
 export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
@@ -26,6 +26,13 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   
   const signatureImage = getAuthorisedSignature();
   const logoImage = getCompanyLogo();
+  const resolvedLogo = (logoImage && logoImage !== 'null' && logoImage !== 'undefined') 
+    ? logoImage 
+    : (COMPANY_DETAILS.logoUrl || '/samyak-logo.png');
+
+  const qrValue = `SAMYAK-ERP-PO:${currentPoNumber || 'PO-000'}`;
+  const qrSvg = generateSyncQrSvg(qrValue, 0);
+  const qrDataUrl = qrSvg ? `data:image/svg+xml;utf8,${encodeURIComponent(qrSvg)}` : '';
 
   const {
     poDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }),
@@ -131,7 +138,19 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
           {/* Executive Header Banner */}
           <div className="po-header">
             <div className="po-brand">
-              <img src={logoImage} alt="Samyak International Ltd Logo" className="po-logo-img" />
+              <img 
+                src={resolvedLogo} 
+                alt={`${COMPANY_DETAILS.name} Logo`} 
+                className="po-logo-img"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                  const fb = e.currentTarget.nextElementSibling;
+                  if (fb) fb.style.display = 'block';
+                }}
+              />
+              <div className="po-company-fallback" style={{ display: 'none' }}>
+                {COMPANY_DETAILS.name}
+              </div>
               {COMPANY_DETAILS.tagline ? (
                 <div className="po-tagline">
                   {COMPANY_DETAILS.tagline}
@@ -151,7 +170,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                       onChange={(e) => setCurrentPoNumber(e.target.value)}
                       onBlur={() => setIsEditingRef(false)}
                       autoFocus
-                      style={{ fontSize: '8.5pt', fontWeight: 'bold', border: '1px solid #2563eb', padding: '1px 5px', borderRadius: '3px', textAlign: 'right' }}
+                      style={{ fontSize: '8pt', fontWeight: 'bold', border: '1px solid #2563eb', padding: '1px 5px', borderRadius: '3px', textAlign: 'right' }}
                     />
                   ) : (
                     <span 
@@ -182,8 +201,18 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                   </span>
                 </div>
               </div>
-              <div className="po-qr-box">
-                <QRCode2D value={`SAMYAK-ERP-PO:${currentPoNumber || 'PO-000'}`} size={44} showLabel={false} margin={0} />
+              <div className="po-qr-box" title={`QR Code: ${qrValue}`}>
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt="Purchase Order QR Code"
+                    className="po-qr-img"
+                    width="42"
+                    height="42"
+                  />
+                ) : (
+                  <div style={{ width: 42, height: 42 }} />
+                )}
               </div>
             </div>
           </div>
@@ -259,13 +288,17 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 <tr>
                   <td className="label-col">Payment Terms</td>
                   <td className="value-col">
-                    <input
-                      type="text"
-                      value={currentPaymentTerms}
-                      onChange={(e) => setCurrentPaymentTerms(e.target.value)}
-                      className="no-border-print"
-                      style={{ width: '100%', background: 'transparent', border: 'none', fontWeight: '800', fontSize: '8pt', color: '#1e40af', padding: 0 }}
-                    />
+                    <span className="no-print" style={{ display: 'block', width: '100%' }}>
+                      <input
+                        type="text"
+                        value={currentPaymentTerms}
+                        onChange={(e) => setCurrentPaymentTerms(e.target.value)}
+                        style={{ width: '100%', background: 'transparent', border: 'none', fontWeight: '800', fontSize: '7.8pt', color: '#1e40af', padding: 0 }}
+                      />
+                    </span>
+                    <span className="po-print-only" style={{ display: 'none', fontWeight: '800', fontSize: '7.8pt', color: '#0f172a' }}>
+                      {currentPaymentTerms}
+                    </span>
                   </td>
                   <td className="label-col">Indent Number</td>
                   <td className="value-col">{indentNumber}</td>
@@ -283,18 +316,18 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
             <thead>
               <tr>
                 <th style={{ width: '3.5%', textAlign: 'center' }}>#</th>
-                <th style={{ width: '31.5%', textAlign: 'left' }}>Item Description & Make</th>
-                <th style={{ width: '7%', textAlign: 'center' }}>HSN Code</th>
+                <th style={{ width: '27%', textAlign: 'left' }}>Item Description & Make</th>
+                <th style={{ width: '6%', textAlign: 'center' }}>HSN Code</th>
                 <th style={{ width: '9%', textAlign: 'right' }}>Quantity</th>
-                <th style={{ width: '9%', textAlign: 'right' }}>Unit Rate</th>
-                <th style={{ width: '12%', textAlign: 'right' }}>Taxable Amt</th>
-                <th style={{ width: '9%', textAlign: 'right' }}>
+                <th style={{ width: '8.5%', textAlign: 'right' }}>Unit Rate</th>
+                <th style={{ width: '13%', textAlign: 'right' }}>Taxable Amt</th>
+                <th style={{ width: '10%', textAlign: 'right' }}>
                   CGST<br/><span style={{ fontSize: '6.5pt', fontWeight: 500, opacity: 0.9 }}>Rate / Amt</span>
                 </th>
-                <th style={{ width: '9%', textAlign: 'right' }}>
+                <th style={{ width: '10%', textAlign: 'right' }}>
                   SGST<br/><span style={{ fontSize: '6.5pt', fontWeight: 500, opacity: 0.9 }}>Rate / Amt</span>
                 </th>
-                <th style={{ width: '10%', textAlign: 'right' }}>Line Total</th>
+                <th style={{ width: '13%', textAlign: 'right' }}>Line Total</th>
               </tr>
             </thead>
             <tbody>
@@ -318,35 +351,35 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 return (
                   <tr key={index} style={{ background: index % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                     <td className="center" style={{ fontWeight: '700', color: '#64748b' }}>{index + 1}</td>
-                    <td>
-                      <div style={{ color: '#0f172a', fontWeight: '800', fontSize: '8.5pt', lineHeight: '1.25' }}>
+                    <td style={{ wordBreak: 'break-word' }}>
+                      <div style={{ color: '#0f172a', fontWeight: '800', fontSize: '8pt', lineHeight: '1.25' }}>
                         {itemNameText}
                       </div>
-                      {itemSpecText && <div style={{ fontSize: '7.5pt', color: '#475569', marginTop: '1px', fontWeight: '600' }}>{itemSpecText}</div>}
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+                      {itemSpecText && <div style={{ fontSize: '7.2pt', color: '#475569', marginTop: '1px', fontWeight: '600' }}>{itemSpecText}</div>}
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
                         {item.itemId && (
-                          <span style={{ fontSize: '7.2pt', color: '#1e40af', background: '#eff6ff', padding: '1px 5px', borderRadius: '3px', fontFamily: 'monospace', fontWeight: '700', border: '1px solid #bfdbfe' }}>
+                          <span style={{ fontSize: '7pt', color: '#1e40af', background: '#eff6ff', padding: '1px 4px', borderRadius: '3px', fontFamily: 'monospace', fontWeight: '700', border: '1px solid #bfdbfe' }}>
                             Product Code: {item.itemId}
                           </span>
                         )}
                         {item.make && (
-                          <span style={{ fontSize: '7.2pt', color: '#64748b', fontWeight: '600' }}>
+                          <span style={{ fontSize: '7pt', color: '#64748b', fontWeight: '600' }}>
                             Make: {item.make}
                           </span>
                         )}
                       </div>
                     </td>
 
-                    <td className="center" style={{ fontWeight: '700', color: '#334155' }}>{item.hsnCode || '3215'}</td>
+                    <td className="center po-num" style={{ fontWeight: '700', color: '#334155' }}>{item.hsnCode || '3215'}</td>
                     <td className="right po-num" style={{ fontWeight: '700', color: '#0f172a' }}>{qty.toFixed(2)} Kg</td>
                     <td className="right po-num">{formatINR(rate)}</td>
                     <td className="right po-num" style={{ fontWeight: '700' }}>{formatINR(taxable)}</td>
-                    <td className="right po-num" style={{ fontSize: '7.5pt' }}>
-                      <span style={{ fontSize: '6.8pt', color: '#64748b', display: 'block' }}>{cgstRate}%</span>
+                    <td className="right po-num" style={{ fontSize: '7.4pt' }}>
+                      <span style={{ fontSize: '6.6pt', color: '#64748b', display: 'block', lineHeight: 1.1 }}>{cgstRate}%</span>
                       <span style={{ fontWeight: '700' }}>{formatINR(cgstAmt)}</span>
                     </td>
-                    <td className="right po-num" style={{ fontSize: '7.5pt' }}>
-                      <span style={{ fontSize: '6.8pt', color: '#64748b', display: 'block' }}>{sgstRate}%</span>
+                    <td className="right po-num" style={{ fontSize: '7.4pt' }}>
+                      <span style={{ fontSize: '6.6pt', color: '#64748b', display: 'block', lineHeight: 1.1 }}>{sgstRate}%</span>
                       <span style={{ fontWeight: '700' }}>{formatINR(sgstAmt)}</span>
                     </td>
                     <td className="right po-num" style={{ fontWeight: '800', color: '#0f172a' }}>{formatINR(totalAmt)}</td>
@@ -457,31 +490,66 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 type="button" 
                 onClick={handleAddTerm}
                 className="no-print"
-                style={{ background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: '7.5pt', cursor: 'pointer', fontWeight: '700', padding: '1px 6px', borderRadius: '3px' }}
+                style={{ 
+                  background: '#eff6ff', 
+                  border: '1px solid #bfdbfe', 
+                  color: '#1e40af', 
+                  fontSize: '7.2pt', 
+                  cursor: 'pointer', 
+                  fontWeight: '700', 
+                  padding: '2px 8px', 
+                  borderRadius: '3px' 
+                }}
               >
                 + Add Bullet
               </button>
             </div>
             <ol className="po-terms-list">
               {(currentTerms || []).map((term, idx) => (
-                <li key={idx}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input
-                      type="text"
+                <li key={idx} style={{ marginBottom: '2px' }}>
+                  <div className="no-print" style={{ display: 'flex', alignItems: 'flex-start', gap: '6px', width: '100%', boxSizing: 'border-box' }}>
+                    <textarea
+                      rows={Math.max(1, Math.ceil(term.length / 85))}
                       value={term}
                       onChange={(e) => handleUpdateTerm(idx, e.target.value)}
-                      className="no-border-print"
-                      style={{ width: '100%', background: 'transparent', border: 'none', fontSize: '7.8pt', color: '#334155', fontWeight: '500', padding: '1px 0' }}
+                      style={{ 
+                        flex: '1 1 0%', 
+                        minWidth: 0, 
+                        width: '100%',
+                        background: 'transparent', 
+                        border: '1px dashed #cbd5e1', 
+                        borderRadius: '3px',
+                        fontSize: '7.6pt', 
+                        color: '#334155', 
+                        fontWeight: '500', 
+                        padding: '2px 5px',
+                        resize: 'none',
+                        lineHeight: '1.25',
+                        fontFamily: 'inherit',
+                        boxSizing: 'border-box'
+                      }}
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveTerm(idx)}
-                      className="no-print"
-                      style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '10pt', fontWeight: 'bold' }}
+                      style={{ 
+                        flex: '0 0 auto',
+                        background: 'none', 
+                        border: 'none', 
+                        color: '#dc2626', 
+                        cursor: 'pointer', 
+                        fontSize: '11pt', 
+                        lineHeight: '1',
+                        fontWeight: 'bold',
+                        padding: '2px 4px'
+                      }}
                       title="Remove term bullet"
                     >
                       ×
                     </button>
+                  </div>
+                  <div className="po-print-term" style={{ display: 'none', wordBreak: 'break-word', fontSize: '7.5pt', lineHeight: '1.25', color: '#334155' }}>
+                    {term}
                   </div>
                 </li>
               ))}
