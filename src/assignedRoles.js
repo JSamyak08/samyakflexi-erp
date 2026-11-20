@@ -17,6 +17,7 @@ export const PLANT_ROLE_OPTIONS = [
   { role: 'QC Chemist', dept: 'Quality Control Lab' },
   { role: 'Purchase Manager', dept: 'Purchase & Commercial' },
   { role: 'Sales Manager', dept: 'Sales & Commercial' },
+  { role: 'Accounts Manager', dept: 'Accounts & Finance' },
   { role: 'Printing Operator', dept: 'Rotogravure Printing' },
   { role: 'Shop Floor Operator', dept: 'Lamination & Printing' },
 ];
@@ -29,7 +30,10 @@ export function normalizeAssignedRoles(roles) {
   const seen = new Set();
   const incoming = Array.isArray(roles) ? roles : [];
   incoming.forEach((value) => {
-    const role = typeof value === 'string' ? value.trim() : '';
+    let role = typeof value === 'string' ? value.trim() : '';
+    if (role.toLowerCase() === 'accounts' || role.toLowerCase() === 'accounts department') {
+      role = 'Accounts Manager';
+    }
     if (SYSTEM_ROLES.includes(role)) seen.add(role);
   });
   return SYSTEM_ROLES.filter((role) => seen.has(role));

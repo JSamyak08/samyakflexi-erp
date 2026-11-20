@@ -205,12 +205,24 @@ export default function SalesManagement({
   onSaveOcn,
   onLogAudit
 }) {
-  const isSalesAuthorized = useMemo(() => {
+  const isAccounts = useMemo(() => {
+    return anyAssignedRole(currentUser || userRole, (_role, lower) => lower.includes('account'));
+  }, [currentUser, userRole]);
+
+  const canWriteSales = useMemo(() => {
     if (!currentUser && !userRole) return true;
+    if (isAccounts) {
+      const isAdmin = anyAssignedRole(currentUser || userRole, (_role, lower) =>
+        lower.includes('admin') || lower.includes('director') || lower.includes('owner')
+      );
+      return isAdmin;
+    }
     return anyAssignedRole(currentUser || userRole, (_role, lower) =>
       lower.includes('admin') || lower.includes('sales') || lower.includes('plant') || lower.includes('director')
     );
-  }, [currentUser, userRole]);
+  }, [currentUser, userRole, isAccounts]);
+
+  const isSalesAuthorized = canWriteSales;
 
   const [quotations, setQuotations] = useState([]);
 
@@ -230,8 +242,12 @@ export default function SalesManagement({
 
   const [activeSubTab, setActiveSubTab] = useState(urlParams?.subTab === 'create' ? 'create' : 'list');
   useEffect(() => {
+    if (!canWriteSales && activeSubTab === 'create') {
+      setActiveSubTab('list');
+      return;
+    }
     if (urlParams?.subTab === 'create' || urlParams?.subTab === 'list') setActiveSubTab(urlParams.subTab);
-  }, [urlParams?.subTab]);
+  }, [urlParams?.subTab, canWriteSales, activeSubTab]);
   const chooseSalesTab = (subTab) => {
     setActiveSubTab(subTab);
     pushSlugState('sales', { section: subTab });
@@ -588,6 +604,10 @@ export default function SalesManagement({
 
   // Open Create Form — everything blank, no seed data
   const handleOpenCreateForm = () => {
+    if (!canWriteSales) {
+      alert("Permission Denied: Accounts role has read-only access to Sales & Quotations.");
+      return;
+    }
     setEditingQuotationId(null);
     setQuotationNo('');
     setRevisionNo(0);
@@ -634,6 +654,10 @@ export default function SalesManagement({
 
   // Open the same quotation so a rate or comment change updates that row.
   const handleOpenEditForm = (qtn) => {
+    if (!canWriteSales) {
+      alert("Permission Denied: Accounts role has read-only access to Sales & Quotations.");
+      return;
+    }
     setEditingQuotationId(qtn.id);
     setQuotationNo(qtn.quotationNo);
     setRevisionNo(qtn.revisionNo || 0);
@@ -668,6 +692,10 @@ export default function SalesManagement({
 
   // Open Amend Form
   const handleOpenAmendForm = (qtn) => {
+    if (!canWriteSales) {
+      alert("Permission Denied: Accounts role has read-only access to Sales & Quotations.");
+      return;
+    }
     setEditingQuotationId(null); // Create new revision
     setQuotationNo(qtn.quotationNo);
     const nextRev = (qtn.revisionNo || 0) + 1;
@@ -720,6 +748,10 @@ export default function SalesManagement({
   // Save Sales Quotation
   const handleSaveQuotation = async (e) => {
     e.preventDefault();
+    if (!canWriteSales) {
+      alert("Permission Denied: Accounts role has read-only access to Sales & Quotations.");
+      return;
+    }
     if (!selectedClientName || items.length === 0) {
       alert("Client Name and at least 1 Product Item are required!");
       return;
@@ -805,6 +837,10 @@ export default function SalesManagement({
 
   // Delete Sales Quotation
   const handleDeleteQuotation = async (id) => {
+    if (!canWriteSales) {
+      alert("Permission Denied: Accounts role has read-only access to Sales & Quotations.");
+      return;
+    }
     if (!window.confirm("Are you sure you want to delete this Sales Quotation?")) return;
     await deleteSalesQuotationFromSupabase(id);
     const updated = quotations.filter(q => q.id !== id);
@@ -813,6 +849,10 @@ export default function SalesManagement({
 
   // Open Interactive Convert to OCN Confirmation & Job Punching Modal
   const handleOpenOcnConvertModal = (qtn) => {
+    if (!canWriteSales) {
+      alert("Permission Denied: Accounts role has read-only access to Sales & Quotations.");
+      return;
+    }
     if (qtn.status && qtn.status.includes('Confirmed')) {
       alert(`Quotation ${qtn.quotationNo} is already converted to OCN ${qtn.ocnRefNo}!`);
       return;
@@ -1052,14 +1092,20 @@ export default function SalesManagement({
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button 
-              className="btn-primary" 
-              style={{ background: '#ffffff', color: '#0284c7', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px' }}
-              onClick={handleOpenCreateForm}
-            >
-              <Plus size={18} /> Create New Sales Quotation
-            </button>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            {canWriteSales ? (
+              <button 
+                className="btn-primary" 
+                style={{ background: '#ffffff', color: '#0284c7', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px' }}
+                onClick={handleOpenCreateForm}
+              >
+                <Plus size={18} /> Create New Sales Quotation
+              </button>
+            ) : (
+              <span style={{ background: 'rgba(255, 255, 255, 0.2)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.4)', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FileText size={16} /> Read-Only Access (Accounts)
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -1117,21 +1163,23 @@ export default function SalesManagement({
           <FileText size={18} /> Sales Quotations Directory ({(quotations || []).length})
         </button>
 
-        <button 
-          className={`btn-secondary ${activeSubTab === 'create' ? 'active' : ''}`}
-          style={{ 
-            padding: '10px 20px', 
-            fontSize: '0.9rem', 
-            fontWeight: '700',
-            borderBottom: activeSubTab === 'create' ? '3px solid var(--primary-brand)' : '3px solid transparent',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px'
-          }}
-          onClick={handleOpenCreateForm}
-        >
-          <Plus size={18} /> {editingQuotationId ? 'Edit Quotation' : 'Create Quotation'}
-        </button>
+        {canWriteSales && (
+          <button 
+            className={`btn-secondary ${activeSubTab === 'create' ? 'active' : ''}`}
+            style={{ 
+              padding: '10px 20px', 
+              fontSize: '0.9rem', 
+              fontWeight: '700',
+              borderBottom: activeSubTab === 'create' ? '3px solid var(--primary-brand)' : '3px solid transparent',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}
+            onClick={handleOpenCreateForm}
+          >
+            <Plus size={18} /> {editingQuotationId ? 'Edit Quotation' : 'Create Quotation'}
+          </button>
+        )}
       </div>
 
       {/* SUB-TAB 1: SALES QUOTATIONS DIRECTORY LIST */}
@@ -1190,7 +1238,7 @@ export default function SalesManagement({
                 {filteredQuotations.length === 0 ? (
                   <tr>
                     <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                      No sales quotations match your search. Click "Create New Sales Quotation" to add one.
+                      {canWriteSales ? 'No sales quotations match your search. Click "Create New Sales Quotation" to add one.' : 'No sales quotations found matching your search criteria.'}
                     </td>
                   </tr>
                 ) : (
@@ -1265,7 +1313,7 @@ export default function SalesManagement({
                             </button>
 
                             {/* Convert to OCN Button */}
-                            {!isConfirmed && (
+                            {!isConfirmed && canWriteSales && (
                               <button 
                                 className="btn-primary" 
                                 style={{ padding: '4px 10px', fontSize: '0.75rem', background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
@@ -1276,34 +1324,40 @@ export default function SalesManagement({
                               </button>
                             )}
 
-                            <button 
-                              className="btn-secondary" 
-                              style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                              onClick={() => handleOpenEditForm(qtn)}
-                              title="Edit this quotation"
-                            >
-                              <Edit3 size={13} /> Edit
-                            </button>
+                            {canWriteSales && (
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                                onClick={() => handleOpenEditForm(qtn)}
+                                title="Edit this quotation"
+                              >
+                                <Edit3 size={13} /> Edit
+                              </button>
+                            )}
 
                             {/* Amend Quotation Button */}
-                            <button 
-                              className="btn-secondary" 
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#0284c7', borderColor: '#bae6fd' }}
-                              onClick={() => handleOpenAmendForm(qtn)}
-                              title="Create Amended Revision (Rev 01, Rev 02)"
-                            >
-                              <RotateCcw size={13} /> Amend
-                            </button>
+                            {canWriteSales && (
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#0284c7', borderColor: '#bae6fd' }}
+                                onClick={() => handleOpenAmendForm(qtn)}
+                                title="Create Amended Revision (Rev 01, Rev 02)"
+                              >
+                                <RotateCcw size={13} /> Amend
+                              </button>
+                            )}
 
                             {/* Delete Quotation Button */}
-                            <button 
-                              className="btn-secondary" 
-                              style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#ef4444', borderColor: '#fca5a5' }}
-                              onClick={() => handleDeleteQuotation(qtn.id)}
-                              title="Delete Sales Quotation"
-                            >
-                              <Trash2 size={13} /> Delete
-                            </button>
+                            {canWriteSales && (
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#ef4444', borderColor: '#fca5a5' }}
+                                onClick={() => handleDeleteQuotation(qtn.id)}
+                                title="Delete Sales Quotation"
+                              >
+                                <Trash2 size={13} /> Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

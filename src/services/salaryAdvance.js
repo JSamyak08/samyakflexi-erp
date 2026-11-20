@@ -65,6 +65,18 @@ export function isExactAdminRole(role) {
   return rawRoleNames(role).some((name) => name.toLowerCase() === 'admin');
 }
 
+export function isAccountsRole(role) {
+  return rawRoleNames(role).some((name) => {
+    const lower = name.toLowerCase();
+    return lower.includes('account');
+  });
+}
+
+export function canDisburseSalaryAdvanceRole(role, { anonymous = false } = {}) {
+  if (anonymous) return false;
+  return isExactAdminRole(role) || isAccountsRole(role);
+}
+
 // Employee Management decisions. Approve, reject, revert, disbursal,
 // recovery, and payroll authorization are Admin only. A missing user is
 // not an approver. HR may still request an advance.
@@ -78,17 +90,18 @@ export function canApproveSalaryAdvanceRole(role, options) {
 }
 
 // The action cell. A requested advance waits for Admin. An unsettled
-// sibling still requires the Admin policy override. Disbursal and
-// recovery are the same Admin authorization, not data entry.
+// sibling still requires the Admin policy override. Disbursal is
+// authorized for Admin and Accounts.
 export function salaryAdvancePrimaryAction(adv, advances, role, { anonymous = false } = {}) {
   if (!adv) return 'history';
   const canDecide = canDecideEmployeeAuthorization(role, { anonymous });
+  const canDisburse = canDisburseSalaryAdvanceRole(role, { anonymous });
   const other = findUnsettledAdvance(advances, adv.employeeId, adv.id);
   if (adv.status === 'Requested' || adv.status === 'Pending Approval') {
     if (!canDecide) return 'awaiting-admin';
     return other ? 'approve-override' : 'approve';
   }
-  if (adv.status === 'Approved' && canDecide) return 'disburse';
+  if (adv.status === 'Approved' && (canDecide || canDisburse)) return 'disburse';
   if ((adv.status === 'Disbursed' || adv.status === 'Approved & Disbursed') && advanceRemainingBalance(adv) > 0 && canDecide) {
     return 'recover';
   }

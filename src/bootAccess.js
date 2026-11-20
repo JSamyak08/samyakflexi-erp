@@ -70,7 +70,12 @@ export function roleNeedsAny(matrix, roleOrRoles, moduleKeys) {
 
 export function canReadPayroll(roleOrRoles) {
   const roles = asRoleList(roleOrRoles);
-  return roles.includes('Admin') || roles.includes('HR & Payroll Manager');
+  return (
+    roles.includes('Admin') ||
+    roles.includes('HR & Payroll Manager') ||
+    roles.includes('Accounts Manager') ||
+    roles.includes('Accounts')
+  );
 }
 
 export const BOOT_NEEDS = {

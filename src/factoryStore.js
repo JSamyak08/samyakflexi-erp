@@ -1804,6 +1804,15 @@ export const generateFullRolePermissions = (allowAll = false) => {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "vendors" || m.key === "purchase_orders" || m.key === "inventory" || m.key === "material_indents" || m.key === "ink_management");
       } else if (r === "Sales Manager") {
         perm[r][m.key] = (m.key === "dashboard" || m.key === "sales" || m.key === "job_punching" || m.key === "orders" || m.key === "clients" || m.key === "dispatch");
+      } else if (r === "Accounts Manager" || r === "Accounts") {
+        perm[r][m.key] = (
+          m.key === "dashboard" ||
+          m.key === "inventory" ||
+          m.key === "vendors" ||
+          m.key === "dispatch" ||
+          m.key === "employees" ||
+          m.key === "sales"
+        );
       } else {
         perm[r][m.key] = allowAll;
       }
@@ -1828,6 +1837,9 @@ export const generateFullRolePermissions = (allowAll = false) => {
     perm[r].barcodes = BARCODE_REGISTRY_ROLES.includes(r);
     perm[r].print_run_analytics = PRINT_RUN_ANALYTICS_ROLES.includes(r);
   });
+  if (perm["Accounts Manager"]) {
+    perm["Accounts"] = { ...perm["Accounts Manager"] };
+  }
   return perm;
 };
 

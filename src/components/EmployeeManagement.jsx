@@ -72,7 +72,9 @@ import {
   buildDisbursedSalaryAdvance,
   canApproveSalaryAdvanceRole,
   canDecideEmployeeAuthorization,
+  canDisburseSalaryAdvanceRole,
   findUnsettledAdvance,
+  isAccountsRole,
   isExactAdminRole,
   isPayrollRecoverableAdvance,
   SALARY_ADVANCE_STATUS_FILTERS,
@@ -269,6 +271,18 @@ export default function EmployeeManagement({
   const isAdmin = useMemo(() => anyAssignedRole(actor, (_role, lower) =>
     lower === 'admin' || lower.includes('admin') || lower.includes('director') || lower.includes('owner')
   ), [actor]);
+
+  const isAccounts = useMemo(() => isAccountsRole(actor), [actor]);
+
+  const canDisburse = useMemo(
+    () => canDisburseSalaryAdvanceRole(actor, { anonymous: !currentUser && !userRole }),
+    [actor, currentUser, userRole]
+  );
+
+  const canManageHR = useMemo(() => {
+    if (isAccounts && !isAdmin) return false;
+    return true;
+  }, [isAccounts, isAdmin]);
 
   const advanceActorRole = actor || '';
   const isExactAdmin = useMemo(
@@ -736,6 +750,10 @@ export default function EmployeeManagement({
 
   // Open Onboard Modal
   const handleOpenOnboardModal = () => {
+    if (!canManageHR) {
+      alert('Read-only access: Accounts role is not authorized to onboard employees.');
+      return;
+    }
     setEditingEmployee(null);
     const nextCode = `EMP-${Math.floor(100 + Math.random() * 900)}`;
     setFormEmpCode(nextCode);
@@ -946,6 +964,10 @@ export default function EmployeeManagement({
 
   // Open Attendance Modal for an Employee
   const handleOpenAttendanceModal = (emp) => {
+    if (!canManageHR) {
+      alert('Read-only access: Accounts role is not authorized to mark attendance.');
+      return;
+    }
     setAttendanceFormError('');
     setMarkingAttendanceEmp(emp);
     const existing = (attendanceRecords || []).find(a => attendanceMatchesEmployeeDate(a, emp.id, attendanceDate));
@@ -1066,6 +1088,10 @@ export default function EmployeeManagement({
 
   // Bulk Mark All Present
   const handleBulkMarkPresent = async () => {
+    if (!canManageHR) {
+      alert('Read-only access: Accounts role is not authorized to mark attendance.');
+      return;
+    }
     const markedDate = attendanceCalendarDate(attendanceDate);
     if (!markedDate) {
       alert('Choose a valid attendance date before saving.');
@@ -1344,6 +1370,10 @@ export default function EmployeeManagement({
 
   // Open New Salary Advance Request Modal
   const handleOpenNewAdvanceModal = () => {
+    if (!canManageHR) {
+      alert('Read-only access: Accounts role is not authorized to request salary advances.');
+      return;
+    }
     setEditingAdvance(null);
     setAdvEmpId('');
     setAdvAmount('');
@@ -1509,7 +1539,7 @@ export default function EmployeeManagement({
   };
 
   const handleOpenDisburseModal = (adv) => {
-    if (!canApproveAdvance) {
+    if (!canDecide && !canDisburse) {
       alert('Authorization required to disburse salary advances!');
       return;
     }
@@ -1525,8 +1555,8 @@ export default function EmployeeManagement({
 
   const handleDisburseAdvanceSubmit = async (e) => {
     e.preventDefault();
-    if (!canDecide) {
-      alert('Only an Admin can disburse a salary advance.');
+    if (!canDecide && !canDisburse) {
+      alert('Authorization required to disburse salary advances!');
       return;
     }
     if (!disburseTargetAdvance) return;
@@ -1558,8 +1588,8 @@ export default function EmployeeManagement({
 
   // Open Payment Disbursal Modal with Advance Recovery Option
   const handleOpenPaymentModal = (row, emp) => {
-    if (!canDecide) {
-      alert('Only an Admin can authorize a salary payment.');
+    if (!canDecide && !canDisburse) {
+      alert('Authorization required to record a salary payment.');
       return;
     }
     setPaymentRowData(row);
@@ -1595,8 +1625,8 @@ export default function EmployeeManagement({
   // Save Salary Payment Record with Confirmed Advance Recovery
   const handleSaveSalaryPaymentSubmit = async (e) => {
     e.preventDefault();
-    if (!canDecide) {
-      alert('Only an Admin can authorize a salary payment.');
+    if (!canDecide && !canDisburse) {
+      alert('Authorization required to record a salary payment.');
       return;
     }
     if (!paymentRowData || !paymentEmpData) return;
@@ -1931,24 +1961,32 @@ export default function EmployeeManagement({
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button 
-            type="button" 
-            className="btn-secondary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
-            onClick={handleOpenNewAdvanceModal}
-          >
-            <Coins size={16} /> Request Salary Advance
-          </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {canManageHR ? (
+            <>
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                onClick={handleOpenNewAdvanceModal}
+              >
+                <Coins size={16} /> Request Salary Advance
+              </button>
 
-          <button 
-            type="button" 
-            className="btn-primary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
-            onClick={handleOpenOnboardModal}
-          >
-            <UserPlus size={16} /> Onboard New Employee
-          </button>
+              <button 
+                type="button" 
+                className="btn-primary" 
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '700' }}
+                onClick={handleOpenOnboardModal}
+              >
+                <UserPlus size={16} /> Onboard New Employee
+              </button>
+            </>
+          ) : (
+            <span style={{ fontSize: '0.78rem', fontWeight: '800', color: '#1e40af', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <ShieldCheck size={14} /> Accounts Disburse & Read-Only Access
+            </span>
+          )}
         </div>
       </div>
 
@@ -2266,16 +2304,18 @@ export default function EmployeeManagement({
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button 
-                type="button" 
-                className="btn-secondary" 
-                style={{ background: '#ecfdf5', color: '#059669', borderColor: '#a7f3d0', fontWeight: '800' }}
-                onClick={handleBulkMarkPresent}
-              >
-                <CheckCircle2 size={16} /> Mark All Active as Present
-              </button>
-            </div>
+            {canManageHR && (
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button 
+                  type="button" 
+                  className="btn-secondary" 
+                  style={{ background: '#ecfdf5', color: '#059669', borderColor: '#a7f3d0', fontWeight: '800' }}
+                  onClick={handleBulkMarkPresent}
+                >
+                  <CheckCircle2 size={16} /> Mark All Active as Present
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Daily Attendance Table */}
@@ -2411,7 +2451,7 @@ export default function EmployeeManagement({
                               <LockIcon size={12} style={{ color: '#64748b' }} /> Locked (Admin Only)
                             </span>
                           )
-                        ) : (
+                        ) : canManageHR ? (
                           <button 
                             type="button" 
                             className="btn-primary" 
@@ -2420,6 +2460,10 @@ export default function EmployeeManagement({
                           >
                             <Calendar size={13} /> Mark Att
                           </button>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+                            Unmarked
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -3272,14 +3316,16 @@ export default function EmployeeManagement({
               >
                 <Download size={16} /> Download CSV
               </button>
-              <button 
-                type="button" 
-                className="btn-primary" 
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-                onClick={handleOpenNewAdvanceModal}
-              >
-                <Plus size={16} /> New Advance Request
-              </button>
+              {canManageHR && (
+                <button 
+                  type="button" 
+                  className="btn-primary" 
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                  onClick={handleOpenNewAdvanceModal}
+                >
+                  <Plus size={16} /> New Advance Request
+                </button>
+              )}
             </div>
           </div>
 
@@ -3782,7 +3828,7 @@ export default function EmployeeManagement({
                               {matchingPayment.paymentMode} {matchingPayment.transactionReference ? `• Ref: ${matchingPayment.transactionReference}` : ''}
                             </div>
                           </div>
-                        ) : canDecide ? (
+                        ) : (canDecide || canDisburse) ? (
                           <button 
                             type="button" 
                             className="btn-primary"

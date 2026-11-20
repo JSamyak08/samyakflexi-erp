@@ -146,9 +146,11 @@ test('the plant role field is a multi-select of the FlexiERP roles', async () =>
       }),
     );
     const boxes = html.match(/type="checkbox"/g) || [];
-    assert.equal(boxes.length, 10);
+    assert.equal(boxes.length, 11);
     assert.match(html, /Store Manager/);
     assert.match(html, /Sales Manager/);
+    assert.match(html, /Accounts Manager/);
+    assert.match(html, /Accounts &amp; Finance/);
     assert.match(html, /Plant Manager/);
     assert.match(html, /Operations &amp; Plant/);
     assert.match(html, /QC Chemist/);

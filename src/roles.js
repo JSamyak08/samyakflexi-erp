@@ -13,6 +13,7 @@ export const SYSTEM_ROLES = [
   'QC Chemist',
   'Purchase Manager',
   'Sales Manager',
+  'Accounts Manager',
   'Printing Operator',
   'Shop Floor Operator',
 ];
