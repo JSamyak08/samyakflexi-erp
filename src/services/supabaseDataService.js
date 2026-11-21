@@ -4044,6 +4044,9 @@ export async function fetchSFGGoodsFromSupabase() {
           parentBarcode: extra.parentBarcode || extra.parentSfgBatchCode
         } : {}),
         isPrintedLot: Boolean(extra.isPrintedLot) || String(item.sfg_batch_code || '').startsWith('SFG-LOT-'),
+        isOpeningBalance: item.is_opening_balance === true || extra.isOpeningBalance === true,
+        openingBalanceEnteredBy: extra.openingBalanceEnteredBy || '',
+        openingBalanceEnteredAt: extra.openingBalanceEnteredAt || '',
         childRolls: Array.isArray(extra.childRolls) ? extra.childRolls : [],
         ...(Array.isArray(extra.runBalanceRolls) ? { runBalanceRolls: extra.runBalanceRolls } : {}),
         runConsumedRolls: Array.isArray(extra.runConsumedRolls) ? extra.runConsumedRolls : [],
@@ -4131,6 +4134,11 @@ export function buildSfgNotesEnvelope(item, overrides = {}) {
     notesBody.parentSfgBatchCode = item.parentSfgBatchCode;
     notesBody.parentBarcode = item.parentBarcode || item.parentSfgBatchCode;
   }
+  if (item?.isOpeningBalance === true) {
+    notesBody.isOpeningBalance = true;
+    notesBody.openingBalanceEnteredBy = item.openingBalanceEnteredBy || '';
+    notesBody.openingBalanceEnteredAt = item.openingBalanceEnteredAt || '';
+  }
   return JSON.stringify(notesBody);
 }
 
@@ -4198,6 +4206,7 @@ export async function saveSFGGoodToSupabase(item) {
     production_date: toDatabaseDate(item.productionDate),
     status: computedStatus,
     notes: notesEnvelope,
+    is_opening_balance: item.isOpeningBalance === true,
     updated_at: new Date().toISOString()
   };
   // The store list sorts on this same stamp. Keep it on the in-memory row
@@ -4221,7 +4230,12 @@ export async function saveSFGGoodToSupabase(item) {
     const missingFn = /save_printing_sfg_lot|schema cache|could not find the function|PGRST202/i.test(rpcMessage);
     if (!missingFn) handleSupabaseError(rpcError, 'sfg_goods');
   }
-  const { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
+  let { error } = await supabase.from('sfg_goods').upsert(payload, { onConflict: 'sfg_batch_code' });
+  if (error && /is_opening_balance/i.test(`${error.message || ''} ${error.details || ''}`)) {
+    const withoutFlag = { ...payload };
+    delete withoutFlag.is_opening_balance;
+    ({ error } = await supabase.from('sfg_goods').upsert(withoutFlag, { onConflict: 'sfg_batch_code' }));
+  }
   if (error) {
     handleSupabaseError(error, 'sfg_goods');
   }
