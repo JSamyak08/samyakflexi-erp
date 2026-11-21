@@ -222,6 +222,67 @@
   overflow-wrap: break-word;
 }
 
+@media screen and (max-width: 768px) {
+  .totals-and-words-grid,
+  #printable-ocn .totals-and-words-grid,
+  #printable-po .totals-and-words-grid,
+  .printable-document .totals-and-words-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    padding: 10px 12px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  .words-block,
+  #printable-ocn .words-block,
+  #printable-po .words-block,
+  .printable-document .words-block {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .word-line,
+  #printable-ocn .word-line,
+  #printable-po .word-line,
+  .printable-document .word-line {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 2px !important;
+    width: 100% !important;
+  }
+
+  .word-label,
+  #printable-ocn .word-label,
+  #printable-po .word-label,
+  .printable-document .word-label {
+    font-weight: 800 !important;
+    color: #1e293b !important;
+    font-size: 8pt !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.03em !important;
+  }
+
+  .word-value,
+  #printable-ocn .word-value,
+  #printable-po .word-value,
+  .printable-document .word-value {
+    font-weight: 600 !important;
+    color: #0f172a !important;
+    font-size: 8.5pt !important;
+    line-height: 1.4 !important;
+    word-break: normal !important;
+    overflow-wrap: break-word !important;
+    white-space: normal !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+}
+
 .totals-summary-table {
   font-size: 8.5pt;
 }

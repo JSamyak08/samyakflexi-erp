@@ -737,7 +737,7 @@ export default function JobPunchingForm({
             </div>
           </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) 420px', gap: '24px' }}>
+      <div className="job-punching-split-layout">
         {/* Left Side: Job Entry Form */}
         <div className="glass-panel" style={{ padding: '24px' }}>
           <h3 style={{ fontSize: '1.1rem', fontWeight: '600', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1143,7 +1143,7 @@ export default function JobPunchingForm({
               </span>
             </div>
 
-            <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: '14px' }}>
+            <div className="job-punching-form-grid-2">
               {/* Liquid Ink Block */}
               <div style={{ background: '#ffffff', padding: '12px', borderRadius: '8px', border: '1px solid #ddd6fe' }}>
                 <label style={{ fontSize: '0.8rem', fontWeight: '800', color: '#6d28d9', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
@@ -1224,104 +1224,110 @@ export default function JobPunchingForm({
                 : (DEFAULT_DAILY_RATES[layer.filmType] || 130);
 
               return (
-                <div key={layer.id} className="layer-row-card" style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '32px', flexShrink: 0 }}>
-                    <span className="layer-badge">L{index + 1}</span>
-                  </div>
+                <div key={layer.id} className="layer-row-card">
+                  {/* Top Bar on Mobile (Badge + Substrate Select + GSM summary + Delete) */}
+                  <div className="layer-row-top-bar">
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '32px', flexShrink: 0 }}>
+                      <span className="layer-badge">L{index + 1}</span>
+                    </div>
 
-                  <div style={{ flex: '2 1 120px', minWidth: 0 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Film Substrate</label>
-                    <SearchableSelect 
-                      className="form-control" 
-                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
-                      value={layer.filmType}
-                      onChange={e => {
-                        const newType = e.target.value;
-                        const newDefWidth = isLDFilm(newType) ? pWidth + 5 : pWidth;
-                        const oldDefWidth = defaultWidth;
-                        const currentW = layer.widthMm;
-                        const shouldResetWidth = (currentW === undefined || currentW === '' || currentW === null || parseFloat(currentW) === oldDefWidth);
-                        updateLayer(layer.id, 'filmType', newType);
-                        if (shouldResetWidth) {
-                          updateLayer(layer.id, 'widthMm', newDefWidth);
-                        }
-                      }}
-                    >
-                      {Object.keys(FILM_DENSITIES).map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </SearchableSelect>
-                  </div>
-
-                  <div style={{ flex: '1 1 70px', minWidth: 0 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Micron (µ) *</label>
-                    <input 
-                      type="number" 
-                      className="form-control" 
-                      style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
-                      value={layer.micron}
-                      onChange={e => updateLayer(layer.id, 'micron', e.target.value)}
-                      required
-                    />
-                  </div>
-
-                  <div style={{ flex: '1.2 1 90px', minWidth: 0 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Film Width (mm)</label>
-                    <input 
-                      type="number" 
-                      className="form-control" 
-                      style={{ padding: '6px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#1e40af', width: '100%', boxSizing: 'border-box' }}
-                      value={layer.widthMm ?? layerWidth}
-                      onChange={e => updateLayer(layer.id, 'widthMm', e.target.value)}
-                      placeholder={`${defaultWidth}`}
-                      title="Editable Film Width (mm). Pre-filled with Print Width (+5mm for LD films)."
-                    />
-                  </div>
-
-                  {isMetalloceneEligibleFilm(layer.filmType) && (
-                    <div style={{ flex: '1.2 1 95px', minWidth: 0 }}>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Metallocene %</label>
-                      <SearchableSelect
-                        className="form-control"
+                    <div className="layer-substrate-wrapper" style={{ flex: '2 1 120px', minWidth: 0 }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Film Substrate</label>
+                      <SearchableSelect 
+                        className="form-control" 
                         style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
-                        value={layer.metallocenePct || ''}
-                        onChange={e => updateLayer(layer.id, 'metallocenePct', e.target.value)}
+                        value={layer.filmType}
+                        onChange={e => {
+                          const newType = e.target.value;
+                          const newDefWidth = isLDFilm(newType) ? pWidth + 5 : pWidth;
+                          const oldDefWidth = defaultWidth;
+                          const currentW = layer.widthMm;
+                          const shouldResetWidth = (currentW === undefined || currentW === '' || currentW === null || parseFloat(currentW) === oldDefWidth);
+                          updateLayer(layer.id, 'filmType', newType);
+                          if (shouldResetWidth) {
+                            updateLayer(layer.id, 'widthMm', newDefWidth);
+                          }
+                        }}
                       >
-                        <option value="">-- % --</option>
-                        {METALLOCENE_OPTIONS.map(opt => (
-                          <option key={opt} value={opt}>{opt}</option>
+                        {Object.keys(FILM_DENSITIES).map(type => (
+                          <option key={type} value={type}>{type}</option>
                         ))}
                       </SearchableSelect>
                     </div>
-                  )}
 
-                  <div style={{ flex: '1.2 1 85px', minWidth: 0 }}>
-                    <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Rate (₹/kg) *</label>
-                    <input 
-                      type="number" 
-                      step="any"
-                      className="form-control" 
-                      style={{ padding: '6px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#047857', width: '100%', boxSizing: 'border-box' }}
-                      placeholder={`${DEFAULT_DAILY_RATES[layer.filmType] || 125}`}
-                      value={layer.rate ?? ''}
-                      onChange={e => updateLayer(layer.id, 'rate', e.target.value)}
-                      required
-                    />
+                    <div className="layer-gsm-wrapper" style={{ flexShrink: 0, minWidth: '85px', fontSize: '0.75rem', textAlign: 'right', lineHeight: '1.3' }}>
+                      <span style={{ display: 'block', color: 'var(--text-secondary)' }}>
+                        {Math.abs(layerWidth - pWidth) > 0.1 ? `Base: ${baseGsm.toFixed(1)}` : `Density: ${density}`}
+                      </span>
+                      <span style={{ display: 'block', color: 'var(--accent-color)', fontWeight: '700' }} title={`Base GSM: ${baseGsm.toFixed(2)} g/m² × (${layerWidth}/${pWidth}) = ${effectiveGsm.toFixed(2)} g/m²`}>
+                        {effectiveGsm.toFixed(2)} GSM
+                      </span>
+                    </div>
+
+                    <div className="layer-delete-wrapper" style={{ flexShrink: 0 }}>
+                      <button className="icon-btn-danger" style={{ padding: '6px' }} onClick={() => removeLayer(layer.id)} aria-label="Delete layer" title="Delete Layer">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
 
-                  <div style={{ flexShrink: 0, width: '90px', fontSize: '0.75rem', textAlign: 'right', lineHeight: '1.3' }}>
-                    <span style={{ display: 'block', color: 'var(--text-secondary)' }}>
-                      {Math.abs(layerWidth - pWidth) > 0.1 ? `Base: ${baseGsm.toFixed(1)}` : `Density: ${density}`}
-                    </span>
-                    <span style={{ display: 'block', color: 'var(--accent-color)', fontWeight: '700' }} title={`Base GSM: ${baseGsm.toFixed(2)} g/m² × (${layerWidth}/${pWidth}) = ${effectiveGsm.toFixed(2)} g/m²`}>
-                      {effectiveGsm.toFixed(2)} GSM
-                    </span>
-                  </div>
+                  {/* Inputs Grid (Micron, Width, Metallocene, Rate) */}
+                  <div className="layer-row-inputs-grid">
+                    <div style={{ flex: '1 1 70px', minWidth: 0 }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Micron (µ) *</label>
+                      <input 
+                        type="number" 
+                        className="form-control" 
+                        style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                        value={layer.micron}
+                        onChange={e => updateLayer(layer.id, 'micron', e.target.value)}
+                        required
+                      />
+                    </div>
 
-                  <div style={{ flexShrink: 0 }}>
-                    <button className="icon-btn-danger" style={{ padding: '6px' }} onClick={() => removeLayer(layer.id)}>
-                      <Trash2 size={16} />
-                    </button>
+                    <div style={{ flex: '1.2 1 90px', minWidth: 0 }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Film Width (mm)</label>
+                      <input 
+                        type="number" 
+                        className="form-control" 
+                        style={{ padding: '6px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#1e40af', width: '100%', boxSizing: 'border-box' }}
+                        value={layer.widthMm ?? layerWidth}
+                        onChange={e => updateLayer(layer.id, 'widthMm', e.target.value)}
+                        placeholder={`${defaultWidth}`}
+                        title="Editable Film Width (mm). Pre-filled with Print Width (+5mm for LD films)."
+                      />
+                    </div>
+
+                    {isMetalloceneEligibleFilm(layer.filmType) && (
+                      <div style={{ flex: '1.2 1 95px', minWidth: 0 }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Metallocene %</label>
+                        <SearchableSelect
+                          className="form-control"
+                          style={{ padding: '6px 8px', fontSize: '0.85rem', width: '100%', boxSizing: 'border-box' }}
+                          value={layer.metallocenePct || ''}
+                          onChange={e => updateLayer(layer.id, 'metallocenePct', e.target.value)}
+                        >
+                          <option value="">-- % --</option>
+                          {METALLOCENE_OPTIONS.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </SearchableSelect>
+                      </div>
+                    )}
+
+                    <div style={{ flex: '1.2 1 85px', minWidth: 0 }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap' }}>Rate (₹/kg) *</label>
+                      <input 
+                        type="number" 
+                        step="any"
+                        className="form-control" 
+                        style={{ padding: '6px 8px', fontSize: '0.85rem', fontWeight: '700', color: '#047857', width: '100%', boxSizing: 'border-box' }}
+                        placeholder={`${DEFAULT_DAILY_RATES[layer.filmType] || 125}`}
+                        value={layer.rate ?? ''}
+                        onChange={e => updateLayer(layer.id, 'rate', e.target.value)}
+                        required
+                      />
+                    </div>
                   </div>
                 </div>
               );

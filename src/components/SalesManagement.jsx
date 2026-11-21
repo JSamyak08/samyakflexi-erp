@@ -1713,7 +1713,11 @@ export default function SalesManagement({
               </button>
             </div>
 
-            <div style={{ overflowX: 'auto', width: '100%', maxWidth: '100%', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff' }}>
+            <div className="mobile-table-scroll-hint no-print">
+              <span>↔ Swipe table horizontally to view and edit all columns</span>
+            </div>
+
+            <div style={{ overflowX: 'auto', width: '100%', maxWidth: '100%', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', WebkitOverflowScrolling: 'touch' }}>
               <table className="data-table" style={{ width: '100%', minWidth: '920px', margin: 0 }}>
                 <thead>
                   <tr style={{ background: '#f8fafc' }}>
@@ -2182,11 +2186,11 @@ export default function SalesManagement({
               )}
 
               {/* Add Custom Clause Bullet */}
-              <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', gap: '8px', marginTop: '12px', flexWrap: 'wrap' }}>
                 <input 
                   type="text" 
                   className="form-control"
-                  style={{ fontSize: '0.82rem' }}
+                  style={{ fontSize: '0.82rem', flex: '1 1 200px', minWidth: 0 }}
                   placeholder="Type additional custom term/clause bullet here..."
                   value={customTermInput}
                   onChange={e => setCustomTermInput(e.target.value)}
@@ -2195,7 +2199,7 @@ export default function SalesManagement({
                 <button 
                   type="button"
                   className="btn-secondary"
-                  style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', padding: '6px 12px', fontWeight: '700' }}
+                  style={{ whiteSpace: 'nowrap', fontSize: '0.78rem', padding: '6px 14px', fontWeight: '700', flex: '0 0 auto' }}
                   onClick={handleAddCustomTerm}
                 >
                   <Plus size={14} /> Add Bullet

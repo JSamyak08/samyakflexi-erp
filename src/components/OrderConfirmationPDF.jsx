@@ -146,22 +146,26 @@ export default function OrderConfirmationPDF({ ocn, calculationData: propCalc, o
   return (
     <div className="pdf-modal-overlay">
       <div className="pdf-modal-toolbar no-print">
-        <button className="btn-secondary" onClick={onClose}>
+        <button className="btn-secondary" onClick={onClose} style={{ whiteSpace: 'nowrap' }}>
           <ArrowLeft size={16} /> Close & Return
         </button>
         {onAmendOcn && ocn && (
           <button 
             type="button"
             className="btn-secondary" 
-            style={{ color: '#b45309', borderColor: '#fde68a', background: '#fffbeb', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            style={{ color: '#b45309', borderColor: '#fde68a', background: '#fffbeb', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}
             onClick={() => onAmendOcn(ocn)}
           >
             <Edit3 size={15} /> Amend OCN ({revLabel})
           </button>
         )}
-        <button className="btn-primary" onClick={() => printWithPdfName(ocnFileBase)}>
+        <button className="btn-primary" onClick={() => printWithPdfName(ocnFileBase)} style={{ whiteSpace: 'nowrap' }}>
           <Printer size={16} /> Print OCN Note PDF
         </button>
+      </div>
+
+      <div className="mobile-table-scroll-hint no-print" style={{ margin: '0 auto 10px auto', width: '100%', maxWidth: '210mm' }}>
+        <span>📱 Swipe horizontally to view full document layout</span>
       </div>
 
       <div className="pdf-paper-container" style={{ background: '#ffffff', height: 'auto', boxSizing: 'border-box' }}>

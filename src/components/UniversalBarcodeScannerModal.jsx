@@ -1015,9 +1015,9 @@ export default function UniversalBarcodeScannerModal({
             >
               <ScanBarcode size={22} />
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: '#ffffff' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h3 style={{ margin: 0, fontSize: 'clamp(0.95rem, 3.5vw, 1.15rem)', fontWeight: '800', color: '#ffffff', lineHeight: 1.25 }}>
                   Universal Barcode & 2D QR Inspector
                 </h3>
                 <span 
@@ -1030,13 +1030,15 @@ export default function UniversalBarcodeScannerModal({
                     borderRadius: '999px',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: '4px'
+                    gap: '4px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
                   }}
                 >
                   <LockIcon size={10} /> READ-ONLY CHECK
                 </span>
               </div>
-              <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', marginTop: '3px', lineHeight: 1.3 }}>
                 Scan with handheld scanner gun, mobile camera, or paste barcode to inspect linked record details.
               </p>
             </div>
@@ -1067,9 +1069,9 @@ export default function UniversalBarcodeScannerModal({
         </div>
 
         {/* Search & Camera Input Bar */}
-        <div style={{ padding: '16px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '10px' }}>
-            <div style={{ position: 'relative', flex: 1 }}>
+        <div style={{ padding: '16px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+          <form onSubmit={handleSearchSubmit} className="barcode-scanner-form">
+            <div className="barcode-search-input-wrap" style={{ position: 'relative', flex: 1, minWidth: 0 }}>
               <Search 
                 size={18} 
                 style={{ 
@@ -1085,7 +1087,7 @@ export default function UniversalBarcodeScannerModal({
                 type="text"
                 value={barcodeInput}
                 onChange={e => setBarcodeInput(e.target.value)}
-                placeholder="Scan / Type Barcode ID, Batch No, OCN, Cylinder SKU, GRN, Item Code..."
+                placeholder="Scan or enter Barcode ID, Batch, OCN, GRN..."
                 style={{
                   width: '100%',
                   padding: '12px 40px 12px 42px',
@@ -1118,39 +1120,41 @@ export default function UniversalBarcodeScannerModal({
               )}
             </div>
 
-            <button
-              type="submit"
-              className="btn-primary"
-              style={{
-                padding: '0 20px',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: '700',
-                fontSize: '0.9rem'
-              }}
-            >
-              <Search size={16} /> Inspect
-            </button>
+            <div className="barcode-scanner-actions" style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="submit"
+                className="btn-primary"
+                style={{
+                  padding: '0 18px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontWeight: '700',
+                  fontSize: '0.9rem'
+                }}
+              >
+                <Search size={16} /> Inspect
+              </button>
 
-            <button
-              type="button"
-              onClick={cameraActive ? stopCamera : () => startCamera(readRememberedCameraId(cameraStorage()))}
-              className="btn-secondary"
-              style={{
-                padding: '0 16px',
-                borderRadius: '10px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontWeight: '600',
-                fontSize: '0.88rem'
-              }}
-            >
-              {cameraActive ? <CameraOff size={16} /> : <Camera size={16} />}
-              {cameraActive ? 'Stop' : 'Camera'}
-            </button>
+              <button
+                type="button"
+                onClick={cameraActive ? stopCamera : () => startCamera(readRememberedCameraId(cameraStorage()))}
+                className="btn-secondary"
+                style={{
+                  padding: '0 16px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontWeight: '600',
+                  fontSize: '0.88rem'
+                }}
+              >
+                {cameraActive ? <CameraOff size={16} /> : <Camera size={16} />}
+                {cameraActive ? 'Stop' : 'Camera'}
+              </button>
+            </div>
           </form>
 
           {/* Camera Viewport (if active) */}
