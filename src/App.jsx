@@ -258,6 +258,33 @@ import './index.css';
 // Immediately sanitize localStorage on boot
 initSafeStorage();
 
+function getMobileTabTitle(activeTab, urlParams = {}) {
+  switch (activeTab) {
+    case 'dashboard': return 'Dashboard';
+    case 'sales': return 'Sales & Quotes';
+    case 'scrap_analytics': return 'Scrap & Wastage';
+    case 'job_punching': return (urlParams?.view === 'ocns' || urlParams?.section === 'ocns') ? 'OCN Orders' : 'Job Punching';
+    case 'orders': return 'Orders';
+    case 'job_masters': return 'Job Masters';
+    case 'clients': return 'Clients';
+    case 'production': return 'Live Floor';
+    case 'cylinders': return 'Cylinders';
+    case 'inventory': return 'Inventory';
+    case 'purchase_orders': return 'Purchase Orders';
+    case 'vendors': return 'Vendors';
+    case 'dispatch': return 'Dispatch';
+    case 'maintenance': return 'Maintenance';
+    case 'employees': return 'Employees';
+    case 'users': return 'User Access';
+    case 'supabase': return 'Database Admin';
+    case 'settings': return 'Settings';
+    case 'changelog': return 'Changelog';
+    case 'bug_reports': return 'Bug Reports';
+    case 'system_audit': return 'Audit Logs';
+    default: return 'Overview';
+  }
+}
+
 
 const e2eRoleAtBoot = (() => {
   if (typeof window === 'undefined' || import.meta.env.VITE_E2E_STUB_AUTH !== '1') return '';
@@ -5230,32 +5257,7 @@ export default function App() {
   };
   const moduleOpen = !routeInfo.unknown && isTabAllowed(activeTab);
 
-  const mobileTabTitle = useMemo(() => {
-    switch (activeTab) {
-      case 'dashboard': return 'Dashboard';
-      case 'sales': return 'Sales & Quotes';
-      case 'scrap_analytics': return 'Scrap & Wastage';
-      case 'job_punching': return (urlParams.view === 'ocns' || urlParams.section === 'ocns') ? 'OCN Orders' : 'Job Punching';
-      case 'orders': return 'Orders';
-      case 'job_masters': return 'Job Masters';
-      case 'clients': return 'Clients';
-      case 'production': return 'Live Floor';
-      case 'cylinders': return 'Cylinders';
-      case 'inventory': return 'Inventory';
-      case 'purchase_orders': return 'Purchase Orders';
-      case 'vendors': return 'Vendors';
-      case 'dispatch': return 'Dispatch';
-      case 'maintenance': return 'Maintenance';
-      case 'employees': return 'Employees';
-      case 'users': return 'User Access';
-      case 'supabase': return 'Database Admin';
-      case 'settings': return 'Settings';
-      case 'changelog': return 'Changelog';
-      case 'bug_reports': return 'Bug Reports';
-      case 'system_audit': return 'Audit Logs';
-      default: return 'Overview';
-    }
-  }, [activeTab, urlParams]);
+  const mobileTabTitle = getMobileTabTitle(activeTab, urlParams);
 
   return (
     <div

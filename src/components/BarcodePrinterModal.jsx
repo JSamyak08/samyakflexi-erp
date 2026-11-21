@@ -25,8 +25,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
   const rootRef = useRef(null);
   const letterhead = loadLetterhead();
   useModalDismiss(rootRef, onClose, !letterhead?.error);
-  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
-  const COMPANY_DETAILS = letterhead.company;
+  const COMPANY_DETAILS = letterhead.company || {};
 
   const activeRoll = rollList[activeIndex] || rollList[0];
 
@@ -50,6 +49,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
 
   // Enter records the next inward roll. A reprint does not. Ctrl/Cmd+P prints.
   useEffect(() => {
+    if (letterhead.error) return;
     const handleKeyDown = (e) => {
       if (!reprint && e.key === 'Enter') {
         e.preventDefault();
@@ -61,17 +61,20 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [reprint, onRecordNext, onClose, rollList, COMPANY_DETAILS, inventory, inks, inventoryRolls]);
+  }, [reprint, onRecordNext, onClose, rollList, COMPANY_DETAILS, inventory, inks, inventoryRolls, letterhead.error]);
 
   // Auto-trigger instant isolated iframe thermal print command when requested
   useEffect(() => {
+    if (letterhead.error) return;
     if (autoPrint && rollList.length > 0) {
       const timer = setTimeout(() => {
         handlePrint();
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [autoPrint, rollList.length]);
+  }, [autoPrint, rollList.length, letterhead.error]);
+
+  if (letterhead.error) return <CompanyProfileNotice message={letterhead.error} onClose={onClose} />;
 
   const renderSingleStickerPreview = (source) => {
     const r = inheritBalanceDetails(source, { rolls: inventoryRolls, inventory });

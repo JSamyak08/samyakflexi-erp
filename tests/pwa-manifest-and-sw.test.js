@@ -113,4 +113,14 @@ test('PWA client registration and UI components are authored', () => {
   const appContent = fs.readFileSync(appPath, 'utf8');
   assert.ok(appContent.includes('mobile-sidebar-close-btn'), 'App sidebar must have mobile dismiss close button');
   assert.ok(appContent.includes('mobile-header-tab-pill'), 'App mobile header must show active tab pill badge');
+
+  // Verify no React hooks are placed after early returns in App.jsx (prevents Minified React Error #310)
+  const bootIndex = appContent.indexOf('if (showBootLoader)');
+  assert.ok(bootIndex > 0, 'showBootLoader must exist');
+  const codeAfterBoot = appContent.slice(bootIndex);
+  const forbiddenHooks = ['useMemo(', 'useState(', 'useEffect(', 'useCallback(', 'useRef('];
+  for (const h of forbiddenHooks) {
+    assert.equal(codeAfterBoot.includes(h), false, `No ${h} hooks should be placed after early returns in App.jsx`);
+  }
+  assert.ok(appContent.includes('getMobileTabTitle('), 'App must call pure getMobileTabTitle function without hooks');
 });
