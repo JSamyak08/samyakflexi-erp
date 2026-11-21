@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 import { recordsAfterDataLoad } from '../src/utils/loadedRecords.js';
 import { reportBackgroundFailure, resetFailureToasts, showFailureToast } from '../src/utils/backgroundFailure.js';
 
 const root = new URL('..', import.meta.url);
+const rootPath = fileURLToPath(root);
 const migrationSql = fs.readFileSync(new URL('../supabase/migrations/20261112130000_allocate_order_id.sql', import.meta.url), 'utf8');
 const repairSql = fs.readFileSync(new URL('../supabase/manual/20261112_restore_ord_2026_101_and_relink.sql', import.meta.url), 'utf8');
 
@@ -45,7 +47,7 @@ test('a record containing the old dummy keywords survives a data load', () => {
 });
 
 test('page load does not delete records and order numbers are not taken from the browser', () => {
-  const srcDir = path.join(root.pathname, 'src');
+  const srcDir = path.join(rootPath, 'src');
   const files = walk(srcDir);
   for (const file of files) {
     const text = fs.readFileSync(file, 'utf8');

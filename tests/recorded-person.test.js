@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
@@ -178,7 +179,7 @@ test('the directory user wins when an employee shares the same email', () => {
 });
 
 test('production screens no longer hardcode the dummy signature names', () => {
-  const root = new URL('../src', import.meta.url);
+  const root = fileURLToPath(new URL('../src', import.meta.url));
   const banned = /Virendra Singh|Rajesh Sharma|Dilip Joshi|Store Mgr Dilip/;
   const hits = [];
   const walk = (dir) => {
@@ -190,10 +191,10 @@ test('production screens no longer hardcode the dummy signature names', () => {
       }
       if (!/\.(js|jsx)$/.test(entry)) continue;
       const text = fs.readFileSync(full, 'utf8');
-      if (banned.test(text)) hits.push(path.relative(root.pathname, full));
+      if (banned.test(text)) hits.push(path.relative(root, full));
     }
   };
-  walk(root.pathname);
+  walk(root);
   assert.deepEqual(hits, []);
 
   const indents = fs.readFileSync(new URL('../src/components/ConsumablesAndIndents.jsx', import.meta.url), 'utf8');

@@ -104,8 +104,7 @@ import ChangelogScreen from './components/ChangelogScreen';
 import InkManagement from './components/InkManagement';
 import DispatchManagement from './components/DispatchManagement';
 import SFGStoreManagement from './components/SFGStoreManagement';
-import DeadlineReminderBanner from './components/DeadlineReminderBanner';
-import PrintingDeadlineSummaryCard from './components/PrintingDeadlineSummaryCard';
+import ExecutiveAlertsSection from './components/ExecutiveAlertsSection';
 import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
@@ -6078,259 +6077,7 @@ export default function App() {
             />
           </div>
         ) : moduleOpen && activeTab === 'dashboard' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-            {!printingDeadlineBannerHidden && (
-              <DeadlineReminderBanner
-                reminders={printingDeadlineReminders}
-                leadDays={printingLeadDays}
-                userKey={currentUser?.id || currentUser?.email || ''}
-                canPlanPrinting={isTabAllowed('printing_scheduler')}
-                onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
-                onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
-                onDismiss={() => setPrintingDeadlineBannerHidden(true)}
-              />
-            )}
-            {canManageOrderDeadline(currentUser) && (
-              <PrintingDeadlineSummaryCard
-                summary={deadlineSummary}
-                leadDays={printingLeadDays}
-                userKey={currentUser?.id || currentUser?.email || ''}
-                onOpenOrder={(order) => handleTabChange('orders', order?.id ? { id: order.id } : {})}
-              />
-            )}
-            {/* Redesigned Executive Operational Alerts Hub */}
-            {(delayedOrdersCount > 0 || (lowStockInks || []).length > 0) && (
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: (delayedOrdersCount > 0 && (lowStockInks || []).length > 0) ? 'repeat(auto-fit, minmax(420px, 1fr))' : '1fr',
-                gap: '16px'
-              }}>
-                {/* Delayed Orders Alert Card */}
-                {delayedOrdersCount > 0 && (
-                  <div style={{
-                    background: 'linear-gradient(135deg, #ffffff 0%, #fffbfb 100%)',
-                    border: '1px solid #fecaca',
-                    borderLeft: '4px solid #dc2626',
-                    borderRadius: '12px',
-                    padding: '18px 20px',
-                    boxShadow: '0 2px 8px -2px rgba(220, 38, 38, 0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '14px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '38px',
-                          height: '38px',
-                          borderRadius: '10px',
-                          background: '#fee2e2',
-                          color: '#dc2626',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0
-                        }}>
-                          <AlertTriangle size={20} />
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <h3 style={{ fontSize: '0.98rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                              Delivery Deadline Overdue
-                            </h3>
-                            <span style={{
-                              background: '#fee2e2',
-                              color: '#dc2626',
-                              border: '1px solid #fca5a5',
-                              fontSize: '0.72rem',
-                              fontWeight: '800',
-                              padding: '2px 8px',
-                              borderRadius: '9999px',
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.04em'
-                            }}>
-                              {delayedOrdersCount} {delayedOrdersCount === 1 ? 'Order' : 'Orders'} Delayed
-                            </span>
-                          </div>
-                          <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '3px', margin: 0, lineHeight: '1.4' }}>
-                            Target delivery deadlines have lapsed. Expedite scheduling and raw material issuance.
-                          </p>
-                        </div>
-                      </div>
-                      <button 
-                        className="btn-primary"
-                        onClick={() => handleTabChange('orders')}
-                        style={{
-                          background: '#dc2626',
-                          borderColor: '#dc2626',
-                          padding: '7px 14px',
-                          fontSize: '0.82rem',
-                          fontWeight: '700',
-                          whiteSpace: 'nowrap',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)',
-                          borderRadius: '6px'
-                        }}
-                      >
-                        Manage Delayed Orders <ArrowRight size={14} />
-                      </button>
-                    </div>
-
-                    {/* Discrete chips of impacted orders */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingTop: '6px', borderTop: '1px dashed #fecaca' }}>
-                      {delayedOrders.slice(0, 3).map(o => (
-                        <span 
-                          key={o.id}
-                          onClick={() => handleTabChange('orders', o?.id ? { id: o.id } : {})}
-                          style={{
-                            background: '#fff1f2',
-                            border: '1px solid #fecdd3',
-                            color: '#9f1239',
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                          title={`Click to view ${o.jobName}`}
-                        >
-                          <strong>{o.id}</strong>: {o.jobName}
-                          <span style={{ color: '#e11d48', fontSize: '0.7rem' }}>• Target: {o.targetDeliveryDate || 'Overdue'}</span>
-                        </span>
-                      ))}
-                      {delayedOrdersCount > 3 && (
-                        <span 
-                          onClick={() => handleTabChange('orders')}
-                          style={{ fontSize: '0.75rem', color: '#9f1239', alignSelf: 'center', fontWeight: '700', cursor: 'pointer' }}
-                        >
-                          +{delayedOrdersCount - 3} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Low Stock Ink Alert Card */}
-                {(lowStockInks || []).length > 0 && (
-                  <div style={{
-                    background: 'linear-gradient(135deg, #ffffff 0%, #fffbfb 100%)',
-                    border: '1px solid #fecdd3',
-                    borderLeft: '4px solid #e11d48',
-                    borderRadius: '12px',
-                    padding: '18px 20px',
-                    boxShadow: '0 2px 8px -2px rgba(225, 29, 72, 0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    gap: '14px'
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{
-                          width: '38px',
-                          height: '38px',
-                          borderRadius: '10px',
-                          background: '#ffe4e6',
-                          color: '#e11d48',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0
-                        }}>
-                          <Droplet size={20} />
-                        </div>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <h3 style={{ fontSize: '0.98rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                              Low Ink Stock Warning
-                            </h3>
-                            <span style={{
-                              background: '#ffe4e6',
-                              color: '#e11d48',
-                              border: '1px solid #fecdd3',
-                              fontSize: '0.72rem',
-                              fontWeight: '800',
-                              padding: '2px 8px',
-                              borderRadius: '9999px',
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.04em'
-                            }}>
-                              {(lowStockInks || []).length} Inks Below Minimum
-                            </span>
-                          </div>
-                          <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '3px', margin: 0, lineHeight: '1.4' }}>
-                            Plant reserve has fallen below reorder levels. Issue purchase indent to prevent press downtime.
-                          </p>
-                        </div>
-                      </div>
-                      <button 
-                        className="btn-primary"
-                        onClick={() => handleTabChange('ink_management')}
-                        style={{
-                          background: '#e11d48',
-                          borderColor: '#e11d48',
-                          padding: '7px 14px',
-                          fontSize: '0.82rem',
-                          fontWeight: '700',
-                          whiteSpace: 'nowrap',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          boxShadow: '0 2px 6px rgba(225, 29, 72, 0.25)',
-                          borderRadius: '6px'
-                        }}
-                      >
-                        Reorder Inks <ArrowRight size={14} />
-                      </button>
-                    </div>
-
-                    {/* Discrete chips of low stock inks */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', paddingTop: '6px', borderTop: '1px dashed #fecdd3' }}>
-                      {(lowStockInks || []).slice(0, 3).map(i => (
-                        <span 
-                          key={i.id || i.productCode}
-                          onClick={() => handleTabChange('ink_management', (i?.id || i?.productCode) ? { id: i.id || i.productCode } : {})}
-                          style={{
-                            background: '#fff1f2',
-                            border: '1px solid #fecdd3',
-                            color: '#9f1239',
-                            fontSize: '0.75rem',
-                            fontWeight: '600',
-                            padding: '4px 10px',
-                            borderRadius: '6px',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.15s ease'
-                          }}
-                          title={`Current Stock: ${i.stockQtyKg || 0} kg | Reorder Level: ${i.reorderLevelKg || 0} kg`}
-                        >
-                          <strong>{i.productCode}</strong> ({i.shade})
-                          <span style={{ color: '#e11d48', fontSize: '0.7rem' }}>• {i.stockQtyKg || 0} kg left ({i.reorderLevelKg || 0} kg min)</span>
-                        </span>
-                      ))}
-                      {(lowStockInks || []).length > 3 && (
-                        <span 
-                          onClick={() => handleTabChange('ink_management')}
-                          style={{ fontSize: '0.75rem', color: '#9f1239', alignSelf: 'center', fontWeight: '700', cursor: 'pointer' }}
-                        >
-                          +{(lowStockInks || []).length - 3} more
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             {/* Metrics Overview Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('orders')}>
@@ -6414,6 +6161,19 @@ export default function App() {
                 </span>
               </div>
             </div>
+
+            {/* Consolidated Executive Operational Warnings & Action Center */}
+            <ExecutiveAlertsSection
+              delayedOrders={delayedOrders}
+              delayedOrdersCount={delayedOrdersCount}
+              printingDeadlineReminders={printingDeadlineReminders}
+              deadlineSummary={deadlineSummary}
+              printingLeadDays={printingLeadDays}
+              lowStockInks={lowStockInks}
+              canPlanPrinting={isTabAllowed('printing_scheduler')}
+              canManageDeadline={canManageOrderDeadline(currentUser)}
+              onNavigateTab={(tab, params) => handleTabChange(tab, params || {})}
+            />
 
 
             {/* Quick Actions & Recent Orders Split */}

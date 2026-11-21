@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generateFullRolePermissions } from '../src/factoryStore.js';
 import { roleCanEditSfgStore } from '../src/bootAccess.js';
 import { sfgStoreUi } from '../src/sfgStoreAccess.js';
@@ -14,7 +15,7 @@ import {
   sortSfgStoreItems
 } from '../src/utils/sfgStoreList.js';
 
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+const root = fileURLToPath(new URL('..', import.meta.url));
 
 function batch(index, extra = {}) {
   return {

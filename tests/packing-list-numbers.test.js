@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url);
+const rootPath = fileURLToPath(root);
 const migrationName = '20261121130000_packing_list_numbers.sql';
 const migrationSql = fs.readFileSync(new URL(`../supabase/migrations/${migrationName}`, import.meta.url), 'utf8');
 
@@ -109,7 +111,7 @@ test('the packing list migration is after the accounts role constraint and does 
 });
 
 test('the browser no longer chooses a packing list number', () => {
-  const srcDir = path.join(root.pathname, 'src');
+  const srcDir = path.join(rootPath, 'src');
   for (const file of walk(srcDir)) {
     const text = fs.readFileSync(file, 'utf8');
     assert.doesNotMatch(text, /getNextDocRefNumber\(\s*['"]pl['"]\s*\)/);
