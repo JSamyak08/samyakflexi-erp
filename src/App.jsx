@@ -6077,9 +6077,9 @@ export default function App() {
             />
           </div>
         ) : moduleOpen && activeTab === 'dashboard' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '100%', minWidth: 0 }}>
             {/* Metrics Overview Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '18px', width: '100%', maxWidth: '100%', minWidth: 0 }}>
               <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('orders')}>
                 <span className="stats-title">Active Orders</span>
                 <span className="stats-value">{(orders || []).length}</span>
@@ -6177,18 +6177,18 @@ export default function App() {
 
 
             {/* Quick Actions & Recent Orders Split */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '24px' }}>
+            <div className="dashboard-orders-shortcuts-split">
               {/* Recent Orders Overview Table */}
-              <div className="glass-panel" style={{ padding: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div className="glass-panel" style={{ padding: '24px', minWidth: 0, maxWidth: '100%' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
                   <h3 style={{ fontSize: '1.1rem', fontWeight: '600' }}>Recent Active Orders & Target Deadlines</h3>
                   <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem' }} onClick={() => handleTabChange('orders')}>
                     View All Orders
                   </button>
                 </div>
 
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="data-table">
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', maxWidth: '100%', width: '100%' }}>
+                  <table className="data-table" style={{ width: '100%', minWidth: '600px' }}>
                     <thead>
                       <tr>
                         <th>Order ID</th>
@@ -6282,38 +6282,38 @@ export default function App() {
               </div>
 
               {/* Plant Quick Shortcuts Panel */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div className="glass-card">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0, maxWidth: '100%', width: '100%' }}>
+                <div className="glass-card" style={{ minWidth: 0, maxWidth: '100%' }}>
                   <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '12px' }}>⚙️ Plant Quick Shortcuts</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_punching', { view: 'form' })}>
-                      <Calculator size={16} style={{ color: 'var(--primary-brand)' }} /> Job Punching & Costing
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start', width: '100%', whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }} onClick={() => handleTabChange('job_punching', { view: 'form' })}>
+                      <Calculator size={16} style={{ color: 'var(--primary-brand)', flexShrink: 0 }} /> <span>Job Punching & Costing</span>
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_punching', { view: 'ocns' })}>
-                      <FileCheck size={16} style={{ color: '#2563eb' }} /> Saved OCNs Register ({ocns?.length || 0})
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start', width: '100%', whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }} onClick={() => handleTabChange('job_punching', { view: 'ocns' })}>
+                      <FileCheck size={16} style={{ color: '#2563eb', flexShrink: 0 }} /> <span>Saved OCNs Register ({ocns?.length || 0})</span>
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('orders')}>
-                      <ShoppingBag size={16} style={{ color: '#059669' }} /> Issue Bulk Purchase Orders (POs)
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start', width: '100%', whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }} onClick={() => handleTabChange('orders')}>
+                      <ShoppingBag size={16} style={{ color: '#059669', flexShrink: 0 }} /> <span>Issue Bulk Purchase Orders (POs)</span>
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('job_datasheet')}>
-                      <FileSpreadsheet size={16} style={{ color: '#7c3aed' }} /> Actual Consumption & Pre/Post Costing
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start', width: '100%', whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }} onClick={() => handleTabChange('job_datasheet')}>
+                      <FileSpreadsheet size={16} style={{ color: '#7c3aed', flexShrink: 0 }} /> <span>Actual Consumption & Pre/Post Costing</span>
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('inventory')}>
-                      <FileCheck size={16} style={{ color: '#d97706' }} /> Inward GRN & QC Approval
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start', width: '100%', whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }} onClick={() => handleTabChange('inventory')}>
+                      <FileCheck size={16} style={{ color: '#d97706', flexShrink: 0 }} /> <span>Inward GRN & QC Approval</span>
                     </button>
-                    <button className="btn-secondary" style={{ justifyContent: 'flex-start' }} onClick={() => handleTabChange('clients')}>
-                      <Briefcase size={16} style={{ color: '#2563eb' }} /> View Client Directory & Cylinders
+                    <button className="btn-secondary" style={{ justifyContent: 'flex-start', width: '100%', whiteSpace: 'normal', textAlign: 'left', wordBreak: 'break-word' }} onClick={() => handleTabChange('clients')}>
+                      <Briefcase size={16} style={{ color: '#2563eb', flexShrink: 0 }} /> <span>View Client Directory & Cylinders</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Stock Level Quick Summary */}
-                <div className="glass-card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="glass-card" style={{ minWidth: 0, maxWidth: '100%' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                       📦 Low Stock Warning
                     </h3>
-                    <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem' }} onClick={() => handleTabChange('inventory')}>
+                    <button className="btn-secondary" style={{ padding: '4px 8px', fontSize: '0.75rem', flexShrink: 0 }} onClick={() => handleTabChange('inventory')}>
                       Manage Inventory
                     </button>
                   </div>
@@ -6410,27 +6410,27 @@ export default function App() {
                         };
 
                         return (
-                          <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#991b1b' }}>
+                          <div key={i.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '10px 12px', background: '#fef2f2', borderRadius: '6px', border: '1px solid #fecaca', minWidth: 0, maxWidth: '100%' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                              <span style={{ fontWeight: '700', fontSize: '0.9rem', color: '#991b1b', wordBreak: 'break-word' }}>
                                 {displayName}
                               </span>
                               {hasValidMicron ? (
-                                <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dc2626', color: '#ffffff', padding: '2px 6px', borderRadius: '4px' }}>
+                                <span style={{ fontSize: '0.75rem', fontWeight: '700', background: '#dc2626', color: '#ffffff', padding: '2px 6px', borderRadius: '4px', flexShrink: 0 }}>
                                   {i.micron} µ
                                 </span>
                               ) : (
-                                <span style={{ fontSize: '0.7rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '4px' }}>
+                                <span style={{ fontSize: '0.7rem', fontWeight: '700', background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5', padding: '2px 8px', borderRadius: '4px', flexShrink: 0 }}>
                                   {category}
                                 </span>
                               )}
                             </div>
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginTop: '2px' }}>
-                              <span style={{ color: '#475569' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', marginTop: '2px', flexWrap: 'wrap', gap: '6px' }}>
+                              <span style={{ color: '#475569', wordBreak: 'break-word' }}>
                                 {renderSpecs()}
                               </span>
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                                 <span style={{ color: '#b91c1c', fontWeight: '800' }}>
                                   Avail: {(i.availableQtyKg ?? 0).toLocaleString()} {unitStr}
                                 </span>

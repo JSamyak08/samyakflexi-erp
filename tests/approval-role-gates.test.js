@@ -39,6 +39,7 @@ const PERMISSIONS = {
   'QC Chemist': { material_indents: false, inventory: true, purchase_orders: false, pellet_fuel: true, printing_scheduler: false },
   'Purchase Manager': { material_indents: true, inventory: true, purchase_orders: true, pellet_fuel: true, printing_scheduler: false },
   'Sales Manager': { material_indents: false, inventory: false, purchase_orders: false, pellet_fuel: true, printing_scheduler: false },
+  'Accounts Manager': { material_indents: false, inventory: true, purchase_orders: false, pellet_fuel: true, printing_scheduler: false },
   'Printing Operator': { material_indents: false, inventory: true, purchase_orders: false, pellet_fuel: false, printing_scheduler: true },
   'Shop Floor Operator': { material_indents: false, inventory: true, purchase_orders: false, pellet_fuel: false, printing_scheduler: true },
 };

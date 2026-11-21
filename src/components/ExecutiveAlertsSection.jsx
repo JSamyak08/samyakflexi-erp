@@ -170,7 +170,10 @@ export default function ExecutiveAlertsSection({
       boxShadow: '0 2px 10px rgba(15, 23, 42, 0.04)',
       display: 'flex',
       flexDirection: 'column',
-      gap: '16px'
+      gap: '16px',
+      minWidth: 0,
+      maxWidth: '100%',
+      width: '100%'
     }}>
       {/* Unified Section Header with Category Tabs and Controls */}
       <div style={{
@@ -334,9 +337,12 @@ export default function ExecutiveAlertsSection({
       <div style={{
         display: 'grid',
         gridTemplateColumns: activeCategory === 'all' 
-          ? 'repeat(auto-fit, minmax(340px, 1fr))' 
+          ? 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))' 
           : '1fr',
-        gap: '16px'
+        gap: '16px',
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0
       }}>
         {/* 1. Delayed Orders Card */}
         {(activeCategory === 'all' || activeCategory === 'delayed') && delayedOrdersCount > 0 && (
@@ -350,11 +356,13 @@ export default function ExecutiveAlertsSection({
             flexDirection: 'column',
             justifyContent: 'space-between',
             gap: '12px',
-            boxShadow: '0 1px 4px rgba(220, 38, 38, 0.05)'
+            boxShadow: '0 1px 4px rgba(220, 38, 38, 0.05)',
+            minWidth: 0,
+            maxWidth: '100%'
           }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: '1 1 180px' }}>
                   <div style={{
                     width: '32px',
                     height: '32px',
@@ -368,8 +376,8 @@ export default function ExecutiveAlertsSection({
                   }}>
                     <AlertTriangle size={18} />
                   </div>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a', wordBreak: 'break-word' }}>
                       Delivery Deadline Overdue
                     </h4>
                     <span style={{ fontSize: '0.76rem', color: '#dc2626', fontWeight: '700' }}>
@@ -393,7 +401,8 @@ export default function ExecutiveAlertsSection({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
                   }}
                 >
                   Manage <ArrowRight size={13} />
@@ -468,11 +477,13 @@ export default function ExecutiveAlertsSection({
             flexDirection: 'column',
             justifyContent: 'space-between',
             gap: '12px',
-            boxShadow: '0 1px 4px rgba(234, 88, 12, 0.05)'
+            boxShadow: '0 1px 4px rgba(234, 88, 12, 0.05)',
+            minWidth: 0,
+            maxWidth: '100%'
           }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: '1 1 180px' }}>
                   <div style={{
                     width: '32px',
                     height: '32px',
@@ -486,8 +497,8 @@ export default function ExecutiveAlertsSection({
                   }}>
                     <Printer size={18} />
                   </div>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a', wordBreak: 'break-word' }}>
                       Orders At Risk Before Print
                     </h4>
                     <span style={{ fontSize: '0.76rem', color: '#c2410c', fontWeight: '700' }}>
@@ -511,7 +522,8 @@ export default function ExecutiveAlertsSection({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
                   }}
                 >
                   Schedule <ArrowRight size={13} />
@@ -586,11 +598,13 @@ export default function ExecutiveAlertsSection({
             flexDirection: 'column',
             justifyContent: 'space-between',
             gap: '12px',
-            boxShadow: '0 1px 4px rgba(225, 29, 72, 0.05)'
+            boxShadow: '0 1px 4px rgba(225, 29, 72, 0.05)',
+            minWidth: 0,
+            maxWidth: '100%'
           }}>
             <div>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: '1 1 180px' }}>
                   <div style={{
                     width: '32px',
                     height: '32px',
@@ -604,8 +618,8 @@ export default function ExecutiveAlertsSection({
                   }}>
                     <Droplet size={18} />
                   </div>
-                  <div>
-                    <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <h4 style={{ margin: 0, fontSize: '0.94rem', fontWeight: '800', color: '#0f172a', wordBreak: 'break-word' }}>
                       Low Ink Stock Warning
                     </h4>
                     <span style={{ fontSize: '0.76rem', color: '#e11d48', fontWeight: '700' }}>
@@ -629,7 +643,8 @@ export default function ExecutiveAlertsSection({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
                   }}
                 >
                   Reorder <ArrowRight size={13} />

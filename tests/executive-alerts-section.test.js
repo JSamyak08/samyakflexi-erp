@@ -67,3 +67,28 @@ test('OrderManagement preserves DeadlineReminderBanner and PrintingDeadlineSumma
   assert.match(source, /DeadlineReminderBanner/);
   assert.match(source, /PrintingDeadlineSummaryCard/);
 });
+
+test('Executive Dashboard and Shortcuts are responsive and fit screen width without horizontal overflow', () => {
+  const appPath = path.join(rootDir, 'src', 'App.jsx');
+  const appSource = fs.readFileSync(appPath, 'utf8');
+
+  const cssPath = path.join(rootDir, 'src', 'index.css');
+  const cssSource = fs.readFileSync(cssPath, 'utf8');
+
+  const alertsPath = path.join(rootDir, 'src', 'components', 'ExecutiveAlertsSection.jsx');
+  const alertsSource = fs.readFileSync(alertsPath, 'utf8');
+
+  // Verify dashboard split uses responsive class
+  assert.match(appSource, /dashboard-orders-shortcuts-split/);
+
+  // Verify CSS defines responsive split with minmax(0, 1fr) and media query
+  assert.match(cssSource, /\.dashboard-orders-shortcuts-split\s*\{/);
+  assert.match(cssSource, /grid-template-columns:\s*minmax\(0,\s*1fr\)\s*minmax\(280px,\s*360px\)/);
+  assert.match(cssSource, /@media\s*\(max-width:\s*1200px\)\s*\{\s*\.dashboard-orders-shortcuts-split/);
+
+  // Verify ExecutiveAlertsSection uses responsive card grid
+  assert.match(alertsSource, /minmax\(min\(100%,\s*280px\),\s*1fr\)/);
+
+  // Verify flexWrap: 'wrap' on warning card headers
+  assert.match(alertsSource, /flexWrap:\s*'wrap'/);
+});

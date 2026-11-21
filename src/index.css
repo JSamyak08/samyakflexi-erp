@@ -215,6 +215,28 @@ td.no-capitalize,
   box-shadow: var(--shadow-md);
 }
 
+/* Dashboard Orders & Shortcuts Split Layout */
+.dashboard-orders-shortcuts-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 24px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .dashboard-orders-shortcuts-split {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 20px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
 /* Stats Cards & Grids */
 .stat-cards-grid {
   display: grid;
