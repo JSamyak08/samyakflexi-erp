@@ -15,12 +15,14 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { SuccessModalProvider } from './context/SuccessModalContext.jsx'
 import { installModalDismissGuard } from './utils/modalDismiss.js'
 import { installPdfPrintTitles } from './utils/pdfFileName.js'
+import { registerServiceWorker } from './registerServiceWorker.js'
 
 if (typeof document !== 'undefined') {
   installModalDismissGuard(document);
 }
 if (typeof window !== 'undefined') {
   installPdfPrintTitles(window);
+  registerServiceWorker();
 }
 
 const container = document.getElementById("root");

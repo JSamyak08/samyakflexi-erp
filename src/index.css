@@ -3320,6 +3320,433 @@ div[style*="overflowX: 'auto'"] {
   }
 }
 
+/* ============================================================================
+   PWA & MOBILE RESPONSIVE ENHANCEMENTS (ANDROID & iOS)
+   ============================================================================ */
+
+/* Safe area support for iOS (iPhone Notch, Dynamic Island, Home Indicator) */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+html, body {
+  min-height: 100%;
+  min-height: -webkit-fill-available;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+/* Offline Status Toast */
+.offline-toast {
+  position: fixed;
+  top: max(10px, var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  animation: fadeInDown 0.3s ease-out;
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* PWA Install Banner */
+.pwa-install-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.2);
+}
+
+.pwa-install-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pwa-install-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.pwa-install-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pwa-install-title {
+  font-size: 0.88rem;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pwa-install-desc {
+  font-size: 0.72rem;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pwa-install-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.pwa-btn-install {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  color: #0284c7;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.pwa-btn-install:active {
+  transform: scale(0.96);
+}
+
+.pwa-btn-dismiss {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  opacity: 0.75;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+}
+
+.pwa-btn-dismiss:hover {
+  opacity: 1;
+}
+
+/* iOS PWA Install Guide Modal */
+.pwa-ios-modal {
+  max-width: 440px !important;
+  width: 92% !important;
+  padding: 24px 20px !important;
+  border-radius: 16px !important;
+}
+
+.pwa-ios-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  font-size: 0.86rem;
+  color: #1e293b;
+  line-height: 1.4;
+}
+
+.pwa-step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #0284c7;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* Mobile Header Bar Enhancements */
+.mobile-header-bar {
+  padding-top: max(8px, var(--safe-top));
+  padding-left: max(14px, var(--safe-left));
+  padding-right: max(14px, var(--safe-right));
+  height: calc(56px + var(--safe-top));
+  display: none;
+}
+
+.mobile-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-header-scan-btn {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #0284c7;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mobile-header-scan-btn:active {
+  transform: scale(0.92);
+  background: #dbeafe;
+}
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 998;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.06);
+  padding: 6px max(8px, var(--safe-left)) max(6px, var(--safe-bottom)) max(8px, var(--safe-right));
+  justify-content: space-around;
+  align-items: center;
+}
+
+.dark-mode .mobile-bottom-nav {
+  background: rgba(15, 23, 42, 0.95);
+  border-top-color: #334155;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-width: 54px;
+}
+
+.dark-mode .mobile-nav-item {
+  color: #94a3b8;
+}
+
+.mobile-nav-item.active {
+  color: #0284c7;
+}
+
+.dark-mode .mobile-nav-item.active {
+  color: #38bdf8;
+}
+
+.mobile-nav-item:active {
+  transform: scale(0.94);
+}
+
+.mobile-nav-scan-wrapper {
+  position: relative;
+  top: -14px;
+}
+
+.mobile-nav-scan-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border: 3px solid #ffffff;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.45);
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.dark-mode .mobile-nav-scan-btn {
+  border-color: #0f172a;
+}
+
+.mobile-nav-scan-btn:active {
+  transform: scale(0.9);
+}
+
+.mobile-scan-label {
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* ============================================================================
+   RESPONSIVE ENHANCEMENTS FOR SCREENS <= 768px (MOBILE & TABLET)
+   ============================================================================ */
+@media (max-width: 768px) {
+  .mobile-header-bar {
+    display: flex !important;
+  }
+
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+
+  /* Offset container so bottom navigation doesn't overlap page content */
+  .app-container {
+    padding-bottom: calc(68px + var(--safe-bottom)) !important;
+  }
+
+  /* Prevent iOS Safari Auto-Zoom on form input focus */
+  input[type="text"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="tel"],
+  input[type="date"],
+  input[type="search"],
+  select,
+  textarea,
+  .form-control {
+    font-size: 16px !important;
+  }
+
+  /* Data Table Horizontal Scroll Containment */
+  .glass-panel, .erp-panel {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* Ensure wide tables don't blowout mobile screen width */
+  .data-table {
+    min-width: 620px;
+  }
+
+  /* Section top headers & banner action wrappers */
+  .tab-container {
+    padding: 12px 10px !important;
+  }
+
+  .tab-container > div:first-child,
+  .glass-panel > div[style*="justify-content: space-between"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+
+  .tab-container > div:first-child > div:last-child,
+  .glass-panel > div[style*="justify-content: space-between"] > div:last-child {
+    width: 100% !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  /* Sub-tab navigation bar scrolling */
+  .nav-tabs, .tab-bar, .sub-nav-tabs {
+    display: flex !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding-bottom: 4px;
+    margin-bottom: 14px !important;
+    gap: 6px !important;
+  }
+
+  .nav-tab-btn {
+    flex-shrink: 0 !important;
+    font-size: 0.8rem !important;
+    padding: 6px 12px !important;
+  }
+
+  /* KPI Grid on Mobile */
+  .kpi-grid-4, .kpi-grid-3, .kpi-grid-2 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  /* Buttons on mobile */
+  .btn-primary, .btn-secondary, .btn-danger {
+    min-height: 42px !important;
+    font-size: 0.82rem !important;
+  }
+
+  /* Modal Dialogs */
+  .modal-overlay {
+    padding: 8px !important;
+    align-items: flex-end;
+  }
+
+  .modal-content {
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 88vh !important;
+    border-radius: 16px 16px 0 0 !important;
+    margin: 0 !important;
+    padding: 18px 14px !important;
+  }
+}
+
+/* Small mobile devices (<= 480px) */
+@media (max-width: 480px) {
+  .kpi-grid-4, .kpi-grid-3, .kpi-grid-2 {
+    grid-template-columns: 1fr !important;
+  }
+
+  .mobile-header-title span {
+    font-size: 0.82rem !important;
+  }
+
+  .pwa-install-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pwa-install-actions {
+    justify-content: space-between;
+    margin-top: 6px;
+  }
+}
+
 
 
 

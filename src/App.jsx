@@ -70,9 +70,12 @@ import {
   PanelLeftOpen,
   Bug,
   ScrollText,
+  ScanLine,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
+import PwaInstallPrompt from './components/PwaInstallPrompt';
+import MobileBottomNav from './components/MobileBottomNav';
 import AuthScreen from './components/AuthScreen';
 import JobPunchingForm from './components/JobPunchingForm';
 import OrderManagement from './components/OrderManagement';
@@ -406,6 +409,19 @@ export default function App() {
   const activeTab = routeInfo.tab;
   const urlParams = routeInfo.params || {};
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readSidebarCollapsed());
   const sidebarCollapsedRef = useRef(sidebarCollapsed);
   sidebarCollapsedRef.current = sidebarCollapsed;
@@ -5231,7 +5247,16 @@ export default function App() {
           <img src="/samyak-logo.png" alt="Samyak Logo" style={{ height: '24px', objectFit: 'contain' }} />
           <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>Samyak Flexi-ERP</span>
         </div>
-        <span className="mobile-header-balance" aria-hidden="true" />
+        <button
+          type="button"
+          className="mobile-header-scan-btn"
+          onClick={() => setIsBarcodeScannerOpen(true)}
+          aria-label="Open barcode scanner"
+          title="Quick Scan (Camera / USB)"
+        >
+          <ScanLine size={18} />
+          <span>Scan</span>
+        </button>
       </div>
 
       {isMobileMenuOpen && (
@@ -5749,6 +5774,13 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="main-content">
+        {!isOnline && (
+          <div className="offline-toast-banner" role="status">
+            <AlertTriangle size={15} />
+            <span>Offline Mode — Changes will sync when factory Wi-Fi / network is restored.</span>
+          </div>
+        )}
+        <PwaInstallPrompt />
         <div className="header">
           <div>
             <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
@@ -7209,6 +7241,15 @@ export default function App() {
             ...(recordId ? { id: recordId, section: params?.section || params?.tab || 'list' } : {}),
           });
         }}
+      />
+
+      {/* Mobile Bottom Navigation Bar for iOS & Android */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
+        onOpenScanner={() => setIsBarcodeScannerOpen(true)}
+        onOpenMenu={() => setIsMobileMenuOpen(true)}
+        isTabAllowed={isTabAllowed}
       />
 
       {/* Global Success Screen Modal across all forms and submissions */}

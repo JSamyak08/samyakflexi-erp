@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7" />
+      <stop offset="100%" stop-color="#0369a1" />
+    </linearGradient>
+    <linearGradient id="ribbonGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444" />
+      <stop offset="100%" stop-color="#b91c1c" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Center Circle Container -->
+  <circle cx="256" cy="256" r="180" fill="#ffffff" filter="url(#shadow)" />
+
+  <!-- Inner Logo: Globe Wireframe + Red S Ribbon -->
+  <g transform="translate(146, 146) scale(1.57)">
+    <!-- Globe Wireframe (Steel Slate) -->
+    <g fill="none" stroke="#64748b" stroke-width="2.5" opacity="0.85">
+      <circle cx="70" cy="70" r="58" />
+      <line x1="12" y1="70" x2="128" y2="70" />
+      <ellipse cx="70" cy="70" rx="58" ry="26" />
+      <ellipse cx="70" cy="70" rx="58" ry="44" />
+      <line x1="70" y1="12" x2="70" y2="128" />
+      <ellipse cx="70" cy="70" rx="32" ry="58" />
+      <ellipse cx="70" cy="70" rx="16" ry="58" />
+    </g>
+
+    <!-- Red S Ribbon / Swoosh -->
+    <path d="M 32,118 C 45,98 62,80 82,72 C 102,64 114,50 108,36 C 102,22 84,20 62,28 C 44,35 28,52 24,62" 
+          fill="none" 
+          stroke="url(#ribbonGrad)" 
+          stroke-width="9" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+  </g>
+</svg>

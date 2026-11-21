@@ -562,6 +562,27 @@
     print-color-adjust: exact !important;
   }
 
+  .pdf-modal-overlay,
+  .pdf-paper-container,
+  .po-management-wrapper,
+  .app-container,
+  .main-content {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    overflow: visible !important;
+    transform: none !important;
+    align-items: stretch !important;
+  }
+
   #printable-po {
     font-size: 7.5pt !important;
     line-height: 1.22 !important;
@@ -573,6 +594,18 @@
     box-sizing: border-box !important;
     position: static !important;
     overflow: visible !important;
+  }
+
+  #printable-po table,
+  #printable-po .po-items-table,
+  #printable-po .items-table,
+  #printable-po .po-address-table,
+  #printable-po .address-grid-table,
+  #printable-po .po-details-table,
+  #printable-po .details-grid-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
   #printable-po * {
@@ -595,6 +628,23 @@
     visibility: visible !important;
     display: flex !important;
     border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+  }
+
+  #printable-po .po-qr-box svg,
+  #printable-po .po-qr-svg-wrap,
+  #printable-po .po-qr-svg-wrap svg {
+    display: block !important;
+    visibility: visible !important;
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    min-height: 42px !important;
+    max-width: 42px !important;
+    max-height: 42px !important;
+    shape-rendering: crispEdges !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
   #printable-po .po-qr-box .po-qr-img,

@@ -574,7 +574,10 @@
   #printable-ocn .details-grid-table,
   #printable-ocn .items-table,
   #printable-po .address-grid-table,
-  #printable-po .items-table {
+  #printable-po .items-table,
+  #printable-po .po-address-table,
+  #printable-po .po-details-table,
+  #printable-po .po-items-table {
     table-layout: fixed !important;
   }
 

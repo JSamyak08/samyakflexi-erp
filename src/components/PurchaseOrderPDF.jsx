@@ -202,23 +202,27 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 </div>
               </div>
               <div className="po-qr-box" title={`QR Code: ${qrValue}`}>
-                {qrDataUrl ? (
-                  <img
-                    src={qrDataUrl}
-                    alt="Purchase Order QR Code"
-                    className="po-qr-img"
-                    width="42"
-                    height="42"
+                {qrSvg ? (
+                  <div 
+                    className="po-qr-svg-wrap"
+                    dangerouslySetInnerHTML={{ __html: qrSvg }}
+                    style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   />
-                ) : (
-                  <div style={{ width: 42, height: 42 }} />
-                )}
+                ) : null}
+                <img
+                  src={qrDataUrl}
+                  alt="Purchase Order QR Code"
+                  className="po-qr-img"
+                  width="42"
+                  height="42"
+                  style={{ display: qrSvg ? 'none' : 'block' }}
+                />
               </div>
             </div>
           </div>
 
           {/* 3-Column Address Grid */}
-          <table className="po-address-table">
+          <table className="po-address-table address-grid-table">
             <thead>
               <tr>
                 <th>Buyer (Bill To)</th>
@@ -259,7 +263,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
             <div className="po-section-header">
               Purchase Order & Logistics Details
             </div>
-            <table className="po-details-table">
+            <table className="po-details-table details-grid-table">
               <tbody>
                 <tr>
                   <td className="label-col">PO Number</td>
