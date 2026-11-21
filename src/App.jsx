@@ -120,7 +120,7 @@ import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
 import { showSuccessScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
-import { getDocumentPrefixes, getNextDocRefNumber } from './services/settingsService';
+import { getDocumentPrefixes } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
 import { getRouteFromUrl, getTabFromUrl, pushSlugState, parseLocation, isRecoveryLocation, isAuthCallbackLocation, rememberReturnTo, consumeReturnTo, sameRoute } from './utils/slugRouter';
 import { activeUserLabel } from './utils/activeUserLabel';
@@ -163,7 +163,6 @@ import { canViewPrintRunAnalytics } from './utils/printRunAccess';
 import {
   applyDispatchPackingConsumption,
   consumptionFromLog,
-  findOpenPackingList,
   isDispatchPacking,
   listConsumptions,
   nextDispatchQuantity,
@@ -4261,7 +4260,7 @@ export default function App() {
     assertAllSaved('Some inventory rolls were saved. The rolls listed below were not, and they are not shown as updated.', failed);
   };
 
-  const handleAddDispatchShipment = async (newShipment) => {
+  const handleAddDispatchShipment = async (newShipment, { insertOnly = false } = {}) => {
     requireDatabaseConnection('create dispatch shipment');
     const cleanShipment = shipmentWithoutGainLoss({ ...newShipment });
     const shipmentKey = String(cleanShipment.dispatchId || cleanShipment.id || '');
@@ -4269,7 +4268,7 @@ export default function App() {
     const linkedConsumption = listConsumptions(cleanShipment).length > 0;
     const skipStock = linkedConsumption || previous?.stockApplied === true;
     const shipmentToSave = skipStock ? { ...cleanShipment, stockApplied: true } : cleanShipment;
-    await saveDispatchShipmentToSupabase(shipmentToSave);
+    await saveDispatchShipmentToSupabase(shipmentToSave, { insertOnly });
     const nextShipments = [
       shipmentToSave,
       ...dispatchShipments.filter((row) => {
@@ -5108,19 +5107,13 @@ export default function App() {
       try {
         const orderId = updatedSfgItem.orderId || logEntry.orderId || '';
         const jobName = updatedSfgItem.jobName || logEntry.jobName || '';
-        const openList = findOpenPackingList(dispatchShipments, { orderId, jobName });
-        let suggestedDispatchId = null;
-        if (!openList) {
-          try { suggestedDispatchId = getNextDocRefNumber('pl'); } catch { suggestedDispatchId = null; }
-        }
         const entry = consumptionFromLog(logEntry, {
           orderId,
           jobName,
           jobCode: updatedSfgItem.jobCode || logEntry.jobCode || '',
           clientName: updatedSfgItem.clientName || '',
           poNo: updatedSfgItem.poNo || '',
-          consumedBy: currentUser?.fullName || currentUser?.name || currentUser?.email || logEntry.operatorName || '',
-          suggestedDispatchId
+          consumedBy: currentUser?.fullName || currentUser?.name || currentUser?.email || logEntry.operatorName || ''
         });
         const recorded = await recordDispatchPackingConsumption(entry);
         const shipment = recorded?.shipment;
