@@ -290,9 +290,7 @@ export function generateDocRefNumber(type, customNumber) {
     const num = customNumber !== undefined ? customNumber : (config.indentCounter || 101);
     return `${config.indentPrefix || 'SIL/IND/26-27/'}${num}`;
   } else if (type === 'pl' || type === 'packing') {
-    const year = new Date().getFullYear();
-    const num = customNumber !== undefined ? customNumber : (config.plCounter || 606130);
-    return `PL-${year}-${num}`;
+    throw new Error('Packing list numbers are issued by the database (allocate_packing_list_no). They are not taken from this browser.');
   }
   
   return `SIL/DOC/${customNumber || 100}`;
@@ -313,6 +311,9 @@ export function getNextDocRefNumber(type) {
   }
   if (type === 'qtn' || type === 'quotation') {
     throw new Error('Quotation numbers are issued by the database (allocate_quotation_number). They are not taken from this browser.');
+  }
+  if (type === 'pl' || type === 'packing') {
+    throw new Error('Packing list numbers are issued by the database (allocate_packing_list_no). They are not taken from this browser.');
   }
   const config = getDocumentPrefixes();
   let num = 101;
@@ -339,9 +340,6 @@ export function getNextDocRefNumber(type) {
   } else if (type === 'indent') {
     num = config.indentCounter || 101;
     key = 'indentCounter';
-  } else if (type === 'pl' || type === 'packing') {
-    num = config.plCounter || 606130;
-    key = 'plCounter';
   }
 
   const docRef = generateDocRefNumber(type, num);

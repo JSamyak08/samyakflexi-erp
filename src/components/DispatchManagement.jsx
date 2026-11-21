@@ -36,8 +36,8 @@ import WeighingScaleCaptureButton from './WeighingScaleCaptureButton';
 import CertificateOfAnalysisPDF, { DEFAULT_COA_PARAMETERS } from './CertificateOfAnalysisPDF';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import BarcodePrinterModal from './BarcodePrinterModal';
-import { generateDocRefNumber, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
-import { allocateDeliveryChallanNo, releaseDeliveryChallanNo } from '../services/supabaseDataService';
+import { getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
+import { allocateDeliveryChallanNo, allocatePackingListNo, releaseDeliveryChallanNo, releasePackingListNo } from '../services/supabaseDataService';
 import {
   challanNature,
   formatSaleChallanConflicts,
@@ -258,6 +258,7 @@ export default function DispatchManagement({
   const [pktVehicleNo, setPktVehicleNo] = useState('');
   const [pktVehicleError, setPktVehicleError] = useState('');
   const pktVehicleRef = useRef(null);
+  const packingNumberLock = useRef(false);
   const [pktLrNo, setPktLrNo] = useState('');
   const [pktTransporterName, setPktTransporterName] = useState('');
   const [pktPoNo, setPktPoNo] = useState('');
@@ -1745,7 +1746,7 @@ export default function DispatchManagement({
     setSelectedRollForBarcodeModal(added[added.length - 1]);
   };
 
-  const handleSavePackingListSubmit = (e) => {
+  const handleSavePackingListSubmit = async (e) => {
     e.preventDefault();
     if (!pktJobName || !pktClientName) {
       alert("Please select a Production Job and enter Client Name.");
@@ -1812,7 +1813,24 @@ export default function DispatchManagement({
       hour12: true
     });
 
-    const finalDispatchId = pktDispatchId || getNextDocRefNumber('pl');
+    let finalDispatchId = pktDispatchId;
+    let releaseNumber = '';
+    if (!editingExisting) {
+      if (packingNumberLock.current || pendingDocConfirmation) return;
+      packingNumberLock.current = true;
+      try {
+        finalDispatchId = await allocatePackingListNo();
+        releaseNumber = finalDispatchId;
+      } catch (err) {
+        packingNumberLock.current = false;
+        alert(`A packing list number was not issued: ${err.message || err}`);
+        return;
+      }
+    }
+    if (!finalDispatchId) {
+      alert('This packing list has no number to keep.');
+      return;
+    }
 
     const newShipment = {
       id: pktInternalId || `DISP-PL-${Date.now()}`,
@@ -1860,10 +1878,21 @@ export default function DispatchManagement({
         col3: `Net: ${roll.netWeightKg} Kg`,
         col4: `Gross: ${roll.grossWeightKg} Kg`
       })),
+      onDismiss: async () => {
+        packingNumberLock.current = false;
+        if (releaseNumber) {
+          try { await releasePackingListNo(releaseNumber); } catch { /* unused number stays reserved */ }
+        }
+        setPendingDocConfirmation(null);
+      },
       onConfirm: async () => {
+        packingNumberLock.current = false;
         try {
-          if (onAddDispatchShipment) await onAddDispatchShipment(newShipment);
+          if (onAddDispatchShipment) await onAddDispatchShipment(newShipment, { insertOnly: !editingExisting });
         } catch (err) {
+          if (releaseNumber && err?.name !== 'PartialSaveError') {
+            try { await releasePackingListNo(releaseNumber); } catch { /* unused number stays reserved */ }
+          }
           alert(err?.name === 'PartialSaveError'
             ? err.message
             : `The packing list was not saved: ${err.message || err}`);
@@ -2344,10 +2373,9 @@ export default function DispatchManagement({
                 type="button" 
                 className="btn-primary" 
                 onClick={() => {
-                  const autoPlId = generateDocRefNumber('pl');
                   const firstOrder = (orders || [])[0];
                   resetPackingDraft();
-                  setPktDispatchId(autoPlId);
+                  setPktDispatchId('');
                   setPktJobName(firstOrder?.jobName || '');
                   setPktClientName(firstOrder?.clientName || firstOrder?.customerName || '');
                   setPktPoNo(firstOrder?.poNo || '');
@@ -4355,13 +4383,16 @@ export default function DispatchManagement({
               <div className="form-grid">
 
                 <div className="form-group">
-                  <label>Packing List ID (Automated) *</label>
-                  <input 
-                    type="text" 
-                    className="form-control" 
-                    value={pktDispatchId} 
-                    onChange={e => setPktDispatchId(e.target.value)} 
-                    required 
+                  <label htmlFor="packing-list-number">Packing List ID (Automated) *</label>
+                  <input
+                    id="packing-list-number"
+                    data-testid="packing-list-number"
+                    type="text"
+                    className="form-control"
+                    value={pktInternalId ? pktDispatchId : ''}
+                    placeholder={pktInternalId ? '' : 'Issued when you save'}
+                    readOnly
+                    aria-readonly="true"
                     style={{ fontWeight: '800', color: '#2563eb' }}
                   />
                 </div>

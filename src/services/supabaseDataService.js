@@ -1499,6 +1499,36 @@ export async function allocateQuotationNumberFromServer() {
   return number;
 }
 
+export function packingListDuplicateMessage(dispatchId) {
+  const number = String(dispatchId || '').trim() || 'This number';
+  return `Packing list number ${number} is already used. Existing lists keep their numbers.`;
+}
+
+function isPackingListConflict(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || error?.details || '').toLowerCase();
+  return code === '23505'
+    || message.includes('already used')
+    || message.includes('cannot overwrite');
+}
+
+export async function allocatePackingListNo() {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not configured.');
+  }
+  const { data, error } = await supabase.rpc('allocate_packing_list_no');
+  if (error) handleSupabaseError(error, 'allocate_packing_list_no');
+  const number = String(data || '').trim();
+  if (!number) throw new Error('The database did not return a packing list number.');
+  return number;
+}
+
+export async function releasePackingListNo(number) {
+  if (!isSupabaseConfigured() || !number) return;
+  const { error } = await supabase.rpc('release_packing_list_no', { p_number: number });
+  if (error) handleSupabaseError(error, 'release_packing_list_no');
+}
+
 export async function allocateDeliveryChallanNo() {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase is not configured.');
@@ -2669,7 +2699,7 @@ export async function fetchDispatchShipments() {
   }
 }
 
-export async function saveDispatchShipmentToSupabase(shipment) {
+export async function saveDispatchShipmentToSupabase(shipment, { insertOnly = false } = {}) {
   if (!isSupabaseConfigured() || !shipment) {
     throw new Error("Cannot save dispatch shipment: Supabase database connection is not available.");
   }
@@ -2704,8 +2734,31 @@ export async function saveDispatchShipmentToSupabase(shipment) {
     updated_at: new Date().toISOString()
   };
 
-  const { error: fullErr } = await supabase.from('dispatch_shipments').upsert(fullPayload, { onConflict: 'dispatch_id' });
-  if (fullErr) handleSupabaseError(fullErr, 'dispatch_shipments');
+  if (insertOnly) {
+    const { error: insertErr } = await supabase.from('dispatch_shipments').insert(fullPayload);
+    if (insertErr) {
+      if (isPackingListConflict(insertErr)) {
+        throw new Error(packingListDuplicateMessage(fullPayload.dispatch_id));
+      }
+      handleSupabaseError(insertErr, 'dispatch_shipments');
+    }
+    return;
+  }
+
+  const { data: updated, error: updateErr } = await supabase
+    .from('dispatch_shipments')
+    .update(fullPayload)
+    .eq('dispatch_id', fullPayload.dispatch_id)
+    .select('dispatch_id');
+  if (updateErr) {
+    if (isPackingListConflict(updateErr)) {
+      throw new Error(packingListDuplicateMessage(fullPayload.dispatch_id));
+    }
+    handleSupabaseError(updateErr, 'dispatch_shipments');
+  }
+  if (!Array.isArray(updated) || updated.length === 0) {
+    throw new Error(`Packing list ${fullPayload.dispatch_id} was not found, so it was not saved.`);
+  }
 }
 
 export async function deleteDispatchShipmentFromSupabase(id) {

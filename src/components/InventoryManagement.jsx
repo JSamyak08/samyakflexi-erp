@@ -1104,7 +1104,7 @@ export default function InventoryManagement({
     };
 
     try {
-      if (onAddDispatchShipment) await onAddDispatchShipment(newShipment);
+      if (onAddDispatchShipment) await onAddDispatchShipment(newShipment, { insertOnly: true });
     } catch (err) {
       alert(err?.name === 'PartialSaveError'
         ? err.message
