@@ -71,6 +71,8 @@ import {
   Bug,
   ScrollText,
   ScanLine,
+  Menu,
+  X,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
@@ -5228,6 +5230,33 @@ export default function App() {
   };
   const moduleOpen = !routeInfo.unknown && isTabAllowed(activeTab);
 
+  const mobileTabTitle = useMemo(() => {
+    switch (activeTab) {
+      case 'dashboard': return 'Dashboard';
+      case 'sales': return 'Sales & Quotes';
+      case 'scrap_analytics': return 'Scrap & Wastage';
+      case 'job_punching': return (urlParams.view === 'ocns' || urlParams.section === 'ocns') ? 'OCN Orders' : 'Job Punching';
+      case 'orders': return 'Orders';
+      case 'job_masters': return 'Job Masters';
+      case 'clients': return 'Clients';
+      case 'production': return 'Live Floor';
+      case 'cylinders': return 'Cylinders';
+      case 'inventory': return 'Inventory';
+      case 'purchase_orders': return 'Purchase Orders';
+      case 'vendors': return 'Vendors';
+      case 'dispatch': return 'Dispatch';
+      case 'maintenance': return 'Maintenance';
+      case 'employees': return 'Employees';
+      case 'users': return 'User Access';
+      case 'supabase': return 'Database Admin';
+      case 'settings': return 'Settings';
+      case 'changelog': return 'Changelog';
+      case 'bug_reports': return 'Bug Reports';
+      case 'system_audit': return 'Audit Logs';
+      default: return 'Overview';
+    }
+  }, [activeTab, urlParams]);
+
   return (
     <div
       className="app-container"
@@ -5236,27 +5265,45 @@ export default function App() {
     >
       {/* Mobile Top Header Bar */}
       <div className="mobile-header-bar">
-        <button type="button" className="hamburger-btn" onClick={() => setIsMobileMenuOpen(true)} aria-label="Open navigation menu" aria-expanded={isMobileMenuOpen} aria-controls="app-sidebar">
-          <svg style={{ width: '24px', height: '24px', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }} viewBox="0 0 24 24">
-            <line x1="4" y1="12" x2="20" y2="12"></line>
-            <line x1="4" y1="6" x2="20" y2="6"></line>
-            <line x1="4" y1="18" x2="20" y2="18"></line>
-          </svg>
-        </button>
-        <div className="mobile-header-title">
-          <img src="/samyak-logo.png" alt="Samyak Logo" style={{ height: '24px', objectFit: 'contain' }} />
-          <span style={{ fontSize: '0.9rem', letterSpacing: '0.05em' }}>Samyak Flexi-ERP</span>
-        </div>
         <button
           type="button"
-          className="mobile-header-scan-btn"
-          onClick={() => setIsBarcodeScannerOpen(true)}
-          aria-label="Open barcode scanner"
-          title="Quick Scan (Camera / USB)"
+          className="hamburger-btn"
+          onClick={() => setIsMobileMenuOpen(true)}
+          aria-label="Open navigation menu"
+          aria-expanded={isMobileMenuOpen}
+          aria-controls="app-sidebar"
         >
-          <ScanLine size={18} />
-          <span>Scan</span>
+          <Menu size={22} />
         </button>
+        <div className="mobile-header-title">
+          <img src="/samyak-logo.png" alt="Samyak Logo" className="mobile-header-logo-img" />
+          <div className="mobile-header-text">
+            <span className="mobile-header-app-name">FlexiERP</span>
+            <span className="mobile-header-tab-pill">{mobileTabTitle}</span>
+          </div>
+        </div>
+        <div className="mobile-header-actions">
+          <button
+            type="button"
+            className="mobile-header-scan-btn"
+            onClick={() => setIsBarcodeScannerOpen(true)}
+            aria-label="Open barcode scanner"
+            title="Quick Scan (Camera / USB)"
+          >
+            <ScanLine size={19} />
+          </button>
+          <button
+            type="button"
+            className="mobile-header-user-btn"
+            onClick={() => setIsMobileMenuOpen(true)}
+            aria-label="Open user profile menu"
+            title={`${currentUser?.name || 'User'} (${assignedRolesOf(currentUser)[0] || 'User'})`}
+          >
+            <span className="mobile-user-initials">
+              {currentUser?.name ? currentUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'U'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {isMobileMenuOpen && (
@@ -5286,6 +5333,22 @@ export default function App() {
         }}
         onBlur={() => setNavTooltip(null)}
       >
+        {/* Mobile-only drawer dismiss header */}
+        <div className="mobile-sidebar-top-bar">
+          <div className="mobile-sidebar-brand-meta">
+            <img src="/samyak-logo.png" alt="Samyak Logo" style={{ height: '22px', objectFit: 'contain' }} />
+            <span style={{ fontWeight: '800', fontSize: '0.9rem', color: '#0f172a' }}>FlexiERP Menu</span>
+          </div>
+          <button
+            type="button"
+            className="mobile-sidebar-close-btn"
+            onClick={() => setIsMobileMenuOpen(false)}
+            aria-label="Close navigation menu"
+          >
+            <X size={20} />
+          </button>
+        </div>
+
         <div className="sidebar-collapse-bar">
           <button
             type="button"

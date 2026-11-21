@@ -83,18 +83,34 @@ test('index.html contains all essential iOS & Android PWA meta tags and safe are
   assert.ok(html.includes('apple-touch-icon'), 'index.html must include apple-touch-icon');
   assert.ok(html.includes('theme-color'), 'index.html must set theme-color');
   assert.ok(html.includes('viewport-fit=cover'), 'index.html viewport must include viewport-fit=cover for notch/safe area handling');
+  assert.ok(html.includes('apple-touch-startup-image'), 'index.html must include apple-touch-startup-image for iOS splash screen');
+  assert.ok(html.includes('pwa-splash'), 'index.html must include zero-delay modern inline splash screen');
+  assert.ok(html.includes('interactive-widget=resizes-content'), 'index.html must handle mobile virtual keyboard viewport sizing');
 });
 
 test('PWA client registration and UI components are authored', () => {
   const registerPath = path.join(rootDir, 'src', 'registerServiceWorker.js');
   const promptPath = path.join(rootDir, 'src', 'components', 'PwaInstallPrompt.jsx');
   const navPath = path.join(rootDir, 'src', 'components', 'MobileBottomNav.jsx');
+  const preloaderPath = path.join(rootDir, 'src', 'components', 'Preloader.jsx');
+  const appPath = path.join(rootDir, 'src', 'App.jsx');
 
   assert.ok(fs.existsSync(registerPath), 'src/registerServiceWorker.js must exist');
   assert.ok(fs.existsSync(promptPath), 'src/components/PwaInstallPrompt.jsx must exist');
   assert.ok(fs.existsSync(navPath), 'src/components/MobileBottomNav.jsx must exist');
+  assert.ok(fs.existsSync(preloaderPath), 'src/components/Preloader.jsx must exist');
 
   const navContent = fs.readFileSync(navPath, 'utf8');
   assert.ok(navContent.includes('mobile-bottom-nav'), 'MobileBottomNav must define mobile-bottom-nav class');
   assert.ok(navContent.includes('onOpenScanner'), 'MobileBottomNav must include elevated quick scan trigger');
+  assert.ok(navContent.includes('mobile-nav-scan-btn'), 'MobileBottomNav must define elevated mobile-nav-scan-btn');
+
+  const preloaderContent = fs.readFileSync(preloaderPath, 'utf8');
+  assert.ok(preloaderContent.includes('preloaderSpin'), 'Preloader must have modern spin animation');
+  assert.ok(preloaderContent.includes('preloaderShimmer'), 'Preloader must have shimmer progress bar');
+  assert.ok(preloaderContent.includes('isExiting'), 'Preloader must have smooth exit transition');
+
+  const appContent = fs.readFileSync(appPath, 'utf8');
+  assert.ok(appContent.includes('mobile-sidebar-close-btn'), 'App sidebar must have mobile dismiss close button');
+  assert.ok(appContent.includes('mobile-header-tab-pill'), 'App mobile header must show active tab pill badge');
 });
