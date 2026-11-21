@@ -18,6 +18,7 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
   const [isEditingRef, setIsEditingRef] = useState(false);
   const [currentPaymentTerms, setCurrentPaymentTerms] = useState(poData?.paymentTerms || savedTerms.paymentTerms || "60 Days");
   const [currentTerms, setCurrentTerms] = useState(savedTerms.poTerms || []);
+  const [logoError, setLogoError] = useState(false);
   const letterhead = loadLetterhead();
 
   if (!poData) return null;
@@ -138,19 +139,18 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
           {/* Executive Header Banner */}
           <div className="po-header">
             <div className="po-brand">
-              <img 
-                src={resolvedLogo} 
-                alt={`${COMPANY_DETAILS.name} Logo`} 
-                className="po-logo-img"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                  const fb = e.currentTarget.nextElementSibling;
-                  if (fb) fb.style.display = 'block';
-                }}
-              />
-              <div className="po-company-fallback" style={{ display: 'none' }}>
-                {COMPANY_DETAILS.name}
-              </div>
+              {!logoError ? (
+                <img 
+                  src={resolvedLogo} 
+                  alt={`${COMPANY_DETAILS.name} Logo`} 
+                  className="po-logo-img"
+                  onError={() => setLogoError(true)}
+                />
+              ) : (
+                <div className="po-company-fallback">
+                  {COMPANY_DETAILS.name}
+                </div>
+              )}
               {COMPANY_DETAILS.tagline ? (
                 <div className="po-tagline">
                   {COMPANY_DETAILS.tagline}
@@ -202,20 +202,13 @@ export default function PurchaseOrderPDF({ poData, vendors = [], onClose }) {
                 </div>
               </div>
               <div className="po-qr-box" title={`QR Code: ${qrValue}`}>
-                {qrSvg ? (
-                  <div 
-                    className="po-qr-svg-wrap"
-                    dangerouslySetInnerHTML={{ __html: qrSvg }}
-                    style={{ width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                  />
-                ) : null}
                 <img
                   src={qrDataUrl}
                   alt="Purchase Order QR Code"
                   className="po-qr-img"
                   width="42"
                   height="42"
-                  style={{ display: qrSvg ? 'none' : 'block' }}
+                  style={{ display: 'block', width: '42px', height: '42px', objectFit: 'contain', imageRendering: 'pixelated' }}
                 />
               </div>
             </div>

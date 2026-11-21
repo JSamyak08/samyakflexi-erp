@@ -372,6 +372,7 @@
   #root,
   .app-container,
   .main-content,
+  .po-management-wrapper,
   .pdf-modal-overlay,
   .modal-overlay,
   .modal-content,
@@ -446,6 +447,16 @@
     max-height: none !important;
     min-height: 0 !important;
     overflow: visible !important;
+  }
+
+  .printable-document svg,
+  .printable-document svg *,
+  #printable-po svg,
+  #printable-po svg *,
+  .po-qr-box svg,
+  .po-qr-box svg * {
+    height: initial !important;
+    max-height: none !important;
   }
 
   .no-print,

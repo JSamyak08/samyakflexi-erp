@@ -89,6 +89,27 @@ REVOKE ALL ON FUNCTION private.app_roles() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION private.app_role() TO authenticated;
 GRANT EXECUTE ON FUNCTION private.app_roles() TO authenticated;
 
+-- 2b. Update users_role_allowed constraint to allow Accounts Manager and Accounts
+ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_role_allowed;
+ALTER TABLE public.users ADD CONSTRAINT users_role_allowed CHECK (
+  role IS NULL
+  OR role IN (
+    'Admin',
+    'Plant Manager',
+    'Production Manager',
+    'Sales Manager',
+    'Purchase Manager',
+    'Store Manager',
+    'QC Chemist',
+    'Printing Operator',
+    'Shop Floor Operator',
+    'HR & Payroll Manager',
+    'Accounts Manager',
+    'Accounts',
+    'System'
+  )
+);
+
 -- 3. Upsert default role_permissions for Accounts Manager and Accounts
 INSERT INTO public.role_permissions (role, permissions, updated_at)
 VALUES

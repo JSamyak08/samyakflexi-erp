@@ -562,6 +562,7 @@
     print-color-adjust: exact !important;
   }
 
+  #root,
   .pdf-modal-overlay,
   .pdf-paper-container,
   .po-management-wrapper,

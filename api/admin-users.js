@@ -278,7 +278,13 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
   let id = existing?.[0]?.id;
   if (id) {
     const { error } = await service.from('users').update(profile).eq('id', id);
-    if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
+    if (error) {
+      console.error('admin-users createAccount update profile error:', error);
+      return reply(res, 400, {
+        success: false,
+        message: error.message ? `Could not save the user profile: ${error.message}` : 'Could not save the user profile.',
+      });
+    }
   } else {
     const { data: linked } = await service
       .from('users')
@@ -290,7 +296,13 @@ async function createAccount(service, res, body, callerAuthId, deps = {}) {
       ? service.from('users').update(profile).eq('id', id)
       : service.from('users').insert({ id, ...profile });
     const { error } = await write;
-    if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
+    if (error) {
+      console.error('admin-users createAccount insert profile error:', error);
+      return reply(res, 400, {
+        success: false,
+        message: error.message ? `Could not save the user profile: ${error.message}` : 'Could not save the user profile.',
+      });
+    }
   }
 
   const user = publicUser({ id, ...profile });
@@ -362,7 +374,13 @@ async function updateAccount(service, res, body, caller) {
     active: status === 'Active',
   };
   const { error } = await service.from('users').update(profile).eq('id', id);
-  if (error) return reply(res, 400, { success: false, message: 'Could not save the user profile.' });
+  if (error) {
+    console.error('admin-users updateAccount profile error:', error);
+    return reply(res, 400, {
+      success: false,
+      message: error.message ? `Could not save the user profile: ${error.message}` : 'Could not save the user profile.',
+    });
+  }
 
   if (current.auth_user_id) {
     await service.auth.admin.updateUserById(current.auth_user_id, {
@@ -397,7 +415,13 @@ async function deleteAccount(service, res, body, caller) {
     await service.auth.admin.deleteUser(current.auth_user_id);
   }
   const { error } = await service.from('users').delete().eq('id', id);
-  if (error) return reply(res, 400, { success: false, message: 'Could not delete the user profile.' });
+  if (error) {
+    console.error('admin-users deleteAccount profile error:', error);
+    return reply(res, 400, {
+      success: false,
+      message: error.message ? `Could not delete the user profile: ${error.message}` : 'Could not delete the user profile.',
+    });
+  }
   return reply(res, 200, { success: true, message: 'User deleted.' });
 }
 

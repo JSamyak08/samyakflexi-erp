@@ -136,4 +136,15 @@ test('migration 20261120170000_accounts_department_role.sql exists and contains 
   assert.ok(sql.includes('employee_attendance_accounts_select'), 'SQL must grant SELECT on employee_attendance to Accounts');
   assert.ok(sql.includes('salary_advances_accounts'), 'SQL must grant access on salary_advances to Accounts');
   assert.ok(sql.includes('salary_payments_accounts'), 'SQL must grant access on salary_payments to Accounts');
+  assert.ok(sql.includes('users_role_allowed'), 'SQL must update users_role_allowed check constraint');
+});
+
+test('migration 20261121120000_allow_accounts_role_in_users.sql allows Accounts Manager and Accounts in public.users', () => {
+  const migrationPath = path.resolve(__dirname, '../supabase/migrations/20261121120000_allow_accounts_role_in_users.sql');
+  assert.ok(fs.existsSync(migrationPath), 'Migration file must exist');
+  const sql = fs.readFileSync(migrationPath, 'utf8');
+
+  assert.ok(sql.includes('users_role_allowed'), 'SQL must drop and re-add users_role_allowed constraint');
+  assert.ok(sql.includes("'Accounts Manager'"), 'SQL must allow Accounts Manager');
+  assert.ok(sql.includes("'Accounts'"), 'SQL must allow Accounts');
 });

@@ -83,3 +83,32 @@ test('PurchaseOrderPDF Terms & Conditions uses flexbox without input overflow', 
   // Ensure static print term exists
   assert.ok(content.includes('className="po-print-term"'), 'Terms must have po-print-term for clean multiline wrapping in print');
 });
+
+test('PurchaseOrderPDF renders QR code as reliable img element with data uri', () => {
+  const poPdfFile = path.resolve(__dirname, '../src/components/PurchaseOrderPDF.jsx');
+  const content = fs.readFileSync(poPdfFile, 'utf8');
+
+  assert.ok(content.includes('src={qrDataUrl}'), 'Must render qrDataUrl on img');
+  assert.ok(content.includes('className="po-qr-img"'), 'Must have po-qr-img class');
+  assert.equal(content.includes('dangerouslySetInnerHTML={{ __html: qrSvg }}'), false, 'Must not rely on fragile inline SVG');
+});
+
+test('Print stylesheets maintain static document flow and clean ancestor resets', () => {
+  const indexCss = fs.readFileSync(path.resolve(__dirname, '../src/index.css'), 'utf8');
+  const pdfA4Css = fs.readFileSync(path.resolve(__dirname, '../src/pdfA4.css'), 'utf8');
+  const poPrintCss = fs.readFileSync(path.resolve(__dirname, '../src/components/purchaseOrderPrint.css'), 'utf8');
+
+  // index.css must not force position: absolute on #printable-po
+  assert.equal(indexCss.includes('#printable-po {\n    position: absolute'), false);
+  assert.ok(indexCss.includes('#printable-po,\n  #printable-ocn'), 'index.css targets #printable-po');
+  assert.ok(indexCss.includes('.po-management-wrapper'), 'index.css strips po-management-wrapper');
+
+  // pdfA4.css must reset po-management-wrapper
+  assert.ok(pdfA4Css.includes('.po-management-wrapper'), 'pdfA4.css must include po-management-wrapper in ancestor reset');
+  assert.ok(pdfA4Css.includes('#printable-po svg'), 'pdfA4.css must preserve SVG height');
+
+  // purchaseOrderPrint.css must reset ancestors in print
+  assert.ok(poPrintCss.includes('.po-management-wrapper'), 'purchaseOrderPrint.css must reset po-management-wrapper');
+  assert.ok(poPrintCss.includes('.app-container'), 'purchaseOrderPrint.css must reset app-container');
+  assert.ok(poPrintCss.includes('.main-content'), 'purchaseOrderPrint.css must reset main-content');
+});

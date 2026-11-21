@@ -1430,7 +1430,10 @@ td.no-capitalize,
   /* Completely strip modal backdrop, fixed overlay boxes, scroll panels & sidebars */
   #root,
   main,
+  .app-container,
+  .main-content,
   .app-layout,
+  .po-management-wrapper,
   .modal-overlay,
   .pdf-modal-overlay,
   .modal-content,
@@ -1469,16 +1472,16 @@ td.no-capitalize,
     visibility: hidden !important;
   }
 
-  /* 4. Position printable document target cleanly at top-left 0,0 */
+  /* 4. Position printable document target cleanly in static page flow */
   .printable-document,
   #printable-quotation,
   #printable-po,
   #printable-ocn,
   #printable-jds,
   #printable-packing-list {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
     width: 100% !important;
     max-width: 100% !important;
     box-sizing: border-box !important;
