@@ -3,13 +3,13 @@ import { getCompanyLogo } from '../services/settingsService';
 
 export default function Preloader({ onComplete, isReady = true, statusText }) {
   const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('Initializing ERP Core Engine...');
+  const [statusMessage, setStatusMessage] = useState('Loading FlexiERP...');
   const [isExiting, setIsExiting] = useState(false);
   const logoUrl = getCompanyLogo();
   const completedCalledRef = useRef(false);
   const forceCompleteRef = useRef(false);
 
-  // Hard stop so a hung data fetch cannot leave the bar clamped at 92%.
+  // Hard stop so a hung data fetch cannot leave the loader stuck
   useEffect(() => {
     const forceTimer = setTimeout(() => {
       forceCompleteRef.current = true;
@@ -23,14 +23,12 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
         let next;
         const ready = isReady || forceCompleteRef.current;
         if (!ready) {
-          // While DB connection or data fetching is pending, cap smooth progress at 92%
-          if (prev < 25) next = prev + 2.5;
-          else if (prev < 55) next = prev + 1.8;
-          else if (prev < 88) next = prev + 1.2;
+          if (prev < 30) next = prev + 3;
+          else if (prev < 60) next = prev + 2;
+          else if (prev < 90) next = prev + 1;
           else next = Math.min(92, prev + 0.25);
         } else {
-          // Once DB connected and initial data fetched, quickly advance to 100%
-          next = Math.min(100, prev + (prev < 90 ? 8 : 5));
+          next = Math.min(100, prev + (prev < 90 ? 10 : 6));
         }
 
         const pct = Math.floor(next);
@@ -38,16 +36,14 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
         if (statusText) {
           setStatusMessage(statusText);
         } else {
-          if (pct < 25) {
-            setStatusMessage('Initializing Core Modules...');
-          } else if (pct < 55) {
-            setStatusMessage('Connecting to Database & Cloud Storage...');
-          } else if (pct < 88) {
-            setStatusMessage('Loading Inventory & Production Records...');
-          } else if (pct < 98) {
-            setStatusMessage('Verifying User Permissions...');
+          if (pct < 30) {
+            setStatusMessage('Initializing system modules...');
+          } else if (pct < 65) {
+            setStatusMessage('Connecting to plant database...');
+          } else if (pct < 92) {
+            setStatusMessage('Loading records & inventory...');
           } else {
-            setStatusMessage('Loading Workspace...');
+            setStatusMessage('Opening workspace...');
           }
         }
 
@@ -58,7 +54,7 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
             setIsExiting(true);
             setTimeout(() => {
               if (onComplete) onComplete();
-            }, 260);
+            }, 220);
           }
         }
 
@@ -83,102 +79,56 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        background: 'radial-gradient(circle at 50% 45%, #ffffff 0%, #f8fafc 70%, #f1f5f9 100%)',
+        background: '#ffffff',
+        fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
         color: '#0f172a',
-        fontFamily: "'Outfit', 'Inter', system-ui, -apple-system, sans-serif",
         padding: '24px',
         opacity: isExiting ? 0 : 1,
-        transform: isExiting ? 'scale(1.01)' : 'scale(1)',
-        transition: 'opacity 0.26s ease-out, transform 0.26s ease-out',
-        WebkitFontSmoothing: 'antialiased',
+        transition: 'opacity 0.22s ease-out',
+        WebkitFontSmoothing: 'antialiased'
       }}
     >
-      {/* Clean Centered Brand Stack */}
+      {/* Central Brand & Loader Stack */}
       <div style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         textAlign: 'center',
-        maxWidth: '380px',
-        width: '100%'
+        width: '100%',
+        maxWidth: '320px'
       }}>
-        {/* Logo Container with Subtle Elevation */}
-        <div style={{
-          position: 'relative',
-          marginBottom: '20px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center'
-        }}>
-          {/* Subtle Outer Spinner Ring */}
-          <div style={{
-            position: 'absolute',
-            inset: '-10px',
-            borderRadius: '50%',
-            border: '2px dashed rgba(2, 132, 199, 0.25)',
-            animation: 'preloaderSpin 12s linear infinite'
-          }}></div>
-
-          <div style={{
-            width: '84px',
-            height: '84px',
-            borderRadius: '22px',
-            background: '#ffffff',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.08)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '12px'
-          }}>
-            <img 
-              src={logoUrl || '/samyak-logo.png'} 
-              alt="Samyak Logo" 
-              style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
-          </div>
+        {/* Official Corporate Logo */}
+        <div style={{ marginBottom: '28px' }}>
+          <img 
+            src={logoUrl || '/samyak-logo.png'} 
+            alt="Samyak International Ltd" 
+            style={{
+              height: '46px',
+              maxWidth: '220px',
+              width: 'auto',
+              objectFit: 'contain',
+              display: 'block'
+            }}
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
         </div>
 
-        {/* Brand & System Names */}
-        <h1 style={{
-          fontSize: '1.15rem',
-          fontWeight: '800',
-          letterSpacing: '0.04em',
-          margin: '0 0 4px 0',
-          color: '#0f172a',
-          textTransform: 'uppercase'
-        }}>
-          Samyak International Ltd
-        </h1>
-
+        {/* Minimal Precision Progress Bar */}
         <div style={{
-          fontSize: '0.8rem',
-          fontWeight: '600',
-          color: '#0284c7',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          marginBottom: '20px'
-        }}>
-          FlexiERP Operating System
-        </div>
-
-        {/* Minimalist Progress Track */}
-        <div style={{
-          width: '240px',
-          height: '4px',
-          background: '#e2e8f0',
+          width: '200px',
+          height: '2.5px',
+          background: '#f1f5f9',
           borderRadius: '999px',
           overflow: 'hidden',
           position: 'relative',
-          marginBottom: '12px'
+          marginBottom: '14px'
         }}>
           <div style={{
             width: `${progress}%`,
             height: '100%',
+            background: '#0284c7',
             borderRadius: '999px',
-            background: 'linear-gradient(90deg, #0284c7 0%, #0ea5e9 100%)',
-            transition: 'width 0.08s ease-out',
+            transition: 'width 0.1s linear',
             position: 'relative',
             overflow: 'hidden'
           }}>
@@ -188,41 +138,51 @@ export default function Preloader({ onComplete, isReady = true, statusText }) {
               left: 0,
               right: 0,
               bottom: 0,
-              background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.7) 50%, transparent 100%)',
-              animation: 'preloaderShimmer 1.5s infinite'
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.6) 50%, transparent 100%)',
+              animation: 'preloaderShimmer 1.4s infinite'
             }}></div>
           </div>
         </div>
 
-        {/* Status Text & Subtle Percentage */}
+        {/* Quiet Corporate Status Note with Micro-Spinner */}
         <div style={{
-          display: 'flex',
+          display: 'inline-flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '240px',
-          fontSize: '0.78rem',
+          gap: '8px',
+          fontSize: '12px',
           color: '#64748b',
-          fontWeight: '500'
+          fontWeight: '500',
+          letterSpacing: '-0.01em'
         }}>
           <span style={{
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            maxWidth: '190px'
-          }}>
-            {statusMessage}
-          </span>
-          <span style={{
-            fontWeight: '700',
-            color: '#0284c7',
-            fontVariantNumeric: 'tabular-nums'
-          }}>
-            {progress}%
-          </span>
+            width: '11px',
+            height: '11px',
+            borderRadius: '50%',
+            border: '1.5px solid #cbd5e1',
+            borderTopColor: '#0284c7',
+            display: 'inline-block',
+            animation: 'preloaderSpin 0.75s linear infinite'
+          }}></span>
+          <span>{statusMessage}</span>
         </div>
       </div>
 
-      {/* Embedded Animations */}
+      {/* Corporate Plant Footer */}
+      <div style={{
+        position: 'absolute',
+        bottom: 'max(20px, env(safe-area-inset-bottom, 20px))',
+        left: 0,
+        right: 0,
+        textAlign: 'center',
+        fontSize: '11px',
+        fontWeight: '500',
+        color: '#94a3b8',
+        letterSpacing: '0.02em'
+      }}>
+        Samyak International Ltd • Indore Manufacturing Unit
+      </div>
+
+      {/* Clean Embedded Animations */}
       <style>{`
         @keyframes preloaderSpin {
           from { transform: rotate(0deg); }
