@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { 
-  Building2, 
-  Plus, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  CreditCard, 
-  CheckCircle2, 
-  Star, 
+import {
+  Building2,
+  Plus,
+  Mail,
+  Phone,
+  MapPin,
+  CreditCard,
+  CheckCircle2,
+  Star,
   FileText,
   Search,
   Printer,
@@ -84,24 +84,24 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
   const [selectedMaterials, setSelectedMaterials] = useState(['PET', 'METPET']);
 
   const materialOptions = [
-    "PET", 
-    "METPET", 
-    "LDPE", 
-    "Natural GP LD", 
-    "White LD", 
-    "BOPP Natural", 
+    "PET",
+    "METPET",
+    "LDPE",
+    "Natural GP LD",
+    "White LD",
+    "BOPP Natural",
     "Matte Finish BOPP",
-    "Metalised BOPP", 
-    "Pearlised BOPP", 
-    "CPP Natural", 
-    "Metalised CPP", 
-    "Liquid Inks", 
-    "Solvent-less Adhesive", 
+    "Metalised BOPP",
+    "Pearlised BOPP",
+    "CPP Natural",
+    "Metalised CPP",
+    "Liquid Inks",
+    "Solvent-less Adhesive",
     "Solvents"
   ];
 
   const toggleMaterial = (mat) => {
-    setSelectedMaterials(prev => 
+    setSelectedMaterials(prev =>
       prev.includes(mat) ? prev.filter(m => m !== mat) : [...prev, mat]
     );
   };
@@ -243,7 +243,7 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
   // Helper to compute PO history for a selected vendor
   const getVendorPoHistory = (vendor) => {
     if (!vendor) return [];
-    
+
     // 1. Read cached POs from safeLocalStorage
     const cachedPos = safeLocalStorageGet('samyak_erp_issued_pos', {});
 
@@ -297,10 +297,10 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       {/* Generated Purchase Order PDF Modal Preview */}
       {activePoPdfData && (
-        <PurchaseOrderPDF 
-          poData={activePoPdfData} 
+        <PurchaseOrderPDF
+          poData={activePoPdfData}
           vendors={vendors}
-          onClose={() => setActivePoPdfData(null)} 
+          onClose={() => setActivePoPdfData(null)}
         />
       )}
 
@@ -310,9 +310,9 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
             <div className="search-bar" style={{ width: '300px' }}>
               <Search size={18} style={{ color: 'var(--text-muted)' }} />
-              <input 
-                type="text" 
-                placeholder="Search Vendor Name, GSTIN, Material..." 
+              <input
+                type="text"
+                placeholder="Search Vendor Name, GSTIN, Material..."
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
                 style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }}
@@ -358,10 +358,10 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                   Contact:{' '}
                   {String(vendor.contactPerson || '').trim() || String(vendor.phone || '').trim()
                     ? <>
-                        {String(vendor.contactPerson || '').trim() ? <b>{vendor.contactPerson}</b> : null}
-                        {String(vendor.contactPerson || '').trim() && String(vendor.phone || '').trim() ? ' ' : ''}
-                        {String(vendor.phone || '').trim() ? `(${vendor.phone})` : ''}
-                      </>
+                      {String(vendor.contactPerson || '').trim() ? <b>{vendor.contactPerson}</b> : null}
+                      {String(vendor.contactPerson || '').trim() && String(vendor.phone || '').trim() ? ' ' : ''}
+                      {String(vendor.phone || '').trim() ? `(${vendor.phone})` : ''}
+                    </>
                     : '—'}
                 </span>
               </div>
@@ -399,26 +399,26 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                 Terms: <b>{vendor.paymentTerms || vendor.payment_terms || '30 Days Net'}</b>
               </span>
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button 
+                <button
                   type="button"
-                  className="btn-secondary" 
+                  className="btn-secondary"
                   style={{ padding: '5px 10px', fontSize: '0.78rem', cursor: 'pointer', background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0', fontWeight: '700' }}
                   onClick={() => setSelectedVendorForPoHistory(vendor)}
                 >
                   <FileText size={14} /> PO History
                 </button>
-                <button 
+                <button
                   type="button"
-                  className="btn-secondary" 
+                  className="btn-secondary"
                   style={{ padding: '5px 8px', fontSize: '0.78rem', cursor: 'pointer' }}
                   onClick={() => handleOpenEditModal(vendor)}
                   title="Edit Vendor Details"
                 >
                   <Edit3 size={14} /> Edit
                 </button>
-                <button 
+                <button
                   type="button"
-                  className="btn-danger" 
+                  className="btn-danger"
                   style={{ padding: '5px 8px', fontSize: '0.78rem', cursor: 'pointer' }}
                   onClick={() => handleDeleteVendorClick(vendor.id, vendor.companyName || vendor.name)}
                   title="Delete Vendor Record"
@@ -499,8 +499,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                                   ₹{(totalVal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                 </td>
                                 <td>
-                                  <button 
-                                    className="btn-primary" 
+                                  <button
+                                    className="btn-primary"
                                     style={{ padding: '4px 10px', fontSize: '0.75rem', background: '#047857' }}
                                     onClick={() => setActivePoPdfData(po)}
                                   >
@@ -542,8 +542,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
               <div className="form-grid">
                 <div className="form-group">
                   <label>Company Name *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     required
                     placeholder="e.g. FlexiPoly Films Ltd"
@@ -554,8 +554,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group">
                   <label>GSTIN *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     required
                     placeholder="e.g. 23AABCF1234H1Z5"
@@ -566,8 +566,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>Factory / Office Address *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     required
                     placeholder="e.g. Plot 45, Sector 3, Pithampur Industrial Area, Dhar M.P."
@@ -578,8 +578,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group">
                   <label>Contact Person Name</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     placeholder="e.g. Rajesh Kumar"
                     value={contactPerson}
@@ -589,8 +589,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group">
                   <label>Phone Number</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     placeholder="e.g. +91 98260 12345"
                     value={phone}
@@ -600,8 +600,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group">
                   <label>Email Address</label>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     className="form-control"
                     placeholder="e.g. sales@flexipoly.com"
                     value={email}
@@ -611,8 +611,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group">
                   <label>Payment Terms</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     value={paymentTerms}
                     onChange={e => setPaymentTerms(e.target.value)}
@@ -621,8 +621,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
 
                 <div className="form-group" style={{ gridColumn: 'span 2' }}>
                   <label>Vendor Bank Account & IFSC Details</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     className="form-control"
                     placeholder="e.g. HDFC Bank | A/C: 50200012345678 | IFSC: HDFC0000123"
                     value={bankDetails}
@@ -640,8 +640,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
                   {materialOptions.map(mat => {
                     const isSelected = selectedMaterials.includes(mat);
                     return (
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         key={mat}
                         className={`preset-chip ${isSelected ? 'active-chip' : ''}`}
                         onClick={() => toggleMaterial(mat)}
