@@ -138,3 +138,39 @@ test('UniversalBarcodeScannerModal suppresses Open Production Record for RM barc
   assert.match(modalContent, /View Inward GRN PDF/, 'Must provide button to view/print Inward GRN PDF');
   assert.match(modalContent, /<GRNPDF[\s\S]*?grnData=\{activeGrnPdfData\}/, 'Must mount GRNPDF overlay when activeGrnPdfData is set');
 });
+
+test('Side menu Scan Barcode, Revert notices, and Structure Changes are minimized into icons with closable popups', () => {
+  const appPath = path.join(rootDir, 'src', 'App.jsx');
+  const revertPath = path.join(rootDir, 'src', 'components', 'ConsumptionRevertNotices.jsx');
+  const structurePath = path.join(rootDir, 'src', 'components', 'StructureChangeNotices.jsx');
+  const cssPath = path.join(rootDir, 'src', 'index.css');
+
+  const appContent = fs.readFileSync(appPath, 'utf8');
+  const revertContent = fs.readFileSync(revertPath, 'utf8');
+  const structureContent = fs.readFileSync(structurePath, 'utf8');
+  const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+  // Verify App.jsx quick actions container
+  assert.match(appContent, /data-testid="sidebar-quick-actions"/, 'Must contain sidebar-quick-actions bar');
+  assert.match(appContent, /className="sidebar-action-icon-btn sidebar-action-scan"/, 'Scan Barcode must be a compact icon button');
+  assert.match(appContent, /Scan Barcode \(Alt\+B\)/, 'Scan barcode must retain Alt+B hint');
+
+  // Verify ConsumptionRevertNotices uses icon button and ModalOverlay popup
+  assert.match(revertContent, /import ModalOverlay from '\.\/ModalOverlay';/, 'Revert notices must import ModalOverlay');
+  assert.match(revertContent, /className=\{`sidebar-action-icon-btn sidebar-action-revert/, 'Revert notices toggle must use compact icon button class');
+  assert.match(revertContent, /className="sidebar-action-badge"/, 'Revert notices must render floating unread badge');
+  assert.match(revertContent, /<ModalOverlay onClose=\{\(\) => setOpen\(false\)\}/, 'Revert notices must open a closable ModalOverlay popup');
+
+  // Verify StructureChangeNotices uses icon button and ModalOverlay popup
+  assert.match(structureContent, /import ModalOverlay from '\.\/ModalOverlay';/, 'Structure changes must import ModalOverlay');
+  assert.match(structureContent, /className=\{`sidebar-action-icon-btn sidebar-action-structure/, 'Structure changes toggle must use compact icon button class');
+  assert.match(structureContent, /className="sidebar-action-badge"/, 'Structure changes must render floating unread badge');
+  assert.match(structureContent, /<ModalOverlay onClose=\{\(\) => setOpen\(false\)\}/, 'Structure changes must open a closable ModalOverlay popup');
+
+  // Verify CSS styles for quick actions
+  assert.match(cssContent, /\.sidebar-quick-actions\s*\{[\s\S]*?display:\s*flex/i, 'Must style quick actions container');
+  assert.match(cssContent, /\.sidebar-action-icon-btn\s*\{[\s\S]*?height:\s*38px/i, 'Must define compact 38px icon buttons');
+  assert.match(cssContent, /\.sidebar-action-badge\s*\{[\s\S]*?position:\s*absolute/i, 'Must define floating counter badge');
+  assert.match(cssContent, /\.sidebar\.collapsed \.sidebar-quick-actions\s*\{[\s\S]*?flex-direction:\s*column/i, 'Must stack vertically in collapsed desktop rail');
+});
+

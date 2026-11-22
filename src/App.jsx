@@ -5313,27 +5313,23 @@ export default function App() {
           </div>
         </div>
 
-        <div className="sidebar-scan-wrap">
+        {/* Quick Actions Bar: Scan Barcode, Revert Notices, Structure Changes as compact icons */}
+        <div className="sidebar-quick-actions" data-testid="sidebar-quick-actions">
           <button
             type="button"
-            className="sidebar-scan-btn"
+            className="sidebar-action-icon-btn sidebar-action-scan"
             onClick={() => setIsBarcodeScannerOpen(true)}
             data-nav-label="Scan Barcode (Alt+B)"
-            title={railCollapsed ? undefined : 'Universal Barcode & 2D QR Inspector (Alt+B)'}
+            title="Scan Barcode (Alt+B)"
             aria-label="Scan Barcode (Alt+B)"
           >
-            <span className="sidebar-scan-btn-inner">
-              <span className="sidebar-scan-icon">
-                <ScanBarcode size={16} aria-hidden="true" />
-              </span>
-              <span className="nav-label">Scan Barcode</span>
-            </span>
-            <span className="sidebar-scan-kbd">Alt+B</span>
+            <ScanBarcode size={17} aria-hidden="true" />
+            <span className="sidebar-action-tooltip">Scan Barcode (Alt+B)</span>
           </button>
-        </div>
 
-        <ConsumptionRevertNotices currentUser={currentUser} />
-        <StructureChangeNotices currentUser={currentUser} />
+          <ConsumptionRevertNotices currentUser={currentUser} />
+          <StructureChangeNotices currentUser={currentUser} />
+        </div>
 
         <div className="nav-links" onScroll={() => setNavTooltip(null)}>
           {(isTabAllowed('dashboard') || isTabAllowed('sales') || isTabAllowed('scrap_analytics')) && (
