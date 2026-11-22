@@ -143,6 +143,18 @@ test('FIFO lines keep the oldest in-stock barcode as consume-first', () => {
   assert.equal(lines[1].originText, '2025-06-01');
 });
 
+test('the phone ledger header does not stretch the title into a gap above Close', () => {
+  const css = fs.readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+  const marker = '.rm-stock-ledger-header {';
+  const start = css.indexOf(marker);
+  assert.ok(start > 0);
+  const rule = css.slice(start, css.indexOf('.rm-ledger-kpi-grid', start));
+  assert.match(rule, /flex-direction:\s*column/);
+  assert.match(rule, /\.rm-stock-ledger-header > :first-child\s*\{[^}]*flex:\s*none\s*!important/);
+  const desktop = css.slice(0, start);
+  assert.doesNotMatch(desktop, /\.rm-stock-ledger-header > :first-child/);
+});
+
 test('the trial loads Mantine table styles only, and only behind the switch', () => {
   const pilot = fs.readFileSync(new URL('../src/components/inventoryTrial/MantinePilot.jsx', import.meta.url), 'utf8');
   const inventory = fs.readFileSync(new URL('../src/components/InventoryManagement.jsx', import.meta.url), 'utf8');

@@ -4631,6 +4631,12 @@ html, body {
     gap: 10px !important;
   }
 
+  /* The title's flex basis is a width in the desktop row. In this column it
+     would become a 280px-tall block and leave a blank band above Close. */
+  .rm-stock-ledger-header > :first-child {
+    flex: none !important;
+  }
+
   .rm-stock-ledger-actions {
     display: flex !important;
     width: 100% !important;
