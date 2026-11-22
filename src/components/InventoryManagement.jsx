@@ -1,4 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import UiTrialToggleButton from './trial/UiTrialToggleButton.jsx';
+import { useUiTrial } from '../utils/uiTrialSwitch.js';
+import { ItemLedgerFifoTrialView, ItemLedgerMovementsTrialView } from './trial/ItemLedgerTrialTables.jsx';
+
+const InventoryTrialView = React.lazy(() => import('./trial/InventoryTrialView.jsx'));
 import { anyAssignedRole } from '../assignedRoles';
 import { canDecideGrnQc } from '../approvalAccess';
 import { formatPlantDate, formatPlantDateTime } from '../utils/dbDates';
@@ -336,6 +341,7 @@ export default function InventoryManagement({
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
+  const { enabled: uiTrialActive, toggle: toggleUiTrial } = useUiTrial(currentUser);
 
   // SFG & FG Creation Modal State
   const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
@@ -5123,6 +5129,7 @@ export default function InventoryManagement({
       <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {/* Top Actions Row */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+          <UiTrialToggleButton currentUser={currentUser} />
           <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
             <ArrowUpRight size={16} /> Issue / Return to Store
           </button>
@@ -5622,6 +5629,7 @@ export default function InventoryManagement({
 
 
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <UiTrialToggleButton currentUser={currentUser} />
               <button 
                 type="button"
                 className="btn-primary" 
@@ -5685,261 +5693,295 @@ export default function InventoryManagement({
             </div>
           </div>
 
-          <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '36px' }}>
-                    <input
-                      type="checkbox"
-                      aria-label="Select stock items on this page"
-                      checked={stockPagination.paginatedItems.length > 0 && stockPagination.paginatedItems.every((row) => stockItemIds(row).every((id) => selectedStockIds.has(id)))}
-                      onChange={(event) => {
-                        const ids = stockPagination.paginatedItems.flatMap((row) => stockItemIds(row));
-                        toggleStockSelection(ids, event.target.checked);
-                      }}
-                    />
-                  </th>
-                  <th>Inventory ID</th>
-                  <th>Item Name & Code</th>
-                  <th>Category</th>
-                  <th>Substrate / Grade</th>
-                  <th>Specs / Gauge</th>
-                  <th>Available Stock</th>
-                  <th>Purchase Rate (₹)</th>
-                  <th>Purchase Valuation (₹)</th>
-                  <th>Allocated Qty</th>
-                  <th>Location Bay</th>
-                  <th>Last Supplier & Batch</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stockPagination.paginatedItems.map(item => {
-                  const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
-                  const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
-                  const title = (isFilm && !item.preserveItemName)
-                    ? formatFilmItemName(item.filmType, item.widthMm, item.micron, displayItemName(item.itemName))
-                    : (item.itemName ? displayItemName(item.itemName) : (item.category || item.filmType || 'Stock Item'));
-                  const unitStr = item.unit || 'kg';
-                  const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
-                  const availQty = parseFloat(item.availableQtyKg) || 0;
-                  const itemValuation = availQty * rate;
-                  const subGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || '-';
-
-                  const barcodeFifos = fifosForItemIds(item.allInventoryIds || [item.id], inventoryRolls, rollFifoIndex);
-                  const isOverAged = barcodeFifos.some(({ roll, fifo }) => openBarcodeIsOverAged(fifo, item.category || roll.category, ageingSettings));
-
-                  // Pending QC matching for this item
-                  const pendingQcQty = pendingQcKgForItem(item, safeGrns);
-
-                  const itemResInfo = getItemReservations(item);
-                  const allocatedForOrders = itemResInfo.totalReservedKg;
-                  const effectiveAllocated = Number(((item.allocatedQtyKg || 0) + allocatedForOrders).toFixed(2));
-                  const usableFreeStock = Math.max(0, Number(((item.availableQtyKg || 0) - allocatedForOrders).toFixed(2)));
-
-                  const rowIds = stockItemIds(item);
-                  const rowSelected = rowIds.length > 0 && rowIds.every((id) => selectedStockIds.has(id));
-                  const rowArchived = (item.subItems || [item]).every((sub) => !isInventoryItemActive(sub));
-                  return (
-                    <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
-                      <td>
+          {uiTrialActive ? (
+            <React.Suspense fallback={<div style={{ padding: '36px', textAlign: 'center', color: '#64748b' }}>Loading modern inventory view…</div>}>
+              <InventoryTrialView
+                paginatedItems={stockPagination.paginatedItems}
+                totalItems={stockPagination.totalItems}
+                currentPage={stockPagination.currentPage}
+                pageSize={stockPagination.pageSize}
+                onPageChange={stockPagination.setCurrentPage}
+                onPageSizeChange={stockPagination.setPageSize}
+                selectedStockIds={selectedStockIds}
+                toggleStockSelection={toggleStockSelection}
+                stockItemIds={stockItemIds}
+                onInward={openNewGRNModal}
+                onOpenHistory={setSelectedItemForPurchaseHistory}
+                onEdit={openEditStockModal}
+                onDelete={handleDeleteStockItem}
+                formatFilmItemName={formatFilmItemName}
+                displayItemName={displayItemName}
+                isInventoryItemActive={isInventoryItemActive}
+                fifosForItemIds={fifosForItemIds}
+                openBarcodeIsOverAged={openBarcodeIsOverAged}
+                ageingSettings={ageingSettings}
+                rollFifoIndex={rollFifoIndex}
+                inventoryRolls={inventoryRolls}
+                pendingQcKgForItem={pendingQcKgForItem}
+                safeGrns={safeGrns}
+                getItemReservations={getItemReservations}
+                onToggleClassic={toggleUiTrial}
+              />
+            </React.Suspense>
+          ) : (
+            <>
+              <div style={{ overflowX: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: '36px' }}>
                         <input
                           type="checkbox"
-                          aria-label={`Select ${title}`}
-                          checked={rowSelected}
-                          onChange={(event) => toggleStockSelection(rowIds, event.target.checked)}
-                        />
-                      </td>
-                      <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
-                        <div>{item.primaryId || item.id}</div>
-                        {item.subItems && item.subItems.length > 1 && (
-                          <div style={{ fontSize: '0.7rem', color: '#4b5563', fontWeight: '600', marginTop: '2px' }} title={`Grouped Inventory Codes/IDs: ${item.allInventoryIds.join(', ')}`}>
-                            <span className="badge" style={{ background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', padding: '1px 5px', fontSize: '0.68rem', fontWeight: '700' }}>
-                              +{item.subItems.length - 1} inward lots
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        <button 
-                          style={{ 
-                            background: 'none', 
-                            border: 'none', 
-                            padding: 0, 
-                            fontFamily: 'inherit', 
-                            fontSize: 'inherit', 
-                            fontWeight: '700', 
-                            color: '#2563eb', 
-                            cursor: 'pointer', 
-                            textDecoration: 'underline',
-                            textAlign: 'left'
+                          aria-label="Select stock items on this page"
+                          checked={stockPagination.paginatedItems.length > 0 && stockPagination.paginatedItems.every((row) => stockItemIds(row).every((id) => selectedStockIds.has(id)))}
+                          onChange={(event) => {
+                            const ids = stockPagination.paginatedItems.flatMap((row) => stockItemIds(row));
+                            toggleStockSelection(ids, event.target.checked);
                           }}
-                          onClick={() => setSelectedItemForPurchaseHistory(item)}
-                          title="Click to view date-wise GRN Purchase & Receipt History"
-                        >
-                          {title}
-                        </button>
-                        {rowArchived && (
-                          <div style={{ marginTop: '4px' }}>
-                            <span className="badge" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', fontSize: '0.68rem', fontWeight: '800' }}>Archived</span>
-                          </div>
-                        )}
-                        {item.itemCode && (
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.itemCode}</div>
-                        )}
-                      </td>
-                      <td>
-                        <span className="badge badge-info" style={{ fontSize: '0.75rem', fontWeight: '700' }}>
-                          {item.category || 'Film Substrates'}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.75rem', fontWeight: '700' }}>
-                          {subGrade}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: '0.85rem' }}>
-                        {isFilm ? `${item.micron} Micron × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
-                      </td>
-                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: (usableFreeStock ?? 0) === 0 ? (availQty === 0 && (pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}>
-                        {(usableFreeStock ?? 0).toLocaleString()} {unitStr}
-                        {(allocatedForOrders ?? 0) > 0 && (
-                          <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
-                            On-hand: {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
-                          </div>
-                        )}
-                        {(pendingQcQty ?? 0) > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: '700', marginTop: '2px', background: '#fef3c7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #fde68a', display: 'inline-block' }}>
-                            ⏳ +{(pendingQcQty ?? 0).toLocaleString()} {unitStr} Pending QC
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ fontWeight: '700', color: '#1e293b' }}>
-                        ₹{rate > 0 ? (rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} / {unitStr}
-                      </td>
-                      <td style={{ fontWeight: '800', color: '#047857' }}>
-                        ₹{itemValuation > 0 ? (itemValuation || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
-                      </td>
-                      <td style={{ color: 'var(--text-secondary)' }}>
-                        {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}
-                        {(allocatedForOrders ?? 0) > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #86efac', display: 'inline-block', whiteSpace: 'nowrap' }}>
-                            🔒 {(allocatedForOrders ?? 0).toLocaleString()} {unitStr} Reserved
-                          </div>
-                        )}
-                      </td>
-                      <td>{item.location}</td>
-                      <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                        <div>{item.lastVendor}</div>
-                        <code style={{ color: 'var(--accent-color)' }}>{item.lastBatch}</code>
-                      </td>
-                      <td>
-                        {availQty === 0 && pendingQcQty > 0 ? (
-                          <span 
-                            className="badge" 
-                            style={{ 
-                              background: '#fef3c7', 
-                              color: '#92400e', 
-                              border: '1.5px solid #fde68a', 
-                              fontSize: '0.72rem', 
-                              fontWeight: '700', 
-                              padding: '3px 8px', 
-                              borderRadius: '6px',
-                              whiteSpace: 'nowrap' 
-                            }}
-                          >
-                            📥 GRN Inward (Pending QC)
-                          </span>
-                        ) : isLow ? (
-                          <div>
-                            <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
-                              LOW STOCK
-                            </span>
-                            {pendingQcQty > 0 && (
-                              <div style={{ marginTop: '3px' }}>
-                                <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.65rem', fontWeight: '700' }}>
-                                  📥 GRN Inward (Pending QC)
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            <span className="badge badge-us">IN STOCK</span>
-                            {pendingQcQty > 0 && (
-                              <div style={{ marginTop: '3px' }}>
-                                <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.65rem', fontWeight: '700' }}>
-                                  📥 GRN Inward (Pending QC)
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {isOverAged && (
-                          <div style={{ marginTop: '4px' }}>
-                            <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }}>
-                              Has an over-aged barcode
-                            </span>
-                          </div>
-                        )}
-                      </td>
-
-
-                      <td>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button 
-                            className="btn-primary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669' }}
-                            onClick={() => openNewGRNModal(item)}
-                            title="Create Inward GRN for this item"
-                          >
-                            <Plus size={14} /> Inward
-                          </button>
-                          
-                          <button 
-                            className="btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                            onClick={() => setSelectedItemForPurchaseHistory(item)}
-                            title="View GRN Purchase History"
-                          >
-                            <Clock size={14} /> History
-                          </button>
-                          
-                          <button 
-                            className="btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
-                            onClick={() => openEditStockModal(item)}
-                            title="Edit Stock Item"
-                          >
-                            <Edit3 size={14} /> Edit
-                          </button>
-                          
-                          <button 
-                            className="btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem', color: rowArchived ? '#0369a1' : '#dc2626', borderColor: rowArchived ? '#bae6fd' : '#fecaca' }}
-                            onClick={() => handleDeleteStockItem(item)}
-                            title={rowArchived ? 'Reactivate stock item' : 'Delete an unused item, or archive an item that has history'}
-                          >
-                            <Trash2 size={14} /> {rowArchived ? 'Reactivate' : 'Delete / Archive'}
-                          </button>
-                        </div>
-                      </td>
+                        />
+                      </th>
+                      <th>Inventory ID</th>
+                      <th>Item Name & Code</th>
+                      <th>Category</th>
+                      <th>Substrate / Grade</th>
+                      <th>Specs / Gauge</th>
+                      <th>Available Stock</th>
+                      <th>Purchase Rate (₹)</th>
+                      <th>Purchase Valuation (₹)</th>
+                      <th>Allocated Qty</th>
+                      <th>Location Bay</th>
+                      <th>Last Supplier & Batch</th>
+                      <th>Status</th>
+                      <th>Actions</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <TablePagination
-            currentPage={stockPagination.currentPage}
-            totalItems={stockPagination.totalItems}
-            pageSize={stockPagination.pageSize}
-            onPageChange={stockPagination.setCurrentPage}
-            onPageSizeChange={stockPagination.setPageSize}
-          />
+                  </thead>
+                  <tbody>
+                    {stockPagination.paginatedItems.map(item => {
+                      const isLow = (item.availableQtyKg ?? 0) <= (item.reorderLevelKg ?? 100);
+                      const isFilm = (item.category || 'Film Substrates') === 'Film Substrates';
+                      const title = (isFilm && !item.preserveItemName)
+                        ? formatFilmItemName(item.filmType, item.widthMm, item.micron, displayItemName(item.itemName))
+                        : (item.itemName ? displayItemName(item.itemName) : (item.category || item.filmType || 'Stock Item'));
+                      const unitStr = item.unit || 'kg';
+                      const rate = parseFloat(item.unitPrice || item.purchaseRatePerKg) || 0;
+                      const availQty = parseFloat(item.availableQtyKg) || 0;
+                      const itemValuation = availQty * rate;
+                      const subGrade = item.substrateOrGrade || item.substrateGrade || item.filmType || item.grade || item.subType || '-';
+
+                      const barcodeFifos = fifosForItemIds(item.allInventoryIds || [item.id], inventoryRolls, rollFifoIndex);
+                      const isOverAged = barcodeFifos.some(({ roll, fifo }) => openBarcodeIsOverAged(fifo, item.category || roll.category, ageingSettings));
+
+                      // Pending QC matching for this item
+                      const pendingQcQty = pendingQcKgForItem(item, safeGrns);
+
+                      const itemResInfo = getItemReservations(item);
+                      const allocatedForOrders = itemResInfo.totalReservedKg;
+                      const effectiveAllocated = Number(((item.allocatedQtyKg || 0) + allocatedForOrders).toFixed(2));
+                      const usableFreeStock = Math.max(0, Number(((item.availableQtyKg || 0) - allocatedForOrders).toFixed(2)));
+
+                      const rowIds = stockItemIds(item);
+                      const rowSelected = rowIds.length > 0 && rowIds.every((id) => selectedStockIds.has(id));
+                      const rowArchived = (item.subItems || [item]).every((sub) => !isInventoryItemActive(sub));
+                      return (
+                        <tr key={item.id} style={{ background: isOverAged ? '#fff5f5' : 'transparent' }}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${title}`}
+                              checked={rowSelected}
+                              onChange={(event) => toggleStockSelection(rowIds, event.target.checked)}
+                            />
+                          </td>
+                          <td style={{ fontWeight: '700', color: 'var(--accent-color)' }}>
+                            <div>{item.primaryId || item.id}</div>
+                            {item.subItems && item.subItems.length > 1 && (
+                              <div style={{ fontSize: '0.7rem', color: '#4b5563', fontWeight: '600', marginTop: '2px' }} title={`Grouped Inventory Codes/IDs: ${item.allInventoryIds.join(', ')}`}>
+                                <span className="badge" style={{ background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db', padding: '1px 5px', fontSize: '0.68rem', fontWeight: '700' }}>
+                                  +{item.subItems.length - 1} inward lots
+                                </span>
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <button 
+                              style={{ 
+                                background: 'none', 
+                                border: 'none', 
+                                padding: 0, 
+                                fontFamily: 'inherit', 
+                                fontSize: 'inherit', 
+                                fontWeight: '700', 
+                                color: '#2563eb', 
+                                cursor: 'pointer', 
+                                textDecoration: 'underline',
+                                textAlign: 'left'
+                              }}
+                              onClick={() => setSelectedItemForPurchaseHistory(item)}
+                              title="Click to view date-wise GRN Purchase & Receipt History"
+                            >
+                              {title}
+                            </button>
+                            {rowArchived && (
+                              <div style={{ marginTop: '4px' }}>
+                                <span className="badge" style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', fontSize: '0.68rem', fontWeight: '800' }}>Archived</span>
+                              </div>
+                            )}
+                            {item.itemCode && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.itemCode}</div>
+                            )}
+                          </td>
+                          <td>
+                            <span className="badge badge-info" style={{ fontSize: '0.75rem', fontWeight: '700' }}>
+                              {item.category || 'Film Substrates'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', fontSize: '0.75rem', fontWeight: '700' }}>
+                              {subGrade}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '0.85rem' }}>
+                            {isFilm ? `${item.micron} Micron × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
+                          </td>
+                          <td style={{ fontSize: '1.1rem', fontWeight: '800', color: (usableFreeStock ?? 0) === 0 ? (availQty === 0 && (pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}>
+                            {(usableFreeStock ?? 0).toLocaleString()} {unitStr}
+                            {(allocatedForOrders ?? 0) > 0 && (
+                              <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
+                                On-hand: {(item.availableQtyKg ?? 0).toLocaleString()} {unitStr}
+                              </div>
+                            )}
+                            {(pendingQcQty ?? 0) > 0 && (
+                              <div style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: '700', marginTop: '2px', background: '#fef3c7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #fde68a', display: 'inline-block' }}>
+                                ⏳ +{(pendingQcQty ?? 0).toLocaleString()} {unitStr} Pending QC
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ fontWeight: '700', color: '#1e293b' }}>
+                            ₹{rate > 0 ? (rate || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'} / {unitStr}
+                          </td>
+                          <td style={{ fontWeight: '800', color: '#047857' }}>
+                            ₹{itemValuation > 0 ? (itemValuation || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                          </td>
+                          <td style={{ color: 'var(--text-secondary)' }}>
+                            {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}
+                            {(allocatedForOrders ?? 0) > 0 && (
+                              <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #86efac', display: 'inline-block', whiteSpace: 'nowrap' }}>
+                                🔒 {(allocatedForOrders ?? 0).toLocaleString()} {unitStr} Reserved
+                              </div>
+                            )}
+                          </td>
+                          <td>{item.location}</td>
+                          <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            <div>{item.lastVendor}</div>
+                            <code style={{ color: 'var(--accent-color)' }}>{item.lastBatch}</code>
+                          </td>
+                          <td>
+                            {availQty === 0 && pendingQcQty > 0 ? (
+                              <span 
+                                className="badge" 
+                                style={{ 
+                                  background: '#fef3c7', 
+                                  color: '#92400e', 
+                                  border: '1.5px solid #fde68a', 
+                                  fontSize: '0.72rem', 
+                                  fontWeight: '700', 
+                                  padding: '3px 8px', 
+                                  borderRadius: '6px',
+                                  whiteSpace: 'nowrap' 
+                                }}
+                              >
+                                📥 GRN Inward (Pending QC)
+                              </span>
+                            ) : isLow ? (
+                              <div>
+                                <span className="badge badge-warning" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                                  LOW STOCK
+                                </span>
+                                {pendingQcQty > 0 && (
+                                  <div style={{ marginTop: '3px' }}>
+                                    <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.65rem', fontWeight: '700' }}>
+                                      📥 GRN Inward (Pending QC)
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div>
+                                <span className="badge badge-us">IN STOCK</span>
+                                {pendingQcQty > 0 && (
+                                  <div style={{ marginTop: '3px' }}>
+                                    <span className="badge" style={{ background: '#fef3c7', color: '#92400e', border: '1px solid #fde68a', fontSize: '0.65rem', fontWeight: '700' }}>
+                                      📥 GRN Inward (Pending QC)
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {isOverAged && (
+                              <div style={{ marginTop: '4px' }}>
+                                <span className="badge" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', fontSize: '0.68rem', fontWeight: '800', padding: '2px 6px', display: 'inline-block' }}>
+                                  Has an over-aged barcode
+                                </span>
+                              </div>
+                            )}
+                          </td>
+
+
+                          <td>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button 
+                                className="btn-primary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#059669', borderColor: '#059669' }}
+                                onClick={() => openNewGRNModal(item)}
+                                title="Create Inward GRN for this item"
+                              >
+                                <Plus size={14} /> Inward
+                              </button>
+                              
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                                onClick={() => setSelectedItemForPurchaseHistory(item)}
+                                title="View GRN Purchase History"
+                              >
+                                <Clock size={14} /> History
+                              </button>
+                              
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem' }}
+                                onClick={() => openEditStockModal(item)}
+                                title="Edit Stock Item"
+                              >
+                                <Edit3 size={14} /> Edit
+                              </button>
+                              
+                              <button 
+                                className="btn-secondary" 
+                                style={{ padding: '4px 8px', fontSize: '0.75rem', color: rowArchived ? '#0369a1' : '#dc2626', borderColor: rowArchived ? '#bae6fd' : '#fecaca' }}
+                                onClick={() => handleDeleteStockItem(item)}
+                                title={rowArchived ? 'Reactivate stock item' : 'Delete an unused item, or archive an item that has history'}
+                              >
+                                <Trash2 size={14} /> {rowArchived ? 'Reactivate' : 'Delete / Archive'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <TablePagination
+                currentPage={stockPagination.currentPage}
+                totalItems={stockPagination.totalItems}
+                pageSize={stockPagination.pageSize}
+                onPageChange={stockPagination.setCurrentPage}
+                onPageSizeChange={stockPagination.setPageSize}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -10081,6 +10123,13 @@ export default function InventoryManagement({
               </div>
 
               {ledgerPanel === 'barcodes' && (
+                uiTrialActive ? (
+                  <ItemLedgerFifoTrialView
+                    inStockBarcodeFifos={inStockBarcodeFifos}
+                    unitStr={unitStr}
+                    ageingSettings={ageingSettings}
+                  />
+                ) : (
                 <div data-testid="ledger-barcode-fifo">
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '12px' }}>
                     In-stock barcodes, oldest origin first. Age is counted from each barcode's own origin.
@@ -10132,6 +10181,7 @@ export default function InventoryManagement({
                     </table>
                   </div>
                 </div>
+                )
               )}
 
               {ledgerPanel === 'ledger' && (
@@ -10343,7 +10393,29 @@ export default function InventoryManagement({
               </div>
 
               {/* Comprehensive Material Stock Ledger Table */}
-              <div className="mobile-table-scroll-hint">← Swipe horizontally to view full ledger history →</div>
+              {uiTrialActive ? (
+                <>
+                  <ItemLedgerMovementsTrialView
+                    paginatedLedgerItems={paginatedLedgerItems}
+                    unitStr={unitStr}
+                    editingTxId={editingTxId}
+                    tempBarcodeVal={editingBarcodeVal}
+                    onStartEditBarcode={(txId, current) => { setEditingTxId(txId); setEditingBarcodeVal(current); }}
+                    onSaveBarcode={handleSaveCustomBarcode}
+                    onCancelEditBarcode={() => { setEditingTxId(null); setEditingBarcodeVal(''); }}
+                    onTempBarcodeChange={setEditingBarcodeVal}
+                  />
+                  <TablePagination
+                    currentPage={ledgerCurrentPage}
+                    totalItems={displayLines.length}
+                    pageSize={ledgerPageSize}
+                    onPageChange={setLedgerCurrentPage}
+                    onPageSizeChange={setLedgerPageSize}
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="mobile-table-scroll-hint">← Swipe horizontally to view full ledger history →</div>
               <div className="rm-stock-ledger-table-wrap" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', WebkitOverflowScrolling: 'touch' }}>
                 <table className="data-table" style={{ fontSize: '0.85rem', minWidth: '780px' }}>
                   <thead>
@@ -10703,6 +10775,8 @@ export default function InventoryManagement({
                 onPageChange={setLedgerCurrentPage}
                 onPageSizeChange={setLedgerPageSize}
               />
+                </>
+              )}
               </>
               )}
             </div>

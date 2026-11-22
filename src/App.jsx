@@ -28,6 +28,10 @@ import { syncChallansForShipment, tareEditSummary } from './utils/deliveryChalla
 import { withReconciledCosts } from './utils/cylinderCost';
 import { artworkToApply, cylinderIdentityKey, isExplicitCylinderJobLink } from './utils/cylinderArtwork';
 import { cylindersLinkedToJobMaster, skuAfterJobMasterSync, skuWhenLinkingCylinder } from './utils/jobMasterLink';
+import UiTrialToggleButton from './components/trial/UiTrialToggleButton.jsx';
+import { useUiTrial } from './utils/uiTrialSwitch.js';
+
+const DashboardTrialView = React.lazy(() => import('./components/trial/DashboardTrialView.jsx'));
 import {
   isClosedScheduleStatus,
   jobMasterBaseForSync,
@@ -406,6 +410,7 @@ export default function App() {
 
   // Authentication & Active User Session State
   const [currentUser, setCurrentUser] = useState(() => e2eStubUser());
+  const { enabled: uiTrialActive, toggle: toggleUiTrial } = useUiTrial(currentUser);
   const [sessionProfile, setSessionProfile] = useState(null);
   const [mustSetPassword, setMustSetPassword] = useState(false);
   const [authLinkError, setAuthLinkError] = useState('');
@@ -5822,6 +5827,9 @@ export default function App() {
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
           <div data-testid="app-header-user" className="app-header-user-actions">
+            {(activeTab === 'dashboard' || activeTab === 'inventory') && (
+              <UiTrialToggleButton currentUser={currentUser} />
+            )}
             {/* Database Health Badge - Concise Icon & Status Dot */}
             <div 
               className="header-badge-db"
@@ -6029,6 +6037,24 @@ export default function App() {
             />
           </div>
         ) : moduleOpen && activeTab === 'dashboard' && (
+          uiTrialActive ? (
+            <React.Suspense fallback={<div style={{ padding: '36px', textAlign: 'center', color: '#64748b' }}>Loading modern dashboard…</div>}>
+              <DashboardTrialView
+                orders={orders}
+                delayedOrders={delayedOrders}
+                delayedOrdersCount={delayedOrdersCount}
+                inventory={inventory}
+                inks={inks}
+                avgSolidEqInkCost={avgSolidEqInkCost}
+                vendors={vendors}
+                clients={clients}
+                scrapMetrics={scrapMetrics}
+                currentUser={currentUser}
+                onNavigateTab={handleTabChange}
+                onToggleClassic={toggleUiTrial}
+              />
+            </React.Suspense>
+          ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', width: '100%', maxWidth: '100%', minWidth: 0 }}>
             {/* Metrics Overview Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))', gap: '18px', width: '100%', maxWidth: '100%', minWidth: 0 }}>
@@ -6406,6 +6432,7 @@ export default function App() {
               </div>
             </div>
           </div>
+          )
         )}
 
         {/* TAB: SALES MANAGEMENT & QUOTATION ENGINE */}

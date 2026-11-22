@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
 const sentryRelease = process.env.VITE_SENTRY_RELEASE
@@ -13,7 +14,7 @@ export default defineConfig({
   define: {
     __SENTRY_RELEASE__: JSON.stringify(sentryRelease),
   },
-  plugins: [react()],
+  plugins: [tailwindcss(), react()],
   server: {
     historyApiFallback: true,
     proxy: {
