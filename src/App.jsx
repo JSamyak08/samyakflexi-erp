@@ -155,6 +155,7 @@ import {
 import { alertOrderSaveError } from './utils/alertOnce';
 import { recordsAfterDataLoad } from './utils/loadedRecords';
 import { reportBackgroundFailure } from './utils/backgroundFailure';
+import { calculateScrapMetrics } from './utils/dashboardScrap';
 import { applyPrintRunResult, holdPrintRun, recordPrintRun, restartHeldPrintRun } from './services/printRun';
 import { isActivePrintRun, parseActivePrintRunConflict } from './utils/printRunConflict';
 import { canHoldPrintJob, isHeldPrintJob } from './utils/printHold';
@@ -2472,67 +2473,7 @@ export default function App() {
   const pendingProductionApprovalCount = (productionRecords || []).filter(r => r.status === 'Filled by Plant Manager').length;
 
   // Calculate average scrap % running throughout the jobs for dashboard
-  const calculateScrapMetrics = (records) => {
-    if (!records || records.length === 0) {
-      return { currentMonthAvg: 0, prevMonthAvg: 0, momChange: 0, momDirection: 'neutral' };
-    }
-
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-
-    const curMonthRecords = [];
-    const prevMonthRecords = [];
-
-    let prevYear = currentYear;
-    let prevMonth = currentMonth - 1;
-    if (prevMonth < 0) {
-      prevMonth = 11;
-      prevYear = currentYear - 1;
-    }
-
-    records.forEach(r => {
-      const dateStr = r.recordedAt || r.dateFilled;
-      if (!dateStr) return;
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return;
-
-      const y = date.getFullYear();
-      const m = date.getMonth();
-
-      if (y === currentYear && m === currentMonth) {
-        curMonthRecords.push(r);
-      } else if (y === prevYear && m === prevMonth) {
-        prevMonthRecords.push(r);
-      }
-    });
-
-    const getAvgScrap = (recList) => {
-      if (recList.length === 0) return 0;
-      const sum = recList.reduce((acc, r) => {
-        const grossKg = r.grossProductionKg || r.totalProductionQtyKg || ((r.netUsableKg || r.qtyDispatch || 0) + (r.totalWastageKg || r.totalScrapQtyKg || 0));
-        const wastageKg = r.totalWastageKg || r.totalScrapQtyKg || 0;
-        const wastagePct = Number(r.wastagePercentage ?? r.overallScrapPctOfOutput ?? (grossKg > 0 ? (wastageKg / grossKg) * 100 : 0));
-        return acc + wastagePct;
-      }, 0);
-      return sum / recList.length;
-    };
-
-    const currentMonthAvg = getAvgScrap(curMonthRecords);
-    const prevMonthAvg = getAvgScrap(prevMonthRecords);
-
-    const momChange = currentMonthAvg - prevMonthAvg;
-    const momDirection = momChange > 0 ? 'up' : (momChange < 0 ? 'down' : 'neutral');
-
-    return {
-      currentMonthAvg: parseFloat(currentMonthAvg.toFixed(2)),
-      prevMonthAvg: parseFloat(prevMonthAvg.toFixed(2)),
-      momChange: parseFloat(Math.abs(momChange).toFixed(2)),
-      momDirection
-    };
-  };
-
-  const scrapMetrics = calculateScrapMetrics(productionRecords);
+  const scrapMetrics = useMemo(() => calculateScrapMetrics(productionRecords, orders), [productionRecords, orders]);
 
   const lowStockInks = useMemo(() => {
     return (inks || []).filter(i => (parseFloat(i.stockQtyKg) || 0) < (parseFloat(i.reorderLevelKg) || 0));
@@ -6142,10 +6083,10 @@ export default function App() {
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Registered Buyers</span>
               </div>
 
-              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('scrap_analytics')}>
+              <div className="glass-card stats-card" style={{ cursor: 'pointer' }} onClick={() => handleTabChange('scrap_analytics')} title="Click to view detailed Scrap & Wastage Analysis">
                 <span className="stats-title">Average Scrap %</span>
                 <span className="stats-value">
-                  {scrapMetrics.currentMonthAvg}%
+                  {scrapMetrics.formattedAvg}
                 </span>
                 <span style={{ 
                   fontSize: '0.8rem', 
@@ -6155,9 +6096,7 @@ export default function App() {
                   alignItems: 'center',
                   gap: '4px'
                 }}>
-                  {scrapMetrics.momDirection === 'up' && `▲ +${scrapMetrics.momChange}% MoM (Increase)`}
-                  {scrapMetrics.momDirection === 'down' && `▼ -${scrapMetrics.momChange}% MoM (Decrease)`}
-                  {scrapMetrics.momDirection === 'neutral' && `• 0.0% MoM (No Change)`}
+                  {scrapMetrics.subText}
                 </span>
               </div>
             </div>

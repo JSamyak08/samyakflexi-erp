@@ -79,7 +79,7 @@ export function canReadPayroll(roleOrRoles) {
 }
 
 export const BOOT_NEEDS = {
-  orders: ['orders', 'job_punching', 'sales', 'production_records', 'printing_scheduler', 'dispatch', 'inventory', 'scrap_analytics'],
+  orders: ['dashboard', 'orders', 'job_punching', 'sales', 'production_records', 'printing_scheduler', 'dispatch', 'inventory', 'scrap_analytics'],
   jobMasters: ['job_masters', 'job_punching', 'orders', 'cylinders', 'printing_scheduler', 'production_records'],
   inventory: ['inventory', 'material_indents', 'purchase_orders', 'production_records', 'printing_scheduler', 'ink_management', 'pellet_fuel', 'dispatch'],
   cylinders: ['cylinders', 'job_masters', 'printing_scheduler', 'orders'],
@@ -88,7 +88,7 @@ export const BOOT_NEEDS = {
   machines: ['printing_scheduler', 'production_records', 'doc_settings', 'material_indents'],
   schedules: ['printing_scheduler', 'production_records'],
   grns: ['inventory', 'purchase_orders', 'pellet_fuel'],
-  productionRecords: ['production_records', 'scrap_analytics', 'printing_scheduler', 'dispatch'],
+  productionRecords: ['dashboard', 'production_records', 'scrap_analytics', 'printing_scheduler', 'dispatch'],
   datasheets: ['job_masters', 'production_records', 'scrap_analytics', 'job_punching'],
   rolls: ['inventory', 'material_indents', 'production_records', 'printing_scheduler'],
   shipments: ['dispatch', 'sales', 'inventory', 'scrap_analytics'],
