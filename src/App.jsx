@@ -5817,9 +5817,10 @@ export default function App() {
           </div>
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
-          <div data-testid="app-header-user" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div data-testid="app-header-user" className="app-header-user-actions" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
             {/* Database Health Badge - Concise Icon & Status Dot */}
             <div 
+              className="header-badge-db"
               onClick={() => runDatabaseHealthCheck()}
               style={{ 
                 display: 'flex', 
@@ -5847,12 +5848,13 @@ export default function App() {
             </div>
 
             <WeighingScaleWidget />
-            <div data-testid="active-user-control" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
-              <UserCheck size={16} style={{ color: 'var(--primary-brand)' }} />
-              <span style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
+            <div data-testid="active-user-control" className="active-user-control" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
+              <UserCheck size={16} style={{ color: 'var(--primary-brand)', flexShrink: 0 }} />
+              <span className="active-user-prefix" style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
               {canSwitchActiveUser ? (
                 <SearchableSelect
                   id="active-user-switch"
+                  className="active-user-switch-select"
                   style={{ minWidth: '180px', display: 'inline-block' }}
                   triggerStyle={{
                     border: 'none',
@@ -5878,14 +5880,14 @@ export default function App() {
                   }}
                 />
               ) : (
-                <span data-testid="active-user-label" style={{ fontWeight: '700', color: 'var(--text-primary)', padding: '2px 4px' }}>
+                <span data-testid="active-user-label" className="active-user-readonly-label" style={{ fontWeight: '700', color: 'var(--text-primary)', padding: '2px 4px' }}>
                   {activeUserReadonlyLabel(currentUser)}
                 </span>
               )}
             </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
-              <LogOut size={16} /> Sign Out
+              <LogOut size={16} /> <span className="btn-signout-text">Sign Out</span>
             </button>
           </div>
         </div>
