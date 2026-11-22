@@ -188,9 +188,15 @@ td.no-capitalize,
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-color);
+}
+
+.header > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* ERP Panels & Cards */
@@ -1862,18 +1868,21 @@ td.no-capitalize,
 }
 
 .btn-signout {
-  background: #f1f5f9;
+  background: #f8fafc;
   border: 1px solid #cbd5e1;
   color: #475569;
-  padding: 5px 12px;
+  padding: 4px 10px;
   border-radius: 20px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-height: 32px;
+  max-height: 34px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.15s ease;
 }
 
@@ -1886,28 +1895,39 @@ td.no-capitalize,
 .app-header-user-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap !important;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .scale-badge-btn {
   border-radius: 20px !important;
   min-height: 32px;
+  padding: 4px 8px !important;
+  flex-shrink: 0;
+}
+
+.header-badge-db {
+  border-radius: 20px !important;
+  min-height: 32px;
+  padding: 4px 8px !important;
+  flex-shrink: 0;
 }
 
 .active-user-control {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   background: #ffffff;
   border: 1px solid var(--border-color);
-  padding: 3px 10px;
+  padding: 2px 8px;
   border-radius: 20px;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   min-height: 32px;
-  max-height: 36px;
+  max-height: 34px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
   transition: all 0.15s ease;
+  flex-shrink: 0;
 }
 
 .active-user-control:hover {
@@ -1920,38 +1940,41 @@ td.no-capitalize,
 }
 
 .active-user-switch-select {
-  min-width: 120px;
-  max-width: 210px;
+  width: auto;
+  min-width: 80px;
+  max-width: 125px;
   display: inline-flex;
 }
 
 .active-user-switch-select .searchable-select-trigger,
 .active-user-switch-select.searchable-select-trigger {
-  padding: 2px 4px !important;
-  font-size: 0.82rem !important;
-  min-height: 26px !important;
-  max-height: 28px !important;
-  max-width: 200px !important;
+  padding: 1px 20px 1px 2px !important;
+  font-size: 0.78rem !important;
+  min-height: 24px !important;
+  max-height: 26px !important;
+  max-width: 125px !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
+  border: none !important;
+  background: transparent !important;
 }
 
 .active-user-switch-select .searchable-select-value {
-  font-size: 0.82rem !important;
+  font-size: 0.78rem !important;
   font-weight: 600 !important;
-  max-width: 170px !important;
+  max-width: 95px !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
 
 .active-user-readonly-label {
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
-  padding: 2px 4px;
-  max-width: 180px;
+  padding: 1px 4px;
+  max-width: 105px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

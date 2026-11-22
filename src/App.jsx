@@ -5780,8 +5780,8 @@ export default function App() {
         )}
         <PwaInstallPrompt />
         <div className="header">
-          <div>
-            <h1 style={{ fontSize: '1.6rem', fontWeight: '700' }}>
+          <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+            <h1 style={{ fontSize: '1.42rem', fontWeight: '700', lineHeight: 1.25, margin: 0 }}>
               {routeInfo.unknown && 'Page not found'}
               {!routeInfo.unknown && !isTabAllowed(activeTab) && 'Access restricted'}
               {moduleOpen && activeTab === 'dashboard' && 'Executive Operations Dashboard'}
@@ -5811,13 +5811,13 @@ export default function App() {
 
 
 
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               Samyak International Ltd — Flexible Packaging Manufacturing OS
             </p>
           </div>
 
           {/* Top Bar Active User & Logout Controls (ACCOUNT / ROLE SWITCHER) */}
-          <div data-testid="app-header-user" className="app-header-user-actions" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          <div data-testid="app-header-user" className="app-header-user-actions">
             {/* Database Health Badge - Concise Icon & Status Dot */}
             <div 
               className="header-badge-db"
@@ -5826,18 +5826,20 @@ export default function App() {
                 display: 'flex', 
                 alignItems: 'center', 
                 justifyContent: 'center',
-                gap: '6px', 
-                padding: '6px 10px', 
+                gap: '5px', 
+                padding: '4px 8px', 
                 borderRadius: '20px', 
                 cursor: 'pointer',
+                minHeight: '32px',
                 background: databaseStatus === 'connected' ? '#ecfdf5' : (databaseStatus === 'checking' ? '#fef3c7' : '#fef2f2'),
                 color: databaseStatus === 'connected' ? '#047857' : (databaseStatus === 'checking' ? '#b45309' : '#dc2626'),
                 border: `1px solid ${databaseStatus === 'connected' ? '#a7f3d0' : (databaseStatus === 'checking' ? '#fde68a' : '#fecaca')}`,
-                transition: 'all 0.2s ease'
+                transition: 'all 0.2s ease',
+                flexShrink: 0
               }}
               title={`Database Status: ${databaseStatus.toUpperCase()} (Supabase PostgreSQL). Click to test connection.`}
             >
-              <Database size={16} style={{ color: databaseStatus === 'connected' ? '#059669' : (databaseStatus === 'checking' ? '#d97706' : '#dc2626') }} />
+              <Database size={15} style={{ color: databaseStatus === 'connected' ? '#059669' : (databaseStatus === 'checking' ? '#d97706' : '#dc2626') }} />
               <span style={{
                 width: '7px',
                 height: '7px',
@@ -5864,7 +5866,7 @@ export default function App() {
                     background: 'transparent',
                     fontWeight: '600',
                     color: 'var(--text-primary)',
-                    padding: '2px 4px',
+                    padding: '2px 22px 2px 2px',
                     minHeight: '26px'
                   }}
                   value={currentUser?.id || ''}
@@ -5890,7 +5892,7 @@ export default function App() {
             </div>
 
             <button className="btn-signout" onClick={handleLogout} title="Sign Out of Session">
-              <LogOut size={16} /> <span className="btn-signout-text">Sign Out</span>
+              <LogOut size={15} /> <span className="btn-signout-text">Sign Out</span>
             </button>
           </div>
         </div>
