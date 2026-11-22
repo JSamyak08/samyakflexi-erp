@@ -107,6 +107,12 @@ import SFGStoreManagement from './components/SFGStoreManagement';
 import ExecutiveAlertsSection from './components/ExecutiveAlertsSection';
 import PurchaseOrderManagement from './components/PurchaseOrderManagement';
 import WeighingScaleWidget from './components/WeighingScaleWidget';
+import NotificationsCenterModal from './components/NotificationsCenterModal';
+import {
+  aggregateRoleBasedNotifications,
+  getNotificationPermission,
+  syncAndDispatchPwaNativeNotifications
+} from './services/pwaNotifications';
 import UniversalBarcodeScannerModal from './components/UniversalBarcodeScannerModal';
 import Preloader from './components/Preloader';
 import { bootLoaderIsReady, shouldShowBootLoader } from './bootLoader';
@@ -850,6 +856,11 @@ export default function App() {
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [newBugCount, setNewBugCount] = useState(0);
+
+  // Role-based PWA private notifications state
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(() => getNotificationPermission());
+  const [notificationTick, setNotificationTick] = useState(0);
 
   // Alt+B / Ctrl+B opens the barcode scanner. Ctrl/Cmd+\ collapses the sidebar.
   // Alt+Shift+R opens Report a Bug and does not use those chords.
@@ -2489,6 +2500,73 @@ export default function App() {
     }, 0);
     return sum / valid.length;
   }, [inks]);
+
+  // Role-based PWA private notifications aggregation & synchronization
+  useEffect(() => {
+    const onUpdated = () => setNotificationTick((t) => t + 1);
+    window.addEventListener('pwa-notifications-updated', onUpdated);
+    window.addEventListener('pwa-notification-permission-changed', onUpdated);
+    return () => {
+      window.removeEventListener('pwa-notifications-updated', onUpdated);
+      window.removeEventListener('pwa-notification-permission-changed', onUpdated);
+    };
+  }, []);
+
+  const pwaNotificationsData = useMemo(() => {
+    return aggregateRoleBasedNotifications({
+      currentUser,
+      orders,
+      printingDeadlineReminders,
+      lowStockInks,
+      inventory,
+      grns,
+      salaryAdvances,
+      indents,
+      bugReports: newBugCount > 0 ? [{ id: 'active-open-bugs', title: `${newBugCount} Open Bug Reports`, severity: 'Normal', status: 'Open' }] : []
+    });
+  }, [
+    currentUser,
+    orders,
+    printingDeadlineReminders,
+    lowStockInks,
+    inventory,
+    grns,
+    salaryAdvances,
+    indents,
+    newBugCount,
+    notificationTick
+  ]);
+
+  useEffect(() => {
+    if (notificationPermission === 'granted' && currentUser && pwaNotificationsData.notifications?.length > 0) {
+      syncAndDispatchPwaNativeNotifications(currentUser, pwaNotificationsData.notifications);
+    }
+  }, [currentUser, notificationPermission, pwaNotificationsData.notifications]);
+
+  const handleNotificationRedirect = (targetUrl, actionType) => {
+    setIsNotificationsOpen(false);
+    if (!targetUrl) return;
+    const parsed = parseLocation({ pathname: targetUrl });
+    if (!parsed.unknown && parsed.tab) {
+      handleTabChange(parsed.tab, parsed.params);
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', targetUrl);
+      window.dispatchEvent(new CustomEvent('erp-slug-navigate'));
+    }
+  };
+
+  useEffect(() => {
+    const handlePwaNavigate = (e) => {
+      const { url, actionType } = e.detail || {};
+      if (url) {
+        handleNotificationRedirect(url, actionType);
+      }
+    };
+    window.addEventListener('pwa-notification-navigate', handlePwaNavigate);
+    return () => window.removeEventListener('pwa-notification-navigate', handlePwaNavigate);
+  }, []);
 
 
   // Handlers for Production Records
@@ -5228,6 +5306,41 @@ export default function App() {
         <div className="mobile-header-actions">
           <button
             type="button"
+            data-testid="pwa-notifications-bell-mobile"
+            className="mobile-header-scan-btn"
+            onClick={() => setIsNotificationsOpen(true)}
+            aria-label={`Open notifications (${pwaNotificationsData.unreadCount} unread)`}
+            title={`Action Notifications (${pwaNotificationsData.unreadCount} unread)`}
+            style={{ position: 'relative' }}
+          >
+            <Bell size={19} />
+            {pwaNotificationsData.unreadCount > 0 && (
+              <span
+                data-testid="pwa-notifications-badge-mobile"
+                style={{
+                  position: 'absolute',
+                  top: '-3px',
+                  right: '-3px',
+                  background: '#dc2626',
+                  color: '#ffffff',
+                  fontSize: '0.62rem',
+                  fontWeight: '800',
+                  minWidth: '16px',
+                  height: '16px',
+                  borderRadius: '999px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #ffffff',
+                  lineHeight: 1
+                }}
+              >
+                {pwaNotificationsData.unreadCount > 99 ? '99+' : pwaNotificationsData.unreadCount}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
             className="mobile-header-scan-btn"
             onClick={() => setIsBarcodeScannerOpen(true)}
             aria-label="Open barcode scanner"
@@ -5851,6 +5964,52 @@ export default function App() {
                 backgroundColor: databaseStatus === 'connected' ? '#10b981' : (databaseStatus === 'checking' ? '#f59e0b' : '#ef4444'),
                 boxShadow: databaseStatus === 'connected' ? '0 0 6px #10b981' : 'none'
               }} />
+            </div>
+
+            {/* PWA Role-Based Notifications Bell */}
+            <div 
+              data-testid="pwa-notifications-bell-desktop"
+              className="header-badge-notifications"
+              onClick={() => setIsNotificationsOpen(true)}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                position: 'relative',
+                gap: '6px', 
+                padding: '4px 10px', 
+                borderRadius: '20px', 
+                cursor: 'pointer',
+                minHeight: '32px',
+                background: pwaNotificationsData.unreadCount > 0 ? '#eff6ff' : '#f8fafc',
+                color: pwaNotificationsData.unreadCount > 0 ? '#1d4ed8' : '#64748b',
+                border: `1px solid ${pwaNotificationsData.unreadCount > 0 ? '#bfdbfe' : '#e2e8f0'}`,
+                transition: 'all 0.2s ease',
+                flexShrink: 0
+              }}
+              title={`Plant Action Notifications (${pwaNotificationsData.unreadCount} unread). Click to view.`}
+            >
+              <Bell size={15} style={{ color: pwaNotificationsData.unreadCount > 0 ? '#2563eb' : '#64748b' }} />
+              {pwaNotificationsData.unreadCount > 0 ? (
+                <span
+                  data-testid="pwa-notifications-badge-desktop"
+                  style={{
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    fontSize: '0.68rem',
+                    fontWeight: '800',
+                    padding: '1px 6px',
+                    borderRadius: '999px',
+                    lineHeight: '1.2'
+                  }}
+                >
+                  {pwaNotificationsData.unreadCount}
+                </span>
+              ) : (
+                <span style={{ fontSize: '0.74rem', fontWeight: '600', color: '#64748b' }}>
+                  Alerts
+                </span>
+              )}
             </div>
 
             <WeighingScaleWidget />
@@ -7018,6 +7177,18 @@ export default function App() {
         onOpenScanner={() => setIsBarcodeScannerOpen(true)}
         onOpenMenu={() => setIsMobileMenuOpen(true)}
         isTabAllowed={isTabAllowed}
+      />
+
+      {/* PWA Role-Based Notifications Center Modal */}
+      <NotificationsCenterModal
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        currentUser={currentUser}
+        notifications={pwaNotificationsData.notifications}
+        unreadCount={pwaNotificationsData.unreadCount}
+        permission={notificationPermission}
+        onPermissionChange={(perm) => setNotificationPermission(perm)}
+        onNavigate={handleNotificationRedirect}
       />
 
       {/* Global Success Screen Modal across all forms and submissions */}

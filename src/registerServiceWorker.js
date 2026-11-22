@@ -24,6 +24,15 @@ export function registerServiceWorker() {
     console.log('[PWA] FlexiERP installed successfully');
   });
 
+  // Listen for service worker notification click navigation events
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'NAVIGATE_TO' && event.data.url) {
+      window.dispatchEvent(
+        new CustomEvent('pwa-notification-navigate', { detail: event.data })
+      );
+    }
+  });
+
   window.addEventListener('load', () => {
     // Register SW
     navigator.serviceWorker

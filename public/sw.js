@@ -142,3 +142,31 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
+
+// Notification Click Event: Focus PWA window and redirect to the action URL
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || '/dashboard';
+  const actionType = event.notification.data?.actionType || 'general';
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 1. If an existing ERP window is open, focus it and dispatch client navigation
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.focus();
+          client.postMessage({
+            type: 'NAVIGATE_TO',
+            url: targetUrl,
+            actionType: actionType
+          });
+          return;
+        }
+      }
+      // 2. If no window is open, launch a new window directly to the action URL
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
+    })
+  );
+});
