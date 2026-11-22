@@ -1080,34 +1080,21 @@ export default function SalesManagement({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* Top Banner Header */}
-      <div className="glass-panel" style={{ padding: '24px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', color: '#ffffff' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.6rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
-              <ShoppingBag size={28} /> Sales Management & Quotation Engine
-            </h2>
-            <p style={{ fontSize: '0.88rem', opacity: 0.9, marginTop: '4px' }}>
-              Create professional Sales Quotations for client enquiries, manage amendments, and convert confirmed quotes directly into Order Confirmation Notes (OCN) & Job Masters.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            {canWriteSales ? (
-              <button 
-                className="btn-primary" 
-                style={{ background: '#ffffff', color: '#0284c7', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px' }}
-                onClick={handleOpenCreateForm}
-              >
-                <Plus size={18} /> Create New Sales Quotation
-              </button>
-            ) : (
-              <span style={{ background: 'rgba(255, 255, 255, 0.2)', color: '#ffffff', border: '1px solid rgba(255, 255, 255, 0.4)', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <FileText size={16} /> Read-Only Access (Accounts)
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Top Actions Row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '-8px' }}>
+        {canWriteSales ? (
+          <button 
+            className="btn-primary" 
+            style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 18px', borderRadius: '8px' }}
+            onClick={handleOpenCreateForm}
+          >
+            <Plus size={16} /> Create New Sales Quotation
+          </button>
+        ) : (
+          <span style={{ background: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', padding: '6px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <FileText size={15} /> Read-Only Access (Accounts)
+          </span>
+        )}
       </div>
 
       {/* Analytics KPI Metric Cards */}

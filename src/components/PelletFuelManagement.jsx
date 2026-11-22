@@ -489,21 +489,8 @@ export default function PelletFuelManagement({
   return (
     <div className="tab-container" style={{ padding: '24px 28px' }}>
       
-      {/* Header Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '900', color: '#0f172a', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <span style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', color: '#ffffff', width: '42px', height: '42px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(217, 119, 6, 0.25)' }}>
-              <Flame size={24} />
-            </span>
-            Boiler Pellet Fuel Stock & Consumption Engine
-          </h2>
-          <p style={{ fontSize: '0.86rem', color: '#64748b', marginTop: '4px', marginLeft: '54px' }}>
-            Day-wise boiler pellet fuel consumption logging, GRN inwarding, cost per operating hour & cost per kg of printing produced.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Header Action Bar */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
           <button 
             type="button" 
             className="btn-secondary" 
@@ -532,7 +519,6 @@ export default function PelletFuelManagement({
           </button>
             </>
           )}
-        </div>
       </div>
 
       {loadError && (

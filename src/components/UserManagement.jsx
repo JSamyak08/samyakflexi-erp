@@ -233,19 +233,9 @@ export default function UserManagement({
       )}
 
       {/* Top Header Banner */}
-      <div className="glass-panel" style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldCheck size={22} style={{ color: 'var(--primary-brand)' }} /> User Management & Dynamic RBAC Permissions Matrix
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-              Onboard plant users and configure module access permissions per role across Samyak FactoryOS.
-            </p>
-          </div>
-
-          {/* Sub-Tab Switcher */}
-          <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+      <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        {/* Sub-Tab Switcher */}
+        <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
             <button 
               className={`btn-secondary ${activeSubTab === 'directory' ? 'active' : ''}`}
               style={{ background: activeSubTab === 'directory' ? '#0f172a' : 'transparent', color: activeSubTab === 'directory' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
@@ -261,7 +251,6 @@ export default function UserManagement({
               <ShieldCheck size={16} /> Role & Module Permissions Matrix
             </button>
           </div>
-        </div>
       </div>
 
       {!isAuthorized ? (

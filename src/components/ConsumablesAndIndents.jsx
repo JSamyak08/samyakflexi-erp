@@ -856,38 +856,27 @@ export default function ConsumablesAndIndents({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      {/* Header Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <ClipboardList style={{ color: 'var(--primary-brand)' }} /> Material Indents & Consumables Store
-          </h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-            Plant store management, machine stock issuance, reserve thresholds & Store / Plant Manager requisition indents.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button 
-            className="btn-secondary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-            onClick={() => setIsNewItemModalOpen(true)}
-          >
-            <Plus size={16} /> Add Store Consumable / Spare
-          </button>
-          <button 
-            className="btn-primary" 
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
-            onClick={() => {
-              setIndentLineItems([
-                { id: Date.now(), itemName: consumables[0]?.name || "Ethyl Acetate Solvent", category: consumables[0]?.category || "Chemicals", unit: consumables[0]?.unit || "Litres", reqQty: 100, targetMachine: dynamicMachineList[0] || '' }
-              ]);
-              setIsIndentModalOpen(true);
-            }}
-          >
-            <Plus size={18} /> Raise Material Indent
-          </button>
-        </div>
+      {/* Header Action Row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '-8px' }}>
+        <button 
+          className="btn-secondary" 
+          style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          onClick={() => setIsNewItemModalOpen(true)}
+        >
+          <Plus size={16} /> Add Store Consumable / Spare
+        </button>
+        <button 
+          className="btn-primary" 
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)' }}
+          onClick={() => {
+            setIndentLineItems([
+              { id: Date.now(), itemName: consumables[0]?.name || "Ethyl Acetate Solvent", category: consumables[0]?.category || "Chemicals", unit: consumables[0]?.unit || "Litres", reqQty: 100, targetMachine: dynamicMachineList[0] || '' }
+            ]);
+            setIsIndentModalOpen(true);
+          }}
+        >
+          <Plus size={18} /> Raise Material Indent
+        </button>
       </div>
 
       {/* Main Tab Navigation Buttons */}

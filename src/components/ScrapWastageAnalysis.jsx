@@ -322,29 +322,17 @@ export default function ScrapWastageAnalysis({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', fontFamily: 'Inter, system-ui, sans-serif' }}>
       
-      {/* Top Banner */}
-      <div className="glass-panel" style={{ padding: '24px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldAlert size={24} style={{ color: '#dc2626' }} />
-              <h2 style={{ fontSize: '1.35rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                Unified Scrap Store & Wastage Audit Registry
-              </h2>
-            </div>
-            <p style={{ color: '#64748b', fontSize: '0.88rem', marginTop: '4px', margin: '4px 0 0 0' }}>
-              Scrap store lines stay per stage and type. A job enters the high scrap registry only when its total stage wastage is {HIGH_SCRAP_THRESHOLD_PCT}% or more of the kilograms actually dispatched ({ORDER_QTY_UNIT}). Jobs that have not been dispatched are left out.
-            </p>
-          </div>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '8px 12px', borderRadius: '8px' }}>
-              <AlertTriangle size={16} color="#dc2626" />
-              <span style={{ color: '#991b1b', fontWeight: '900', fontSize: '0.85rem' }}>
-                High scrap: {HIGH_SCRAP_THRESHOLD_PCT}% of dispatch quantity ({ORDER_QTY_UNIT})
-              </span>
-            </div>
-          </div>
+      {/* Top Audit Notice Bar */}
+      <div className="glass-panel" style={{ padding: '12px 18px', background: '#ffffff', borderRadius: '12px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <p style={{ color: '#64748b', fontSize: '0.84rem', margin: 0 }}>
+          Scrap store lines stay per stage and type. Jobs enter the high scrap registry when total stage wastage is &ge;{HIGH_SCRAP_THRESHOLD_PCT}% of dispatched kilograms.
+        </p>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '8px' }}>
+          <AlertTriangle size={15} color="#dc2626" />
+          <span style={{ color: '#991b1b', fontWeight: '800', fontSize: '0.82rem' }}>
+            High scrap threshold: {HIGH_SCRAP_THRESHOLD_PCT}% of dispatch quantity ({ORDER_QTY_UNIT})
+          </span>
         </div>
       </div>
 

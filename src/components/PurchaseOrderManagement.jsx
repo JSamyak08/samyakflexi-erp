@@ -1465,25 +1465,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
   return (
     <div className="po-management-wrapper" style={{ padding: '24px', maxWidth: '1440px', margin: '0 auto' }}>
       
-      {/* 1. Header Section */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-              <ShoppingBag size={22} />
-            </div>
-            <div>
-              <h1 style={{ fontSize: '1.65rem', fontWeight: '800', color: '#0f172a', margin: 0, letterSpacing: '-0.02em' }}>
-                Purchase Order Management
-              </h1>
-              <p style={{ fontSize: '0.86rem', color: '#64748b', margin: '2px 0 0 0' }}>
-                Procurement Hub • Inventory & Requirements Linked POs • Live GRN Delivery Reconciliation
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      {/* 1. Header Action Row */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '18px', gap: '10px' }}>
           <button
             type="button"
             className="btn-secondary"
@@ -1510,7 +1493,6 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           >
             <Plus size={17} /> Create Purchase Order
           </button>
-        </div>
       </div>
 
       {/* 2. KPI Metrics Bar */}

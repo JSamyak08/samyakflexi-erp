@@ -75,29 +75,18 @@ export default function OrderConfirmationRegister({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Top Banner & Header Controls */}
-      <div className="glass-panel" style={{ padding: '20px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-primary)', margin: 0 }}>
-              <FileCheck size={24} style={{ color: '#059669' }} /> Order Confirmation Notes (OCN) Register
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', marginTop: '4px', marginBottom: 0 }}>
-              View, print, and amend all confirmed sales order confirmation documents with revision history and live auto-numbering.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            {onRefresh && (
-              <button className="btn-secondary" onClick={onRefresh} title="Refresh OCNs">
-                <RefreshCw size={15} /> Refresh
-              </button>
-            )}
-            {onNavigateToPunching && (
-              <button className="btn-primary" onClick={onNavigateToPunching} style={{ background: '#059669', borderColor: '#059669' }}>
-                <Plus size={16} /> Punch Job & Generate OCN
-              </button>
-            )}
-          </div>
+      <div className="glass-panel" style={{ padding: '16px 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+          {onRefresh && (
+            <button className="btn-secondary" onClick={onRefresh} title="Refresh OCNs" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+              <RefreshCw size={15} /> Refresh
+            </button>
+          )}
+          {onNavigateToPunching && (
+            <button className="btn-primary" onClick={onNavigateToPunching} style={{ background: '#059669', borderColor: '#059669', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+              <Plus size={16} /> Punch Job & Generate OCN
+            </button>
+          )}
         </div>
 
         {/* Stats Row */}

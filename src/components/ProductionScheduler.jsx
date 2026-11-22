@@ -1849,23 +1849,7 @@ export default function ProductionScheduler({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
       
       {/* Top Header & Navigation Bar */}
-      <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderRadius: '14px' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)' }}>
-              <Printer size={22} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '1.4rem', fontWeight: '900', color: 'var(--text-primary)', margin: 0 }}>
-                Printing Press Scheduler & Execution Hub
-              </h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px', margin: 0 }}>
-                Live Shop Floor Ready Queue • Production Parameters Capture • Completed Jobs Archive
-              </p>
-            </div>
-          </div>
-        </div>
-
+      <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderRadius: '14px' }}>
         {/* View Switcher Tabs */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
           <button 

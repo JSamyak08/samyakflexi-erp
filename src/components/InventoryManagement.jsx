@@ -5120,29 +5120,18 @@ export default function InventoryManagement({
       )}
 
       {/* Top Controls & Navigation */}
-      <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {/* Top Title & Actions Row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '14px' }}>
-          <div>
-            <h3 style={{ fontSize: '1.15rem', fontWeight: '800', margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Package size={22} style={{ color: 'var(--primary-brand)' }} /> Raw Material Inventory, GRN & Quality Control
-            </h3>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>
-              Manage stock ledger, issued purchase orders, store inward GRNs, laboratory QC approvals, and dispatch packing lists.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
-              <ArrowUpRight size={16} /> Issue / Return to Store
-            </button>
-            <button className="btn-primary" style={{ background: '#2563eb', borderColor: '#2563eb' }} onClick={() => openAddStockModal()}>
-              <Plus size={16} /> Add Stock Item
-            </button>
-            <button className="btn-primary" onClick={() => openNewGRNModal()}>
-              <Plus size={16} /> Inward GRN (New Stock)
-            </button>
-          </div>
+      <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        {/* Top Actions Row */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+          <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
+            <ArrowUpRight size={16} /> Issue / Return to Store
+          </button>
+          <button className="btn-primary" style={{ background: '#2563eb', borderColor: '#2563eb' }} onClick={() => openAddStockModal()}>
+            <Plus size={16} /> Add Stock Item
+          </button>
+          <button className="btn-primary" onClick={() => openNewGRNModal()}>
+            <Plus size={16} /> Inward GRN (New Stock)
+          </button>
         </div>
 
         {/* Sub Tab Pills (Fully Visible Flex Wrap Grid - No Sliding UI) */}

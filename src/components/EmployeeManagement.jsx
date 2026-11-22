@@ -1950,19 +1950,9 @@ export default function EmployeeManagement({
   return (
     <div className="tab-container" style={{ padding: '20px 24px' }}>
       
-      {/* Header Banner */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '14px' }}>
-        <div>
-          <h2 style={{ fontSize: '1.5rem', fontWeight: '900', color: 'var(--primary-brand)', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users size={26} /> Employee Management & Payroll HR Engine
-          </h2>
-          <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            Manage staff onboarding, 8h/10h/12h shift attendance, daily overtime approvals, salary advances, statutory PF/ESIC, & monthly payroll processing.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {canManageHR ? (
+      {/* Header Action Bar */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+        {canManageHR ? (
             <>
               <button 
                 type="button" 
@@ -1987,7 +1977,6 @@ export default function EmployeeManagement({
               <ShieldCheck size={14} /> Accounts Disburse & Read-Only Access
             </span>
           )}
-        </div>
       </div>
 
       {/* Sub-Tabs Bar */}

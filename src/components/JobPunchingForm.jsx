@@ -718,23 +718,11 @@ export default function JobPunchingForm({
         />
       ) : (
         <>
-          {/* Header Controls */}
-          <div className="glass-panel" style={{ padding: '20px 24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-primary)' }}>
-                  <Calculator size={22} style={{ color: 'var(--primary-brand)' }} /> Order Confirmation & Job Punching Area
-                </h2>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
-                  Input job specs, substrate layers & microns. Calculates exact raw material requirement in Kgs, ink & adhesive costs, and wastage rules.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button className="btn-primary" onClick={() => setShowPDFModal(true)}>
-                  <FileText size={18} /> View Order Confirmation Note (PDF)
-                </button>
-              </div>
-            </div>
+          {/* Header Action Row */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-8px' }}>
+            <button className="btn-primary" onClick={() => setShowPDFModal(true)} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', fontSize: '0.85rem' }}>
+              <FileText size={16} /> View Order Confirmation Note (PDF)
+            </button>
           </div>
 
       <div className="job-punching-split-layout">

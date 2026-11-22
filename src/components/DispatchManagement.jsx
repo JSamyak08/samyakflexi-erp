@@ -1937,55 +1937,10 @@ export default function DispatchManagement({
         <CertificateOfAnalysisPDF coaData={activeCoaForPDF} onClose={() => setActiveCoaForPDF(null)} />
       )}
 
-      {/* Executive Header Banner */}
-      <div className="glass-panel" style={{ padding: '24px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#ffffff', borderRadius: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ background: 'rgba(2, 132, 199, 0.2)', padding: '10px', borderRadius: '12px', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
-                <Truck size={26} />
-              </div>
-              <div>
-                <h2 style={{ fontSize: '1.45rem', fontWeight: '800', margin: 0, color: '#ffffff', letterSpacing: '-0.02em' }}>
-                  Finished Goods Dispatch & Certificate of Analysis (CoA) Hub
-                </h2>
-                <p style={{ fontSize: '0.84rem', color: '#94a3b8', margin: '4px 0 0 0' }}>
-                  Issue Delivery Challans with GST breakdown & letterhead • Generate & print Quality Test Reports (CoA)
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-            <button 
-              className="btn-primary" 
-              onClick={handleOpenNewDcModal}
-              style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', padding: '10px 18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}
-            >
-              <Plus size={18} /> + Issue Delivery Challan
-            </button>
-
-            <button 
-              type="button"
-              className="btn-secondary"
-              onClick={() => setIsTemplateManagerOpen(true)}
-              style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)', padding: '10px 18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', borderRadius: '8px', cursor: 'pointer' }}
-            >
-              <Sliders size={18} /> Material Structure Templates ({coaTemplates.length})
-            </button>
-
-            <button 
-              className="btn-primary" 
-              onClick={handleOpenNewCoaModal}
-              style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', padding: '10px 18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}
-            >
-              <FlaskConical size={18} /> + Generate Quality CoA
-            </button>
-          </div>
-        </div>
-
+      {/* Dispatch Controls & Subtabs Bar */}
+      <div className="glass-panel" style={{ padding: '14px 18px', background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#ffffff', borderRadius: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         {/* Navigation Sub-Tabs: 1. Create Packing List (Leftmost) | 2. Delivery Challans | 3. Quality Test Reports (CoA) */}
-        <div style={{ display: 'flex', gap: '12px', marginTop: '24px', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '16px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           {/* 1st Position: Create Packing List */}
           <button 
             type="button" 
@@ -2070,6 +2025,34 @@ export default function DispatchManagement({
               <TrendingUp size={16} /> Gain / Loss
             </button>
           )}
+        </div>
+
+        {/* Quick Action Buttons */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <button 
+            className="btn-primary" 
+            onClick={handleOpenNewDcModal}
+            style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', padding: '8px 16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+          >
+            <Plus size={16} /> Issue Delivery Challan
+          </button>
+
+          <button 
+            type="button"
+            className="btn-secondary"
+            onClick={() => setIsTemplateManagerOpen(true)}
+            style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399', border: '1px solid rgba(52, 211, 153, 0.4)', padding: '8px 14px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem' }}
+          >
+            <Sliders size={16} /> Material Templates ({coaTemplates.length})
+          </button>
+
+          <button 
+            className="btn-primary" 
+            onClick={handleOpenNewCoaModal}
+            style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', padding: '8px 16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+          >
+            <FlaskConical size={16} /> Generate Quality CoA
+          </button>
         </div>
       </div>
 

@@ -274,17 +274,8 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       )}
 
       {/* Top Action Header */}
-      <div className="glass-panel" style={{ padding: '24px' }}>
+      <div className="glass-panel" style={{ padding: '16px 20px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: 'var(--text-primary)' }}>
-              Vendor Onboarding & Directory ({(vendors || []).length})
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-              Manage approved raw material suppliers, bank details, GSTIN records, and issued PO history.
-            </p>
-          </div>
-
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
             <div className="search-bar" style={{ width: '300px' }}>
               <Search size={18} style={{ color: 'var(--text-muted)' }} />

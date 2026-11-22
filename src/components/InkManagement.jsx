@@ -1023,26 +1023,9 @@ export default function InkManagement({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
       {/* Top Banner Navigation & Summary Header */}
-      <div className="glass-panel" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ background: '#e0e7ff', padding: '10px', borderRadius: '10px', color: '#4338ca' }}>
-                <Droplet size={26} />
-              </div>
-              <div>
-                <h2 style={{ fontSize: '1.4rem', fontWeight: '800', color: 'var(--text-primary)' }}>
-                  Ink Management System
-                </h2>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  Master Product Codes, Supplier POs, Solid Content Costing & Surface/Reverse Stock Management
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Sub-Tab Selector Buttons */}
-          <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+      <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+        {/* Sub-Tab Selector Buttons */}
+        <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
             <button
               className={`btn-subtab ${activeSubTab === 'directory' ? 'active' : ''}`}
               onClick={() => { setActiveSubTab('directory'); onNavigateTab?.('ink_management', { section: 'directory' }); }}
@@ -1143,7 +1126,6 @@ export default function InkManagement({
             </span>
           </div>
         </div>
-      </div>
 
       {/* =================================================================== */}
       {/* SUB-TAB 1: MASTER DIRECTORY OF INK PRODUCT CODES */}

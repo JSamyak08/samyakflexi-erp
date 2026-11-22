@@ -2741,32 +2741,26 @@ export default function JobMasterDirectory({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      <div className="glass-panel" style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <h2 style={{ fontSize: '1.4rem', fontWeight: '700', color: 'var(--text-primary)' }}>Job Master Technical Directory ({(jobMasters || []).length})</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>Central repository for all repeating job structures, film layer gauges, linked cylinders, and production histories.</p>
-          </div>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <div className="search-bar" style={{ width: '260px' }}>
-              <Search size={18} style={{ color: 'var(--text-muted)' }} />
-              <input type="text" placeholder="Search Job Name, SKU, Client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }} />
-            </div>
-            <button
-              type="button"
-              className="btn-secondary"
-              style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}
-              onClick={handleDownloadSampleCSV}
-              title="Download Sample CSV Template for Job Masters"
-            >
-              <Download size={16} /> Sample CSV
-            </button>
-            <label className="btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}>
-              <FileSpreadsheet size={18} /> Bulk Upload (CSV)
-              <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvFileSelected} />
-            </label>
-            <button className="btn-primary" onClick={handleOpenCreateModal}><Plus size={18} /> Create New Job Master</button>
-          </div>
+      <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="search-bar" style={{ width: '280px' }}>
+          <Search size={18} style={{ color: 'var(--text-muted)' }} />
+          <input type="text" placeholder="Search Job Name, SKU, Client..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '0.9rem' }} />
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}
+            onClick={handleDownloadSampleCSV}
+            title="Download Sample CSV Template for Job Masters"
+          >
+            <Download size={16} /> Sample CSV
+          </button>
+          <label className="btn-secondary" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', margin: 0, padding: '8px 14px', border: '1px solid #047857', color: '#047857', background: '#ecfdf5', fontWeight: '700', borderRadius: '6px' }}>
+            <FileSpreadsheet size={18} /> Bulk Upload (CSV)
+            <input type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvFileSelected} />
+          </label>
+          <button className="btn-primary" onClick={handleOpenCreateModal}><Plus size={18} /> Create New Job Master</button>
         </div>
       </div>
 

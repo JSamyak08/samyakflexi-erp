@@ -2341,17 +2341,8 @@ export default function ProductionRecordManagement({
         />
       )}
 
-      {/* Header Banner & Approval Flow Notice */}
-      <div className="glass-panel" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: '700', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <FileSpreadsheet style={{ color: 'var(--primary-brand)' }} /> Job Production Records & Material Costing
-          </h2>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-            All punched jobs appear here. Click <strong>"Start Production" 🚀</strong> to fill material usage & barcode consumption.
-          </p>
-        </div>
-
+      {/* Header Actions Bar */}
+      <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button 
             className="btn-primary" 

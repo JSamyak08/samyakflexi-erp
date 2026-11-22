@@ -1468,32 +1468,20 @@ export default function OrderManagement({
       )}
 
       <div className="hide-on-print" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {/* Top Banner */}
-        <div className="glass-panel" style={{ padding: '20px 24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <ShoppingBag size={22} style={{ color: 'var(--primary-brand)' }} /> Order Management & Vendor PO Issuance
-              </h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-                Manage manufacturing orders, track delays, and consolidate raw material shortages across orders to issue bulk Purchase Orders to vendors.
-              </p>
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <button className="btn-secondary" onClick={onNavigateToPunching}>
-                <Plus size={16} /> Punch New Order
-              </button>
-              
-              <button 
-                className={`btn-primary ${selectedRequirements.length > 0 ? '' : 'btn-disabled'}`}
-                onClick={handleOpenPoModal}
-                title={selectedRequirements.length > 0 ? "Issue Consolidated Purchase Order for selected material requirements" : "Select at least 1 material requirement line first"}
-              >
-                <FileText size={16} /> Issue Vendor PO ({selectedRequirements.length} Lines Selected)
-              </button>
-            </div>
-          </div>
+        {/* Top Actions Bar */}
+        <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <button className="btn-secondary" onClick={onNavigateToPunching} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}>
+            <Plus size={16} /> Punch New Order
+          </button>
+          
+          <button 
+            className={`btn-primary ${selectedRequirements.length > 0 ? '' : 'btn-disabled'}`}
+            onClick={handleOpenPoModal}
+            title={selectedRequirements.length > 0 ? "Issue Consolidated Purchase Order for selected material requirements" : "Select at least 1 material requirement line first"}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
+          >
+            <FileText size={16} /> Issue Vendor PO ({selectedRequirements.length} Lines Selected)
+          </button>
         </div>
 
         {/* SUB-TAB NAVIGATION BAR */}
