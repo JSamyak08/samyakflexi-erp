@@ -1,5 +1,15 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { anyAssignedRole } from '../assignedRoles';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import { anyAssignedRole, userHasAnyRole } from '../assignedRoles';
+import {
+  MANTINE_TRIAL_ROLES,
+  classicUiForced,
+  readMantineTrialPreference,
+  writeMantineTrialPreference,
+} from '../utils/mantineTrial';
+
+const StockTrialView = lazy(() => import('./inventoryTrial/InventoryTrialViews.jsx').then((mod) => ({ default: mod.StockTrialView })));
+const LedgerTrialView = lazy(() => import('./inventoryTrial/InventoryTrialViews.jsx').then((mod) => ({ default: mod.LedgerTrialView })));
+const FifoTrialView = lazy(() => import('./inventoryTrial/InventoryTrialViews.jsx').then((mod) => ({ default: mod.FifoTrialView })));
 import { canDecideGrnQc } from '../approvalAccess';
 import { formatPlantDate, formatPlantDateTime } from '../utils/dbDates';
 import { loggedInActorLabel, printablePersonName } from '../utils/recordedPerson';
@@ -336,6 +346,17 @@ export default function InventoryManagement({
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
+  const [trialPreference, setTrialPreference] = useState(() => (
+    typeof window === 'undefined' ? false : readMantineTrialPreference(window.localStorage)
+  ));
+  const classicForced = typeof window !== 'undefined' && classicUiForced(window.location.search);
+  const canToggleTrial = userHasAnyRole(currentUser, MANTINE_TRIAL_ROLES);
+  const mantineTrialOn = canToggleTrial && !classicForced && trialPreference;
+  const toggleMantineTrial = () => {
+    const next = !trialPreference;
+    writeMantineTrialPreference(window.localStorage, next);
+    setTrialPreference(next);
+  };
 
   // SFG & FG Creation Modal State
   const [isSfgFgModalOpen, setIsSfgFgModalOpen] = useState(false);
@@ -5123,6 +5144,19 @@ export default function InventoryManagement({
       <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {/* Top Actions Row */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+          {canToggleTrial && (
+            <button
+              type="button"
+              className="btn-secondary"
+              data-testid="mantine-trial-switch"
+              aria-pressed={mantineTrialOn}
+              disabled={classicForced}
+              title={classicForced ? 'This address forces the current table (?ui=classic).' : (mantineTrialOn ? 'Switch back to the current stock table' : 'Try the new stock table on this device')}
+              onClick={toggleMantineTrial}
+            >
+              {classicForced ? 'Current table on this address' : (mantineTrialOn ? 'Use the current table' : 'Try the new stock table')}
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
             <ArrowUpRight size={16} /> Issue / Return to Store
           </button>
@@ -5685,8 +5719,26 @@ export default function InventoryManagement({
             </div>
           </div>
 
+          {mantineTrialOn ? (
+            <Suspense fallback={<p style={{ color: 'var(--text-muted)', padding: '16px' }}>Loading the new stock table…</p>}>
+              <StockTrialView
+                items={stockPagination.paginatedItems}
+                getReservations={getItemReservations}
+                getPendingQc={(row) => pendingQcKgForItem(row, safeGrns)}
+                inventoryRolls={inventoryRolls}
+                rollFifoIndex={rollFifoIndex}
+                ageingSettings={ageingSettings}
+                selectedIds={selectedStockIds}
+                onToggleSelection={toggleStockSelection}
+                onOpenLedger={setSelectedItemForPurchaseHistory}
+                onInward={openNewGRNModal}
+                onEdit={openEditStockModal}
+                onDelete={handleDeleteStockItem}
+              />
+            </Suspense>
+          ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table className="data-table">
+            <table className="data-table" data-testid="stock-register-classic">
               <thead>
                 <tr>
                   <th style={{ width: '36px' }}>
@@ -5933,6 +5985,7 @@ export default function InventoryManagement({
               </tbody>
             </table>
           </div>
+          )}
           <TablePagination
             currentPage={stockPagination.currentPage}
             totalItems={stockPagination.totalItems}
@@ -10085,6 +10138,12 @@ export default function InventoryManagement({
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '12px' }}>
                     In-stock barcodes, oldest origin first. Age is counted from each barcode's own origin.
                   </p>
+                  {mantineTrialOn ? (
+                    <Suspense fallback={<p style={{ color: 'var(--text-muted)', padding: '12px' }}>Loading the new barcode list…</p>}>
+                      <FifoTrialView rows={inStockBarcodeFifos} unitStr={unitStr} />
+                    </Suspense>
+                  ) : (
+                  <>
                   <div className="mobile-table-scroll-hint">← Swipe horizontally to inspect barcode FIFO ages →</div>
                   <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', WebkitOverflowScrolling: 'touch' }}>
                     <table className="data-table" style={{ fontSize: '0.85rem', minWidth: '580px' }}>
@@ -10131,6 +10190,8 @@ export default function InventoryManagement({
                       </tbody>
                     </table>
                   </div>
+                  </>
+                  )}
                 </div>
               )}
 
@@ -10342,6 +10403,28 @@ export default function InventoryManagement({
 
               </div>
 
+              {mantineTrialOn ? (
+                <Suspense fallback={<p style={{ color: 'var(--text-muted)', padding: '12px' }}>Loading the new ledger…</p>}>
+                  <LedgerTrialView
+                    rows={paginatedLedgerItems}
+                    unitStr={unitStr}
+                    item={item}
+                    inventoryRolls={inventoryRolls}
+                    editingTxId={editingTxId}
+                    editingBarcodeVal={editingBarcodeVal}
+                    onEditingBarcodeVal={setEditingBarcodeVal}
+                    onSaveBarcode={handleSaveCustomBarcode}
+                    onStartEdit={(tx) => {
+                      setEditingTxId(tx.txId);
+                      setEditingBarcodeVal(tx.barcode);
+                    }}
+                    onCancelEdit={() => setEditingTxId(null)}
+                    onPrint={setSelectedRollForBarcodeModal}
+                    emptyMessage="No transaction records found matching the filter criteria."
+                  />
+                </Suspense>
+              ) : (
+              <>
               {/* Comprehensive Material Stock Ledger Table */}
               <div className="mobile-table-scroll-hint">← Swipe horizontally to view full ledger history →</div>
               <div className="rm-stock-ledger-table-wrap" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', WebkitOverflowScrolling: 'touch' }}>
@@ -10696,6 +10779,8 @@ export default function InventoryManagement({
                   </tbody>
                 </table>
               </div>
+              </>
+              )}
               <TablePagination
                 currentPage={ledgerCurrentPage}
                 totalItems={displayLines.length}

@@ -14,6 +14,15 @@ export default defineConfig({
     __SENTRY_RELEASE__: JSON.stringify(sentryRelease),
   },
   plugins: [react()],
+  optimizeDeps: {
+    include: [
+      '@mantine/core',
+      '@mantine/hooks',
+      '@tanstack/react-table',
+      '@tanstack/table-core',
+      '@tanstack/react-store',
+    ],
+  },
   server: {
     historyApiFallback: true,
     proxy: {
