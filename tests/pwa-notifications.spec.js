@@ -203,4 +203,54 @@ test.describe('Role-Based PWA Notifications', () => {
     await expect(modalContent).toBeVisible();
     await expect(modalContent).toContainText('Quality QC');
   });
+
+  test('Admin user has exclusive access to Notification Role Settings panel', async ({ page }) => {
+    await setupMock(page, 'Admin');
+    await page.goto('/dashboard');
+    await page.waitForTimeout(800);
+
+    const bellBtn = page.locator('[data-testid="pwa-notifications-bell-desktop"]');
+    await expect(bellBtn).toBeVisible({ timeout: 10000 });
+    await bellBtn.click();
+
+    // Admin should see Role Settings button
+    const settingsBtn = page.locator('[data-testid="pwa-notification-settings-btn"]');
+    await expect(settingsBtn).toBeVisible();
+    await settingsBtn.click();
+
+    // Verify Settings Panel is rendered
+    await expect(page.locator('text=Role Notification Assignments')).toBeVisible();
+    await expect(page.locator('text=Select Plant Role to Assign Notification Types:')).toBeVisible();
+
+    // Save button should be available
+    const saveBtn = page.locator('[data-testid="pwa-save-settings-btn"]');
+    await expect(saveBtn).toBeVisible();
+    await saveBtn.click();
+
+    // Verify success feedback
+    await expect(page.locator('text=Role notification assignments saved successfully!')).toBeVisible();
+
+    // Click Back to Alerts
+    await settingsBtn.click();
+
+    // Should return to notification list
+    await expect(page.locator('.modal-content:has-text("Plant Action Notifications")')).toBeVisible();
+  });
+
+  test('Non-Admin user cannot access Notification Role Settings button', async ({ page }) => {
+    await setupMock(page, 'QC Chemist');
+    await page.goto('/dashboard');
+    await page.waitForTimeout(800);
+
+    const bellBtn = page.locator('[data-testid="pwa-notifications-bell-desktop"]');
+    await expect(bellBtn).toBeVisible({ timeout: 10000 });
+    await bellBtn.click();
+
+    const modalContent = page.locator('.modal-content:has-text("Plant Action Notifications")');
+    await expect(modalContent).toBeVisible();
+
+    // Non-Admin must NOT see the Role Settings button
+    const settingsBtn = page.locator('[data-testid="pwa-notification-settings-btn"]');
+    await expect(settingsBtn).not.toBeVisible();
+  });
 });

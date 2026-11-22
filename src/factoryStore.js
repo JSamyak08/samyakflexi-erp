@@ -1140,7 +1140,7 @@ export const getOrderStatusInfo = (order) => {
     return { isOverdue: false, isNearingDeadline: false, daysRemaining: null, statusText: 'On Hold', badgeClass: 'badge-warning' };
   }
 
-  const targetDateStr = order.targetDeliveryDate || order.deliveryDate;
+  const targetDateStr = order.targetDeliveryDate || order.deliveryDate || order.target_delivery_date || order.delivery_date;
   const targetDate = parseStandardDate(targetDateStr);
 
   if (!targetDate) {

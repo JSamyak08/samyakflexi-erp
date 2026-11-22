@@ -2506,9 +2506,11 @@ export default function App() {
     const onUpdated = () => setNotificationTick((t) => t + 1);
     window.addEventListener('pwa-notifications-updated', onUpdated);
     window.addEventListener('pwa-notification-permission-changed', onUpdated);
+    window.addEventListener('pwa-notifications-matrix-updated', onUpdated);
     return () => {
       window.removeEventListener('pwa-notifications-updated', onUpdated);
       window.removeEventListener('pwa-notification-permission-changed', onUpdated);
+      window.removeEventListener('pwa-notifications-matrix-updated', onUpdated);
     };
   }, []);
 

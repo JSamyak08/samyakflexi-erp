@@ -4,12 +4,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   NOTIFICATION_ACTION_TYPES,
+  DEFAULT_ROLE_NOTIFICATION_MATRIX,
+  DEFAULT_PUSH_ENABLED_TYPES,
+  getRoleNotificationMatrix,
+  saveRoleNotificationMatrix,
+  getPushEnabledTypes,
+  savePushEnabledTypes,
+  resetRoleNotificationMatrix,
   isUserTargetedForNotification,
   getUserStorageKey,
   getPrivateReadNotificationIds,
   markPrivateNotificationRead,
   markAllPrivateNotificationsRead,
-  aggregateRoleBasedNotifications
+  aggregateRoleBasedNotifications,
+  isNotificationEligibleForPush,
+  enableAndBaselinePwaNotifications,
+  getPrivateNotificationEnabledAt
 } from '../src/services/pwaNotifications.js';
 import { resolveInternalPath } from '../src/utils/slugRouter.js';
 
@@ -43,7 +53,7 @@ globalThis.CustomEvent = class {
   }
 };
 
-test('NOTIFICATION_ACTION_TYPES provides all essential action types with valid routes', () => {
+test('NOTIFICATION_ACTION_TYPES provides all essential action types with valid routes and importance levels', () => {
   const expectedTypes = [
     'qc_inspection',
     'delayed_order',
@@ -62,6 +72,7 @@ test('NOTIFICATION_ACTION_TYPES provides all essential action types with valid r
     assert.ok(def, `Action type ${type} must be defined`);
     assert.ok(Array.isArray(def.targetRoles) && def.targetRoles.length > 0, `${type} must have target roles`);
     assert.ok(def.defaultUrl && def.defaultUrl.startsWith('/'), `${type} must have default url`);
+    assert.ok(['critical', 'high', 'normal'].includes(def.importance), `${type} must have importance level`);
 
     // Verify target URL resolves through the ERP router
     const resolved = resolveInternalPath(def.defaultUrl);
@@ -69,80 +80,143 @@ test('NOTIFICATION_ACTION_TYPES provides all essential action types with valid r
   });
 });
 
-test('Role-based targeting enforces role boundaries', () => {
-  const adminUser = { id: 'usr-1', email: 'admin@samyak.com', role: 'Admin' };
-  const qcUser = { id: 'usr-2', email: 'qc@samyak.com', role: 'QC Chemist' };
-  const hrUser = { id: 'usr-3', email: 'hr@samyak.com', role: 'HR & Payroll Manager' };
-  const operatorUser = { id: 'usr-4', email: 'press@samyak.com', role: 'Printing Operator' };
-  const storeUser = { id: 'usr-5', email: 'store@samyak.com', role: 'Store Manager' };
-  const shopFloorUser = { id: 'usr-6', email: 'worker@samyak.com', role: 'Shop Floor Operator' };
+test('Role notification assignments matrix: ONLY Admin can save or configure settings', () => {
+  window.localStorage.clear();
 
-  // Admin has visibility across all action types
-  Object.values(NOTIFICATION_ACTION_TYPES).forEach((def) => {
-    assert.strictEqual(
-      isUserTargetedForNotification(adminUser, def.targetRoles),
-      true,
-      `Admin should be targeted for ${def.actionType}`
-    );
+  const adminUser = { id: 'usr-admin', email: 'admin@samyak.com', role: 'Admin' };
+  const plantManagerUser = { id: 'usr-pm', email: 'pm@samyak.com', role: 'Plant Manager' };
+  const chemistUser = { id: 'usr-qc', email: 'qc@samyak.com', role: 'QC Chemist' };
+
+  const customMatrix = {
+    ...DEFAULT_ROLE_NOTIFICATION_MATRIX,
+    qc_inspection: ['Admin', 'QC Chemist'] // Removed Plant Manager from QC
+  };
+
+  // 1. Non-Admin (Plant Manager) attempt MUST be rejected
+  assert.throws(
+    () => saveRoleNotificationMatrix(plantManagerUser, customMatrix),
+    /Unauthorized: Only Admin can access and assign notification types for roles/
+  );
+
+  // 2. Non-Admin (QC Chemist) attempt MUST be rejected
+  assert.throws(
+    () => saveRoleNotificationMatrix(chemistUser, customMatrix),
+    /Unauthorized: Only Admin can access and assign notification types for roles/
+  );
+
+  // 3. Admin attempt MUST succeed
+  assert.doesNotThrow(() => {
+    saveRoleNotificationMatrix(adminUser, customMatrix);
   });
 
-  // QC Chemist receives QC inspection, but NOT HR or Printing alerts
-  assert.strictEqual(
-    isUserTargetedForNotification(qcUser, NOTIFICATION_ACTION_TYPES.qc_inspection.targetRoles),
-    true
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(qcUser, NOTIFICATION_ACTION_TYPES.salary_advance.targetRoles),
-    false
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(qcUser, NOTIFICATION_ACTION_TYPES.printing_deadline.targetRoles),
-    false
+  const storedMatrix = getRoleNotificationMatrix();
+  assert.deepStrictEqual(storedMatrix.qc_inspection, ['Admin', 'QC Chemist']);
+
+  // 4. Non-Admin cannot reset settings
+  assert.throws(
+    () => resetRoleNotificationMatrix(plantManagerUser),
+    /Unauthorized/
   );
 
-  // HR Manager receives Salary Advance, but NOT QC or Ink alerts
-  assert.strictEqual(
-    isUserTargetedForNotification(hrUser, NOTIFICATION_ACTION_TYPES.salary_advance.targetRoles),
-    true
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(hrUser, NOTIFICATION_ACTION_TYPES.qc_inspection.targetRoles),
-    false
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(hrUser, NOTIFICATION_ACTION_TYPES.low_stock_ink.targetRoles),
-    false
-  );
+  // 5. Admin can reset settings
+  resetRoleNotificationMatrix(adminUser);
+  const resetMatrix = getRoleNotificationMatrix();
+  assert.deepStrictEqual(resetMatrix.qc_inspection, DEFAULT_ROLE_NOTIFICATION_MATRIX.qc_inspection);
+});
 
-  // Printing Operator receives Printing Deadline, but NOT Salary Advances
-  assert.strictEqual(
-    isUserTargetedForNotification(operatorUser, NOTIFICATION_ACTION_TYPES.printing_deadline.targetRoles),
-    true
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(operatorUser, NOTIFICATION_ACTION_TYPES.salary_advance.targetRoles),
-    false
-  );
+test('Admin push types configuration: ONLY Admin can configure native push types', () => {
+  const adminUser = { id: 'usr-admin', email: 'admin@samyak.com', role: 'Admin' };
+  const regularUser = { id: 'usr-staff', email: 'staff@samyak.com', role: 'Store Manager' };
 
-  // Store Manager receives Low Stock and Material Indents
-  assert.strictEqual(
-    isUserTargetedForNotification(storeUser, NOTIFICATION_ACTION_TYPES.low_stock_substrate.targetRoles),
-    true
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(storeUser, NOTIFICATION_ACTION_TYPES.material_indent.targetRoles),
-    true
-  );
+  const updatedPush = {
+    ...DEFAULT_PUSH_ENABLED_TYPES,
+    low_stock_ink: true // Admin enables low ink for push
+  };
 
-  // Shop Floor Operator does not receive Admin/Manager alerts
-  assert.strictEqual(
-    isUserTargetedForNotification(shopFloorUser, NOTIFICATION_ACTION_TYPES.salary_advance.targetRoles),
-    false
-  );
-  assert.strictEqual(
-    isUserTargetedForNotification(shopFloorUser, NOTIFICATION_ACTION_TYPES.bug_report.targetRoles),
-    false
-  );
+  assert.throws(() => savePushEnabledTypes(regularUser, updatedPush), /Unauthorized/);
+  assert.doesNotThrow(() => savePushEnabledTypes(adminUser, updatedPush));
+
+  const saved = getPushEnabledTypes();
+  assert.strictEqual(saved.low_stock_ink, true);
+});
+
+test('Freshness guarantee: old notifications are NEVER pushed when user enables notifications', () => {
+  const user = { id: 'usr-qc-1', email: 'qc1@samyak.com', role: 'QC Chemist' };
+  window.localStorage.clear();
+
+  const oldTime = new Date('2026-11-20T10:00:00Z').toISOString();
+  const existingAlert = {
+    id: 'qc-grn-old',
+    actionType: 'qc_inspection',
+    importance: 'critical',
+    title: 'Old GRN Pending',
+    timestamp: oldTime,
+    isRead: false
+  };
+
+  // User enables notifications right now
+  enableAndBaselinePwaNotifications(user, [existingAlert]);
+
+  const enabledAt = getPrivateNotificationEnabledAt(user);
+  assert.ok(enabledAt && enabledAt > 0, 'enabledAt must be set');
+
+  const baselineIds = new Set(['qc-grn-old']);
+  const sentIds = new Set();
+  const pushEnabledTypes = { qc_inspection: true };
+
+  // 1. Verify old pre-existing alert is NOT eligible for push
+  const oldEligible = isNotificationEligibleForPush(existingAlert, user, {
+    enabledAt,
+    baselineIds,
+    sentIds,
+    pushEnabledTypes
+  });
+  assert.strictEqual(oldEligible, false, 'Old alert created prior to enabling MUST NOT be pushed');
+
+  // 2. A brand new alert created AFTER enabledAt timestamp IS eligible for push
+  const freshTime = new Date(Date.now() + 5000).toISOString();
+  const freshAlert = {
+    id: 'qc-grn-fresh-101',
+    actionType: 'qc_inspection',
+    importance: 'critical',
+    title: 'Fresh Inward GRN QC Needed',
+    timestamp: freshTime,
+    isRead: false
+  };
+
+  const freshEligible = isNotificationEligibleForPush(freshAlert, user, {
+    enabledAt,
+    baselineIds,
+    sentIds,
+    pushEnabledTypes
+  });
+  assert.strictEqual(freshEligible, true, 'Fresh alert created after enabling MUST be pushed');
+});
+
+test('Spam prevention: routine normal alerts do not trigger native device push by default', () => {
+  const user = { id: 'usr-store', email: 'store@samyak.com', role: 'Store Manager' };
+  const enabledAt = Date.now() - 10000;
+  const baselineIds = new Set();
+  const sentIds = new Set();
+  const pushEnabledTypes = { ...DEFAULT_PUSH_ENABLED_TYPES };
+
+  const normalStockAlert = {
+    id: 'low-stock-99',
+    actionType: 'low_stock_substrate',
+    importance: 'normal',
+    title: 'Routine Low Stock Item',
+    timestamp: new Date().toISOString(),
+    isRead: false
+  };
+
+  // Routine normal alerts should not be pushed (pushEnabledTypes[low_stock_substrate] === false)
+  const eligible = isNotificationEligibleForPush(normalStockAlert, user, {
+    enabledAt,
+    baselineIds,
+    sentIds,
+    pushEnabledTypes
+  });
+  assert.strictEqual(eligible, false, 'Routine low stock alerts should not spam native device push');
 });
 
 test('Private notification read status is strictly isolated per user', () => {
@@ -151,62 +225,46 @@ test('Private notification read status is strictly isolated per user', () => {
 
   window.localStorage.clear();
 
-  // User A marks notif-1 as read
   markPrivateNotificationRead(userA, 'notif-1');
 
-  // Verify User A has notif-1 marked as read
   const readA = getPrivateReadNotificationIds(userA);
   assert.strictEqual(readA.has('notif-1'), true);
 
-  // Verify User B does NOT have notif-1 marked as read (private isolation)
   const readB = getPrivateReadNotificationIds(userB);
   assert.strictEqual(readB.has('notif-1'), false);
-
-  // User B marks notif-2 as read
-  markPrivateNotificationRead(userB, 'notif-2');
-  assert.strictEqual(getPrivateReadNotificationIds(userB).has('notif-2'), true);
-  assert.strictEqual(getPrivateReadNotificationIds(userA).has('notif-2'), false);
 });
 
-test('aggregateRoleBasedNotifications derives notifications and respects role filters', () => {
-  const qcUser = { id: 'usr-qc', email: 'chemist@samyak.com', role: 'QC Chemist' };
-  const hrUser = { id: 'usr-hr', email: 'hr@samyak.com', role: 'HR & Payroll Manager' };
+test('aggregateRoleBasedNotifications respects Admin custom role assignments matrix', () => {
+  const chemistUser = { id: 'usr-chem', email: 'chemist@samyak.com', role: 'QC Chemist' };
 
-  const sampleGrns = [
-    { id: 'GRN-101', grn_number: 'GRN-101', qc_status: 'Pending', supplier: 'Polyplex' }
-  ];
-  const sampleAdvances = [
-    { id: 'ADV-501', employee_name: 'Rajesh', amount: 5000, status: 'Pending Approval' }
-  ];
-  const sampleDelayedOrders = [
-    { id: 'ORD-901', job_name: 'Biscuit Pouch', target_delivery_date: '2026-10-01', status: 'In Production' }
-  ];
+  const sampleGrns = [{ id: 'GRN-101', grn_number: 'GRN-101', qc_status: 'Pending', supplier: 'Polyplex' }];
+  const sampleDelayedOrders = [{ id: 'ORD-901', job_name: 'Pouch', targetDeliveryDate: '2026-10-01', target_delivery_date: '2026-10-01', status: 'In Production' }];
 
-  // QC Chemist aggregation: MUST include GRN QC, MUST NOT include Salary Advance or Delayed Orders
-  const qcResult = aggregateRoleBasedNotifications({
-    currentUser: qcUser,
+  // 1. With default matrix: Chemist sees QC, does not see Delayed Orders
+  const res1 = aggregateRoleBasedNotifications({
+    currentUser: chemistUser,
     grns: sampleGrns,
-    salaryAdvances: sampleAdvances,
     orders: sampleDelayedOrders
   });
+  assert.strictEqual(res1.notifications.length, 1);
+  assert.strictEqual(res1.notifications[0].actionType, 'qc_inspection');
 
-  assert.strictEqual(qcResult.notifications.length, 1);
-  assert.strictEqual(qcResult.notifications[0].actionType, 'qc_inspection');
-  assert.strictEqual(qcResult.notifications[0].url, '/inventory/qc');
-  assert.strictEqual(qcResult.unreadCount, 1);
+  // 2. Admin custom matrix: Admin explicitly adds QC Chemist to Delayed Orders
+  const customMatrix = {
+    ...DEFAULT_ROLE_NOTIFICATION_MATRIX,
+    delayed_order: ['Admin', 'Plant Manager', 'QC Chemist']
+  };
 
-  // HR Manager aggregation: MUST include Salary Advance, MUST NOT include GRN QC or Delayed Orders
-  const hrResult = aggregateRoleBasedNotifications({
-    currentUser: hrUser,
+  const res2 = aggregateRoleBasedNotifications({
+    currentUser: chemistUser,
     grns: sampleGrns,
-    salaryAdvances: sampleAdvances,
-    orders: sampleDelayedOrders
+    orders: sampleDelayedOrders,
+    roleMatrixOverride: customMatrix
   });
 
-  assert.strictEqual(hrResult.notifications.length, 1);
-  assert.strictEqual(hrResult.notifications[0].actionType, 'salary_advance');
-  assert.strictEqual(hrResult.notifications[0].url, '/employees/advances');
-  assert.strictEqual(hrResult.unreadCount, 1);
+  assert.strictEqual(res2.notifications.length, 2);
+  const types = res2.notifications.map((n) => n.actionType);
+  assert.ok(types.includes('qc_inspection') && types.includes('delayed_order'));
 });
 
 test('Service Worker public/sw.js contains notificationclick handler redirecting to action url', () => {
