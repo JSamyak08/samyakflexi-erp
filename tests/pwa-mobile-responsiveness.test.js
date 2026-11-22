@@ -74,7 +74,7 @@ test('SalesManagement provides mobile table hints and responsive custom term inp
   assert.match(content, /WebkitOverflowScrolling:\s*['"]touch['"]/, 'Must use native smooth touch scrolling');
 });
 
-test('Mobile PWA minimizes Active User toggle and header actions into compact single row', () => {
+test('Active User toggle is minimized into a compact pill on both desktop and mobile views', () => {
   const appPath = path.join(rootDir, 'src', 'App.jsx');
   const indexCssPath = path.join(rootDir, 'src', 'index.css');
 
@@ -87,8 +87,8 @@ test('Mobile PWA minimizes Active User toggle and header actions into compact si
   assert.match(appContent, /className="[^"]*active-user-prefix[^"]*"/, 'Active user prefix text must have active-user-prefix class');
   assert.match(appContent, /className="[^"]*active-user-switch-select[^"]*"/, 'SearchableSelect must have active-user-switch-select class');
 
-  // Verify CSS minimizes the toggle on mobile screens
-  assert.match(cssContent, /\.active-user-prefix\s*\{\s*display:\s*none\s*!important/i, 'Active user prefix must be hidden on mobile');
-  assert.match(cssContent, /\.active-user-control\s*\{[\s\S]*?border-radius:\s*20px/i, 'Active user control must be rendered as a compact pill on mobile');
+  // Verify CSS minimizes the toggle on desktop and mobile
+  assert.match(cssContent, /\.active-user-prefix\s*\{\s*display:\s*none\s*!important/i, 'Active user prefix must be hidden');
+  assert.match(cssContent, /\.active-user-control\s*\{[\s\S]*?border-radius:\s*20px/i, 'Active user control must be rendered as a compact pill');
   assert.match(cssContent, /\.app-header-user-actions\s*\{[\s\S]*?flex-wrap:\s*nowrap/i, 'Header user actions must keep controls in a single row without wrapping on mobile');
 });

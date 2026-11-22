@@ -5848,21 +5848,24 @@ export default function App() {
             </div>
 
             <WeighingScaleWidget />
-            <div data-testid="active-user-control" className="active-user-control" style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem' }}>
-              <UserCheck size={16} style={{ color: 'var(--primary-brand)', flexShrink: 0 }} />
+            <div 
+              data-testid="active-user-control" 
+              className="active-user-control"
+              title={`Active User: ${currentUser?.email || currentUser?.name || 'Select User'}`}
+            >
+              <UserCheck size={15} style={{ color: 'var(--primary-brand)', flexShrink: 0 }} />
               <span className="active-user-prefix" style={{ color: 'var(--text-muted)', fontWeight: '500' }}>Active User:</span>
               {canSwitchActiveUser ? (
                 <SearchableSelect
                   id="active-user-switch"
                   className="active-user-switch-select"
-                  style={{ minWidth: '180px', display: 'inline-block' }}
                   triggerStyle={{
                     border: 'none',
                     background: 'transparent',
-                    fontWeight: '700',
+                    fontWeight: '600',
                     color: 'var(--text-primary)',
-                    padding: '2px 8px',
-                    minHeight: '28px'
+                    padding: '2px 4px',
+                    minHeight: '26px'
                   }}
                   value={currentUser?.id || ''}
                   options={activeUserOptions}
@@ -5880,7 +5883,7 @@ export default function App() {
                   }}
                 />
               ) : (
-                <span data-testid="active-user-label" className="active-user-readonly-label" style={{ fontWeight: '700', color: 'var(--text-primary)', padding: '2px 4px' }}>
+                <span data-testid="active-user-label" className="active-user-readonly-label" style={{ fontWeight: '600', color: 'var(--text-primary)', padding: '2px 4px' }}>
                   {activeUserReadonlyLabel(currentUser)}
                 </span>
               )}

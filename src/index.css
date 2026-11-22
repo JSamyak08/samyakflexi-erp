@@ -1865,14 +1865,15 @@ td.no-capitalize,
   background: #f1f5f9;
   border: 1px solid #cbd5e1;
   color: #475569;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-height: 32px;
   transition: all 0.15s ease;
 }
 
@@ -1886,26 +1887,74 @@ td.no-capitalize,
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
+}
+
+.scale-badge-btn {
+  border-radius: 20px !important;
+  min-height: 32px;
 }
 
 .active-user-control {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: #ffffff;
   border: 1px solid var(--border-color);
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 0.85rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  min-height: 32px;
+  max-height: 36px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+}
+
+.active-user-control:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
 }
 
 .active-user-prefix {
-  display: inline;
+  display: none !important;
 }
 
 .active-user-switch-select {
-  min-width: 180px;
+  min-width: 120px;
+  max-width: 210px;
+  display: inline-flex;
+}
+
+.active-user-switch-select .searchable-select-trigger,
+.active-user-switch-select.searchable-select-trigger {
+  padding: 2px 4px !important;
+  font-size: 0.82rem !important;
+  min-height: 26px !important;
+  max-height: 28px !important;
+  max-width: 200px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.active-user-switch-select .searchable-select-value {
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  max-width: 170px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.active-user-readonly-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 2px 4px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   display: inline-block;
 }
 
