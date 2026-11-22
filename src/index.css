@@ -4450,6 +4450,111 @@ html, body {
   }
 }
 
+/* Raw Material Stock Ledger Mobile Optimizations */
+.rm-stock-ledger-modal {
+  padding: 24px;
+}
+
+.rm-ledger-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+
+.rm-ledger-adj-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .rm-stock-ledger-modal {
+    padding: 16px 14px !important;
+    width: 98% !important;
+    max-height: 94vh !important;
+    border-radius: 14px !important;
+  }
+
+  .rm-stock-ledger-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .rm-stock-ledger-actions {
+    display: flex !important;
+    width: 100% !important;
+    gap: 8px !important;
+  }
+
+  .rm-stock-ledger-actions button {
+    flex: 1 !important;
+    justify-content: center !important;
+    min-height: 38px !important;
+  }
+
+  .rm-ledger-kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+    padding: 12px !important;
+  }
+
+  .rm-ledger-kpi-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    padding: 10px 12px !important;
+  }
+
+  .rm-ledger-kpi-card .stats-title {
+    font-size: 0.72rem !important;
+    line-height: 1.25 !important;
+    display: block !important;
+  }
+
+  .rm-ledger-adj-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .rm-ledger-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .rm-ledger-search-wrap {
+    width: 100% !important;
+  }
+
+  .rm-ledger-subtabs {
+    width: 100% !important;
+    display: flex !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    padding: 4px 2px !important;
+  }
+
+  .rm-ledger-subtabs::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .rm-ledger-subtabs button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    padding: 6px 12px !important;
+    font-size: 0.78rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .rm-ledger-kpi-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+}
+
 
 
 

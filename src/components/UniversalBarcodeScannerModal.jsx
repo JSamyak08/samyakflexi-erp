@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import QRCode2D from './QRCode2D';
 import PurchaseOrderPDF from './PurchaseOrderPDF';
+import GRNPDF from './GRNPDF';
 import { safeLocalStorageGet } from '../utils/safeStorage';
 import {
   codeKey,
@@ -114,6 +115,7 @@ export default function UniversalBarcodeScannerModal({
   const [activeDeviceId, setActiveDeviceId] = useState('');
   const [streamGeneration, setStreamGeneration] = useState(0);
   const [activePoPdfData, setActivePoPdfData] = useState(null);
+  const [activeGrnPdfData, setActiveGrnPdfData] = useState(null);
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   const [ledgerEntries, setLedgerEntries] = useState([]);
   const [fetchedStoreIssues, setFetchedStoreIssues] = useState([]);
@@ -556,7 +558,12 @@ export default function UniversalBarcodeScannerModal({
         dateOfPrinting: traceData.dateOfPrinting,
         materialsUsed: traceData.materialsUsed,
         traceabilityChecked: true,
-        isDispatchBarCode: isFG || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-')
+        isDispatchBarCode: isFG || codeStartsWith(matchedRoll.barcodeId, 'FG-DISP-'),
+        isRM: !isSFG && !isFG,
+        isSFG,
+        isFG,
+        linkedGrn: linkedGrn || null,
+        linkedGrnNo: resolvedGRN !== 'N/A' ? resolvedGRN : (linkedGrn?.grnNo || linkedGrn?.grn_number || null)
       };
     }
 
@@ -801,6 +808,7 @@ export default function UniversalBarcodeScannerModal({
         title: displayItemName(matchedItem.item_name || matchedItem.itemName),
         code: matchedItem.item_code || matchedItem.itemCode || matchedItem.id,
         raw: matchedItem,
+        isRM: true,
         properties: [
           { label: 'Item Code', value: matchedItem.item_code || matchedItem.itemCode || matchedItem.id, isCode: true },
           { label: 'Item Name', value: displayItemName(matchedItem.item_name || matchedItem.itemName) || 'N/A' },
@@ -1547,45 +1555,138 @@ export default function UniversalBarcodeScannerModal({
                 </div>
               )}
 
-              {/* Redirect to Production Record Action Card */}
-              {(searchResults.jobName || searchResults.title) && (
-                <div 
-                  style={{ 
-                    background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)', 
-                    border: '1px solid #bae6fd', 
-                    borderRadius: '12px', 
-                    padding: '14px 18px', 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center',
-                    marginTop: '4px'
-                  }}
-                >
-                  <div>
-                    <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.95rem' }}>
-                      Redirect to Production Record
+              {/* Action Card: Inward GRN for Raw Materials vs Production Record for Manufactured Goods */}
+              {(() => {
+                const isRawMaterial = Boolean(
+                  searchResults.isRM ||
+                  searchResults.type === 'INVENTORY_ITEM' ||
+                  (searchResults.code && (codeStartsWith(searchResults.code, 'RM-BC') || codeStartsWith(searchResults.code, 'CON-BC'))) ||
+                  searchResults.raw?.rollType === 'RAW_MATERIAL' ||
+                  (!searchResults.isSFG && !searchResults.isFG && searchResults.type === 'ROLL')
+                );
+
+                if (isRawMaterial) {
+                  const directGrnNo = codeKeyFrom(searchResults.linkedGrnNo, searchResults.raw?.grnNo, searchResults.raw?.grn_no, searchResults.raw?.metadata?.grnNo);
+                  const grnTarget = searchResults.linkedGrn || (grns || []).find(g => {
+                    const gNo = codeKeyFrom(g.grnNo, g.grn_number, g.id);
+                    return directGrnNo && gNo && (gNo === directGrnNo || gNo.includes(directGrnNo) || directGrnNo.includes(gNo));
+                  }) || (grns || []).find(g => {
+                    const rollInvoice = codeKeyFrom(searchResults.raw?.invoiceNo, searchResults.raw?.invoice_no);
+                    const gInvoice = codeKeyFrom(g.invoiceNo, g.invoice_number, g.invoiceNumber);
+                    return rollInvoice && gInvoice && rollInvoice === gInvoice;
+                  });
+
+                  const grnDisplayNo = grnTarget?.grnNo || grnTarget?.grn_number || searchResults.linkedGrnNo || searchResults.raw?.grnNo || searchResults.raw?.grn_no;
+
+                  return (
+                    <div 
+                      className="rm-grn-action-card"
+                      style={{ 
+                        background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', 
+                        border: '1px solid #bbf7d0', 
+                        borderRadius: '12px', 
+                        padding: '14px 18px', 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '12px',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <div style={{ flex: '1 1 240px', minWidth: '0' }}>
+                        <div style={{ fontWeight: '800', color: '#166534', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <FileText size={18} style={{ color: '#16a34a', flexShrink: 0 }} /> Inward Goods Receipt Note (GRN) Document
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#15803d', marginTop: '3px', lineHeight: 1.4 }}>
+                          {grnDisplayNo ? (
+                            <>Linked Inward GRN: <strong>{grnDisplayNo}</strong>{grnTarget?.vendorName ? ` • Vendor: ${grnTarget.vendorName}` : ''}</>
+                          ) : (
+                            <>Raw Material Inward Stock • Source Item: <strong>{searchResults.title}</strong></>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => {
+                          const printableGrn = grnTarget || {
+                            id: grnDisplayNo || `GRN-${searchResults.code || 'INWARD'}`,
+                            grnNo: grnDisplayNo || `GRN-${searchResults.code || 'INWARD'}`,
+                            receivedDate: searchResults.raw?.inwardDatetime || searchResults.raw?.date || searchResults.raw?.receivedDate || new Date().toISOString(),
+                            vendorName: searchResults.raw?.vendorName || searchResults.raw?.vendor || 'Verified Supplier',
+                            vendor: searchResults.raw?.vendorName || searchResults.raw?.vendor || 'Verified Supplier',
+                            invoiceNo: searchResults.raw?.invoiceNo || searchResults.raw?.invoice_no || '',
+                            poNumber: searchResults.raw?.poNumber || searchResults.raw?.po_number || '',
+                            qcStatus: searchResults.raw?.qcStatus || searchResults.raw?.qc_status || 'Approved',
+                            items: [{
+                              itemName: searchResults.title || searchResults.raw?.itemName || 'Raw Material Stock Item',
+                              category: searchResults.raw?.category || 'Film Substrates',
+                              receivedQtyKg: searchResults.raw?.netWeightKg || searchResults.raw?.weightKg || searchResults.raw?.availableQtyKg || 0,
+                              netWeightKg: searchResults.raw?.netWeightKg || searchResults.raw?.weightKg || searchResults.raw?.availableQtyKg || 0,
+                              grossWeightKg: searchResults.raw?.grossWeightKg || 0,
+                              tareWeightKg: searchResults.raw?.tareWeightKg || 0,
+                              batchNo: searchResults.raw?.batchNo || searchResults.raw?.lotNo || searchResults.code || 'BATCH-01',
+                              barcodeId: searchResults.code || searchResults.raw?.barcodeId,
+                              micron: searchResults.raw?.micron,
+                              widthMm: searchResults.raw?.widthMm,
+                              unit: searchResults.raw?.unit || 'Kg'
+                            }]
+                          };
+                          setActiveGrnPdfData(printableGrn);
+                        }}
+                        style={{ background: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)', borderColor: '#15803d', fontWeight: '800', padding: '9px 18px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <FileText size={16} /> View Inward GRN PDF
+                      </button>
                     </div>
-                    <div style={{ fontSize: '0.8rem', color: '#0284c7', marginTop: '2px' }}>
-                      View complete manufacturing records & approval logs for <strong>{searchResults.jobName || searchResults.title}</strong>
+                  );
+                }
+
+                const hasProductionTarget = Boolean(searchResults.jobName || searchResults.isSFG || searchResults.isFG || searchResults.type === 'PRODUCTION_RECORD' || searchResults.type === 'ORDER');
+                if (hasProductionTarget) {
+                  return (
+                    <div 
+                      style={{ 
+                        background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)', 
+                        border: '1px solid #bae6fd', 
+                        borderRadius: '12px', 
+                        padding: '14px 18px', 
+                        display: 'flex', 
+                        justifyContent: 'space-between', 
+                        alignItems: 'center',
+                        marginTop: '4px'
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontWeight: '800', color: '#0369a1', fontSize: '0.95rem' }}>
+                          Redirect to Production Record
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: '#0284c7', marginTop: '2px' }}>
+                          View complete manufacturing records & approval logs for <strong>{searchResults.jobName || searchResults.title}</strong>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-primary"
+                        onClick={() => {
+                          if (onNavigateToProductionRecord) {
+                            onNavigateToProductionRecord(searchResults.jobName || searchResults.title, {
+                              orderId: searchResults.orderId || searchResults.code,
+                              jobName: searchResults.jobName || searchResults.title
+                            });
+                          }
+                        }}
+                        style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', fontWeight: '800', padding: '9px 18px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                      >
+                        <ArrowRight size={16} /> Open Production Record
+                      </button>
                     </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => {
-                      if (onNavigateToProductionRecord) {
-                        onNavigateToProductionRecord(searchResults.jobName || searchResults.title, {
-                          orderId: searchResults.orderId || searchResults.code,
-                          jobName: searchResults.jobName || searchResults.title
-                        });
-                      }
-                    }}
-                    style={{ background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)', fontWeight: '800', padding: '9px 18px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
-                  >
-                    <ArrowRight size={16} /> Open Production Record
-                  </button>
-                </div>
-              )}
+                  );
+                }
+
+                return null;
+              })()}
             </div>
           )}
         </div>
@@ -1625,6 +1726,56 @@ export default function UniversalBarcodeScannerModal({
                 }}
               >
                 <FileText size={14} /> View PO Document
+              </button>
+            )}
+
+            {searchResults && (searchResults.isRM || searchResults.type === 'GRN' || (searchResults.code && codeStartsWith(searchResults.code, 'RM-BC'))) && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  const directGrnNo = codeKeyFrom(searchResults.linkedGrnNo, searchResults.raw?.grnNo, searchResults.raw?.grn_no, searchResults.raw?.metadata?.grnNo);
+                  const grnTarget = searchResults.linkedGrn || (grns || []).find(g => {
+                    const gNo = codeKeyFrom(g.grnNo, g.grn_number, g.id);
+                    return directGrnNo && gNo && (gNo === directGrnNo || gNo.includes(directGrnNo) || directGrnNo.includes(gNo));
+                  });
+                  const grnDisplayNo = grnTarget?.grnNo || grnTarget?.grn_number || searchResults.linkedGrnNo || searchResults.raw?.grnNo || searchResults.raw?.grn_no;
+                  const printableGrn = grnTarget || {
+                    id: grnDisplayNo || `GRN-${searchResults.code || 'INWARD'}`,
+                    grnNo: grnDisplayNo || `GRN-${searchResults.code || 'INWARD'}`,
+                    receivedDate: searchResults.raw?.inwardDatetime || searchResults.raw?.date || searchResults.raw?.receivedDate || new Date().toISOString(),
+                    vendorName: searchResults.raw?.vendorName || searchResults.raw?.vendor || 'Verified Supplier',
+                    vendor: searchResults.raw?.vendorName || searchResults.raw?.vendor || 'Verified Supplier',
+                    invoiceNo: searchResults.raw?.invoiceNo || searchResults.raw?.invoice_no || '',
+                    poNumber: searchResults.raw?.poNumber || searchResults.raw?.po_number || '',
+                    qcStatus: searchResults.raw?.qcStatus || searchResults.raw?.qc_status || 'Approved',
+                    items: [{
+                      itemName: searchResults.title,
+                      category: searchResults.raw?.category || 'Film Substrates',
+                      receivedQtyKg: searchResults.raw?.netWeightKg || searchResults.raw?.weightKg || 0,
+                      netWeightKg: searchResults.raw?.netWeightKg || searchResults.raw?.weightKg || 0,
+                      grossWeightKg: searchResults.raw?.grossWeightKg || 0,
+                      tareWeightKg: searchResults.raw?.tareWeightKg || 0,
+                      batchNo: searchResults.raw?.batchNo || searchResults.code,
+                      barcodeId: searchResults.code,
+                      unit: searchResults.raw?.unit || 'Kg'
+                    }]
+                  };
+                  setActiveGrnPdfData(printableGrn);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  background: '#f0fdf4',
+                  color: '#15803d',
+                  borderColor: '#bbf7d0',
+                  fontSize: '0.82rem',
+                  fontWeight: '700'
+                }}
+              >
+                <FileText size={14} /> View GRN Document
               </button>
             )}
 
@@ -1691,6 +1842,14 @@ export default function UniversalBarcodeScannerModal({
           poData={activePoPdfData}
           vendors={vendors}
           onClose={() => setActivePoPdfData(null)}
+        />
+      )}
+
+      {/* GRN Document Viewer Overlay */}
+      {activeGrnPdfData && (
+        <GRNPDF 
+          grnData={activeGrnPdfData}
+          onClose={() => setActiveGrnPdfData(null)}
         />
       )}
     </div>

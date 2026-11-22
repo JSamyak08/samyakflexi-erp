@@ -331,7 +331,7 @@ export default function ScrapWastageAnalysis({
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#fef2f2', border: '1.5px solid #fca5a5', padding: '6px 12px', borderRadius: '8px' }}>
           <AlertTriangle size={15} color="#dc2626" />
           <span style={{ color: '#991b1b', fontWeight: '800', fontSize: '0.82rem' }}>
-            High scrap threshold: {HIGH_SCRAP_THRESHOLD_PCT}% of dispatch quantity ({ORDER_QTY_UNIT})
+            High scrap: {HIGH_SCRAP_THRESHOLD_PCT}% of dispatch quantity ({ORDER_QTY_UNIT})
           </span>
         </div>
       </div>

@@ -5130,7 +5130,7 @@ export default function App() {
         isReady={bootLoaderIsReady({ isAuthReady, isDataReady })}
         statusText={
           databaseStatus === 'checking'
-            ? 'Connecting to Supabase Cloud Database...'
+            ? 'Connecting to Cloud Database...'
             : (isDataLoading || ordersLoading)
               ? 'Loading Job Masters, Inventory & Production Records...'
               : undefined

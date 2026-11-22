@@ -92,3 +92,49 @@ test('Active User toggle is minimized into a compact pill on both desktop and mo
   assert.match(cssContent, /\.active-user-control\s*\{[\s\S]*?border-radius:\s*20px/i, 'Active user control must be rendered as a compact pill');
   assert.match(cssContent, /\.app-header-user-actions\s*\{[\s\S]*?flex-wrap:\s*nowrap/i, 'Header user actions must keep controls in a single row without wrapping on mobile');
 });
+
+test('Preloader status text does not expose provider name Supabase across platform', () => {
+  const appPath = path.join(rootDir, 'src', 'App.jsx');
+  const appContent = fs.readFileSync(appPath, 'utf8');
+
+  // Verify Supabase is not in the connecting database sentence
+  assert.doesNotMatch(appContent, /Connecting to Supabase Cloud Database/, 'Preloader must not expose Supabase provider name');
+  assert.match(appContent, /Connecting to Cloud Database\.\.\./, 'Preloader must use generic Connecting to Cloud Database');
+});
+
+test('Raw Material Stock Ledger modal is optimized for mobile responsiveness', () => {
+  const invPath = path.join(rootDir, 'src', 'components', 'InventoryManagement.jsx');
+  const cssPath = path.join(rootDir, 'src', 'index.css');
+
+  const invContent = fs.readFileSync(invPath, 'utf8');
+  const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+  // Verify modal layout classes
+  assert.match(invContent, /className="[^"]*rm-stock-ledger-modal[^"]*"/, 'Stock ledger modal must have rm-stock-ledger-modal class');
+  assert.match(invContent, /className="[^"]*rm-stock-ledger-header[^"]*"/, 'Stock ledger header must have responsive class');
+  assert.match(invContent, /className="[^"]*rm-ledger-kpi-grid[^"]*"/, 'Summary KPI cards must have rm-ledger-kpi-grid class');
+  assert.match(invContent, /className="[^"]*rm-ledger-adj-grid[^"]*"/, 'Quick stock adjustment form must have responsive grid class');
+  assert.match(invContent, /className="[^"]*rm-ledger-toolbar[^"]*"/, 'Toolbar must have rm-ledger-toolbar class');
+  assert.match(invContent, /className="[^"]*rm-ledger-subtabs[^"]*"/, 'Subtabs must have rm-ledger-subtabs class for horizontal swipe');
+  assert.match(invContent, /mobile-table-scroll-hint/, 'Must include mobile scroll cue');
+
+  // Verify CSS media queries
+  assert.match(cssContent, /\.rm-stock-ledger-modal\s*\{[\s\S]*?padding:\s*16px 14px/i, 'Modal padding must be reduced on mobile');
+  assert.match(cssContent, /\.rm-ledger-kpi-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*1fr\)/i, 'KPI grid must wrap into 2 columns on mobile instead of forcing 4');
+  assert.match(cssContent, /\.rm-ledger-subtabs\s*\{[\s\S]*?overflow-x:\s*auto/i, 'Subtabs must enable smooth touch scrolling on mobile');
+});
+
+test('UniversalBarcodeScannerModal suppresses Open Production Record for RM barcodes and points to GRN PDF', () => {
+  const modalPath = path.join(rootDir, 'src', 'components', 'UniversalBarcodeScannerModal.jsx');
+  const modalContent = fs.readFileSync(modalPath, 'utf8');
+
+  // Verify GRNPDF import and state
+  assert.match(modalContent, /import GRNPDF from '\.\/GRNPDF';/, 'Must import GRNPDF component');
+  assert.match(modalContent, /activeGrnPdfData/, 'Must have activeGrnPdfData state');
+
+  // Verify RM barcode check and Inward GRN action card
+  assert.match(modalContent, /isRawMaterial/, 'Must identify raw material barcodes');
+  assert.match(modalContent, /rm-grn-action-card/, 'Must render Inward GRN card for raw materials');
+  assert.match(modalContent, /View Inward GRN PDF/, 'Must provide button to view/print Inward GRN PDF');
+  assert.match(modalContent, /<GRNPDF[\s\S]*?grnData=\{activeGrnPdfData\}/, 'Must mount GRNPDF overlay when activeGrnPdfData is set');
+});

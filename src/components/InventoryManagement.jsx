@@ -10026,30 +10026,30 @@ export default function InventoryManagement({
 
         return (
           <ModalOverlay onClose={closeItemLedger}>
-            <div className="modal-content" style={{ maxWidth: '1180px', width: '96%', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-content rm-stock-ledger-modal" style={{ maxWidth: '1180px', width: '96%', maxHeight: '92vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
               
               {/* Modal Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)' }}>
-                <div>
-                  <h3 style={{ fontSize: '1.3rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <HistoryIcon style={{ color: '#2563eb' }} /> Raw Material Stock Ledger & Barcode History
+              <div className="rm-stock-ledger-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '12px', borderBottom: '1px solid var(--border-color)', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ flex: '1 1 280px', minWidth: '0' }}>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <HistoryIcon style={{ color: '#2563eb', flexShrink: 0 }} /> Raw Material Stock Ledger & Barcode History
                   </h3>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                    Item: <strong>{item.itemName || ((item.category || 'Film Substrates') === 'Film Substrates' ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))} {((item.category || 'Film Substrates') === 'Film Substrates') && item.micron && item.micron !== '-' ? `(${item.micron}µ x ${item.widthMm}mm)` : ''}</strong> | Code: <code>{item.itemCode || item.id}</code> | Category: <span className="badge badge-neutral" style={{ fontSize: '0.75rem' }}>{item.category || 'Film Substrates'}</span> | Location: {item.location || 'Store Bay'} | Unit: {unitStr}
+                  <p className="rm-stock-ledger-meta" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                    Item: <strong>{item.itemName || ((item.category || 'Film Substrates') === 'Film Substrates' ? `${item.filmType}` : (item.category || item.filmType || 'Stock Item'))} {((item.category || 'Film Substrates') === 'Film Substrates') && item.micron && item.micron !== '-' ? `(${item.micron}µ x ${item.widthMm}mm)` : ''}</strong> | Code: <code>{item.itemCode || item.id}</code> | Category: <span className="badge badge-neutral" style={{ fontSize: '0.72rem' }}>{item.category || 'Film Substrates'}</span> | Location: {item.location || 'Store Bay'} | Unit: {unitStr}
                   </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div className="rm-stock-ledger-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                   {ledgerPanel === 'ledger' && (
                     <button
                       type="button"
                       className="btn-primary"
-                      style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '6px 14px', fontSize: '0.85rem' }}
+                      style={{ background: '#4f46e5', borderColor: '#4f46e5', padding: '7px 14px', fontSize: '0.82rem', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}
                       onClick={() => setIsQuickAdjOpen(!isQuickAdjOpen)}
                     >
                       <Plus size={15} /> {isQuickAdjOpen ? 'Close Form' : 'Quick Stock Adjustment'}
                     </button>
                   )}
-                  <button type="button" className="btn-secondary" style={{ padding: '6px 12px' }} data-modal-dismiss="" onClick={closeItemLedger}>
+                  <button type="button" className="btn-secondary" style={{ padding: '7px 12px', fontSize: '0.82rem', fontWeight: '700' }} data-modal-dismiss="" onClick={closeItemLedger}>
                     ✕ Close
                   </button>
                 </div>
@@ -10085,8 +10085,9 @@ export default function InventoryManagement({
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 0, marginBottom: '12px' }}>
                     In-stock barcodes, oldest origin first. Age is counted from each barcode's own origin.
                   </p>
-                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                    <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                  <div className="mobile-table-scroll-hint">← Swipe horizontally to inspect barcode FIFO ages →</div>
+                  <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', WebkitOverflowScrolling: 'touch' }}>
+                    <table className="data-table" style={{ fontSize: '0.85rem', minWidth: '580px' }}>
                       <thead>
                         <tr style={{ background: '#f1f5f9' }}>
                           <th>Barcode</th>
@@ -10142,7 +10143,7 @@ export default function InventoryManagement({
                     <FileSpreadsheet size={16} /> Physical Stock Reconciliation Entry
                   </h4>
                   <form onSubmit={e => handleAddLedgerAdjustment(e, item)}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
+                    <div className="rm-ledger-adj-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
                       <div className="form-group">
                         <label style={{ fontSize: '0.8rem' }}>Adjustment Type *</label>
                         <SearchableSelect className="form-control" triggerStyle={{ padding: '6px 10px', fontSize: '0.85rem' }} value={adjType} onChange={e => setAdjType(e.target.value)}>
@@ -10200,8 +10201,8 @@ export default function InventoryManagement({
               )}
 
               {/* 4 Summary Ledger KPI Cards */}
-              <div className="glass-card" style={{ background: '#f8fafc', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', padding: '16px', marginBottom: '20px' }}>
-                <div>
+              <div className="glass-card rm-ledger-kpi-grid" style={{ background: '#f8fafc', padding: '16px', marginBottom: '20px' }}>
+                <div className="rm-ledger-kpi-card">
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Total Inwards (Purchases + Returns)</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#047857', marginTop: '4px' }}>
                     + {(totalApprovedPurchasedQty ?? 0).toLocaleString()} {unitStr}
@@ -10221,7 +10222,7 @@ export default function InventoryManagement({
                   )}
                 </div>
 
-                <div>
+                <div className="rm-ledger-kpi-card">
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Used / Consumed</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#dc2626', marginTop: '4px' }}>
                     - {(totalConsumedJobQty ?? 0).toLocaleString()} {unitStr}
@@ -10229,7 +10230,7 @@ export default function InventoryManagement({
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{jobUsageLines.length + storeIssueLines.filter(tx => tx.category === 'usage').length} job/store issues</div>
                 </div>
 
-                <div>
+                <div className="rm-ledger-kpi-card">
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Reconciliation Audits</span>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', color: totalReconciliationAdjQty >= 0 ? '#2563eb' : '#d97706', marginTop: '4px' }}>
                     {totalReconciliationAdjQty >= 0 ? `+ ${totalReconciliationAdjQty}` : `- ${Math.abs(totalReconciliationAdjQty)}`} {unitStr}
@@ -10237,7 +10238,7 @@ export default function InventoryManagement({
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{adjLines.length} audit entries</div>
                 </div>
 
-                <div>
+                <div className="rm-ledger-kpi-card">
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Usable Stock</span>
                   <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
                     {(netAvailableBalance ?? 0).toLocaleString()} {unitStr}
@@ -10259,15 +10260,15 @@ export default function InventoryManagement({
               </div>
 
               {/* Filters & Search Toolbar */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
+              <div className="rm-ledger-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
                 
                 {/* Search Bar */}
-                <div style={{ position: 'relative', width: '280px' }}>
+                <div className="rm-ledger-search-wrap" style={{ position: 'relative', width: '280px', maxWidth: '100%' }}>
                   <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                   <input
                     type="text"
                     className="form-control"
-                    style={{ paddingLeft: '32px', paddingRight: '10px', paddingTop: '6px', paddingBottom: '6px', fontSize: '0.825rem' }}
+                    style={{ paddingLeft: '32px', paddingRight: '10px', paddingTop: '8px', paddingBottom: '8px', fontSize: '0.85rem', width: '100%' }}
                     placeholder="Search by Barcode, Job, GRN or Vendor..."
                     value={ledgerSearchTerm}
                     onChange={e => setLedgerSearchTerm(e.target.value)}
@@ -10275,7 +10276,7 @@ export default function InventoryManagement({
                 </div>
 
                 {/* Ledger Subtab Pills */}
-                <div style={{ display: 'flex', gap: '6px', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <div className="rm-ledger-subtabs" style={{ display: 'flex', gap: '6px', background: '#e2e8f0', padding: '4px', borderRadius: '8px', maxWidth: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <button 
                     className={`btn-secondary`}
                     style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'all' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'all' ? '700' : '500', color: ledgerFilterTab === 'all' ? '#0f172a' : 'var(--text-secondary)' }}
@@ -10342,8 +10343,9 @@ export default function InventoryManagement({
               </div>
 
               {/* Comprehensive Material Stock Ledger Table */}
-              <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
-                <table className="data-table" style={{ fontSize: '0.85rem' }}>
+              <div className="mobile-table-scroll-hint">← Swipe horizontally to view full ledger history →</div>
+              <div className="rm-stock-ledger-table-wrap" style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px', WebkitOverflowScrolling: 'touch' }}>
+                <table className="data-table" style={{ fontSize: '0.85rem', minWidth: '780px' }}>
                   <thead>
                     <tr style={{ background: '#f1f5f9' }}>
                       <th>Date & Time</th>
