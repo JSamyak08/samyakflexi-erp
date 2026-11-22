@@ -18,6 +18,7 @@ import {
 import { generateVendorId } from '../factoryStore';
 import TablePagination, { usePagination } from './TablePagination';
 import { safeLocalStorageGet } from '../utils/safeStorage';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 function VendorMaterialItemsCell({ items = [] }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -168,13 +169,43 @@ export default function VendorManagement({ urlParams = {}, vendors = [], orders 
       if (editingVendor) {
         if (onUpdateVendor) await onUpdateVendor(vendorPayload);
         else if (onAddVendor) await onAddVendor(vendorPayload);
-        alert(`Vendor "${companyName}" updated successfully!`);
+        showSuccessScreen({
+          title: 'Vendor Updated Successfully!',
+          message: `Vendor "${companyName}" has been updated in database.`,
+          entityType: 'Vendor',
+          recordId: vendorPayload.id,
+          details: [
+            { label: 'Company Name', value: companyName },
+            { label: 'Category', value: category },
+            { label: 'GSTIN', value: gstin || 'N/A' }
+          ],
+          primaryActionText: 'Done'
+        });
       } else {
         if (onAddVendor) await onAddVendor(vendorPayload);
-        alert(`Vendor "${companyName}" onboarded successfully!`);
+        showSuccessScreen({
+          title: 'Vendor Onboarded Successfully!',
+          message: `Vendor "${companyName}" onboarded and saved to database.`,
+          entityType: 'Vendor',
+          recordId: vendorPayload.id,
+          details: [
+            { label: 'Company Name', value: companyName },
+            { label: 'Category', value: category },
+            { label: 'GSTIN', value: gstin || 'N/A' }
+          ],
+          primaryActionText: 'Done'
+        });
       }
     } catch (err) {
-      alert(`The vendor was not saved: ${err.message || err}`);
+      showErrorScreen({
+        title: 'Failed to Save Vendor',
+        message: 'The vendor profile could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'Vendor', value: companyName }
+        ]
+      });
       return;
     }
 

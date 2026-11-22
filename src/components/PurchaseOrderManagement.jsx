@@ -38,6 +38,7 @@ import TablePagination, { usePagination } from './TablePagination';
 import { getCompanyProfile } from '../services/companyProfile';
 import { generateDocRefNumber, getDocumentPrefixes, getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { allocateGrnNumber, fetchPurchaseOrderRevisions, saveAmendedPurchaseOrderToSupabase } from '../services/supabaseDataService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 import { purchaseLineHsn } from '../utils/inkHsn';
 import {
   amendmentActorName,
@@ -494,10 +495,29 @@ export default function PurchaseOrderManagement({
         setIsCreateModalOpen(false);
         setAmendingFrom(null);
         setAmendmentReason('');
-        alert(`Purchase order ${result.updated.poNumber} saved as ${result.updated.amendmentNo}. The PO number is unchanged, and the previous revision stays in document history.`);
+        showSuccessScreen({
+          title: 'Purchase Order Amended Successfully!',
+          message: `PO #${result.updated.poNumber} has been updated to revision ${result.updated.amendmentNo} in database.`,
+          entityType: 'Purchase Order',
+          recordId: `${result.updated.poNumber} (${result.updated.amendmentNo})`,
+          details: [
+            { label: 'PO Number', value: result.updated.poNumber },
+            { label: 'Revision', value: result.updated.amendmentNo },
+            { label: 'Reason', value: amendmentReason || 'Specification update' }
+          ],
+          primaryActionText: 'Done'
+        });
       } catch (err) {
         console.error('Error amending purchase order:', err);
-        alert(`Failed to save the amendment: ${err.message}`);
+        showErrorScreen({
+          title: 'Failed to Save Amendment',
+          message: 'The purchase order amendment could not be saved to the database.',
+          error: err.message || String(err),
+          details: [
+            { label: 'Error', value: err.message || String(err) },
+            { label: 'PO Number', value: amendingFrom?.poNumber || 'N/A' }
+          ]
+        });
       }
       return;
     }
@@ -566,10 +586,33 @@ export default function PurchaseOrderManagement({
       }
 
       setIsCreateModalOpen(false);
-      alert(`✅ Purchase Order ${payload.poNumber} created and saved to database successfully!\nTotal Value: ₹${(payload.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+      showSuccessScreen({
+        title: 'Purchase Order Created Successfully!',
+        message: `PO #${payload.poNumber} has been safely saved to the database.`,
+        entityType: 'Purchase Order',
+        recordId: payload.poNumber,
+        details: [
+          { label: 'Vendor Name', value: payload.vendorName || vendorObj?.companyName || 'N/A' },
+          { label: 'Promised Delivery', value: payload.deliveryDate || 'N/A' },
+          { label: 'Total Value', value: `₹${(payload.totalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` },
+          { label: 'Line Items', value: `${(payload.items || []).length} item(s)` }
+        ],
+        primaryActionText: 'View / Print PO (PDF)',
+        onPrimaryAction: () => setActivePoForPdf(payload),
+        secondaryActionText: 'Done',
+        onSecondaryAction: () => {}
+      });
     } catch (err) {
       console.error("Error creating Purchase Order:", err);
-      alert(`Failed to save Purchase Order: ${err.message}`);
+      showErrorScreen({
+        title: 'Failed to Save Purchase Order',
+        message: 'The Purchase Order could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'PO Number', value: payload?.poNumber || 'N/A' }
+        ]
+      });
     }
   };
 
@@ -1281,10 +1324,21 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
           await onUpdatePurchaseOrder(updatedPo);
           setActivePoForDetails(updatedPo);
         }
-        const lineSummary = (storedGRN.lineItems || []).map((line) => `${line.itemName} (${line.netWeightKg} kg)`).join('\n');
+        const lineSummary = (storedGRN.lineItems || []).map((line) => `${line.itemName} (${line.netWeightKg} kg)`).join(', ');
         setExtraPoLines([]);
         setActiveGrnModalData(null);
-        alert(`✅ Inward GRN #${storedGRN.grnNo || grnNo} Created Successfully!\n\n${lineSummary}\n\nReceived together under PO #${po.poNumber}.\nStatus: Pending QC Approval`);
+        showSuccessScreen({
+          title: `Inward GRN #${storedGRN.grnNo || grnNo} Created Successfully!`,
+          message: `Inward receipt recorded under PO #${po.poNumber}.`,
+          entityType: 'Inward GRN',
+          recordId: storedGRN.grnNo || grnNo,
+          details: [
+            { label: 'PO Number', value: po.poNumber },
+            { label: 'Line Summary', value: lineSummary || 'Received' },
+            { label: 'QC Status', value: 'Pending QC Approval' }
+          ],
+          primaryActionText: 'Done'
+        });
         return;
       }
 
@@ -1422,10 +1476,30 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
 
       setExtraPoLines([]);
       setActiveGrnModalData(null);
-      alert(`✅ Inward GRN #${storedGRN.grnNo || grnNo} Created Successfully!\n\n${enteredNameClean} (${enteredWeight} kg) has been inwarded under PO #${po.poNumber}.\nStatus: Pending QC Approval${isAnyVar ? '\n\n⚠️ Variations noted and linked with PO Hub.' : ''}`);
+      showSuccessScreen({
+        title: `Inward GRN #${storedGRN.grnNo || grnNo} Created Successfully!`,
+        message: `${enteredNameClean} (${enteredWeight} kg) has been inwarded under PO #${po.poNumber}.`,
+        entityType: 'Inward GRN',
+        recordId: storedGRN.grnNo || grnNo,
+        details: [
+          { label: 'Item Name', value: enteredNameClean },
+          { label: 'Received Weight', value: `${enteredWeight} kg` },
+          { label: 'PO Number', value: po.poNumber },
+          { label: 'QC Status', value: 'Pending QC Approval' }
+        ],
+        primaryActionText: 'Done'
+      });
     } catch (err) {
       console.error('[Create GRN from PO] Error:', err);
-      alert(`❌ Failed to create GRN:\n${err.message || err}`);
+      showErrorScreen({
+        title: 'Failed to Create Inward GRN',
+        message: 'The Goods Receipt Note could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'PO Number', value: po?.poNumber || 'N/A' }
+        ]
+      });
     } finally {
       setIsSubmittingGrn(false);
     }

@@ -66,6 +66,7 @@ import RollToRollVisualFlow from './RollToRollVisualFlow';
 import StationWiseInksManager from './StationWiseInksManager';
 import { calculateStationInksMetrics } from '../utils/inkStationCalculations';
 import { saveProductionRecordToSupabase } from '../services/supabaseDataService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 import {
   NOT_RECORDED,
   displayQuantity,
@@ -2247,7 +2248,15 @@ export default function ProductionRecordManagement({
         balanceRollNote += `\n\nNot posted to the item ledger:\n${consumptionWarnings.map((warning) => `• ${warning.barcode}: ${warning.reason}`).join('\n')}`;
       }
     } catch (err) {
-      alert(`The production record was not saved: ${err.message || err}`);
+      showErrorScreen({
+        title: 'Failed to Save Production Record',
+        message: 'The production record could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'Job Name', value: selectedOrder.jobName }
+        ]
+      });
       return;
     }
     notifyProductionRecordSubmitted(newRecord).catch(err => console.error("Production submission email error:", err));
@@ -2264,7 +2273,19 @@ export default function ProductionRecordManagement({
     }
 
     setIsConfirmModalOpen(false);
-    alert(`🎉 Production Record for "${selectedOrder.jobName}" saved & submitted for Admin Approval!\n\nStage production, scrap generated (${totalScrapQtyKg} kg), and inventory roll returns updated successfully.${balanceRollNote}`);
+    showSuccessScreen({
+      title: 'Production Record Saved Successfully!',
+      message: `Production record for "${selectedOrder.jobName}" saved and submitted for Admin Approval.${balanceRollNote}`,
+      entityType: 'Production Record',
+      recordId: newRecord.id || selectedOrder.id,
+      details: [
+        { label: 'Job Name', value: selectedOrder.jobName },
+        { label: 'Client', value: selectedOrder.clientName },
+        { label: 'Scrap Generated', value: `${totalScrapQtyKg} kg` },
+        { label: 'Status', value: 'Submitted for Admin Approval' }
+      ],
+      primaryActionText: 'Done / View List'
+    });
     setActiveTab('list');
   };
   const filteredRecords = productionRecords.filter(r => {

@@ -38,6 +38,7 @@ import DispatchPackingListPDF from './DispatchPackingListPDF';
 import BarcodePrinterModal from './BarcodePrinterModal';
 import { getNextDocRefNumber, getDocumentTerms } from '../services/settingsService';
 import { allocateDeliveryChallanNo, allocatePackingListNo, releaseDeliveryChallanNo, releasePackingListNo } from '../services/supabaseDataService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 import {
   challanNature,
   formatSaleChallanConflicts,
@@ -970,12 +971,33 @@ export default function DispatchManagement({
           if (onSaveDeliveryChallan) await onSaveDeliveryChallan(payload);
         } catch (err) {
           await releaseReserved();
-          alert(`The delivery challan was not saved: ${err.message || err}`);
+          showErrorScreen({
+            title: 'Failed to Save Delivery Challan',
+            message: 'The delivery challan could not be saved to the database.',
+            error: err.message || String(err),
+            details: [
+              { label: 'Error', value: err.message || String(err) },
+              { label: 'Challan No', value: payload.challanNo }
+            ]
+          });
           return;
         }
         setIsDcModalOpen(false);
         setActiveDcForPDF(payload);
         setPendingDocConfirmation(null);
+        showSuccessScreen({
+          title: `Delivery Challan ${payload.challanNo} Issued Successfully!`,
+          message: 'Delivery Challan has been recorded and committed to database.',
+          entityType: 'Delivery Challan',
+          recordId: payload.challanNo,
+          details: [
+            { label: 'Client / Party', value: payload.clientName || 'N/A' },
+            { label: 'Vehicle No', value: payload.vehicleNo || 'N/A' },
+            { label: 'Total Value', value: `₹${(payload.grandTotalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
+          ],
+          primaryActionText: 'View Delivery Challan (PDF)',
+          onPrimaryAction: () => setActiveDcForPDF(payload)
+        });
       }
     });
   };
@@ -1376,12 +1398,33 @@ export default function DispatchManagement({
         try {
           if (onSaveCoA) await onSaveCoA(payload);
         } catch (err) {
-          alert(`The certificate was not saved: ${err.message || err}`);
+          showErrorScreen({
+            title: 'Failed to Save Quality Test Report (CoA)',
+            message: 'The certificate could not be saved to the database.',
+            error: err.message || String(err),
+            details: [
+              { label: 'Error', value: err.message || String(err) },
+              { label: 'Report No', value: payload.reportNo || payload.coaNo || 'N/A' }
+            ]
+          });
           return;
         }
         setIsCoaModalOpen(false);
         setActiveCoaForPDF(payload);
         setPendingDocConfirmation(null);
+        showSuccessScreen({
+          title: 'Quality Test Report (CoA) Generated Successfully!',
+          message: `CoA #${payload.reportNo || payload.coaNo || 'Generated'} saved to database.`,
+          entityType: 'Quality CoA',
+          recordId: payload.reportNo || payload.coaNo || 'Generated',
+          details: [
+            { label: 'Job Name', value: payload.jobName || 'N/A' },
+            { label: 'Customer', value: payload.customerName || payload.clientName || 'N/A' },
+            { label: 'Overall Status', value: payload.overallStatus || 'APPROVED' }
+          ],
+          primaryActionText: 'View CoA (PDF)',
+          onPrimaryAction: () => setActiveCoaForPDF(payload)
+        });
       }
     });
   };
@@ -1893,14 +1936,36 @@ export default function DispatchManagement({
           if (releaseNumber && err?.name !== 'PartialSaveError') {
             try { await releasePackingListNo(releaseNumber); } catch { /* unused number stays reserved */ }
           }
-          alert(err?.name === 'PartialSaveError'
+          const errMsg = err?.name === 'PartialSaveError'
             ? err.message
-            : `The packing list was not saved: ${err.message || err}`);
+            : `The packing list was not saved: ${err.message || err}`;
+          showErrorScreen({
+            title: 'Failed to Save Packing List',
+            message: errMsg,
+            error: errMsg,
+            details: [
+              { label: 'Error', value: errMsg },
+              { label: 'Packing List No', value: newShipment.packingListNo || newShipment.dispatchId }
+            ]
+          });
           if (err?.name !== 'PartialSaveError') return;
         }
         setIsPackingModalOpen(false);
         setSelectedDispatchForPackingList(newShipment);
         setPendingDocConfirmation(null);
+        showSuccessScreen({
+          title: `Packing List ${newShipment.packingListNo || newShipment.dispatchId} Created Successfully!`,
+          message: 'Packing list recorded and saved to database.',
+          entityType: 'Packing List',
+          recordId: newShipment.packingListNo || newShipment.dispatchId,
+          details: [
+            { label: 'Client Name', value: newShipment.clientName || 'N/A' },
+            { label: 'Total Rolls', value: `${newShipment.totalRolls || (newShipment.rolls || []).length} roll(s)` },
+            { label: 'Net Weight', value: `${newShipment.totalNetWeightKg || 0} Kg` }
+          ],
+          primaryActionText: 'View Packing List (PDF)',
+          onPrimaryAction: () => setSelectedDispatchForPackingList(newShipment)
+        });
       }
     });
   };

@@ -48,6 +48,7 @@ import CylinderJobCardForm from '../CylinderJobCardForm';
 import StationWiseInksManager from './StationWiseInksManager';
 import { getMaterialCostSettings } from '../services/settingsService';
 import { saveJobMasterToSupabase, saveCylinderToSupabase } from '../services/supabaseDataService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 import { openArtworkViewer } from '../services/supabaseStorageService';
 import { pushSlugState } from '../utils/slugRouter';
 import { formatInrAmount, parseInrAmount } from '../utils/cylinderCost';
@@ -1162,12 +1163,31 @@ export default function JobMasterDirectory({
           }
         }
       } catch (err) {
-        alert(err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`);
+        showErrorScreen({
+          title: 'Failed to Save Job Master',
+          message: err?.name === 'PartialSaveError' ? err.message : `The job master was not saved: ${err.message || err}`,
+          error: err?.message || String(err),
+          details: [
+            { label: 'Error', value: err?.message || String(err) },
+            { label: 'Job Master', value: updatedJobMaster.id }
+          ]
+        });
         return;
       }
       setIsCreateModalOpen(false);
       setSelectedJob(updatedJobMaster);
-      alert(`Job Master ${updatedJobMaster.id} updated successfully!`);
+      showSuccessScreen({
+        title: 'Job Master Updated Successfully!',
+        message: `Job Master "${updatedJobMaster.jobName}" (${updatedJobMaster.skuCode}) has been updated in database.`,
+        entityType: 'Job Master',
+        recordId: updatedJobMaster.id,
+        details: [
+          { label: 'Job Name', value: updatedJobMaster.jobName },
+          { label: 'Client Name', value: updatedJobMaster.clientName },
+          { label: 'SKU Code', value: updatedJobMaster.skuCode }
+        ],
+        primaryActionText: 'Done'
+      });
       return;
     }
 
@@ -1265,7 +1285,18 @@ export default function JobMasterDirectory({
     }
     setIsCreateModalOpen(false);
     setSelectedJob(newJobMaster);
-    alert(`Job Master ${jobMasterId} created successfully!`);
+    showSuccessScreen({
+      title: 'Job Master Created Successfully!',
+      message: `Job Master "${jobName}" (${skuCode}) has been safely saved to the database.`,
+      entityType: 'Job Master',
+      recordId: jobMasterId,
+      details: [
+        { label: 'Job Name', value: jobName },
+        { label: 'Client Name', value: clientName },
+        { label: 'SKU Code', value: skuCode }
+      ],
+      primaryActionText: 'Done'
+    });
   };
 
   const getLinkedCylinder = (job) => {

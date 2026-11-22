@@ -22,6 +22,7 @@ import SearchableSelect from './SearchableSelect';
 import { SYSTEM_ROLES, ALL_MODULES, generateFullRolePermissions, DEFAULT_ROLE_PERMISSIONS, grantAllRolePermissions, applyAuditLogBoundary, applyOperatorSfgViewBoundary, applyPrintRunAnalyticsBoundary } from '../factoryStore';
 import { nextSfgStorePermission, SFG_VIEW_ONLY_ROLES } from '../sfgStoreAccess';
 import { saveRolePermissionsToSupabase } from '../services/supabaseDataService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 import { notifyUserCreated } from '../services/emailService';
 import { assignedRolesOf, departmentForRole, primaryRole, userHasRole } from '../assignedRoles';
 import AssignedPlantRoleField from './AssignedPlantRoleField';
@@ -162,8 +163,27 @@ export default function UserManagement({
     try {
       await saveRolePermissionsToSupabase(bounded);
       triggerSaveNotification(successMessage, false);
+      showSuccessScreen({
+        title: 'Permissions Saved Successfully!',
+        message: 'RBAC module access matrix has been safely committed to the database.',
+        entityType: 'RBAC Matrix',
+        recordId: 'Permissions',
+        details: [
+          { label: 'Status', value: 'Live & Active' },
+          { label: 'Updated By', value: currentUser?.name || 'Admin' }
+        ],
+        primaryActionText: 'Done'
+      });
     } catch (err) {
       triggerSaveNotification(err?.message || 'The permission matrix was not saved.', true);
+      showErrorScreen({
+        title: 'Failed to Save Permissions',
+        message: 'The permission matrix could not be saved to the database.',
+        error: err?.message || String(err),
+        details: [
+          { label: 'Error', value: err?.message || String(err) }
+        ]
+      });
     }
   };
 

@@ -1,17 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  CheckCircle2, 
   Copy, 
   Check, 
   X, 
-  ExternalLink, 
   Database, 
   ArrowRight,
   ShieldCheck,
-  FileCheck,
-  Sparkles,
-  Printer,
-  Download
+  AlertTriangle
 } from 'lucide-react';
 import { useSuccessModal } from '../context/SuccessModalContext';
 
@@ -21,17 +16,29 @@ export default function SuccessScreenModal() {
   const [countdown, setCountdown] = useState(100);
 
   // Extract properties
-  const title = successData?.title || 'Record Successfully Saved!';
-  const message = successData?.message || successData?.subtitle || 'Your entry has been securely stored in the database and synced across the platform.';
-  const entityType = successData?.entityType || 'Record';
+  const isError = Boolean(successData?.isError || successData?.type === 'error');
+  const isWarning = Boolean(successData?.type === 'warning');
+  const isSuccess = !isError && !isWarning;
+
+  const defaultTitle = isError 
+    ? 'Database Save Failed' 
+    : (isWarning ? 'Action Warning' : 'Record Successfully Saved!');
+  const title = successData?.title || defaultTitle;
+
+  const defaultMessage = isError
+    ? (successData?.error || 'The entry could not be saved to the database. Please review the details below.')
+    : (successData?.subtitle || 'Your entry has been securely stored in the cloud database and synced across the platform.');
+  const message = successData?.message || defaultMessage;
+
+  const entityType = successData?.entityType || (isError ? 'Error Reference' : 'Record');
   const recordId = successData?.recordId || successData?.id || '';
   const details = successData?.details || [];
-  const primaryActionText = successData?.primaryActionText || 'Done';
+  const primaryActionText = successData?.primaryActionText || (isError ? 'Dismiss' : 'Done');
   const secondaryActionText = successData?.secondaryActionText;
   const onSecondaryAction = successData?.onSecondaryAction;
   const onPrimaryAction = successData?.onPrimaryAction;
-  const autoCloseDuration = successData?.autoCloseDuration || 0; // ms, 0 means no auto-close
-  const isCloudSynced = successData?.isCloudSynced !== false; // default true
+  const autoCloseDuration = isError ? 0 : (successData?.autoCloseDuration || 0); // errors don't auto close
+  const isCloudSynced = isError ? false : (successData?.isCloudSynced !== false);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -97,11 +104,12 @@ export default function SuccessScreenModal() {
 
   return (
     <div 
-      className="success-screen-overlay"
+      className="status-feedback-overlay success-screen-overlay"
+      data-testid="status-feedback-overlay"
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 99999,
+        zIndex: 10800,
         background: 'rgba(15, 23, 42, 0.72)',
         backdropFilter: 'blur(8px)',
         display: 'flex',
@@ -111,32 +119,42 @@ export default function SuccessScreenModal() {
         animation: 'fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
       }}
       onClick={hideSuccess}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="status-feedback-title"
     >
       <div 
-        className="success-screen-card"
+        className="status-feedback-dialog success-screen-card"
+        data-testid="status-feedback-modal"
         style={{
           width: '540px',
           maxWidth: '96vw',
           maxHeight: '90vh',
           overflowY: 'auto',
           background: '#ffffff',
-          borderRadius: '20px',
-          boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(16, 185, 129, 0.2)',
+          borderRadius: '22px',
+          boxShadow: isError
+            ? '0 25px 60px -15px rgba(220, 38, 38, 0.35), 0 0 0 1px rgba(239, 68, 68, 0.25)'
+            : '0 25px 60px -15px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(16, 185, 129, 0.2)',
           position: 'relative',
-          animation: 'slideUpScale 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+          animation: 'statusPopupEnter 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          textAlign: 'center',
+          padding: 0
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Top Celebration Accent Bar */}
+        {/* Top Accent Bar */}
         <div 
           style={{
             height: '6px',
             width: '100%',
-            background: 'linear-gradient(90deg, #10b981 0%, #06b6d4 50%, #6366f1 100%)',
-            borderTopLeftRadius: '20px',
-            borderTopRightRadius: '20px'
+            background: isError 
+              ? 'linear-gradient(90deg, #ef4444 0%, #f97316 50%, #dc2626 100%)' 
+              : 'linear-gradient(90deg, #10b981 0%, #06b6d4 50%, #6366f1 100%)',
+            borderTopLeftRadius: '22px',
+            borderTopRightRadius: '22px'
           }}
         />
 
@@ -144,6 +162,8 @@ export default function SuccessScreenModal() {
         <button
           type="button"
           onClick={hideSuccess}
+          className="status-feedback-close-btn"
+          data-testid="status-feedback-close-btn"
           style={{
             position: 'absolute',
             top: '16px',
@@ -158,7 +178,8 @@ export default function SuccessScreenModal() {
             justifyContent: 'center',
             cursor: 'pointer',
             color: '#64748b',
-            transition: 'all 0.15s ease'
+            transition: 'all 0.15s ease',
+            zIndex: 3
           }}
           onMouseEnter={(e) => { e.currentTarget.style.background = '#e2e8f0'; e.currentTarget.style.color = '#0f172a'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#64748b'; }}
@@ -169,47 +190,43 @@ export default function SuccessScreenModal() {
 
         {/* Modal Body */}
         <div style={{ padding: '32px 28px 24px', textAlign: 'center' }}>
-          {/* Animated Success Icon with pulsing rings */}
-          <div style={{ position: 'relative', display: 'inline-flex', marginBottom: '20px' }}>
-            <div 
-              style={{
-                position: 'absolute',
-                inset: '-8px',
-                borderRadius: '50%',
-                background: 'rgba(16, 185, 129, 0.15)',
-                animation: 'pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
-              }}
-            />
-            <div 
-              style={{
-                position: 'absolute',
-                inset: '-16px',
-                borderRadius: '50%',
-                background: 'rgba(16, 185, 129, 0.08)',
-                animation: 'pulseRing 2s cubic-bezier(0.4, 0, 0.6, 1) infinite 0.5s'
-              }}
-            />
-            <div 
-              style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '50%',
-                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 10px 25px -5px rgba(16, 185, 129, 0.45)',
-                position: 'relative',
-                zIndex: 1
-              }}
-            >
-              <CheckCircle2 size={40} strokeWidth={2.6} />
+          
+          {/* Animated Success Tick or Error Cross */}
+          {isSuccess && (
+            <div className="status-feedback-icon status-feedback-icon-success" data-testid="status-feedback-tick">
+              <div className="status-feedback-pulse-ring" />
+              <svg className="status-checkmark-svg" viewBox="0 0 52 52" aria-hidden="true">
+                <circle className="status-checkmark-circle" cx="26" cy="26" r="23" fill="none" />
+                <path className="status-checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8" />
+              </svg>
             </div>
-          </div>
+          )}
+
+          {isError && (
+            <div className="status-feedback-icon status-feedback-icon-error" data-testid="status-feedback-error">
+              <div className="status-feedback-pulse-ring status-feedback-pulse-error" />
+              <svg className="status-error-svg" viewBox="0 0 52 52" aria-hidden="true">
+                <circle className="status-error-circle" cx="26" cy="26" r="23" fill="none" />
+                <path className="status-error-cross1" fill="none" d="M16 16 36 36" />
+                <path className="status-error-cross2" fill="none" d="M36 16 16 36" />
+              </svg>
+            </div>
+          )}
+
+          {isWarning && (
+            <div className="status-feedback-icon status-feedback-icon-warning">
+              <div className="status-feedback-pulse-ring status-feedback-pulse-warning" />
+              <div className="status-warning-badge">
+                <AlertTriangle size={36} />
+              </div>
+            </div>
+          )}
 
           {/* Heading */}
           <h2 
+            id="status-feedback-title"
+            className="status-feedback-title"
+            data-testid="status-feedback-title"
             style={{
               fontSize: '1.45rem',
               fontWeight: '800',
@@ -224,39 +241,63 @@ export default function SuccessScreenModal() {
 
           {/* Subtitle / Explanatory message */}
           <p 
+            className="status-feedback-message"
+            data-testid="status-feedback-message"
             style={{
               fontSize: '0.88rem',
               color: '#64748b',
-              margin: '0 auto 18px',
-              maxWidth: '440px',
+              margin: '0 auto 16px',
+              maxWidth: '460px',
               lineHeight: 1.5
             }}
           >
             {message}
           </p>
 
+          {/* Database Verification Status Bar */}
+          <div 
+            className={`status-db-pill ${isCloudSynced ? 'status-db-pill-success' : 'status-db-pill-error'}`}
+            data-testid="status-db-pill"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              fontSize: '0.75rem',
+              padding: '6px 14px',
+              borderRadius: '999px',
+              marginBottom: '18px'
+            }}
+          >
+            <Database size={13} />
+            <span style={{ fontWeight: '700' }}>
+              {isCloudSynced ? 'Committed to Cloud Database & Synced' : 'Database Save Failed / Uncommitted'}
+            </span>
+          </div>
+
           {/* Record Reference Badge */}
           {recordId && (
             <div 
               style={{
-                display: 'inline-flex',
+                display: 'flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '8px',
-                background: '#f0fdf4',
-                border: '1px solid #bbf7d0',
+                background: isError ? '#fef2f2' : '#f0fdf4',
+                border: isError ? '1px solid #fecaca' : '1px solid #bbf7d0',
                 borderRadius: '10px',
                 padding: '6px 14px',
-                marginBottom: '20px',
+                marginBottom: '18px',
                 fontSize: '0.82rem'
               }}
             >
-              <span style={{ color: '#166534', fontWeight: '600' }}>
-                {entityType} Reference:
+              <span style={{ color: isError ? '#991b1b' : '#166534', fontWeight: '600' }}>
+                {entityType}:
               </span>
               <code 
                 style={{
                   fontWeight: '800',
-                  color: '#15803d',
+                  color: isError ? '#dc2626' : '#15803d',
                   fontFamily: 'monospace',
                   letterSpacing: '0.02em'
                 }}
@@ -287,6 +328,8 @@ export default function SuccessScreenModal() {
           {/* Submission Details Card */}
           {Array.isArray(details) && details.length > 0 && (
             <div 
+              className="status-feedback-details"
+              data-testid="status-feedback-details"
               style={{
                 background: '#f8fafc',
                 border: '1px solid #e2e8f0',
@@ -309,9 +352,9 @@ export default function SuccessScreenModal() {
                   justifyContent: 'space-between'
                 }}
               >
-                <span>Transaction & Attribute Details</span>
-                <span style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'none', fontWeight: '700' }}>
-                  <ShieldCheck size={13} /> Verified
+                <span>Transaction & Specification Details</span>
+                <span style={{ color: isError ? '#ef4444' : '#10b981', display: 'flex', alignItems: 'center', gap: '4px', textTransform: 'none', fontWeight: '700' }}>
+                  <ShieldCheck size={13} /> {isError ? 'Action Unverified' : 'Verified'}
                 </span>
               </div>
 
@@ -344,30 +387,9 @@ export default function SuccessScreenModal() {
             </div>
           )}
 
-          {/* Cloud Storage Verification Bar */}
-          <div 
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '6px',
-              fontSize: '0.75rem',
-              color: '#059669',
-              background: '#ecfdf5',
-              padding: '6px 12px',
-              borderRadius: '8px',
-              border: '1px solid #d1fae5',
-              marginBottom: '22px'
-            }}
-          >
-            <Database size={13} />
-            <span style={{ fontWeight: '600' }}>
-              {isCloudSynced ? 'Permanently Committed to Supabase Database & Synced' : 'Saved to Local Store & Ledger'}
-            </span>
-          </div>
-
           {/* Action Buttons */}
           <div 
+            className="status-feedback-actions"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -380,7 +402,8 @@ export default function SuccessScreenModal() {
               <button
                 type="button"
                 onClick={handleSecondaryClick}
-                className="btn-secondary"
+                className="btn-secondary status-feedback-btn-secondary"
+                data-testid="status-feedback-secondary-btn"
                 style={{
                   padding: '10px 20px',
                   borderRadius: '10px',
@@ -399,8 +422,13 @@ export default function SuccessScreenModal() {
             <button
               type="button"
               onClick={handlePrimaryClick}
+              className={`btn-primary status-feedback-btn-primary ${isError ? 'status-feedback-btn-danger' : ''}`}
+              data-testid="status-feedback-primary-btn"
+              autoFocus
               style={{
-                background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                background: isError 
+                  ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)' 
+                  : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
                 color: '#ffffff',
                 border: 'none',
                 padding: '10px 28px',
@@ -411,11 +439,23 @@ export default function SuccessScreenModal() {
                 alignItems: 'center',
                 gap: '8px',
                 cursor: 'pointer',
-                boxShadow: '0 4px 14px 0 rgba(16, 185, 129, 0.4)',
+                boxShadow: isError 
+                  ? '0 4px 14px 0 rgba(239, 68, 68, 0.4)' 
+                  : '0 4px 14px 0 rgba(16, 185, 129, 0.4)',
                 transition: 'all 0.15s ease'
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px 0 rgba(16, 185, 129, 0.5)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(16, 185, 129, 0.4)'; }}
+              onMouseEnter={(e) => { 
+                e.currentTarget.style.transform = 'translateY(-1px)'; 
+                e.currentTarget.style.boxShadow = isError 
+                  ? '0 6px 20px 0 rgba(239, 68, 68, 0.5)' 
+                  : '0 6px 20px 0 rgba(16, 185, 129, 0.5)'; 
+              }}
+              onMouseLeave={(e) => { 
+                e.currentTarget.style.transform = 'none'; 
+                e.currentTarget.style.boxShadow = isError 
+                  ? '0 4px 14px 0 rgba(239, 68, 68, 0.4)' 
+                  : '0 4px 14px 0 rgba(16, 185, 129, 0.4)'; 
+              }}
             >
               {primaryActionText}
               <ArrowRight size={16} />
@@ -426,16 +466,18 @@ export default function SuccessScreenModal() {
         {/* Auto-close Progress Bar (if countdown enabled) */}
         {autoCloseDuration > 0 && (
           <div 
+            className="status-feedback-progress"
             style={{
               height: '3px',
               width: '100%',
               background: '#e2e8f0',
               overflow: 'hidden',
-              borderBottomLeftRadius: '20px',
-              borderBottomRightRadius: '20px'
+              borderBottomLeftRadius: '22px',
+              borderBottomRightRadius: '22px'
             }}
           >
             <div 
+              className="status-feedback-progress-bar"
               style={{
                 height: '100%',
                 width: `${countdown}%`,
@@ -446,22 +488,6 @@ export default function SuccessScreenModal() {
           </div>
         )}
       </div>
-
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slideUpScale {
-          from { opacity: 0; transform: translateY(20px) scale(0.96); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes pulseRing {
-          0% { transform: scale(0.95); opacity: 0.8; }
-          50% { transform: scale(1.15); opacity: 0.3; }
-          100% { transform: scale(1.3); opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

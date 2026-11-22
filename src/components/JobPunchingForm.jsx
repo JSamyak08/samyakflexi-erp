@@ -36,6 +36,7 @@ import {
   getMaterialCostSettings, 
   fetchMaterialCostSettingsFromSupabase
 } from '../services/settingsService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 
 export default function JobPunchingForm({ 
   onSaveOrder, 
@@ -651,7 +652,16 @@ export default function JobPunchingForm({
       if (onSaveOrder) await onSaveOrder(newOrder);
       if (onSaveOcn) await onSaveOcn(ocnRecord);
     } catch (err) {
-      alert(`The sales order or OCN was not saved: ${err.message || err}`);
+      showErrorScreen({
+        title: 'Job Punching Failed',
+        message: 'The sales order or OCN could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'Job Name', value: jobName },
+          { label: 'Client Name', value: clientName }
+        ]
+      });
       return;
     }
 
@@ -661,7 +671,22 @@ export default function JobPunchingForm({
 
     notifyOrderPunched(newOrder).catch(err => console.error("Order punched email error:", err));
 
-    setShowPDFModal(true);
+    showSuccessScreen({
+      title: 'Job Punched Successfully!',
+      message: `Order #${newOrder.orderId} and OCN #${ocnRecord.ocnNumber || 'Generated'} have been successfully committed to the database.`,
+      entityType: 'Order & OCN',
+      recordId: newOrder.orderId,
+      details: [
+        { label: 'Job Name', value: jobName },
+        { label: 'Client Name', value: clientName },
+        { label: 'Order Quantity', value: `${orderQtyKg} Kg (${orderType || 'Reel'})` },
+        { label: 'OCN Number', value: ocnRecord.ocnNumber || 'Generated' }
+      ],
+      primaryActionText: 'View Order Confirmation Note (PDF)',
+      onPrimaryAction: () => setShowPDFModal(true),
+      secondaryActionText: 'Close / Continue',
+      onSecondaryAction: () => {}
+    });
   };
 
   return (

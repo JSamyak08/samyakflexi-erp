@@ -9,6 +9,7 @@ import ClientPendingOrdersPDF from './ClientPendingOrdersPDF';
 import { reconcileCylinderCosts } from '../utils/cylinderCost';
 import { displayArtworkUrl } from '../utils/cylinderArtwork';
 import { isOptionalClientEmail } from '../utils/clientEmail';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 
 function ClientEmailField({ email, onChange }) {
   return (
@@ -130,8 +131,28 @@ export default function ClientManagement({ urlParams = {}, clients = [], orders 
         await onAddClient(newClient);
       }
       setIsModalOpen(false);
+      showSuccessScreen({
+        title: editingClient ? 'Client Updated Successfully!' : 'Client Onboarded Successfully!',
+        message: `Client "${name}" has been safely saved to the database.`,
+        entityType: 'Client',
+        recordId: newClient.id,
+        details: [
+          { label: 'Company Name', value: name },
+          { label: 'GSTIN', value: gstin || 'N/A' },
+          { label: 'Contact Person', value: contactPerson || 'N/A' }
+        ],
+        primaryActionText: 'Done'
+      });
     } catch (err) {
-      alert(`The client was not saved: ${err.message || err}`);
+      showErrorScreen({
+        title: 'Failed to Save Client',
+        message: 'The client details could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'Client', value: name }
+        ]
+      });
     }
   };
 

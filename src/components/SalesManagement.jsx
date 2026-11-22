@@ -38,6 +38,7 @@ import {
   DEFAULT_DAILY_RATES
 } from '../factoryStore';
 import { getMaterialCostSettings } from '../services/settingsService';
+import { showSuccessScreen, showErrorScreen } from '../context/SuccessModalContext';
 import { 
   fetchSalesQuotations, 
   saveSalesQuotationToSupabase, 
@@ -825,14 +826,34 @@ export default function SalesManagement({
     try {
       await saveSalesQuotationToSupabase(newQtn);
     } catch (err) {
-      alert(`The quotation was not saved: ${err.message || err}`);
+      showErrorScreen({
+        title: 'Failed to Save Sales Quotation',
+        message: 'The quotation could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'Quotation No', value: finalQtnNo }
+        ]
+      });
       return;
     }
     setQuotations(updatedList);
 
     chooseSalesTab('list');
     setActiveQuotationForPDF(newQtn); // Open PDF preview!
-    alert(`Sales Quotation ${finalQtnNo} (${amendmentNo}) saved & sent to client! Opening PDF preview now.`);
+    showSuccessScreen({
+      title: `Sales Quotation ${finalQtnNo} Saved Successfully!`,
+      message: `Quotation (${amendmentNo}) has been saved to the database.`,
+      entityType: 'Sales Quotation',
+      recordId: finalQtnNo,
+      details: [
+        { label: 'Client Name', value: formData.clientName || 'N/A' },
+        { label: 'Revision', value: amendmentNo },
+        { label: 'Total Value', value: `₹${(grandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` }
+      ],
+      primaryActionText: 'View Quotation PDF',
+      onPrimaryAction: () => setActiveQuotationForPDF(newQtn)
+    });
   };
 
   // Delete Sales Quotation
@@ -1030,7 +1051,14 @@ export default function SalesManagement({
 
     if (!result?.ok) {
       if (!result?.alreadyAlerted) {
-        alert(result?.error || 'The quotation was not converted.');
+        showErrorScreen({
+          title: 'Conversion to OCN Failed',
+          message: result?.error || 'The quotation could not be converted.',
+          details: [
+            { label: 'Quotation No', value: qtn?.quotationNo || 'N/A' },
+            { label: 'Reason', value: result?.error || 'Validation error' }
+          ]
+        });
       }
       return;
     }
@@ -1038,7 +1066,18 @@ export default function SalesManagement({
     setQuotations((prev) => prev.map((row) => (row.id === result.quotation.id ? result.quotation : row)));
     setOcnConvertModalQtn(null);
     setOcnConvertFormData([]);
-    alert(result.successMessage);
+    showSuccessScreen({
+      title: 'Quotation Converted to OCN Successfully!',
+      message: result.successMessage || `Quotation ${qtn.quotationNo} successfully converted to OCN.`,
+      entityType: 'OCN',
+      recordId: result?.ocnNo || result?.quotation?.ocnRefNo || 'Generated',
+      details: [
+        { label: 'Quotation No', value: qtn.quotationNo },
+        { label: 'Client', value: qtn.clientName || 'N/A' },
+        { label: 'OCN Ref', value: result?.ocnNo || result?.quotation?.ocnRefNo || 'Generated' }
+      ],
+      primaryActionText: 'Done'
+    });
   };
 
   // Filtered Quotations

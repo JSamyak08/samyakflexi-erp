@@ -117,7 +117,7 @@ import ConsumptionRevertNotices from './components/ConsumptionRevertNotices';
 import StructureChangeNotices from './components/StructureChangeNotices';
 import SearchableSelect from './components/SearchableSelect';
 import SuccessScreenModal from './components/SuccessScreenModal';
-import { showSuccessScreen } from './context/SuccessModalContext';
+import { showSuccessScreen, showErrorScreen } from './context/SuccessModalContext';
 import { fetchAuditLogsPage, saveAuditLogToSupabase, createAuditEntry, pruneOldAuditLogs } from './services/auditLogger';
 import { getDocumentPrefixes } from './services/settingsService';
 import { mergeRollsIntoList } from './services/grnDocument';
@@ -2828,8 +2828,16 @@ export default function App() {
       setOrders(prev => [newOrder, ...prev.filter(o => o.id !== newOrder.id)]);
       await logAudit('CREATE', 'Orders', `Punched job order ${newOrder.id} - "${newOrder.jobName}" for client "${newOrder.clientName}" (${newOrder.orderQtyKg} kg)`, newOrder.id);
     } catch (err) {
-      console.error('[ORDERS][CREATE] Failed to create order in Supabase:', err);
-      alert(`Failed to save order ${newOrder?.id} to Supabase database: ${err.message || err}`);
+      console.error('[ORDERS][CREATE] Failed to create order in database:', err);
+      showErrorScreen({
+        title: 'Failed to Save Order',
+        message: 'The order could not be saved to the database.',
+        error: err.message || String(err),
+        details: [
+          { label: 'Error', value: err.message || String(err) },
+          { label: 'Order ID', value: newOrder?.id || 'N/A' }
+        ]
+      });
       reportBackgroundFailure(err, `Order ${newOrder?.id} was not created`, { toast: false });
       throw err;
     }
