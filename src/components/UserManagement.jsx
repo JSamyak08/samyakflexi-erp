@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { pushSlugState } from '../utils/slugRouter';
-import { 
-  Users, 
-  UserPlus, 
+import {
+  Users,
+  UserPlus,
   Lock as LockIcon,
-  CheckCircle2, 
+  CheckCircle2,
   Search,
   Edit3,
   Trash2,
@@ -27,9 +27,9 @@ import { notifyUserCreated } from '../services/emailService';
 import { assignedRolesOf, departmentForRole, primaryRole, userHasRole } from '../assignedRoles';
 import AssignedPlantRoleField from './AssignedPlantRoleField';
 
-export default function UserManagement({ 
-  users = [], 
-  currentUser, 
+export default function UserManagement({
+  users = [],
+  currentUser,
   rolePermissions = DEFAULT_ROLE_PERMISSIONS,
   onAddUser,
   onUpdateUser,
@@ -233,7 +233,7 @@ export default function UserManagement({
     }
   };
 
-  const filteredUsers = (users || []).filter(u => 
+  const filteredUsers = (users || []).filter(u =>
     (u.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     assignedRolesOf(u).join(' ').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -244,7 +244,7 @@ export default function UserManagement({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
       {saveNotification && (
         <div style={{ background: saveNotificationError ? '#fef2f2' : '#ecfdf5', color: saveNotificationError ? '#b91c1c' : '#047857', border: `1px solid ${saveNotificationError ? '#fecaca' : '#a7f3d0'}`, padding: '12px 20px', borderRadius: '8px', fontWeight: '700', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
           {saveNotificationError ? <ShieldAlert size={20} /> : <CheckCircle2 size={20} />}
@@ -256,21 +256,21 @@ export default function UserManagement({
       <div className="glass-panel" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         {/* Sub-Tab Switcher */}
         <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '4px', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-            <button 
-              className={`btn-secondary ${activeSubTab === 'directory' ? 'active' : ''}`}
-              style={{ background: activeSubTab === 'directory' ? '#0f172a' : 'transparent', color: activeSubTab === 'directory' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
-              onClick={() => chooseUserTab('directory')}
-            >
-              <Users size={16} /> User Directory ({(users || []).length})
-            </button>
-            <button 
-              className={`btn-secondary ${activeSubTab === 'rbac' ? 'active' : ''}`}
-              style={{ background: activeSubTab === 'rbac' ? '#0f172a' : 'transparent', color: activeSubTab === 'rbac' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
-              onClick={() => chooseUserTab('rbac')}
-            >
-              <ShieldCheck size={16} /> Role & Module Permissions Matrix
-            </button>
-          </div>
+          <button
+            className={`btn-secondary ${activeSubTab === 'directory' ? 'active' : ''}`}
+            style={{ background: activeSubTab === 'directory' ? '#0f172a' : 'transparent', color: activeSubTab === 'directory' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
+            onClick={() => chooseUserTab('directory')}
+          >
+            <Users size={16} /> User Directory ({(users || []).length})
+          </button>
+          <button
+            className={`btn-secondary ${activeSubTab === 'rbac' ? 'active' : ''}`}
+            style={{ background: activeSubTab === 'rbac' ? '#0f172a' : 'transparent', color: activeSubTab === 'rbac' ? '#ffffff' : '#334155', border: 'none', padding: '6px 14px', fontSize: '0.82rem', fontWeight: '700' }}
+            onClick={() => chooseUserTab('rbac')}
+          >
+            <ShieldCheck size={16} /> Role & Module Permissions Matrix
+          </button>
+        </div>
       </div>
 
       {!isAuthorized ? (
@@ -360,10 +360,10 @@ export default function UserManagement({
                               mod.key === 'print_run_analytics'
                                 ? 'Fixed by role: Admin, Plant Manager, and Production Manager'
                                 : mod.key === 'sfg_store' && SFG_VIEW_ONLY_ROLES.includes(r)
-                                ? 'Fixed by role: Printing Operator and Shop Floor Operator stay view-only'
-                                : mod.key === 'sfg_store'
-                                ? (isAllowed ? `Full SFG access for ${r}. Click for view-only` : isView ? `View-only for ${r}. Click to block` : `No SFG access for ${r}. Click to grant full access`)
-                                : (isAllowed ? `Allowed for ${r}. Click to revoke` : `Restricted for ${r}. Click to grant`)
+                                  ? 'Fixed by role: Printing Operator and Shop Floor Operator stay view-only'
+                                  : mod.key === 'sfg_store'
+                                    ? (isAllowed ? `Full SFG access for ${r}. Click for view-only` : isView ? `View-only for ${r}. Click to block` : `No SFG access for ${r}. Click to grant full access`)
+                                    : (isAllowed ? `Allowed for ${r}. Click to revoke` : `Restricted for ${r}. Click to grant`)
                             }
                           >
                             {isAllowed ? <CheckSquare size={18} /> : <Square size={18} style={{ color: isView ? '#f59e0b' : '#cbd5e1' }} />}
@@ -383,12 +383,12 @@ export default function UserManagement({
         <div className="glass-panel" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <h3 style={{ fontSize: '1.05rem', fontWeight: '700' }}>Plant User Accounts Directory</h3>
-            
+
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               <div style={{ position: 'relative', width: '260px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '12px', top: '11px', color: 'var(--text-muted)' }} />
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   className="form-control"
                   style={{ paddingLeft: '36px' }}
                   placeholder="Search user, role or dept..."
@@ -404,7 +404,7 @@ export default function UserManagement({
               )}
             </div>
           </div>
-          
+
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
@@ -446,18 +446,18 @@ export default function UserManagement({
                     {isAdmin && (
                       <td>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <button 
-                            className="btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem' }} 
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem' }}
                             onClick={() => openEditModal(u)}
                             title="Edit User"
                           >
                             <Edit3 size={14} /> Edit
                           </button>
-                          
-                          <button 
-                            className="btn-secondary" 
-                            style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fecaca' }} 
+
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', color: '#dc2626', borderColor: '#fecaca' }}
                             onClick={() => handleDeleteClick(u)}
                             title="Delete User"
                           >
@@ -484,7 +484,7 @@ export default function UserManagement({
       {/* Modal: Onboard / Edit User */}
       {isOnboardingModalOpen && (
         <div className="modal-overlay" onClick={() => setIsOnboardingModalOpen(false)}>
-            <div className="glass-card modal-content" style={{ width: '640px', maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div className="glass-card modal-content" style={{ width: '640px', maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <UserPlus size={20} style={{ color: 'var(--primary-brand)' }} /> {editingUser ? 'Edit User Account' : 'Onboard Plant User'}
             </h3>
@@ -495,25 +495,25 @@ export default function UserManagement({
             <form onSubmit={handleSaveUser}>
               <div className="form-group">
                 <label>Full Name *</label>
-                <input 
-                  type="text" 
-                  className="form-control" 
-                  required 
+                <input
+                  type="text"
+                  className="form-control"
+                  required
                   placeholder="e.g. Ramesh Kumar"
-                  value={name} 
-                  onChange={e => setName(e.target.value)} 
+                  value={name}
+                  onChange={e => setName(e.target.value)}
                 />
               </div>
 
               <div className="form-group">
                 <label>Email Address *</label>
-                <input 
-                  type="email" 
-                  className="form-control" 
-                  required 
+                <input
+                  type="email"
+                  className="form-control"
+                  required
                   placeholder="name@samyakinternational.in"
-                  value={email} 
-                  onChange={e => setEmail(e.target.value)} 
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                 />
               </div>
 
