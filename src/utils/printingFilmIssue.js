@@ -305,16 +305,56 @@ export function planSubstrateBalanceRolls(rolls, { orderId, jobName, stage } = {
   return balances;
 }
 
+function sameBarcode(left, right) {
+  const a = String(left || '').trim().toLowerCase();
+  const b = String(right || '').trim().toLowerCase();
+  return Boolean(a) && a === b;
+}
+
+/** Barcodes already consumed on an earlier hold of this same job. */
+export function earlierRunBarcodes(orderOrHistory) {
+  const history = Array.isArray(orderOrHistory)
+    ? orderOrHistory
+    : (orderOrHistory?.printHoldHistory || orderOrHistory?.jobDetails?.printHoldHistory || []);
+  const codes = [];
+  history.forEach((entry) => {
+    const rolls = entry?.inputRolls || entry?.inputRollsList || [];
+    rolls.forEach((roll) => {
+      const code = String(roll?.barcodeId || roll?.barcode || '').trim();
+      if (code && !codes.some((existing) => sameBarcode(existing, code))) codes.push(code);
+    });
+  });
+  return codes;
+}
+
+function rollAlreadySpent(status) {
+  const text = String(status || '').trim().toLowerCase();
+  if (!text || text.includes('in stock') || text.includes('partial')) return false;
+  return text.includes('issued') || text.includes('consumed');
+}
+
 /**
  * Single input film roll validator for active print runs and end-job confirmations.
  * Enforces mandatory Barcode ID and validates roll quantities (initial, consumed, available stock, balance).
  */
-export function validateSingleInputFilmRoll(roll, inventoryRolls = []) {
+export function validateSingleInputFilmRoll(roll, inventoryRolls = [], options = {}) {
   const barcode = String(roll?.barcodeId || roll?.barcode || '').trim();
+  const earlier = Array.isArray(options?.earlierBarcodes) ? options.earlierBarcodes : [];
   if (!barcode) {
     return {
       isValid: false,
-      barcodeError: 'Barcode ID is mandatory. Please scan the barcode on the roll.',
+      barcodeError: 'Barcode ID is mandatory. The print input barcode cannot be blank. Please scan the barcode on the roll.',
+      quantityError: null,
+      matchedRoll: null,
+      initWeight: 0,
+      consumedWeight: 0,
+      availableWeight: 0
+    };
+  }
+  if (earlier.some((code) => sameBarcode(code, barcode))) {
+    return {
+      isValid: false,
+      barcodeError: `Barcode ${barcode} was already used in an earlier run of this job. Scan a different roll.`,
       quantityError: null,
       matchedRoll: null,
       initWeight: 0,
@@ -349,7 +389,11 @@ export function validateSingleInputFilmRoll(roll, inventoryRolls = []) {
   const availW = finite(matchedRoll?.availableWeightKg ?? matchedRoll?.netWeightKg ?? initW);
 
   let quantityError = null;
-  if (consW === null || consW <= 0) {
+  if (matchedRoll && (availW === null || availW <= 0)) {
+    quantityError = `Roll ${barcode} has 0 kg available. It cannot be issued to printing.`;
+  } else if (matchedRoll && rollAlreadySpent(matchedRoll.status)) {
+    quantityError = `Roll ${barcode} is already ${matchedRoll.status}. Choose a roll that is still in stock.`;
+  } else if (consW === null || consW <= 0) {
     quantityError = 'Consumed weight must be a valid number greater than 0 kg.';
   } else if (initW !== null && initW > 0 && consW > (initW + 0.05)) {
     quantityError = `Consumed weight (${consW.toFixed(2)} kg) cannot exceed roll initial weight (${initW.toFixed(2)} kg).`;
@@ -372,7 +416,7 @@ export function validateSingleInputFilmRoll(roll, inventoryRolls = []) {
  * Validates the full list of input film rolls for an active printing run or end-press job.
  * Returns an array of user-friendly error strings. An empty array indicates all rolls are valid.
  */
-export function validateInputFilmRolls(inputRolls = [], inventoryRolls = []) {
+export function validateInputFilmRolls(inputRolls = [], inventoryRolls = [], options = {}) {
   const errors = [];
   const rolls = Array.isArray(inputRolls) ? inputRolls : [];
 
@@ -383,7 +427,7 @@ export function validateInputFilmRolls(inputRolls = [], inventoryRolls = []) {
 
   rolls.forEach((roll, idx) => {
     const num = idx + 1;
-    const result = validateSingleInputFilmRoll(roll, inventoryRolls);
+    const result = validateSingleInputFilmRoll(roll, inventoryRolls, options);
     const barcode = String(roll?.barcodeId || roll?.barcode || '').trim();
 
     if (result.barcodeError) {

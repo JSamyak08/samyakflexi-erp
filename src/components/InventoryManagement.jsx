@@ -2051,13 +2051,15 @@ export default function InventoryManagement({
   };
 
   const handleSaveSFGFG = async (plan) => {
-    await commitSfgFgBatch({
+    const result = await commitSfgFgBatch({
       plan,
       saveProductionRecord: onSaveProductionRecord,
-      saveSfgGood: onSaveSFGGood
+      saveSfgGood: onSaveSFGGood,
+      saveInventoryRoll: onAddRoll
     });
-    setSelectedRollForBarcodeModal(plan.outputRolls);
+    setSelectedRollForBarcodeModal((plan.childInventoryRolls && plan.childInventoryRolls.length) ? plan.childInventoryRolls : plan.outputRolls);
     setIsSfgFgModalOpen(false);
+    return result;
   };
 
   const handleCreateGRNFromPO = (po) => {

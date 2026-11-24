@@ -14,6 +14,8 @@ import {
   SLITTED_FG_TYPE,
   buildSfgFgBatchPlan,
   commitSfgFgBatch,
+  filmMassCeilingKg,
+  shareMetersByWeight,
   manualBatchCode,
   mergeLedgerMaterials,
   openingBalanceStoreLabel,
@@ -1060,4 +1062,105 @@ test('the production-record ledger trigger posts no lines for an opening-balance
   `);
   assert.equal(only.rows[0].n, 0);
   await db.close();
+});
+
+test('balance left becomes consumed kilograms and names the BAL roll the ledger trigger creates', () => {
+  const plan = buildSfgFgBatchPlan(base({
+    inputRolls: [{ barcode: 'RM-BC-100', initialKg: 50, balanceLeftKg: 12, balanceLeftMeters: 400 }],
+    printingWastageKg: 0.2
+  }));
+  assert.equal(plan.ok, true, plan.errors?.join('\n'));
+  const film = plan.productionRecord.materialsList.find((row) => row.barcode === 'RM-BC-100');
+  assert.equal(film.netConsumedQtyKg, 38);
+  assert.equal(film.initialWeightKg, 50);
+  assert.equal(film.returnQtyKg, 12);
+  const listed = plan.productionRecord.inputRollsList.find((row) => row.barcodeId === 'RM-BC-100');
+  assert.equal(listed.consumedWeightKg, 38);
+  assert.equal(listed.initialWeightKg, 50);
+  assert.deepEqual(plan.balanceRolls, [{
+    parentBarcodeId: 'RM-BC-100',
+    balanceBarcodeId: 'RM-BC-100-BAL',
+    balanceKg: 12,
+    balanceMeters: 400
+  }]);
+  const missing = buildSfgFgBatchPlan(base({
+    inputRolls: [{ barcode: 'RM-BC-100', initialKg: 100, balanceLeftKg: '' }]
+  }));
+  assert.equal(missing.ok, false);
+  assert.match(missing.errors.join('\n'), /Balance left on roll \(kg\) is required/);
+});
+
+test('child roll metres are the printed metres shared by weight and are written as inventory rolls', async () => {
+  const plan = buildSfgFgBatchPlan(base({
+    actualMeters: 1000,
+    plainSettingKg: 0,
+    printingWastageKg: 0,
+    inputRolls: [{ barcode: 'RM-BC-100', consumedKg: 10, initialKg: 100 }],
+    outputRolls: [
+      { barcodeId: 'SFG-PRN-A', grossWeightKg: 30, tareWeightKg: 0, netWeightKg: 30, lengthMeters: 99999 },
+      { barcodeId: 'SFG-PRN-B', grossWeightKg: 70, tareWeightKg: 0, netWeightKg: 70, lengthMeters: 1 }
+    ]
+  }));
+  assert.equal(plan.ok, true, plan.errors?.join('\n'));
+  assert.equal(plan.outputRolls.find((roll) => roll.barcodeId === 'SFG-PRN-A').lengthMeters, 300);
+  assert.equal(plan.outputRolls.find((roll) => roll.barcodeId === 'SFG-PRN-B').lengthMeters, 700);
+  assert.deepEqual(shareMetersByWeight([{ netWeightKg: 1 }, { netWeightKg: 1 }], 10).map((roll) => roll.lengthMeters), [5, 5]);
+  assert.equal(plan.childInventoryRolls.length, 2);
+  assert.equal(plan.childInventoryRolls[0].parentSfgBatchCode, 'SFG-LOT-ORD-2026-153');
+  assert.equal(plan.childInventoryRolls[0].lengthMeters, 300);
+  assert.equal(plan.childInventoryRolls[0].rollType, 'SEMI_FINISHED_GOODS');
+  const calls = [];
+  await commitSfgFgBatch({
+    plan,
+    saveProductionRecord: async () => ({ consumptionWarnings: [] }),
+    saveSfgGood: async () => {},
+    saveInventoryRoll: async (roll) => { calls.push(roll.barcodeId); }
+  });
+  assert.deepEqual(calls, ['SFG-PRN-A', 'SFG-PRN-B']);
+
+  const opening = buildSfgFgBatchPlan(base({
+    isOpeningBalance: true,
+    outputRolls: [{ barcodeId: 'SFG-PRN-OPEN', grossWeightKg: 10, tareWeightKg: 0, netWeightKg: 10, lengthMeters: 111 }]
+  }));
+  assert.equal(opening.ok, true, opening.errors?.join('\n'));
+  assert.equal(opening.printedLot.childRolls.find((roll) => roll.barcodeId === 'SFG-PRN-OPEN').lengthMeters, 111);
+  assert.equal(opening.childInventoryRolls, undefined);
+});
+
+test('ink shortfall blocks the save until an Admin confirms it', () => {
+  const short = buildSfgFgBatchPlan(base({
+    inventory: [{ ...inkItem, availableQtyKg: 1 }, adhesiveItem]
+  }));
+  assert.equal(short.ok, false);
+  assert.match(short.errors.join('\n'), /Ink stock has 1 kg available/);
+  assert.match(short.errors.join('\n'), /Admin must confirm/);
+  const confirmed = buildSfgFgBatchPlan(base({
+    inventory: [{ ...inkItem, availableQtyKg: 1 }, adhesiveItem],
+    confirmStockShortfall: true
+  }));
+  assert.equal(confirmed.ok, true, confirmed.errors?.join('\n'));
+  const heavy = buildSfgFgBatchPlan(base({
+    actualMeters: 100,
+    widthMm: 1000,
+    micron: 12,
+    filmDensity: 1.4,
+    plainSettingKg: 0,
+    printingWastageKg: 0,
+    inputRolls: [{ barcode: 'RM-BC-100', consumedKg: 40, initialKg: 400 }]
+  }));
+  const ceiling = filmMassCeilingKg({ meters: 100, widthMm: 1000, micron: 12, density: 1.4, wasteKg: 0 });
+  assert.ok(40 > ceiling);
+  assert.equal(heavy.ok, false);
+  assert.match(heavy.errors.join('\n'), /Confirm this weight/);
+  const accepted = buildSfgFgBatchPlan(base({
+    actualMeters: 100,
+    widthMm: 1000,
+    micron: 12,
+    filmDensity: 1.4,
+    plainSettingKg: 0,
+    printingWastageKg: 0,
+    inputRolls: [{ barcode: 'RM-BC-100', consumedKg: 40, initialKg: 400 }],
+    confirmFilmOverMass: true
+  }));
+  assert.equal(accepted.ok, true, accepted.errors?.join('\n'));
 });

@@ -36,7 +36,7 @@ import {
   validateProductionEntry
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
-import { buildSfgFgBatchPlan, OPENING_BALANCE_TOGGLE_LABEL, processKindForType, processRecordBlockVisible } from '../utils/sfgFgBatchEntry';
+import { buildSfgFgBatchPlan, OPENING_BALANCE_TOGGLE_LABEL, processKindForType, processRecordBlockVisible, shareMetersByWeight } from '../utils/sfgFgBatchEntry';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -64,6 +64,45 @@ export const FILM_TYPE_OPTIONS = [
   'Nylon / OPA',
   'Paper'
 ];
+
+function emptyRollUse() {
+  return { barcode: '', beforeKg: '', balanceLeftKg: '', balanceMeters: '' };
+}
+
+function consumedFromUse(row) {
+  const before = parseFloat(row?.beforeKg);
+  const left = parseFloat(row?.balanceLeftKg);
+  if (!Number.isFinite(before) || !Number.isFinite(left)) return null;
+  return Math.round((before - left) * 100) / 100;
+}
+
+function RollUseRow({ row, onChange, onRemove, barcodePlaceholder }) {
+  const consumed = consumedFromUse(row);
+  return (
+    <div data-testid="roll-use-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px', alignItems: 'end' }}>
+      <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155' }}>
+        {barcodePlaceholder}
+        <input className="form-control" placeholder="Scan or type barcode" value={row.barcode} onChange={(event) => onChange({ barcode: event.target.value })} />
+      </label>
+      <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155' }}>
+        Roll weight before use (kg) *
+        <input className="form-control" type="number" step="0.01" min="0" value={row.beforeKg} onChange={(event) => onChange({ beforeKg: event.target.value })} />
+      </label>
+      <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155' }}>
+        Balance left on roll (kg) *
+        <input data-testid="balance-left-kg" className="form-control" type="number" step="0.01" min="0" value={row.balanceLeftKg} onChange={(event) => onChange({ balanceLeftKg: event.target.value })} />
+      </label>
+      <label style={{ fontSize: '0.72rem', fontWeight: 700, color: '#334155' }}>
+        Balance left (metres)
+        <input className="form-control" type="number" step="1" min="0" value={row.balanceMeters} onChange={(event) => onChange({ balanceMeters: event.target.value })} />
+      </label>
+      <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0f172a', paddingBottom: '8px' }}>
+        Consumed: {consumed === null ? '—' : `${consumed.toFixed(2)} kg`}
+      </div>
+      <button type="button" className="btn-secondary" onClick={onRemove}>Remove</button>
+    </div>
+  );
+}
 
 export default function SFGFGEntryModal({
   mode = 'SFG', // 'SFG' | 'FG'
@@ -112,7 +151,7 @@ export default function SFGFGEntryModal({
   const [coreDia, setCoreDia] = useState('3 Inch (76mm)');
   const [batchRemarks, setBatchRemarks] = useState('');
   const [formErrors, setFormErrors] = useState({});
-  const [inputRolls, setInputRolls] = useState([{ barcode: '', consumedKg: '', initialKg: '' }]);
+  const [inputRolls, setInputRolls] = useState([{ barcode: '', beforeKg: '', balanceLeftKg: '', balanceMeters: '' }]);
   const [actualMeters, setActualMeters] = useState('');
   const [inkGsm, setInkGsm] = useState('');
   const [inkKg, setInkKg] = useState('');
@@ -122,7 +161,10 @@ export default function SFGFGEntryModal({
   const [printingWastageKg, setPrintingWastageKg] = useState('');
   const [parentBarcode, setParentBarcode] = useState('');
   const [parentConsumedKg, setParentConsumedKg] = useState('');
-  const [substrateRolls, setSubstrateRolls] = useState([{ barcode: '', consumedKg: '', initialKg: '' }]);
+  const [substrateRolls, setSubstrateRolls] = useState([{ barcode: '', beforeKg: '', balanceLeftKg: '', balanceMeters: '' }]);
+  const [confirmFilmOverMass, setConfirmFilmOverMass] = useState(false);
+  const [confirmStockShortfall, setConfirmStockShortfall] = useState(false);
+  const [postResult, setPostResult] = useState(null);
   const [adhesiveGsm, setAdhesiveGsm] = useState('');
   const [adhesiveKg, setAdhesiveKg] = useState('');
   const [adhesiveItemId, setAdhesiveItemId] = useState('');
@@ -374,26 +416,35 @@ export default function SFGFGEntryModal({
   // Sync new rolls dimensions/weights without altering previously assigned barcodes
   useEffect(() => {
     if (!currentJob) return;
-    setMasterRolls(prev => prev.map((r, i) => {
-      if (r.isExisting) return r; // DO NOT mutate previous locked rolls
+    setMasterRolls(prev => {
+      const drafted = prev.map((r, i) => {
+        if (r.isExisting) return r;
 
-      const gross = parseFloat(r.grossWeightKg) || 0;
-      const tare = r.tareWeightKg !== '' ? parseFloat(r.tareWeightKg) : (parseFloat(defaultTareKg) || 0);
-      const net = Math.max(0, gross - tare);
-      const width = parseFloat(jobWidthMm) || 0;
-      const micron = parseFloat(jobMicron) || 0;
-      const len = calculateLength(net, width, micron, jobFilmType);
+        const gross = parseFloat(r.grossWeightKg) || 0;
+        const tare = r.tareWeightKg !== '' ? parseFloat(r.tareWeightKg) : (parseFloat(defaultTareKg) || 0);
+        const net = Math.max(0, gross - tare);
+        const width = parseFloat(jobWidthMm) || 0;
+        const micron = parseFloat(jobMicron) || 0;
+        const len = isOpeningBalance ? calculateLength(net, width, micron, jobFilmType) : 0;
 
-      return {
-        ...r,
-        barcodeId: r.barcodeId || generateRollBarcode(r.rollIndex || (i + 1), currentJob.jobCode, selectedType),
-        netWeightKg: gross > 0 ? parseFloat(net.toFixed(2)) : 0,
-        widthMm: width || '',
-        micron: micron || '',
-        lengthMeters: len
-      };
-    }));
-  }, [jobWidthMm, jobMicron, jobFilmType, defaultTareKg, selectedType]);
+        return {
+          ...r,
+          barcodeId: r.barcodeId || generateRollBarcode(r.rollIndex || (i + 1), currentJob.jobCode, selectedType),
+          netWeightKg: gross > 0 ? parseFloat(net.toFixed(2)) : 0,
+          widthMm: width || '',
+          micron: micron || '',
+          lengthMeters: len
+        };
+      });
+      if (isOpeningBalance) return drafted;
+      const kind = processKindForType(selectedType);
+      const pool = parseFloat(kind === 'printing' ? actualMeters : stageMeters);
+      if (!(pool > 0) || (kind !== 'printing' && kind !== 'lamination-1' && kind !== 'lamination-2')) return drafted;
+      const shared = shareMetersByWeight(drafted.filter((roll) => !roll.isExisting && roll.netWeightKg > 0), pool);
+      const lengths = new Map(shared.map((roll) => [roll.barcodeId, roll.lengthMeters]));
+      return drafted.map((roll) => lengths.has(roll.barcodeId) ? { ...roll, lengthMeters: lengths.get(roll.barcodeId) } : roll);
+    });
+  }, [jobWidthMm, jobMicron, jobFilmType, defaultTareKg, selectedType, isOpeningBalance, actualMeters, stageMeters]);
 
   // Roll Modification Handlers (Only allowed for new rolls)
   const handleUpdateRoll = (index, field, value) => {
@@ -409,7 +460,7 @@ export default function SFGFGEntryModal({
         const tare = parseFloat(field === 'tareWeightKg' ? value : (modRoll.tareWeightKg || defaultTareKg)) || 0;
         const net = Math.max(0, gross - tare);
         modRoll.netWeightKg = parseFloat(net.toFixed(2));
-        modRoll.lengthMeters = calculateLength(net, modRoll.widthMm, modRoll.micron, jobFilmType);
+        modRoll.lengthMeters = isOpeningBalance ? calculateLength(net, modRoll.widthMm, modRoll.micron, jobFilmType) : 0;
       }
 
       if (field === 'barcodeId') {
@@ -417,6 +468,15 @@ export default function SFGFGEntryModal({
       }
 
       updated[index] = modRoll;
+      if (!isOpeningBalance) {
+        const kind = processKindForType(selectedType);
+        const pool = parseFloat(kind === 'printing' ? actualMeters : stageMeters);
+        if (pool > 0 && (kind === 'printing' || kind === 'lamination-1' || kind === 'lamination-2')) {
+          const shared = shareMetersByWeight(updated.filter((item) => !item.isLocked && item.netWeightKg > 0), pool);
+          const lengths = new Map(shared.map((item) => [item.barcodeId, item.lengthMeters]));
+          return updated.map((item) => lengths.has(item.barcodeId) ? { ...item, lengthMeters: lengths.get(item.barcodeId) } : item);
+        }
+      }
       return updated;
     });
   };
@@ -537,7 +597,15 @@ export default function SFGFGEntryModal({
     notes: batchRemarks,
     now: Date.now(),
     outputRolls: newRollsToSave,
-    inputRolls: isOpeningBalance ? [] : inputRolls,
+    filmDensity: getFilmSubstrateDensity(jobFilmType || currentJob?.filmType),
+    confirmFilmOverMass,
+    confirmStockShortfall: isAdmin && confirmStockShortfall,
+    inputRolls: isOpeningBalance ? [] : inputRolls.map((row) => ({
+      barcode: row.barcode,
+      initialKg: row.beforeKg,
+      balanceLeftKg: row.balanceLeftKg,
+      balanceLeftMeters: row.balanceMeters
+    })),
     actualMeters: isOpeningBalance ? '' : actualMeters,
     inkGsm: isOpeningBalance ? '' : inkGsm,
     inkKg: isOpeningBalance ? '' : inkKg,
@@ -547,7 +615,12 @@ export default function SFGFGEntryModal({
     printingWastageKg: isOpeningBalance ? '' : printingWastageKg,
     parentBarcode: isOpeningBalance ? '' : parentBarcode,
     parentConsumedKg: isOpeningBalance ? '' : parentConsumedKg,
-    substrateRolls: isOpeningBalance ? [] : substrateRolls,
+    substrateRolls: isOpeningBalance ? [] : substrateRolls.map((row) => ({
+      barcode: row.barcode,
+      initialKg: row.beforeKg,
+      balanceLeftKg: row.balanceLeftKg,
+      balanceLeftMeters: row.balanceMeters
+    })),
     adhesiveGsm: isOpeningBalance ? '' : adhesiveGsm,
     adhesiveKg: isOpeningBalance ? '' : adhesiveKg,
     adhesiveItemId: isOpeningBalance ? '' : adhesiveItemId,
@@ -676,7 +749,7 @@ export default function SFGFGEntryModal({
         goodKg: newNetKg,
         scrapKg: isOpeningBalance ? 0 : (parseFloat(plainSettingKg) || 0) + (parseFloat(printingWastageKg) || 0) + (parseFloat(laminationPlainWastageKg) || 0) + (parseFloat(laminateWastageKg) || 0),
         meters: isOpeningBalance ? '' : (processKind === 'printing' ? actualMeters : stageMeters),
-        printInputKg: isOpeningBalance ? '' : inputRolls.reduce((sum, row) => sum + (parseFloat(row.consumedKg) || 0), 0)
+        printInputKg: isOpeningBalance ? '' : inputRolls.reduce((sum, row) => sum + (consumedFromUse(row) || 0), 0)
       }
     });
     const decision = decideGuardrailSave(guardrail, {
@@ -695,8 +768,9 @@ export default function SFGFGEntryModal({
     }
     plan.productionRecord.guardrail = decision.fields;
 
+    let saved;
     try {
-      if (onSave) await onSave(plan);
+      saved = onSave ? await onSave(plan) : plan;
     } catch (err) {
       setGuardrailMessages([err?.message || 'The production record was not saved.']);
       return;
@@ -706,7 +780,7 @@ export default function SFGFGEntryModal({
       onPrintRolls(formattedNewRolls);
     }
 
-    onClose();
+    setPostResult(saved || plan);
   };
 
   return (
@@ -772,6 +846,28 @@ export default function SFGFGEntryModal({
         </div>
 
         <form onSubmit={handleSaveAndSubmit}>
+          {postResult && (
+            <div data-testid="batch-post-result" style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+              <div style={{ fontWeight: 800, marginBottom: '8px' }}>Batch saved. Applied kilograms</div>
+              {(postResult.appliedLines || []).map((line) => (
+                <div key={line.id || `${line.role}-${line.barcode}`} style={{ fontSize: '0.8rem', marginBottom: '4px' }}>
+                  {line.itemName || line.role}: {line.barcode} · {Number(line.netConsumedQtyKg || 0).toFixed(2)} kg
+                  {line.returnQtyKg > 0 ? ` · balance ${Number(line.returnQtyKg).toFixed(2)} kg will be ${line.barcode}-BAL` : ''}
+                </div>
+              ))}
+              {(postResult.consumptionWarnings || []).length > 0 && (
+                <div style={{ marginTop: '8px', color: '#b45309', fontSize: '0.8rem' }}>
+                  {(postResult.consumptionWarnings || []).map((warning) => (
+                    <div key={warning.id || warning.barcode}>{warning.barcode}: {warning.reason}</div>
+                  ))}
+                </div>
+              )}
+              {(postResult.consumptionWarnings || []).length === 0 && (
+                <div style={{ fontSize: '0.78rem', color: '#166534' }}>No roll consumption exceptions were returned for this save.</div>
+              )}
+              <button type="button" className="btn-secondary" style={{ marginTop: '10px' }} onClick={onClose}>Close</button>
+            </div>
+          )}
           {/* Section 1: Active Job & Classification */}
           <div style={{ background: '#f8fafc', border: formErrors.selectedJobId || formErrors.selectedType ? '1.5px solid #ef4444' : '1px solid #e2e8f0', borderRadius: '8px', padding: '14px', marginBottom: '14px' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: '800', textTransform: 'uppercase', color: '#475569', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1092,17 +1188,22 @@ export default function SFGFGEntryModal({
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>Film rolls consumed *</div>
                   {inputRolls.map((row, index) => (
-                    <div key={`in-${index}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr auto', gap: '8px' }}>
-                      <input className="form-control" placeholder="Scan or type film barcode *" value={row.barcode} onChange={(event) => {
-                        const barcode = event.target.value;
-                        setInputRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, barcode, initialKg: fillRollBalance(barcode) || item.initialKg } : item));
-                      }} />
-                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Consumed kg *" value={row.consumedKg} onChange={(event) => setInputRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, consumedKg: event.target.value } : item))} />
-                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Roll balance kg" value={row.initialKg} onChange={(event) => setInputRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, initialKg: event.target.value } : item))} />
-                      <button type="button" className="btn-secondary" onClick={() => setInputRolls((prev) => prev.length === 1 ? [{ barcode: '', consumedKg: '', initialKg: '' }] : prev.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
-                    </div>
+                    <RollUseRow
+                      key={`in-${index}`}
+                      row={row}
+                      barcodePlaceholder="Film barcode *"
+                      onChange={(patch) => setInputRolls((prev) => prev.map((item, itemIndex) => {
+                        if (itemIndex !== index) return item;
+                        const next = { ...item, ...patch };
+                        if (Object.prototype.hasOwnProperty.call(patch, 'barcode')) {
+                          next.beforeKg = fillRollBalance(patch.barcode) || item.beforeKg;
+                        }
+                        return next;
+                      }))}
+                      onRemove={() => setInputRolls((prev) => prev.length === 1 ? [emptyRollUse()] : prev.filter((_, itemIndex) => itemIndex !== index))}
+                    />
                   ))}
-                  <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setInputRolls((prev) => prev.concat({ barcode: '', consumedKg: '', initialKg: '' }))}>Add film roll</button>
+                  <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setInputRolls((prev) => prev.concat(emptyRollUse()))}>Add film roll</button>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
                     <input className="form-control" type="number" step="1" min="0" placeholder="Actual meters printed *" value={actualMeters} onChange={(event) => setActualMeters(event.target.value)} />
                     <input className="form-control" type="number" step="0.01" min="0" placeholder="Ink GSM *" value={inkGsm} onChange={(event) => setInkGsm(event.target.value)} />
@@ -1125,17 +1226,22 @@ export default function SFGFGEntryModal({
                   </div>
                   <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>{processKind === 'lamination-2' ? 'Substrate 3' : 'Substrate 2'} *</div>
                   {substrateRolls.map((row, index) => (
-                    <div key={`sub-${index}`} style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.8fr 0.8fr auto', gap: '8px' }}>
-                      <input className="form-control" placeholder="Substrate barcode *" value={row.barcode} onChange={(event) => {
-                        const barcode = event.target.value;
-                        setSubstrateRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, barcode, initialKg: fillRollBalance(barcode) || item.initialKg } : item));
-                      }} />
-                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Consumed kg *" value={row.consumedKg} onChange={(event) => setSubstrateRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, consumedKg: event.target.value } : item))} />
-                      <input className="form-control" type="number" step="0.01" min="0" placeholder="Roll balance kg" value={row.initialKg} onChange={(event) => setSubstrateRolls((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, initialKg: event.target.value } : item))} />
-                      <button type="button" className="btn-secondary" onClick={() => setSubstrateRolls((prev) => prev.length === 1 ? [{ barcode: '', consumedKg: '', initialKg: '' }] : prev.filter((_, itemIndex) => itemIndex !== index))}>Remove</button>
-                    </div>
+                    <RollUseRow
+                      key={`sub-${index}`}
+                      row={row}
+                      barcodePlaceholder="Substrate barcode *"
+                      onChange={(patch) => setSubstrateRolls((prev) => prev.map((item, itemIndex) => {
+                        if (itemIndex !== index) return item;
+                        const next = { ...item, ...patch };
+                        if (Object.prototype.hasOwnProperty.call(patch, 'barcode')) {
+                          next.beforeKg = fillRollBalance(patch.barcode) || item.beforeKg;
+                        }
+                        return next;
+                      }))}
+                      onRemove={() => setSubstrateRolls((prev) => prev.length === 1 ? [emptyRollUse()] : prev.filter((_, itemIndex) => itemIndex !== index))}
+                    />
                   ))}
-                  <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setSubstrateRolls((prev) => prev.concat({ barcode: '', consumedKg: '', initialKg: '' }))}>Add substrate roll</button>
+                  <button type="button" className="btn-secondary" style={{ alignSelf: 'flex-start' }} onClick={() => setSubstrateRolls((prev) => prev.concat(emptyRollUse()))}>Add substrate roll</button>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
                     <input className="form-control" type="number" step="0.01" min="0" placeholder="Adhesive kg *" value={adhesiveKg} onChange={(event) => setAdhesiveKg(event.target.value)} />
                     <input className="form-control" type="number" step="0.01" min="0" placeholder="Adhesive GSM *" value={adhesiveGsm} onChange={(event) => setAdhesiveGsm(event.target.value)} />
@@ -1154,6 +1260,18 @@ export default function SFGFGEntryModal({
                 <div style={{ marginTop: '8px', color: '#b91c1c', fontSize: '0.78rem', fontWeight: 600 }}>
                   {formErrors.process.map((message) => <div key={message}>{message}</div>)}
                 </div>
+              )}
+              {Array.isArray(formErrors.process) && formErrors.process.some((message) => /Confirm this weight/i.test(message)) && (
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px', fontSize: '0.78rem', fontWeight: 700 }}>
+                  <input data-testid="confirm-film-over-mass" type="checkbox" checked={confirmFilmOverMass} onChange={(event) => setConfirmFilmOverMass(event.target.checked)} />
+                  I confirm the film weight is above the expected mass.
+                </label>
+              )}
+              {isAdmin && Array.isArray(formErrors.process) && formErrors.process.some((message) => /Admin must confirm the shortfall/i.test(message)) && (
+                <label style={{ display: 'flex', gap: '8px', alignItems: 'flex-start', marginTop: '8px', fontSize: '0.78rem', fontWeight: 700 }}>
+                  <input data-testid="confirm-stock-shortfall" type="checkbox" checked={confirmStockShortfall} onChange={(event) => setConfirmStockShortfall(event.target.checked)} />
+                  Admin confirm: save even though ink or adhesive stock is short.
+                </label>
               )}
             </div>
           )}

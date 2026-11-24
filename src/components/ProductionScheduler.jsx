@@ -109,7 +109,7 @@ import {
   validatePrintHold
 } from '../utils/printHold';
 import { rollsEligibleForBarcodeLabel } from '../utils/scrapIdentity';
-import { validateInputFilmRolls, validateSingleInputFilmRoll } from '../utils/printingFilmIssue';
+import { earlierRunBarcodes, validateInputFilmRolls, validateSingleInputFilmRoll } from '../utils/printingFilmIssue';
 
 function linkInputRoll(roll, inventoryRolls, inventory) {
   const barcode = String(roll?.barcodeId || roll?.barcode || '').trim().toLowerCase();
@@ -1394,7 +1394,7 @@ export default function ProductionScheduler({
         ? activeRunningJob.inputRollsList
         : inputRollsList;
 
-    const rollErrors = validateInputFilmRolls(rollsToValidate, inventoryRolls);
+    const rollErrors = validateInputFilmRolls(rollsToValidate, inventoryRolls, { earlierBarcodes: earlierRunBarcodes(order) });
     if (rollErrors.length > 0) {
       alert("⚠️ Cannot complete press run. Please resolve the following Input Film Substrate Rolls errors first:\n\n" + rollErrors.map(err => `• ${err}`).join('\n'));
       return;
@@ -1486,7 +1486,7 @@ export default function ProductionScheduler({
       return;
     }
 
-    const rollErrors = validateInputFilmRolls(inputRollsList, inventoryRolls);
+    const rollErrors = validateInputFilmRolls(inputRollsList, inventoryRolls, { earlierBarcodes: earlierRunBarcodes(endJobTargetOrder) });
     if (rollErrors.length > 0) {
       alert("⚠️ Input Film Substrate Roll validation failed:\n\n" + rollErrors.map(err => `• ${err}`).join('\n'));
       return;
@@ -1549,7 +1549,7 @@ export default function ProductionScheduler({
     setIsSubmittingEndJob(true);
 
     try {
-      const rollErrors = validateInputFilmRolls(inputRollsList, inventoryRolls);
+      const rollErrors = validateInputFilmRolls(inputRollsList, inventoryRolls, { earlierBarcodes: earlierRunBarcodes(endJobTargetOrder) });
       if (rollErrors.length > 0) {
         alert("⚠️ Cannot complete press run. Input film roll validation failed:\n\n" + rollErrors.map(err => `• ${err}`).join('\n'));
         setIsSubmittingEndJob(false);
@@ -3069,7 +3069,7 @@ export default function ProductionScheduler({
                   {/* List of Input Rolls */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
                     {inputRollsList.map((roll, index) => {
-                      const rollValidation = validateSingleInputFilmRoll(roll, inventoryRolls);
+                      const rollValidation = validateSingleInputFilmRoll(roll, inventoryRolls, { earlierBarcodes: earlierRunBarcodes(activeRunningJob) });
                       const cleanBarcode = String(roll.barcodeId || '').trim();
                       const isBarcodeVerified = Boolean(cleanBarcode && (rollValidation.matchedRoll || (!inventoryRolls || inventoryRolls.length === 0)));
                       const initW = rollValidation.initWeight || parseFloat(roll.initialWeightKg) || 0;
