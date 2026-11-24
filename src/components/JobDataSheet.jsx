@@ -29,7 +29,7 @@ import JobDataSheetPDF from './JobDataSheetPDF';
 import SearchableSelect from './SearchableSelect';
 import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
 import { DEFAULT_EXTRA_PRINT_PERCENT, planOrderExtraPrint } from '../utils/extraPrintRule';
-import ExtraPrintRuleNote from './ExtraPrintRuleNote';
+import { ExtraPrintTargetFigure } from './ExtraPrintRuleNote';
 
 export default function JobDataSheet({ 
   orders = [], 
@@ -499,7 +499,11 @@ export default function JobDataSheet({
             </h3>
 
             <form onSubmit={handleSaveDataSheet} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <ExtraPrintRuleNote plan={extraPrint} testId="job-data-sheet-extra-print-rule" />
+              {extraPrint?.hasPrintLine && (
+                <div data-testid="job-data-sheet-extra-print-rule" style={{ fontSize: '0.9rem' }}>
+                  Planned print <ExtraPrintTargetFigure plan={extraPrint} />
+                </div>
+              )}
               <div className="form-group">
                 <label className="form-label">Select Job Order</label>
                 <SearchableSelect 

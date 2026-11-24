@@ -41,7 +41,7 @@ import { cylindersLinkedToJobMaster } from '../utils/jobMasterLink';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { carryProcessMeasures, commitSfgFgBatch } from '../utils/sfgFgBatchEntry';
 import { DEFAULT_EXTRA_PRINT_PERCENT, extraPrintShortfall, planOrderExtraPrint } from '../utils/extraPrintRule';
-import ExtraPrintRuleNote, { ExtraPrintShortfallNote } from './ExtraPrintRuleNote';
+import { ExtraPrintShortfallNote, ExtraPrintTargetFigure } from './ExtraPrintRuleNote';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap, getOrderStageInfo } from '../factoryStore';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
@@ -4518,8 +4518,10 @@ export default function ProductionRecordManagement({
                     />
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
                       Net usable roll weight after printing pass
+                      {selectedOrderExtraPrint?.hasPrintLine && (
+                        <span data-testid="production-extra-print-rule"> · Target <ExtraPrintTargetFigure plan={selectedOrderExtraPrint} /></span>
+                      )}
                     </div>
-                    <ExtraPrintRuleNote plan={selectedOrderExtraPrint} testId="production-extra-print-rule" />
                     <ExtraPrintShortfallNote shortfall={selectedOrderPrintShortfall} testId="production-extra-print-shortfall" />
 
                     {/* Actual Ink GSM input by Operator */}

@@ -1057,7 +1057,7 @@ export default function DocumentSettings({
               }}
             >
               <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>+3% extra print rule</h3>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Extra print percent</h3>
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
                   The plain substrate print quantity and its metres are this percent above what still needs to be printed, after any printed SFG balance reused from an earlier job. The default is {DEFAULT_EXTRA_PRINT_PERCENT}. Only Admin can change it.
                 </p>

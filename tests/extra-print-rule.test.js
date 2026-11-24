@@ -6,6 +6,7 @@ import {
   DEFAULT_EXTRA_PRINT_PERCENT,
   EXTRA_PRINT_PERCENT_SETTING,
   applyExtraPrintToRequirements,
+  extraPrintIncludedNote,
   extraPrintRuleLabel,
   extraPrintShortfall,
   normalizeExtraPrintPercent,
@@ -50,6 +51,8 @@ test('a changed extra_print_percent replaces the default 3', () => {
   assert.equal(normalizeExtraPrintPercent('nope'), 3);
   assert.equal(normalizeExtraPrintPercent(0), 0);
   assert.equal(extraPrintRuleLabel(0), '+0% extra print rule');
+  assert.equal(extraPrintIncludedNote(3), '(incl. 3% extra)');
+  assert.equal(extraPrintIncludedNote(5), '(incl. 5% extra)');
 });
 
 test('only the plain print film line becomes the target; other lines stay', () => {

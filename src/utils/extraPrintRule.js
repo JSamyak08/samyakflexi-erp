@@ -37,6 +37,10 @@ export function extraPrintRuleLabel(value) {
   return `+${formatExtraPrintPercent(value)}% extra print rule`;
 }
 
+export function extraPrintIncludedNote(value) {
+  return `(incl. ${formatExtraPrintPercent(value)}% extra)`;
+}
+
 function finiteKg(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return 0;
@@ -210,6 +214,7 @@ export function extraPrintShortfall({ plan, printedKg, printedMeters } = {}) {
     shortKg: belowKg ? shortKg : (kgRecorded ? 0 : null),
     shortMeters: belowMeters ? shortMeters : (metresRecorded ? 0 : null),
     blocks: false,
-    label: plan.label || extraPrintRuleLabel(plan.percent)
+    label: plan.label || extraPrintRuleLabel(plan.percent),
+    percent: plan.percent
   };
 }

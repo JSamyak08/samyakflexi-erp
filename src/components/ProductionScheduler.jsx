@@ -13,7 +13,7 @@ import {
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
 import { DEFAULT_EXTRA_PRINT_PERCENT, extraPrintShortfall, planOrderExtraPrint } from '../utils/extraPrintRule';
-import ExtraPrintRuleNote, { ExtraPrintShortfallNote } from './ExtraPrintRuleNote';
+import { ExtraPrintIncludedNote, ExtraPrintShortfallNote } from './ExtraPrintRuleNote';
 import { pushSlugState } from '../utils/slugRouter';
 import { userHasAnyRole } from '../assignedRoles';
 import PressQueueReorderControls from './PressQueueReorderControls';
@@ -510,7 +510,12 @@ export default function ProductionScheduler({
   const [lastAutosavedTime, setLastAutosavedTime] = useState(null);
 
   // Derived End-Job Target & Meter Shortfall Calculations
-  const endJobTargetMetersNum = endJobTargetOrder ? parseFloat(endJobTargetOrder.targetMeters || 0) : 0;
+  const endJobInclusiveMeters = endJobTargetOrder?.extraPrint?.hasPrintLine && endJobTargetOrder.extraPrint.targetMeters != null
+    ? Number(endJobTargetOrder.extraPrint.targetMeters)
+    : null;
+  const endJobTargetMetersNum = endJobInclusiveMeters != null
+    ? endJobInclusiveMeters
+    : (endJobTargetOrder ? parseFloat(endJobTargetOrder.targetMeters || 0) : 0);
   const endJobActualMetersNum = parseFloat(inputActualMeters) || 0;
   const endJobMeterPercentage = (endJobTargetMetersNum > 0 && endJobActualMetersNum > 0)
     ? ((endJobActualMetersNum / endJobTargetMetersNum) * 100).toFixed(1)
@@ -1566,7 +1571,7 @@ export default function ProductionScheduler({
         quantityKg: totalRollsKg,
         goodKg: totalRollsKg,
         scrapKg: plainSettingKg + printingWastageKg,
-        targetMeters: finiteNumber(endJobTargetOrder?.targetMeters)
+        targetMeters: endJobInclusiveMeters ?? finiteNumber(endJobTargetOrder?.targetMeters)
       }
     });
   };
@@ -2410,12 +2415,13 @@ export default function ProductionScheduler({
                         <strong data-testid="planned-print-kg" style={{ fontSize: '0.92rem', color: '#0f172a' }}>{order.extraPrint?.hasPrintLine ? order.plannedPrintKg : order.printQtyKg} kg</strong>
                         <span data-testid="planned-print-m" style={{ fontSize: '0.68rem', color: '#0369a1', fontWeight: '700', display: 'block' }}>
                           {(order.extraPrint?.hasPrintLine ? order.plannedPrintMeters : order.targetMeters || 0).toLocaleString()} m
+                          {order.extraPrint?.hasPrintLine && <> <ExtraPrintIncludedNote percent={order.extraPrint.percent} /></>}
                         </span>
                       </div>
 
                       <div>
                         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Target Print Length</span>
-                        <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>{(order.targetMeters || 0).toLocaleString()} m</strong>
+                        <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>{(order.extraPrint?.hasPrintLine && order.plannedPrintMeters != null ? order.plannedPrintMeters : (order.targetMeters || 0)).toLocaleString()} m</strong>
                         <span style={{ fontSize: '0.68rem', color: '#0369a1', fontWeight: '700', display: 'block' }}>
                           {order.printLayerGsm} GSM ({order.printFilmType} {order.micron}µ)
                         </span>
@@ -2426,7 +2432,6 @@ export default function ProductionScheduler({
                         <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{order.colorsCount} Col</strong>
                       </div>
                     </div>
-                    <ExtraPrintRuleNote plan={order.extraPrint} />
                     <ExtraPrintShortfallNote shortfall={order.extraPrintShortfall} />
 
                     {/* Machine Assignment & Execution Action Buttons */}
@@ -2991,13 +2996,14 @@ export default function ProductionScheduler({
                       {activeRunningJob.extraPrint?.hasPrintLine ? activeRunningJob.plannedPrintKg : activeRunningJob.printQtyKg} kg
                       {' · '}
                       {(activeRunningJob.extraPrint?.hasPrintLine ? activeRunningJob.plannedPrintMeters : activeRunningJob.targetMeters || 0).toLocaleString()} m
+                      {activeRunningJob.extraPrint?.hasPrintLine && <> <ExtraPrintIncludedNote percent={activeRunningJob.extraPrint.percent} /></>}
                     </div>
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Target Print Meters</span>
                     <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
-                      {(activeRunningJob?.targetMeters || 0).toLocaleString()} m
+                      {(activeRunningJob.extraPrint?.hasPrintLine && activeRunningJob.plannedPrintMeters != null ? activeRunningJob.plannedPrintMeters : (activeRunningJob?.targetMeters || 0)).toLocaleString()} m
                     </div>
                     <span style={{ fontSize: '0.72rem', color: '#0369a1', fontWeight: '700', display: 'block', marginTop: '2px' }}>
                       {activeRunningJob.printLayerGsm} GSM ({activeRunningJob.printFilmType} {activeRunningJob.micron}µ)
@@ -3011,7 +3017,6 @@ export default function ProductionScheduler({
                     </div>
                   </div>
                 </div>
-                <ExtraPrintRuleNote plan={activeRunningJob.extraPrint} testId="job-card-extra-print-rule" />
                 <ExtraPrintShortfallNote shortfall={activeRunningJob.extraPrintShortfall} />
 
                 {/* Substrate Structure */}
@@ -3721,8 +3726,14 @@ export default function ProductionScheduler({
                       <label style={{ fontSize: '0.85rem', fontWeight: '800', color: '#0f172a', margin: 0 }}>
                         📏 Actual Meters Printed (m) *
                       </label>
-                      <span style={{ fontSize: '0.75rem', color: '#0284c7', fontWeight: '700' }}>
-                        Target: {(endJobTargetOrder?.targetMeters || 0).toLocaleString()} m
+                      <span style={{ fontSize: '0.75rem', color: '#0284c7', fontWeight: '700' }} data-testid="end-job-print-target">
+                        Target: {(endJobTargetMetersNum || 0).toLocaleString()} m
+                        {endJobTargetOrder?.extraPrint?.hasPrintLine && <> <ExtraPrintIncludedNote percent={endJobTargetOrder.extraPrint.percent} /></>}
+                        {endJobTargetOrder?.extraPrint?.hasPrintLine && (
+                          <span style={{ display: 'block', textAlign: 'right' }}>
+                            {endJobTargetOrder.plannedPrintKg ?? endJobTargetOrder.extraPrint.targetKg} kg
+                          </span>
+                        )}
                       </span>
                     </div>
                     <input 
@@ -3808,7 +3819,6 @@ export default function ProductionScheduler({
                         </div>
                       </div>
                     )}
-                    <ExtraPrintRuleNote plan={endJobTargetOrder?.extraPrint} testId="end-job-extra-print-rule" />
                     <ExtraPrintShortfallNote shortfall={endJobExtraShortfall} testId="end-job-extra-print-shortfall" />
                   </div>
 

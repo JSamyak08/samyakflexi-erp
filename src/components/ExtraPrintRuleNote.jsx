@@ -1,10 +1,10 @@
 import React from 'react';
-import { extraPrintRuleLabel } from '../utils/extraPrintRule';
+import { extraPrintIncludedNote } from '../utils/extraPrintRule';
 
 function metresText(value) {
-  if (value === null || value === undefined || value === '') return '—';
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
-  if (!Number.isFinite(number)) return '—';
+  if (!Number.isFinite(number)) return null;
   return `${number.toLocaleString()} m`;
 }
 
@@ -15,33 +15,23 @@ function kgText(value) {
   return `${number.toLocaleString(undefined, { maximumFractionDigits: 2 })} kg`;
 }
 
-export default function ExtraPrintRuleNote({ plan, testId = 'extra-print-rule' }) {
-  if (!plan?.hasPrintLine) return null;
-  const label = plan.label || extraPrintRuleLabel(plan.percent);
+export function ExtraPrintIncludedNote({ percent, testId = 'extra-print-included' }) {
+  if (percent === undefined || percent === null || percent === '') return null;
   return (
-    <div
-      data-testid={testId}
-      style={{
-        margin: '8px 0 12px',
-        background: '#eff6ff',
-        border: '1px solid #bfdbfe',
-        borderRadius: '8px',
-        padding: '10px 12px',
-        color: '#1e3a8a'
-      }}
-    >
-      <div style={{ fontSize: '0.82rem', fontWeight: 800 }}>{label}</div>
-      <div style={{ fontSize: '0.78rem', marginTop: '4px', lineHeight: 1.45 }}>
-        Base {kgText(plan.baseKg)} · {metresText(plan.baseMeters)}
-        {' · '}Extra {kgText(plan.extraKg)} · {metresText(plan.extraMeters)}
-        {' · '}Target {kgText(plan.targetKg)} · {metresText(plan.targetMeters)}
-      </div>
-      {Number(plan.sfgBalanceKg) > 0 && (
-        <div style={{ fontSize: '0.74rem', marginTop: '4px', color: '#1d4ed8' }}>
-          Printed SFG reused {kgText(plan.sfgBalanceKg)} is already taken off what needs to be printed.
-        </div>
-      )}
-    </div>
+    <span data-testid={testId} style={{ fontWeight: 700, color: '#1d4ed8' }}>
+      {extraPrintIncludedNote(percent)}
+    </span>
+  );
+}
+
+export function ExtraPrintTargetFigure({ plan, testId = 'extra-print-target' }) {
+  if (!plan?.hasPrintLine) return null;
+  const metres = metresText(plan.targetMeters);
+  return (
+    <span data-testid={testId} style={{ fontSize: '0.82rem', fontWeight: 800, color: '#0f172a' }}>
+      {kgText(plan.targetKg)}{metres ? ` · ${metres}` : ''}{' '}
+      <ExtraPrintIncludedNote percent={plan.percent} />
+    </span>
   );
 }
 
@@ -61,10 +51,10 @@ export function ExtraPrintShortfallNote({ shortfall, testId = 'extra-print-short
       }}
     >
       <div style={{ fontSize: '0.82rem', fontWeight: 800 }}>
-        Printed output is below the {shortfall.label || extraPrintRuleLabel()}
+        Printed output is below the target {shortfall.percent !== undefined && shortfall.percent !== null ? extraPrintIncludedNote(shortfall.percent) : ''}
       </div>
       <div style={{ fontSize: '0.78rem', marginTop: '4px' }}>
-        Shortfall {kgText(shortfall.shortKg)} · {metresText(shortfall.shortMeters)}. This is a warning. It does not block the save.
+        Shortfall {kgText(shortfall.shortKg)} · {metresText(shortfall.shortMeters) || '—'}. This is a warning. It does not block the save.
       </div>
     </div>
   );

@@ -48,7 +48,7 @@ import { receiptKg } from '../services/grnLifecycle';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
 import { DEFAULT_EXTRA_PRINT_PERCENT, normalizeExtraPrintPercent, planOrderExtraPrint } from '../utils/extraPrintRule';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
-import ExtraPrintRuleNote from './ExtraPrintRuleNote';
+import { ExtraPrintIncludedNote } from './ExtraPrintRuleNote';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
 import DeadlineReminderBanner from './DeadlineReminderBanner';
 import PrintingDeadlineSummaryCard from './PrintingDeadlineSummaryCard';
@@ -2502,8 +2502,6 @@ export default function OrderManagement({
                               onChange={(choice) => setAllocationDrafts((prev) => ({ ...prev, [order.id]: choice }))}
                               onReserve={(choice) => reservePrintedSfg(order, choice)}
                             />
-                            <ExtraPrintRuleNote plan={printedSfgPlan.extraPrint} />
-
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <Layers size={16} style={{ color: 'var(--primary-brand)' }} />
@@ -2622,6 +2620,12 @@ export default function OrderManagement({
                                               onChange={(e) => handleUpdateReqField(order.id, req.id, 'qtyKg', e.target.value)}
                                             />
                                             <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700' }}>kg</span>
+                                            {req.extraPrint?.hasPrintLine && (
+                                              <span data-testid="po-print-film-target" style={{ fontSize: '0.72rem', color: '#1d4ed8', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                                {req.extraPrint.targetMeters != null ? `${Number(req.extraPrint.targetMeters).toLocaleString()} m ` : ''}
+                                                <ExtraPrintIncludedNote percent={req.extraPrint.percent} />
+                                              </span>
+                                            )}
                                           </div>
                                         </td>
 
