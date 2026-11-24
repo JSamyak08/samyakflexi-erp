@@ -5,6 +5,7 @@ import {
   planLaminationFilmIssue,
   planSubstrateBalanceRolls,
   substrateRollsFromLog,
+  earlierRunBarcodes,
   validateSingleInputFilmRoll,
   validateInputFilmRolls
 } from '../src/utils/printingFilmIssue.js';
@@ -240,4 +241,34 @@ test('validateInputFilmRolls blocks empty rolls, missing barcodes, and missing b
     consumedWeightKg: 100
   }], stockRolls);
   assert.equal(fullyConsumed.length, 0);
+});
+
+test('a blank print-input barcode, a 0 kg roll, an issued roll, and a re-scanned roll are blocked', () => {
+  const stockRolls = [
+    { barcodeId: 'RM-ZERO', availableWeightKg: 0, netWeightKg: 0, status: 'In Stock (RM)' },
+    { barcodeId: 'RM-ISSUED', availableWeightKg: 40, netWeightKg: 40, status: 'Issued to Printing' },
+    { barcodeId: 'RM-OK', availableWeightKg: 80, netWeightKg: 80, status: 'In Stock (RM)' }
+  ];
+  const blank = validateSingleInputFilmRoll({ barcodeId: '   ', consumedWeightKg: 10 }, stockRolls);
+  assert.equal(blank.isValid, false);
+  assert.match(blank.barcodeError, /blank/i);
+  assert.match(blank.barcodeError, /Barcode ID is mandatory/i);
+
+  const zero = validateSingleInputFilmRoll({ barcodeId: 'RM-ZERO', consumedWeightKg: 10 }, stockRolls);
+  assert.equal(zero.isValid, false);
+  assert.match(zero.quantityError, /0 kg available/i);
+
+  const issued = validateSingleInputFilmRoll({ barcodeId: 'RM-ISSUED', consumedWeightKg: 10 }, stockRolls);
+  assert.equal(issued.isValid, false);
+  assert.match(issued.quantityError, /already Issued to Printing/i);
+
+  const history = [{ inputRolls: [{ barcodeId: 'RM-OK', consumedWeightKg: 20 }] }];
+  assert.deepEqual(earlierRunBarcodes({ printHoldHistory: history }), ['RM-OK']);
+  const again = validateInputFilmRolls(
+    [{ barcodeId: 'RM-OK', consumedWeightKg: 10, initialWeightKg: 80, balanceLengthMeters: 100 }],
+    stockRolls,
+    { earlierBarcodes: earlierRunBarcodes({ jobDetails: { printHoldHistory: history } }) }
+  );
+  assert.equal(again.length, 1);
+  assert.match(again[0], /already used in an earlier run/i);
 });

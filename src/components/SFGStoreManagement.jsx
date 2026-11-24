@@ -216,6 +216,7 @@ export default function SFGStoreManagement({
   urlParams = {},
   onSaveSFGGood,
   onSaveProductionRecord,
+  onAddRoll,
   onConsumeSFG,
   onDeleteSFGGood,
   onConsumptionReverted,
@@ -4848,14 +4849,12 @@ export default function SFGStoreManagement({
           inventoryRolls={inventoryRolls}
           sfgGoods={sfgGoods}
           productionRecords={productionRecords}
-          onSave={async (plan) => {
-            await commitSfgFgBatch({
-              plan,
-              saveProductionRecord: onSaveProductionRecord,
-              saveSfgGood: onSaveSFGGood
-            });
-            setNewGoodModalMode(null);
-          }}
+          onSave={async (plan) => commitSfgFgBatch({
+            plan,
+            saveProductionRecord: onSaveProductionRecord,
+            saveSfgGood: onSaveSFGGood,
+            saveInventoryRoll: onAddRoll
+          })}
         />
       )}
 

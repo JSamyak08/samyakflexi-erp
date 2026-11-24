@@ -6829,6 +6829,7 @@ export default function App() {
             currentUser={currentUser}
             onSaveSFGGood={handleSaveSFGGood}
             onSaveProductionRecord={handleSaveProductionRecord}
+            onAddRoll={handleAddRoll}
             onConsumeSFG={handleConsumeSFG}
             onDeleteSFGGood={handleDeleteSFGGood}
             onConsumptionReverted={refreshAfterConsumptionRevert}

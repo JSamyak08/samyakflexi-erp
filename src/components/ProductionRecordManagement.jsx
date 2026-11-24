@@ -46,12 +46,7 @@ import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notify
 import { pushSlugState } from '../utils/slugRouter';
 import {
   additionalSubstrate2Materials,
-  consumptionOutputNetKg,
-  consumptionOutputTrace,
-  outputRollsFromLog,
-  resolveInputSubstrateBarcodes,
-  sharedInputWeight,
-  substrate2InputRolls
+  consumptionOutputNetKg
 } from '../utils/consumeRollEntries';
 import TablePagination, { usePagination } from './TablePagination';
 import { supabase } from '../services/supabaseClient';
@@ -95,7 +90,7 @@ import {
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting, fetchRollConsumptionExceptions, resolveRollConsumptionException } from '../services/supabaseDataService';
 import { openRollConsumptionWarnings } from '../utils/rollLedger';
-import { inputRollWeightsFromLog } from '../utils/consumeMassBalance';
+import { buildYieldReconciliation, YIELD_BAND_SETTING_KEY } from '../utils/yieldReconciliation';
 import { userHasAnyRole } from '../assignedRoles';
 
 function measureInputValue(value, fallback) {
@@ -120,297 +115,46 @@ function RollWiseInputOutputMasterRolls({
   onOpenFgModal,
   onSelectRollForBarcodeModal
 }) {
-  // 1. Resolve effective order and record
-  const effectiveOrder = targetOrder || (orders || []).find(o => {
-    if (!targetRecord) return false;
-    const cleanO = String(o.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-    const cleanR = String(targetRecord.orderId || targetRecord.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-    return cleanO === cleanR || (targetRecord.jobCode && o.jobCode === targetRecord.jobCode) || (targetRecord.jobName && o.jobName && o.jobName.trim().toLowerCase() === targetRecord.jobName.trim().toLowerCase());
-  });
+  const [yieldBands, setYieldBands] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetchSystemSetting(YIELD_BAND_SETTING_KEY).then((value) => {
+      if (live && value) setYieldBands(value);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const model = useMemo(() => buildYieldReconciliation({
+    targetOrder,
+    targetRecord,
+    orders,
+    productionRecords,
+    inventoryRolls,
+    sfgGoods,
+    bands: yieldBands
+  }), [targetOrder, targetRecord, orders, productionRecords, inventoryRolls, sfgGoods, yieldBands]);
+  const {
+    linkedRolls,
+    lotTotals,
+    inputRolls,
+    pairedRolls,
+    runs,
+    sfgRolls,
+    fgRolls,
+    totalInputConsumedKg,
+    totalSfgKg,
+    totalFgKg,
+    totalOutputKg,
+    hasBothInputAndOutput,
+    netVarianceKg,
+    netVariancePct,
+    cumulativeRecoveryPct,
+    checkEntries,
+    yieldLabel,
+    expectedInkKg,
+    metresCheck,
+    jobTitle
+  } = model;
 
-  const effectiveRecord = targetRecord || (productionRecords || []).find(r => {
-    if (!effectiveOrder) return false;
-    const cleanR = String(r.orderId || r.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-    const cleanO = String(effectiveOrder.id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-    return cleanR === cleanO || (effectiveOrder.jobCode && r.jobCode === effectiveOrder.jobCode) || (effectiveOrder.jobName && r.jobName && r.jobName.trim().toLowerCase() === effectiveOrder.jobName.trim().toLowerCase());
-  });
-
-  const rawOrderId = effectiveOrder?.id || effectiveRecord?.orderId || effectiveRecord?.id || '';
-  const cleanOrderId = String(rawOrderId).replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-  const targetJobCode = String(effectiveOrder?.jobCode || effectiveRecord?.jobCode || '').trim().toLowerCase();
-  const targetJobName = String(effectiveOrder?.jobName || effectiveRecord?.jobName || '').trim().toLowerCase();
-
-  // 2. Collect SFG Store Consumption history for this job/order
-  const sfgLogs = [
-    ...(Array.isArray(effectiveRecord?.sfgConsumptions) ? effectiveRecord.sfgConsumptions : []),
-    ...(Array.isArray(effectiveOrder?.sfgConsumptions) ? effectiveOrder.sfgConsumptions : [])
-  ].filter((log, idx, arr) => {
-    const key = log.id || `${log.timestamp || log.date}-${log.sfgBatchCode}-${log.targetProcess}`;
-    return arr.findIndex(l => (l.id || `${l.timestamp || l.date}-${l.sfgBatchCode}-${l.targetProcess}`) === key) === idx;
-  });
-
-  // 3. Collect real SFG & FG output master rolls (Strictly no dummy or seeded rolls)
-  const rollMap = new Map();
-  const addRoll = (r) => {
-    if (!r) return;
-    const barcode = String(r.barcodeId || r.sfgBatchCode || r.sfg_batch_code || r.rollId || r.barcode || r.id || '').trim();
-    if (!barcode) return;
-
-    // Discard any synthetic or placeholder identifiers
-    if (barcode.startsWith('RM-IN-') || barcode.startsWith('mat-') || barcode === 'null' || barcode === 'undefined') return;
-
-    const rOrderId = String(r.orderId || r.order_id || '').replace(/^PR-/, '').replace(/^REC-/, '').trim().toLowerCase();
-    const rJobCode = String(r.jobCode || r.job_code || '').trim().toLowerCase();
-    const rJobName = String(r.jobName || r.job_name || '').trim().toLowerCase();
-    const rBatch = barcode.toLowerCase();
-
-    const matches = (cleanOrderId && rOrderId && rOrderId === cleanOrderId) ||
-                    (cleanOrderId && rBatch.includes(cleanOrderId)) ||
-                    (targetJobCode && rJobCode && rJobCode === targetJobCode) ||
-                    (targetJobName && rJobName && (rJobName.includes(targetJobName) || targetJobName.includes(rJobName)));
-
-    if (!matches) return;
-
-    const rType = String(r.rollType || r.roll_type || r.sfgType || r.sfg_type || r.category || '').toLowerCase();
-    const isExplicitRm = rType.includes('raw') || rType === 'rm' || rType.includes('chemical') || rType.includes('ink') || rType.includes('solvent') || barcode.startsWith('CON-');
-    if (isExplicitRm && !barcode.startsWith('SFG-') && !barcode.startsWith('FG-')) {
-      return; // Raw material rolls are input rolls, not output master rolls
-    }
-
-    const isRealSfgOrFg = rType.includes('sfg') || rType.includes('semi') || rType.includes('fg') || rType.includes('finish') || rType.includes('printed') || barcode.startsWith('SFG-') || barcode.startsWith('FG-');
-    if (!isRealSfgOrFg) return;
-
-    const netKg = parseFloat(r.netWeightKg || r.total_net_kg || r.totalNetKg || r.availableWeightKg || r.available_weight_kg || 0) || 0;
-    const grossKg = parseFloat(r.grossWeightKg || r.total_gross_kg || r.totalGrossKg || 0) || 0;
-    const tareKg = parseFloat(r.tareWeightKg || r.tare_weight_kg || 0) || 0;
-    const lengthM = parseFloat(r.lengthMeters || r.meters || 0) || 0;
-
-    // Discard entries with 0 weight (not weighed or uninitialized placeholder)
-    if (netKg <= 0 && grossKg <= 0) return;
-
-    if (!rollMap.has(barcode)) {
-      const isFg = isFinishedGoodsStock({
-        rollType: r.rollType || r.roll_type,
-        sfgType: r.sfgType || r.sfg_type,
-        category: r.category,
-        sfgBatchCode: barcode,
-        barcodeId: barcode
-      });
-      const film = r.filmType || r.film_type || effectiveOrder?.printFilmType || '';
-      const micron = finiteNumber(r.micron ?? effectiveOrder?.micron);
-      const widthMm = finiteNumber(r.widthMm ?? r.width_mm ?? effectiveOrder?.printWidthMm ?? effectiveOrder?.widthMm);
-      const qc = r.qcStatus || r.qc_status || 'Approved';
-      const loc = r.locationBay || r.storageBay || r.storage_bay || (isFg ? 'FG Warehouse' : 'SFG Store');
-
-      rollMap.set(barcode, {
-        ...r,
-        id: barcode,
-        barcodeId: barcode,
-        rollType: isFg ? 'FG' : 'SFG',
-        category: isFg ? 'Finished Goods (FG)' : 'Semi-Finished Goods (SFG)',
-        netWeightKg: netKg,
-        grossWeightKg: grossKg,
-        tareWeightKg: tareKg,
-        lengthMeters: lengthM > 0 ? lengthM : null,
-        filmType: film,
-        micron: Number(micron),
-        widthMm: Number(widthMm),
-        qcStatus: qc,
-        locationBay: loc,
-        inputSubstrateBarcodes: resolveInputSubstrateBarcodes(r),
-        inputRollsTraceability: r.inputRollsTraceability || []
-      });
-    }
-  };
-
-  (effectiveRecord?.outputRolls || []).forEach(addRoll);
-  (effectiveRecord?.rollsBreakdown || []).forEach(addRoll);
-  (effectiveRecord?.stages?.printing?.outputRolls || []).forEach(addRoll);
-  (effectiveOrder?.rollsBreakdown || []).forEach(addRoll);
-  (effectiveOrder?.outputRolls || []).forEach(addRoll);
-  (inventoryRolls || []).forEach(addRoll);
-  (sfgGoods || []).forEach(addRoll);
-
-  // Add output rolls recorded via SFG Store Consumption
-  sfgLogs.forEach(log => {
-    const trace = consumptionOutputTrace(log);
-    outputRollsFromLog(log).forEach((outputRoll) => {
-      const outB = String(outputRoll.barcode || outputRoll.barcodeId || '').trim();
-      if (!outB) return;
-      addRoll({
-        ...outputRoll,
-        barcodeId: outB,
-        orderId: log.orderId || effectiveOrder?.id,
-        jobName: log.jobName || effectiveOrder?.jobName,
-        jobCode: log.jobCode || effectiveOrder?.jobCode,
-        rollType: outputRoll.outputType || 'SFG',
-        stage: log.targetProcess || outputRoll.stage,
-        inputSubstrateBarcodes: trace.inputSubstrateBarcodes,
-        inputRollsTraceability: trace.inputRollsTraceability
-      });
-    });
-  });
-
-  const linkedRolls = Array.from(rollMap.values());
-
-  // 4. Collect Real Input Substrate Rolls (From Active Print Run or SFG Store Consumption ONLY)
-  // Strictly filter out empty or un-scanned items; never synthesize dummy rolls from formulation layers
-  const rawPressInputs = [
-    ...(Array.isArray(effectiveRecord?.inputRollsList) ? effectiveRecord.inputRollsList : []),
-    ...(Array.isArray(effectiveRecord?.stages?.printing?.inputRollsList) ? effectiveRecord.stages.printing.inputRollsList : []),
-    ...(Array.isArray(effectiveOrder?.inputRollsList) ? effectiveOrder.inputRollsList : [])
-  ];
-
-  const validPressInputRolls = rawPressInputs.filter(r => {
-    if (!r) return false;
-    const bId = String(r.barcodeId || r.barcode || '').trim();
-    if (!bId || bId.startsWith('RM-IN-') || bId.startsWith('mat-') || bId === 'null' || bId === 'undefined') {
-      return false;
-    }
-    const consW = parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || r.initialWeight || 0);
-    return consW > 0;
-  }).map((r, i) => ({
-    id: r.id || `in-roll-${i + 1}`,
-    barcodeId: String(r.barcodeId || r.barcode).trim(),
-    filmType: r.filmType || effectiveOrder?.printFilmType || '',
-    micron: finiteNumber(r.micron),
-    widthMm: finiteNumber(r.widthMm),
-    initialWeightKg: parseFloat(r.initialWeightKg || r.initialWeight || r.consumedWeightKg || 0) || 0,
-    consumedWeightKg: parseFloat(r.consumedWeightKg || r.consumedWeight || r.initialWeightKg || 0) || 0,
-    source: 'Active Print Run'
-  }));
-
-  // Collect input rolls from SFG Store Consumption logs (e.g. SFG master roll + Substrate 2 & 3 consumed)
-  const sfgInputRolls = [];
-  sfgLogs.forEach(log => {
-    if (log.sfgBatchCode && parseFloat(log.consumedKg) > 0) {
-      const rollWeights = inputRollWeightsFromLog(log);
-      sfgInputRolls.push({
-        id: `sfg-cons-${log.id || log.sfgBatchCode}`,
-        barcodeId: log.sfgBatchCode,
-        filmType: log.filmType || '',
-        micron: finiteNumber(log.micron),
-        widthMm: finiteNumber(log.widthMm),
-        initialWeightKg: rollWeights.initialWeightKg,
-        consumedWeightKg: rollWeights.consumedWeightKg,
-        source: `SFG Store (${log.targetProcess || 'Consumption'})`
-      });
-    }
-    substrate2InputRolls(log).forEach((roll) => sfgInputRolls.push(roll));
-    if (log.substrate3 && log.substrate3.barcode && parseFloat(log.substrate3.consumedKg) > 0) {
-      sfgInputRolls.push({
-        id: `sub3-cons-${log.id || log.substrate3.barcode}`,
-        barcodeId: log.substrate3.barcode,
-        filmType: log.substrate3.filmType || '',
-        micron: finiteNumber(log.substrate3.micron),
-        widthMm: finiteNumber(log.substrate3.widthMm),
-        initialWeightKg: parseFloat(log.substrate3.initialKg || log.substrate3.consumedKg) || 0,
-        consumedWeightKg: parseFloat(log.substrate3.consumedKg) || 0,
-        source: `SFG Store (${log.targetProcess || 'Lamination Pass 2'})`
-      });
-    }
-  });
-
-  const inputRollMap = new Map();
-  [...validPressInputRolls, ...sfgInputRolls].forEach(r => {
-    if (r.barcodeId && !inputRollMap.has(r.barcodeId)) {
-      inputRollMap.set(r.barcodeId, r);
-    }
-  });
-  const inputRolls = Array.from(inputRollMap.values());
-
-  // 5. Pair Input vs Output Roll-Wise
-  const pairedRolls = [];
-  const usedInputIds = new Set();
-
-  linkedRolls.forEach((outRoll, outIdx) => {
-    const linkedInputBarcodes = outRoll.inputSubstrateBarcodes || 
-      (outRoll.inputRollsTraceability || []).map(r => r.barcodeId).filter(Boolean) || [];
-
-    let matchedInputs = [];
-    if (linkedInputBarcodes.length > 0) {
-      matchedInputs = inputRolls.filter(inR => inR && linkedInputBarcodes.includes(inR.barcodeId));
-    }
-    if (matchedInputs.length === 0 && inputRolls[outIdx]) {
-      matchedInputs = [inputRolls[outIdx]];
-    } else if (matchedInputs.length === 0 && inputRolls.length === 1) {
-      matchedInputs = [inputRolls[0]];
-    }
-
-    matchedInputs.forEach(inR => {
-      if (inR?.id || inR?.barcodeId) {
-        usedInputIds.add(inR.id || inR.barcodeId);
-      }
-    });
-
-    const primaryInput = matchedInputs[0] || null;
-    const rawInConsKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.consumedWeightKg) || 0), 0);
-    const rawInInitKg = matchedInputs.reduce((sum, inR) => sum + (parseFloat(inR.initialWeightKg) || (parseFloat(inR.consumedWeightKg) || 0)), 0);
-    const inConsKg = sharedInputWeight(outRoll, linkedRolls, rawInConsKg);
-    const inInitKg = sharedInputWeight(outRoll, linkedRolls, rawInInitKg);
-    const outNetKg = parseFloat(outRoll.netWeightKg || 0);
-    const outGrossKg = parseFloat(outRoll.grossWeightKg || (outNetKg > 0 ? outNetKg + 0.8 : 0));
-    const outLengthM = parseFloat(outRoll.lengthMeters || 0);
-
-    const deltaKg = inConsKg > 0 ? Number((outNetKg - inConsKg).toFixed(2)) : 0;
-    const deltaPct = inConsKg > 0 ? Number(((deltaKg / inConsKg) * 100).toFixed(2)) : 0;
-    const recoveryPct = inConsKg > 0 ? Number(((outNetKg / inConsKg) * 100).toFixed(1)) : (outNetKg > 0 ? 100 : 0);
-
-    pairedRolls.push({
-      rollNo: outRoll.rollNo || outIdx + 1,
-      outputRoll: outRoll,
-      inputRoll: primaryInput,
-      linkedInputList: matchedInputs,
-      outNetKg,
-      outGrossKg,
-      outLengthM,
-      inConsKg,
-      inInitKg,
-      inBalKg: Math.max(0, inInitKg - inConsKg),
-      deltaKg,
-      deltaPct,
-      recoveryPct
-    });
-  });
-
-  // Any leftover real input rolls with actual barcodes from Active Print Run / SFG store with no output yet
-  inputRolls.forEach((inRoll) => {
-    const key = inRoll.id || inRoll.barcodeId;
-    if (key && !usedInputIds.has(key) && !pairedRolls.some(p => p.inputRoll?.barcodeId === inRoll.barcodeId || (p.linkedInputList || []).some(m => m.barcodeId === inRoll.barcodeId))) {
-      const inConsKg = parseFloat(inRoll.consumedWeightKg || 0);
-      const inInitKg = parseFloat(inRoll.initialWeightKg || inConsKg);
-      pairedRolls.push({
-        rollNo: pairedRolls.length + 1,
-        outputRoll: null,
-        inputRoll: inRoll,
-        linkedInputList: [inRoll],
-        outNetKg: 0,
-        outGrossKg: 0,
-        outLengthM: 0,
-        inConsKg,
-        inInitKg,
-        inBalKg: Math.max(0, inInitKg - inConsKg),
-        deltaKg: -inConsKg,
-        deltaPct: -100,
-        recoveryPct: 0
-      });
-    }
-  });
-
-  // 6. Overall Aggregates
-  const totalInputConsumedKg = inputRolls.reduce((sum, r) => sum + (parseFloat(r.consumedWeightKg) || 0), 0);
-  const sfgRolls = linkedRolls.filter(r => r.rollType === 'SFG');
-  const fgRolls = linkedRolls.filter(r => r.rollType === 'FG');
-  const totalSfgKg = sfgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-  const totalFgKg = fgRolls.reduce((sum, r) => sum + (parseFloat(r.netWeightKg) || 0), 0);
-  const totalOutputKg = totalSfgKg + totalFgKg;
-
-  const hasBothInputAndOutput = totalInputConsumedKg > 0 && totalOutputKg > 0;
-  const netVarianceKg = hasBothInputAndOutput ? Number((totalOutputKg - totalInputConsumedKg).toFixed(2)) : 0;
-  const netVariancePct = hasBothInputAndOutput ? Number(((netVarianceKg / totalInputConsumedKg) * 100).toFixed(2)) : 0;
-  const cumulativeRecoveryPct = hasBothInputAndOutput ? Number(((totalOutputKg / totalInputConsumedKg) * 100).toFixed(1)) : (totalOutputKg > 0 ? 100 : 0);
-
-  const jobTitle = effectiveOrder?.jobName || effectiveRecord?.jobName || 'this job';
 
   return (
     <div style={{ marginBottom: '24px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '18px 22px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
@@ -493,15 +237,15 @@ function RollWiseInputOutputMasterRolls({
         </div>
 
         <div style={{ 
-          background: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#ecfdf5' : '#fffbeb') : '#f8fafc', 
-          border: `1px solid ${hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#a7f3d0' : '#fde68a') : '#e2e8f0'}`, 
+          background: !hasBothInputAndOutput ? '#f8fafc' : (checkEntries ? '#fef2f2' : (netVarianceKg >= 0 ? '#ecfdf5' : '#fffbeb')), 
+          border: `1px solid ${!hasBothInputAndOutput ? '#e2e8f0' : (checkEntries ? '#fecaca' : (netVarianceKg >= 0 ? '#a7f3d0' : '#fde68a'))}`, 
           borderRadius: '8px', 
           padding: '10px 14px' 
         }}>
           <div style={{ 
             fontSize: '0.7rem', 
             fontWeight: '800', 
-            color: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#059669' : '#b45309') : '#64748b', 
+            color: !hasBothInputAndOutput ? '#64748b' : (checkEntries ? '#b91c1c' : (netVarianceKg >= 0 ? '#059669' : '#b45309')), 
             textTransform: 'uppercase', 
             letterSpacing: '0.03em' 
           }}>
@@ -510,20 +254,30 @@ function RollWiseInputOutputMasterRolls({
           <div style={{ 
             fontSize: '1.25rem', 
             fontWeight: '900', 
-            color: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#065f46' : '#92400e') : '#64748b', 
+            color: !hasBothInputAndOutput ? '#64748b' : (checkEntries ? '#991b1b' : (netVarianceKg >= 0 ? '#065f46' : '#92400e')), 
             marginTop: '2px' 
           }}>
             {hasBothInputAndOutput ? (netVarianceKg >= 0 ? `+${netVarianceKg.toFixed(2)}` : netVarianceKg.toFixed(2)) + ' kg' : '0.00 kg'}
           </div>
           <div style={{ 
             fontSize: '0.72rem', 
-            color: hasBothInputAndOutput ? (netVarianceKg >= 0 ? '#047857' : '#b45309') : '#94a3b8', 
+            color: !hasBothInputAndOutput ? '#94a3b8' : (checkEntries ? '#b91c1c' : (netVarianceKg >= 0 ? '#047857' : '#b45309')), 
             marginTop: '2px', 
             fontWeight: '700' 
           }}>
             {hasBothInputAndOutput
-              ? (netVarianceKg >= 0 ? `+${netVariancePct.toFixed(1)}% (Ink & Solvent Gain)` : `${netVariancePct.toFixed(1)}% (Trim & Process Loss)`)
+              ? (checkEntries
+                ? <span data-testid="yield-check-entries" style={{ background: '#dc2626', color: '#fff', borderRadius: '4px', padding: '1px 6px' }}>Check entries</span>
+                : `${netVarianceKg >= 0 ? '+' : ''}${netVariancePct.toFixed(1)}% (${yieldLabel})`)
               : (totalInputConsumedKg > 0 ? 'Awaiting Output Weighing' : 'No Output Weighed Yet')}
+            {expectedInkKg !== null && (
+              <div style={{ fontWeight: 600, color: '#334155' }}>Expected ink gain: {expectedInkKg.toFixed(2)} kg</div>
+            )}
+            {metresCheck && (
+              <div style={{ fontWeight: 600, color: '#334155' }} data-testid="yield-metres-check">
+                Metres: output {metresCheck.outputMeters.toLocaleString()} m vs GRN input {metresCheck.inputMeters.toLocaleString()} m
+              </div>
+            )}
           </div>
         </div>
 
@@ -544,6 +298,29 @@ function RollWiseInputOutputMasterRolls({
           </div>
         </div>
       </div>
+
+      {(lotTotals.length > 0 || runs.length > 0) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+          {lotTotals.map((lot) => (
+            <div key={lot.barcodeId} data-testid="yield-lot-total" style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '8px 12px', fontSize: '0.78rem', color: '#4c1d95', fontWeight: 700 }}>
+              Lot total {lot.barcodeId}: {lot.netKg.toFixed(2)} kg{lot.meters ? ` · ${Number(lot.meters).toLocaleString()} m` : ''} · {lot.childCount} child roll(s). Counted once, not added on top of the children.
+            </div>
+          ))}
+          {runs.map((run) => (
+            <div key={run.id} data-testid="yield-run" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '8px 12px', fontSize: '0.76rem', color: '#334155' }}>
+              <strong>{run.label}</strong>
+              {' · '}input {run.inputKg.toFixed(2)} kg
+              {' · '}output {run.outputKg.toFixed(2)} kg
+              {run.inputKg > 0 && run.outputKg > 0 ? ` · ${run.recoveryPct.toFixed(1)}%` : ''}
+              {run.checkEntries && (
+                <span data-testid="yield-check-entries" style={{ marginLeft: '8px', background: '#dc2626', color: '#fff', borderRadius: '4px', padding: '1px 6px', fontWeight: 800 }}>Check entries</span>
+              )}
+              {run.expectedInkKg !== null && <span>{' · '}expected ink {run.expectedInkKg.toFixed(2)} kg</span>}
+              {run.metresCheck && <span>{' · '}metres {run.metresCheck.outputMeters.toLocaleString()} m output / {run.metresCheck.inputMeters.toLocaleString()} m GRN</span>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Roll-Wise Input Vs Output Comparison Table or Clean Empty State */}
       {pairedRolls.length === 0 ? (
@@ -705,6 +482,11 @@ function RollWiseInputOutputMasterRolls({
                             Total Input Consumed: <span style={{ color: '#0369a1' }}>{pair.inConsKg.toFixed(2)} kg</span>
                           </div>
                         </div>
+                      ) : pair.inputNote ? (
+                        <div style={{ fontSize: '0.72rem', color: '#334155', fontWeight: 700 }} data-testid="yield-run-share">
+                          {pair.inputNote}
+                          {pair.runLabel ? <div style={{ color: '#64748b', fontWeight: 600 }}>{pair.runLabel}</div> : null}
+                        </div>
                       ) : pair.inputRoll ? (
                         <>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -749,17 +531,19 @@ function RollWiseInputOutputMasterRolls({
                             fontWeight: '800',
                             padding: '2px 7px',
                             borderRadius: '4px',
-                            background: pair.deltaKg >= 0 ? '#ecfdf5' : '#fffbeb',
-                            color: pair.deltaKg >= 0 ? '#047857' : '#b45309',
-                            border: `1px solid ${pair.deltaKg >= 0 ? '#a7f3d0' : '#fde68a'}`
+                            background: pair.checkEntries ? '#fef2f2' : (pair.deltaKg >= 0 ? '#ecfdf5' : '#fffbeb'),
+                            color: pair.checkEntries ? '#b91c1c' : (pair.deltaKg >= 0 ? '#047857' : '#b45309'),
+                            border: `1px solid ${pair.checkEntries ? '#fecaca' : (pair.deltaKg >= 0 ? '#a7f3d0' : '#fde68a')}`
                           }}>
                             {pair.deltaKg >= 0 ? `▲ +${pair.deltaKg.toFixed(2)} kg` : `▼ ${pair.deltaKg.toFixed(2)} kg`}
                             <span style={{ fontSize: '0.68rem', opacity: 0.9 }}>
                               ({pair.deltaKg >= 0 ? `+${pair.deltaPct.toFixed(1)}%` : `${pair.deltaPct.toFixed(1)}%`})
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.68rem', color: pair.deltaKg >= 0 ? '#059669' : '#b45309', fontWeight: '700', marginTop: '3px' }}>
-                            {pair.deltaKg >= 0 ? '🎨 Ink & Solvent Gain' : '✂️ Trim / Process Loss'}
+                          <div style={{ fontSize: '0.68rem', color: pair.checkEntries ? '#b91c1c' : (pair.deltaKg >= 0 ? '#059669' : '#b45309'), fontWeight: '700', marginTop: '3px' }}>
+                            {pair.checkEntries
+                              ? <span data-testid="yield-check-entries" style={{ background: '#dc2626', color: '#fff', borderRadius: '4px', padding: '1px 6px' }}>Check entries</span>
+                              : (pair.deltaKg >= 0 ? '🎨 Ink & Solvent Gain' : '✂️ Trim / Process Loss')}
                           </div>
                           <div style={{ fontSize: '0.7rem', color: '#334155', fontWeight: '700', marginTop: '1px' }}>
                             Roll Yield: <span style={{ color: '#0f172a', fontWeight: '800' }}>{pair.recoveryPct.toFixed(1)}%</span>
@@ -1540,8 +1324,13 @@ export default function ProductionRecordManagement({
     });
   };
 
+  const savedBatchRollsRef = React.useRef(null);
   const handleCloseSfgFgModal = () => {
     setIsSfgFgModalOpen(false);
+    if (savedBatchRollsRef.current) {
+      setSelectedRollForBarcodeModal(savedBatchRollsRef.current);
+      savedBatchRollsRef.current = null;
+    }
     pushSlugState('production_records', { 
       section: activeTab, 
       ...(selectedRecord ? { id: selectedRecord.id } : (selectedOrder ? { orderId: selectedOrder.id } : {})) 
@@ -2320,13 +2109,16 @@ export default function ProductionRecordManagement({
   });
 
   const handleSaveSFGFG = async (plan) => {
-    await commitSfgFgBatch({
+    const result = await commitSfgFgBatch({
       plan,
       saveProductionRecord: onSaveProductionRecord,
-      saveSfgGood: onSaveSFGGood
+      saveSfgGood: onSaveSFGGood,
+      saveInventoryRoll: onAddRoll
     });
-    setSelectedRollForBarcodeModal(plan.outputRolls);
-    setIsSfgFgModalOpen(false);
+    savedBatchRollsRef.current = (plan.childInventoryRolls && plan.childInventoryRolls.length)
+      ? plan.childInventoryRolls
+      : plan.outputRolls;
+    return result;
   };
 
   return (
