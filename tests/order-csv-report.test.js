@@ -329,11 +329,11 @@ test('available stock drops archived, QC hold, and retired barcodes, then reserv
   });
   assert.equal(row['Order No'], 'ORD-LATE');
   assert.equal(row['RM Status'], 'Partially Available');
-  assert.equal(row['RM Required Kg'], 130);
-  assert.equal(row['RM Shortfall Kg'], 110);
-  assert.match(row['Short Materials'], /PET 12µ x 710mm \(60 kg\)/);
+  assert.equal(row['RM Required Kg'], 132.4);
+  assert.equal(row['RM Shortfall Kg'], 114.8);
+  assert.match(row['Short Materials'], /PET 12µ x 710mm \(64.8 kg\)/);
   assert.match(row['Short Materials'], /LD 30µ x 710mm \(50 kg\)/);
-  assert.match(row['Raw Materials'], /PET 12µ x 710mm: required 80 kg, issued 0 kg, stock 100 kg, short 60 kg/);
+  assert.match(row['Raw Materials'], /PET 12µ x 710mm: required 82.4 kg, issued 0 kg, stock 100 kg, short 64.8 kg/);
   assert.match(row['Raw Materials'], /; LD 30µ x 710mm: required 50 kg, issued 0 kg, stock 0 kg, short 50 kg/);
   assert.equal(row['Raw Materials'].includes('₹'), false);
 });
@@ -357,9 +357,10 @@ test('a store issue is used when the production record has no material line', ()
     ],
   });
   assert.equal(row['RM Issued Kg'], 25);
-  assert.equal(row['RM Status'], 'In Stock');
-  assert.equal(row['RM Shortfall Kg'], 0);
-  assert.equal(row['Short Materials'], '');
+  assert.equal(row['RM Status'], 'Partially Available');
+  assert.equal(row['RM Required Kg'], 82.4);
+  assert.equal(row['RM Shortfall Kg'], 2.4);
+  assert.equal(row['Short Materials'], 'PET 12µ x 710mm (2.4 kg)');
 });
 
 test('search and status filters select the same orders as the order list, with no page cut', () => {

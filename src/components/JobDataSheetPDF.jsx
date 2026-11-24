@@ -5,6 +5,7 @@ import CompanyProfileNotice from './CompanyProfileNotice';
 import { formatINR } from '../utils/pdfHelpers';
 import { PDF_DOCUMENT_TITLES, pdfFileBase, printWithPdfName } from '../utils/pdfFileName';
 import { printablePersonName } from '../utils/recordedPerson';
+import { extraPrintIncludedNote } from '../utils/extraPrintRule';
 import { getAuthorisedSignature, getCompanyLogo, generateDocRefNumber } from '../services/settingsService';
 
 export default function JobDataSheetPDF({ sheetData, onClose }) {
@@ -106,6 +107,16 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
                   <td className="label-col">Recorded By</td>
                   <td className="value-col">{printablePersonName(sheetData.createdBy)}</td>
                 </tr>
+                {sheetData.extraPrint?.hasPrintLine && (
+                  <tr>
+                    <td className="label-col">Planned print</td>
+                    <td className="value-col" colSpan={3}>
+                      {sheetData.extraPrint.targetKg} kg
+                      {sheetData.extraPrint.targetMeters != null ? ` · ${Number(sheetData.extraPrint.targetMeters).toLocaleString()} m` : ''}
+                      {' '}{extraPrintIncludedNote(sheetData.extraPrint.percent)}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

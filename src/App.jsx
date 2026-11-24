@@ -22,6 +22,11 @@ import {
   PRINTING_LEAD_DAYS_SETTING,
   DEFAULT_PRINTING_LEAD_DAYS,
 } from './utils/orderDeadlineReminder';
+import {
+  DEFAULT_EXTRA_PRINT_PERCENT,
+  EXTRA_PRINT_PERCENT_SETTING,
+  normalizeExtraPrintPercent,
+} from './utils/extraPrintRule';
 import { loggedInActorLabel } from './utils/recordedPerson';
 import { calculateGSTBreakdown } from './utils/pdfHelpers';
 import { syncChallansForShipment, tareEditSummary } from './utils/deliveryChallanGuard';
@@ -574,6 +579,7 @@ export default function App() {
   const [orders, setOrders] = useState([]);
   const [orderCloseSettings, setOrderCloseSettings] = useState({ enabled: true, tolerancePct: 10 });
   const [printingLeadDays, setPrintingLeadDays] = useState(DEFAULT_PRINTING_LEAD_DAYS);
+  const [extraPrintPercent, setExtraPrintPercent] = useState(DEFAULT_EXTRA_PRINT_PERCENT);
   const [deadlineSummary, setDeadlineSummary] = useState(null);
   const [deadlineDigestReady, setDeadlineDigestReady] = useState(false);
   const deadlineDigestKeyRef = useRef('');
@@ -1842,6 +1848,7 @@ export default function App() {
           loadedCloseSettings = normalizeAutoCloseSettings(allSettings);
           setOrderCloseSettings(loadedCloseSettings);
           setPrintingLeadDays(normalizePrintingLeadDays(allSettings[PRINTING_LEAD_DAYS_SETTING]));
+          setExtraPrintPercent(normalizeExtraPrintPercent(allSettings[EXTRA_PRINT_PERCENT_SETTING]));
         }
 
         const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
@@ -2063,6 +2070,9 @@ export default function App() {
               applyRemoteCompanyProfile(settings.company_profile);
               if (settings[PRINTING_LEAD_DAYS_SETTING] !== undefined) {
                 setPrintingLeadDays(normalizePrintingLeadDays(settings[PRINTING_LEAD_DAYS_SETTING]));
+              }
+              if (settings[EXTRA_PRINT_PERCENT_SETTING] !== undefined) {
+                setExtraPrintPercent(normalizeExtraPrintPercent(settings[EXTRA_PRINT_PERCENT_SETTING]));
               }
             }
           }
@@ -3060,6 +3070,14 @@ export default function App() {
     setPrintingLeadDays(next);
     await saveSystemSetting(PRINTING_LEAD_DAYS_SETTING, next);
     await logAudit('UPDATE', 'Settings', `Printing deadline reminder lead time is ${next} days.`, PRINTING_LEAD_DAYS_SETTING);
+    return next;
+  };
+
+  const handleSaveExtraPrintPercent = async (value) => {
+    const next = normalizeExtraPrintPercent(value);
+    setExtraPrintPercent(next);
+    await saveSystemSetting(EXTRA_PRINT_PERCENT_SETTING, next);
+    await logAudit('UPDATE', 'Settings', `Extra print percent is ${next}.`, EXTRA_PRINT_PERCENT_SETTING);
     return next;
   };
 
@@ -6165,6 +6183,7 @@ export default function App() {
               dispatchShipments={dispatchShipments}
               orderCloseSettings={orderCloseSettings}
               currentUser={currentUser}
+              extraPrintPercent={extraPrintPercent}
               initialPressQueueOrder={pressQueueOrder}
               initialPressMachineAssignments={pressMachineAssignments}
               initialPressActiveRunningJob={pressActiveRunningJob}
@@ -6613,6 +6632,7 @@ export default function App() {
             onUpdateJobMaster={handleUpdateJobMaster}
             onUpdateCylinder={handleUpdateCylinder}
             onAddRoll={handleAddRoll}
+            extraPrintPercent={extraPrintPercent}
           />
         )}
 
@@ -6621,6 +6641,9 @@ export default function App() {
             urlParams={urlParams}
             orders={orders}
             jobDataSheets={jobDataSheets}
+            jobMasters={jobMasters}
+            sfgGoods={sfgGoods}
+            extraPrintPercent={extraPrintPercent}
             currentUser={currentUser}
             onSaveJobDataSheet={handleAddJobDataSheet}
             onDeleteJobDataSheet={handleDeleteJobDataSheet}
@@ -6726,6 +6749,7 @@ export default function App() {
             onPlanPrinting={(order) => handleTabChange('printing_scheduler', { section: 'job', orderId: order.id })}
             onOrderDeadlineSaved={handleOrderDeadlineSaved}
             printingLeadDays={printingLeadDays}
+            extraPrintPercent={extraPrintPercent}
             reminderContext={printingDeadlineContext}
             printingDeadlineSummary={deadlineSummary}
             inventoryRolls={inventoryRolls}
@@ -7029,6 +7053,7 @@ export default function App() {
             dispatchShipments={dispatchShipments}
             orderCloseSettings={orderCloseSettings}
             currentUser={currentUser}
+            extraPrintPercent={extraPrintPercent}
             initialPressQueueOrder={pressQueueOrder}
             initialPressMachineAssignments={pressMachineAssignments}
             initialPressActiveRunningJob={pressActiveRunningJob}
@@ -7070,6 +7095,8 @@ export default function App() {
             currentUser={currentUser}
             printingLeadDays={printingLeadDays}
             onSavePrintingLeadDays={handleSavePrintingLeadDays}
+            extraPrintPercent={extraPrintPercent}
+            onSaveExtraPrintPercent={handleSaveExtraPrintPercent}
           />
         )}
 

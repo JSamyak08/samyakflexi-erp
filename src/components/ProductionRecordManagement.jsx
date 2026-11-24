@@ -40,6 +40,8 @@ import CylinderJobCardForm from '../CylinderJobCardForm';
 import { cylindersLinkedToJobMaster } from '../utils/jobMasterLink';
 import SFGFGEntryModal from './SFGFGEntryModal';
 import { carryProcessMeasures, commitSfgFgBatch } from '../utils/sfgFgBatchEntry';
+import { DEFAULT_EXTRA_PRINT_PERCENT, extraPrintShortfall, planOrderExtraPrint } from '../utils/extraPrintRule';
+import { ExtraPrintShortfallNote, ExtraPrintTargetFigure } from './ExtraPrintRuleNote';
 import { DEFAULT_DAILY_RATES, generateBarcodeId, calculateJobRawMaterials, calculatePreVsPostCosting, getFilmSubstrateMap, getOrderStageInfo } from '../factoryStore';
 import { isFinishedGoodsStock } from '../utils/finishedGoods';
 import { notifyProductionRecordSubmitted, notifyProductionRecordApproved, notifyOverWastageAlert } from '../services/emailService';
@@ -629,7 +631,8 @@ export default function ProductionRecordManagement({
   onApproveProductionRecord,
   onUpdateJobMaster,
   onUpdateCylinder,
-  onAddRoll
+  onAddRoll,
+  extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const isPlantManager = userHasAnyRole(currentUser, ['Plant Manager', 'Admin', 'Production Manager']);
@@ -667,6 +670,20 @@ export default function ProductionRecordManagement({
 
   // Stage-wise Production Quantities & Consumables (7 Stages)
   const [qtyFirstPassL1, setQtyFirstPassL1] = useState(''); // Stage 1: Printing Output (kg)
+  const selectedOrderExtraPrint = selectedOrder?.id
+    ? planOrderExtraPrint({
+      order: selectedOrder,
+      orders,
+      sfgGoods,
+      jobMasters,
+      percent: extraPrintPercent
+    }).extraPrint
+    : null;
+  const selectedOrderPrintShortfall = extraPrintShortfall({
+    plan: selectedOrderExtraPrint,
+    printedKg: qtyFirstPassL1,
+    printedMeters: selectedRecord?.actualMetersPrinted ?? selectedOrder?.actualMetersPrinted
+  });
   const [qtyInspection, setQtyInspection] = useState(''); // Stage 2: Printing Inspection Output (kg)
   const [qtyLaminationL1, setQtyLaminationL1] = useState(''); // Stage 3: First Pass L1 Output (kg)
   const [adhesiveConsumedL1Kg, setAdhesiveConsumedL1Kg] = useState(0); // Stage 3: Adhesive Consumed (kg)
@@ -4501,7 +4518,11 @@ export default function ProductionRecordManagement({
                     />
                     <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '6px' }}>
                       Net usable roll weight after printing pass
+                      {selectedOrderExtraPrint?.hasPrintLine && (
+                        <span data-testid="production-extra-print-rule"> · Target <ExtraPrintTargetFigure plan={selectedOrderExtraPrint} /></span>
+                      )}
                     </div>
+                    <ExtraPrintShortfallNote shortfall={selectedOrderPrintShortfall} testId="production-extra-print-shortfall" />
 
                     {/* Actual Ink GSM input by Operator */}
                     <div style={{ marginTop: '12px', padding: '10px 12px', background: '#f0f9ff', borderRadius: '6px', border: '1px solid #bae6fd' }}>

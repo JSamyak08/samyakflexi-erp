@@ -17,7 +17,8 @@
  * A due date of today is not overdue. An order with no date is not overdue.
  *
  * Raw material required kilograms come from the same requirement list Order
- * Management shows, including a saved printed-SFG reduction. Available stock
+ * Management shows, including a saved printed-SFG reduction and the extra
+ * print target on the plain substrate. Available stock
  * is usable on-hand stock: archived items are left out (isInventoryItemActive),
  * QC Hold / pending QC / rejected stock is left out, and deleted or
  * written-off barcodes are left out (findRetiredBarcode). When the item has
@@ -50,7 +51,7 @@ import {
   orderIsClosedOrCancelled,
   plantCalendarDate,
 } from './orderDeadlineReminder.js';
-import { planPrintedSfgAllocation } from './printedSfgReuse.js';
+import { DEFAULT_EXTRA_PRINT_PERCENT, planOrderExtraPrint } from './extraPrintRule.js';
 
 export const PENDING_ORDER_CSV_HEADERS = [
   'Order No',
@@ -280,10 +281,12 @@ function requirementsFor(order, orders, context) {
   const base = saved?.printLineId && saved.baseQtyKg !== undefined && saved.baseQtyKg !== null
     ? stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req))
     : stored;
-  return planPrintedSfgAllocation({
+  return planOrderExtraPrint({
     order,
     orders,
     sfgGoods: context.sfgGoods || [],
+    jobMasters: context.jobMasters || [],
+    percent: context.extraPrintPercent ?? DEFAULT_EXTRA_PRINT_PERCENT,
     requirements: base,
     choice: choiceFor(order, context.allocationChoices),
   }).requirements;
