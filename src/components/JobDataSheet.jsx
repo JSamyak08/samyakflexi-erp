@@ -28,10 +28,15 @@ import { formatINR } from '../utils/pdfHelpers';
 import JobDataSheetPDF from './JobDataSheetPDF';
 import SearchableSelect from './SearchableSelect';
 import { getNextDocRefNumber, generateDocRefNumber } from '../services/settingsService';
+import { DEFAULT_EXTRA_PRINT_PERCENT, planOrderExtraPrint } from '../utils/extraPrintRule';
+import ExtraPrintRuleNote from './ExtraPrintRuleNote';
 
 export default function JobDataSheet({ 
   orders = [], 
   jobDataSheets = [],
+  jobMasters = [],
+  sfgGoods = [],
+  extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT,
   currentUser, 
   onSaveJobDataSheet,
   onDeleteJobDataSheet,
@@ -63,6 +68,15 @@ export default function JobDataSheet({
   const [previewPdfSheet, setPreviewPdfSheet] = useState(null);
 
   const selectedOrder = orders.find(o => o.id === selectedJobId) || orders[0] || {};
+  const extraPrint = selectedOrder?.id
+    ? planOrderExtraPrint({
+      order: selectedOrder,
+      orders,
+      sfgGoods,
+      jobMasters,
+      percent: extraPrintPercent
+    }).extraPrint
+    : null;
   const preCostingDetails = selectedOrder?.calculationDetails || {};
 
   // Compute live Pre vs Post Costing variance & profitability
@@ -420,7 +434,16 @@ export default function JobDataSheet({
                         <td>
                           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                             <button
-                              onClick={() => setPreviewPdfSheet(sheet)}
+                              onClick={() => setPreviewPdfSheet({
+                                ...sheet,
+                                extraPrint: planOrderExtraPrint({
+                                  order: (orders || []).find((item) => item.id === sheet.jobId) || null,
+                                  orders,
+                                  sfgGoods,
+                                  jobMasters,
+                                  percent: extraPrintPercent
+                                }).extraPrint
+                              })}
                               className="btn-secondary"
                               style={{ padding: '4px 8px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
                               title="View & Print Formal Job Data Sheet PDF"
@@ -476,6 +499,7 @@ export default function JobDataSheet({
             </h3>
 
             <form onSubmit={handleSaveDataSheet} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <ExtraPrintRuleNote plan={extraPrint} testId="job-data-sheet-extra-print-rule" />
               <div className="form-group">
                 <label className="form-label">Select Job Order</label>
                 <SearchableSelect 

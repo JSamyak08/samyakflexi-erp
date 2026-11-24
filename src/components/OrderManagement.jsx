@@ -46,7 +46,9 @@ import { readyForDispatchLots, isAdminRole } from '../utils/orderAutoClose';
 import { anyAssignedRole } from '../assignedRoles';
 import { receiptKg } from '../services/grnLifecycle';
 import { planPrintedSfgAllocation } from '../utils/printedSfgReuse';
+import { DEFAULT_EXTRA_PRINT_PERCENT, normalizeExtraPrintPercent, planOrderExtraPrint } from '../utils/extraPrintRule';
 import PrintedSfgAllocationPanel from './PrintedSfgAllocationPanel';
+import ExtraPrintRuleNote from './ExtraPrintRuleNote';
 import OrderDeadlineReminder from './OrderDeadlineReminder';
 import DeadlineReminderBanner from './DeadlineReminderBanner';
 import PrintingDeadlineSummaryCard from './PrintingDeadlineSummaryCard';
@@ -89,6 +91,7 @@ export default function OrderManagement({
   printingDeadlineSummary = null,
   inventoryRolls = [],
   storeIssueTransactions = [],
+  extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT,
 }) {
   // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
@@ -191,15 +194,18 @@ export default function OrderManagement({
     return stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req));
   };
 
-  const materialPlanFor = (order) => planPrintedSfgAllocation({
+  const materialPlanFor = (order) => planOrderExtraPrint({
     order,
     orders,
     sfgGoods,
+    jobMasters,
+    percent: extraPrintPercent,
     requirements: baseRequirementsFor(order),
     choice: choiceForOrder(order)
   });
 
-  // Requirements shown for PO release. A printed SFG balance reduces the print film by default.
+  // Requirements shown for PO release. A printed SFG balance reduces the print film,
+  // then the extra print target is the substrate quantity for that film.
   const getOrderMaterialRequirements = (order) => materialPlanFor(order).requirements;
 
   const reservePrintedSfg = async (order, choice) => {
@@ -231,8 +237,14 @@ export default function OrderManagement({
     if (!ord) return;
 
     const preview = materialPlanFor(ord);
+    const percent = normalizeExtraPrintPercent(extraPrintPercent);
+    const factor = 1 + percent / 100;
+    const typedNumber = parseFloat(value);
+    const afterSfg = field === 'qtyKg' && preview.printLineId === reqId && factor > 0 && Number.isFinite(typedNumber)
+      ? typedNumber / factor
+      : typedNumber;
     const typedValue = field === 'qtyKg' && preview.printLineId === reqId
-      ? (parseFloat(value) || 0) + (preview.allocatedKg || 0)
+      ? (Number.isFinite(afterSfg) ? afterSfg : 0) + (preview.allocatedKg || 0)
       : value;
     const currentReqs = baseRequirementsFor(ord);
     const updatedReqs = currentReqs.map(r => {
@@ -713,16 +725,18 @@ export default function OrderManagement({
   // Multi-order coordinated stock reservation engine
   const stockReservations = useMemo(() => {
     const withPrintedSfg = (orders || []).map((order) => {
-      const plan = planPrintedSfgAllocation({
+      const stored = getOrderMaterialRequirementsFromStore(order, jobMasters);
+      const saved = order?.printedSfgUse;
+      const base = !saved?.printLineId || saved.baseQtyKg == null
+        ? stored
+        : stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req));
+      const plan = planOrderExtraPrint({
         order,
         orders,
         sfgGoods,
-        requirements: (() => {
-          const stored = getOrderMaterialRequirementsFromStore(order, jobMasters);
-          const saved = order?.printedSfgUse;
-          if (!saved?.printLineId || saved.baseQtyKg == null) return stored;
-          return stored.map((req) => (req.id === saved.printLineId ? { ...req, qtyKg: Number(saved.baseQtyKg) || 0 } : req));
-        })(),
+        jobMasters,
+        percent: extraPrintPercent,
+        requirements: base,
         choice: allocationDrafts[order.id]
           ? { mode: allocationDrafts[order.id].mode || 'all', kg: allocationDrafts[order.id].kg, explicit: true }
           : (order.printedSfgUse
@@ -732,7 +746,7 @@ export default function OrderManagement({
       return { ...order, materialRequirements: plan.requirements, rawMaterialRequirements: plan.requirements };
     });
     return calculateOrderStockReservations(withPrintedSfg, inventory, jobMasters);
-  }, [orders, inventory, jobMasters, sfgGoods, allocationDrafts]);
+  }, [orders, inventory, jobMasters, sfgGoods, allocationDrafts, extraPrintPercent]);
 
   const getStockCheckForReq = (req, orderId) => {
     return stockReservations.getReqStockInfo(req, orderId);
@@ -1448,6 +1462,7 @@ export default function OrderManagement({
       allocationChoices: allocationDrafts,
       structureOf: getSubstrateStructure,
       blockerContext: reminderContext,
+      extraPrintPercent,
     });
   };
 
@@ -2487,6 +2502,7 @@ export default function OrderManagement({
                               onChange={(choice) => setAllocationDrafts((prev) => ({ ...prev, [order.id]: choice }))}
                               onReserve={(choice) => reservePrintedSfg(order, choice)}
                             />
+                            <ExtraPrintRuleNote plan={printedSfgPlan.extraPrint} />
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

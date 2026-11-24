@@ -106,6 +106,16 @@ export default function JobDataSheetPDF({ sheetData, onClose }) {
                   <td className="label-col">Recorded By</td>
                   <td className="value-col">{printablePersonName(sheetData.createdBy)}</td>
                 </tr>
+                {sheetData.extraPrint?.hasPrintLine && (
+                  <tr>
+                    <td className="label-col">{sheetData.extraPrint.label}</td>
+                    <td className="value-col" colSpan={3}>
+                      Base {sheetData.extraPrint.baseKg} kg / {sheetData.extraPrint.baseMeters ?? '—'} m
+                      {' · '}Extra {sheetData.extraPrint.extraKg} kg / {sheetData.extraPrint.extraMeters ?? '—'} m
+                      {' · '}Target {sheetData.extraPrint.targetKg} kg / {sheetData.extraPrint.targetMeters ?? '—'} m
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

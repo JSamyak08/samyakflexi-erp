@@ -98,6 +98,11 @@ import {
   normalizePrintingLeadDays,
 } from '../utils/orderDeadlineReminder';
 import PrintingShiftSettings from './PrintingShiftSettings';
+import {
+  DEFAULT_EXTRA_PRINT_PERCENT,
+  EXTRA_PRINT_PERCENT_SETTING,
+  normalizeExtraPrintPercent,
+} from '../utils/extraPrintRule';
 
 export default function DocumentSettings({
   machines = [],
@@ -108,13 +113,19 @@ export default function DocumentSettings({
   currentUser = null,
   printingLeadDays = DEFAULT_PRINTING_LEAD_DAYS,
   onSavePrintingLeadDays,
+  extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT,
+  onSaveExtraPrintPercent,
 }) {
   // Navigation Sub-tab State
   const [activeTab, setActiveTab] = useState(urlParams?.tab || 'general');
   const [leadDaysInput, setLeadDaysInput] = useState(() => normalizePrintingLeadDays(printingLeadDays));
+  const [extraPrintInput, setExtraPrintInput] = useState(() => normalizeExtraPrintPercent(extraPrintPercent));
   useEffect(() => {
     setLeadDaysInput(normalizePrintingLeadDays(printingLeadDays));
   }, [printingLeadDays]);
+  useEffect(() => {
+    setExtraPrintInput(normalizeExtraPrintPercent(extraPrintPercent));
+  }, [extraPrintPercent]);
   useEffect(() => {
     let active = true;
     fetchSystemSetting(PRINTING_LEAD_DAYS_SETTING)
@@ -1026,6 +1037,48 @@ export default function DocumentSettings({
               </label>
               <div style={{ marginTop: '16px' }}>
                 <button type="submit" className="btn-primary">Save lead time</button>
+              </div>
+            </form>
+          )}
+          {isAdminRole(currentUser) && (
+            <form
+              className="glass-panel"
+              data-testid="extra-print-percent-setting"
+              style={{ padding: '24px', marginBottom: '24px' }}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const next = normalizeExtraPrintPercent(extraPrintInput);
+                setExtraPrintInput(next);
+                persistSetting(async () => {
+                  if (onSaveExtraPrintPercent) return onSaveExtraPrintPercent(next);
+                  await saveSystemSetting(EXTRA_PRINT_PERCENT_SETTING, next);
+                  return next;
+                });
+              }}
+            >
+              <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>+3% extra print rule</h3>
+                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
+                  The plain substrate print quantity and its metres are this percent above what still needs to be printed, after any printed SFG balance reused from an earlier job. The default is {DEFAULT_EXTRA_PRINT_PERCENT}. Only Admin can change it.
+                </p>
+              </div>
+              <label htmlFor="extra-print-percent" style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.78rem', fontWeight: 700, maxWidth: '280px' }}>
+                Extra print percent
+                <input
+                  id="extra-print-percent"
+                  data-testid="extra-print-percent-input"
+                  className="form-control"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={extraPrintInput}
+                  onChange={(event) => setExtraPrintInput(event.target.value)}
+                  required
+                />
+              </label>
+              <div style={{ marginTop: '16px' }}>
+                <button type="submit" className="btn-primary" data-testid="save-extra-print-percent">Save extra print percent</button>
               </div>
             </form>
           )}

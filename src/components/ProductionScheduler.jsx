@@ -12,6 +12,8 @@ import {
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
 import { fetchSystemSetting } from '../services/supabaseDataService';
+import { DEFAULT_EXTRA_PRINT_PERCENT, extraPrintShortfall, planOrderExtraPrint } from '../utils/extraPrintRule';
+import ExtraPrintRuleNote, { ExtraPrintShortfallNote } from './ExtraPrintRuleNote';
 import { pushSlugState } from '../utils/slugRouter';
 import { userHasAnyRole } from '../assignedRoles';
 import PressQueueReorderControls from './PressQueueReorderControls';
@@ -259,6 +261,7 @@ export default function ProductionScheduler({
   dispatchShipments = [],
   orderCloseSettings,
   currentUser,
+  extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT,
   initialPressQueueOrder = [],
   initialPressMachineAssignments = {},
   initialPressActiveRunningJob = null,
@@ -513,6 +516,12 @@ export default function ProductionScheduler({
     ? ((endJobActualMetersNum / endJobTargetMetersNum) * 100).toFixed(1)
     : null;
   const endJobIsMetersShortfall = endJobTargetMetersNum > 0 && endJobActualMetersNum > 0 && endJobActualMetersNum < endJobTargetMetersNum;
+  const endJobRecordedKg = outputRollsList.reduce((sum, roll) => sum + (parseFloat(roll.netWeightKg) || 0), 0);
+  const endJobExtraShortfall = extraPrintShortfall({
+    plan: endJobTargetOrder?.extraPrint,
+    printedKg: endJobRecordedKg > 0 ? endJobRecordedKg : (inputPrintedOutputKg === '' ? null : inputPrintedOutputKg),
+    printedMeters: inputActualMeters === '' ? null : inputActualMeters
+  });
 
   // Custom Queue Ordering State. Local edits stay on screen until the
   // debounced save is acknowledged, so a server echo cannot jump the list.
@@ -776,6 +785,15 @@ export default function ProductionScheduler({
       const actualMetersPrinted = order.actualMetersPrinted || matchingProdRecord?.actualMetersPrinted || targetMeters;
       const inkGsmInSpeed = order.inkGsmInSpeed || matchingProdRecord?.inkGsmInSpeed || inkGsm;
       const printedOutputKg = order.printedOutputKg || matchingProdRecord?.qtyFirstPassL1 || printLayerNetKg || printQtyKg;
+      const recordedPrintedKg = finiteNumber(order.printedOutputKg ?? matchingProdRecord?.qtyFirstPassL1 ?? matchingProdRecord?.printedOutputKg);
+      const recordedPrintedMeters = finiteNumber(order.actualMetersPrinted ?? matchingProdRecord?.actualMetersPrinted);
+      const extraPrint = planOrderExtraPrint({
+        order,
+        orders,
+        sfgGoods,
+        jobMasters,
+        percent: extraPrintPercent
+      }).extraPrint;
 
       // A press run is the order's own open print, not a sibling production record that shares a job code.
       const isCurrentlyInProduction = isActivePrintRun(order);
@@ -812,6 +830,16 @@ export default function ProductionScheduler({
         printedOutputKg,
         targetMeters,
         printQtyKg,
+        extraPrint,
+        plannedPrintKg: extraPrint?.targetKg ?? printQtyKg,
+        plannedPrintMeters: extraPrint?.hasPrintLine && extraPrint.targetMeters !== null ? extraPrint.targetMeters : targetMeters,
+        recordedPrintedKg,
+        recordedPrintedMeters,
+        extraPrintShortfall: extraPrintShortfall({
+          plan: extraPrint,
+          printedKg: recordedPrintedKg,
+          printedMeters: recordedPrintedMeters
+        }),
         priorityTag: isCurrentlyInProduction 
           ? 'IN PRODUCTION' 
           : isOverdue 
@@ -823,7 +851,7 @@ export default function ProductionScheduler({
           : 'READY'
       };
     });
-  }, [orders, inventory, jobMasters, cylinders, productionRecords, queueOrderIds]);
+  }, [orders, inventory, jobMasters, cylinders, productionRecords, queueOrderIds, sfgGoods, extraPrintPercent]);
 
   // Do not open the Active Print Run modal when the queue or the order list
   // changes. allEnrichedOrders is a new array on every reorder, and syncing
@@ -2378,6 +2406,14 @@ export default function ProductionScheduler({
                       </div>
 
                       <div>
+                        <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Planned print</span>
+                        <strong data-testid="planned-print-kg" style={{ fontSize: '0.92rem', color: '#0f172a' }}>{order.extraPrint?.hasPrintLine ? order.plannedPrintKg : order.printQtyKg} kg</strong>
+                        <span data-testid="planned-print-m" style={{ fontSize: '0.68rem', color: '#0369a1', fontWeight: '700', display: 'block' }}>
+                          {(order.extraPrint?.hasPrintLine ? order.plannedPrintMeters : order.targetMeters || 0).toLocaleString()} m
+                        </span>
+                      </div>
+
+                      <div>
                         <span style={{ fontSize: '0.68rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase', display: 'block' }}>Target Print Length</span>
                         <strong style={{ fontSize: '0.92rem', color: '#0284c7' }}>{(order.targetMeters || 0).toLocaleString()} m</strong>
                         <span style={{ fontSize: '0.68rem', color: '#0369a1', fontWeight: '700', display: 'block' }}>
@@ -2390,6 +2426,8 @@ export default function ProductionScheduler({
                         <strong style={{ fontSize: '0.92rem', color: '#0f172a' }}>{order.colorsCount} Col</strong>
                       </div>
                     </div>
+                    <ExtraPrintRuleNote plan={order.extraPrint} />
+                    <ExtraPrintShortfallNote shortfall={order.extraPrintShortfall} />
 
                     {/* Machine Assignment & Execution Action Buttons */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
@@ -2948,6 +2986,15 @@ export default function ProductionScheduler({
                   </div>
 
                   <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Planned print</span>
+                    <div data-testid="job-card-planned-print" style={{ fontSize: '1.3rem', fontWeight: '900', color: '#0f172a', marginTop: '2px' }}>
+                      {activeRunningJob.extraPrint?.hasPrintLine ? activeRunningJob.plannedPrintKg : activeRunningJob.printQtyKg} kg
+                      {' · '}
+                      {(activeRunningJob.extraPrint?.hasPrintLine ? activeRunningJob.plannedPrintMeters : activeRunningJob.targetMeters || 0).toLocaleString()} m
+                    </div>
+                  </div>
+
+                  <div style={{ background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
                     <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '800', textTransform: 'uppercase' }}>Target Print Meters</span>
                     <div style={{ fontSize: '1.3rem', fontWeight: '900', color: '#059669', marginTop: '2px' }}>
                       {(activeRunningJob?.targetMeters || 0).toLocaleString()} m
@@ -2964,6 +3011,8 @@ export default function ProductionScheduler({
                     </div>
                   </div>
                 </div>
+                <ExtraPrintRuleNote plan={activeRunningJob.extraPrint} testId="job-card-extra-print-rule" />
+                <ExtraPrintShortfallNote shortfall={activeRunningJob.extraPrintShortfall} />
 
                 {/* Substrate Structure */}
                 <div style={{ marginTop: '14px', background: '#ffffff', padding: '12px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
@@ -3759,6 +3808,8 @@ export default function ProductionScheduler({
                         </div>
                       </div>
                     )}
+                    <ExtraPrintRuleNote plan={endJobTargetOrder?.extraPrint} testId="end-job-extra-print-rule" />
+                    <ExtraPrintShortfallNote shortfall={endJobExtraShortfall} testId="end-job-extra-print-shortfall" />
                   </div>
 
                   {/* Field 2: Ink GSM (In Speed) */}
