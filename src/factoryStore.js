@@ -1836,12 +1836,22 @@ export const generateFullRolePermissions = (allowAll = false) => {
     // for that role. Sales, printing, and shop-floor roles stay off.
     perm[r].barcodes = BARCODE_REGISTRY_ROLES.includes(r);
     perm[r].print_run_analytics = PRINT_RUN_ANALYTICS_ROLES.includes(r);
+    // Direct slitting moves film kilograms between widths. It is not a sidebar
+    // screen in this release. Operators keep inventory write and stay off this key.
+    perm[r].direct_slitting = DIRECT_SLITTING_ROLES.includes(r);
   });
   if (perm["Accounts Manager"]) {
     perm["Accounts"] = { ...perm["Accounts Manager"] };
   }
   return perm;
 };
+
+export const DIRECT_SLITTING_ROLES = [
+  "Admin",
+  "Plant Manager",
+  "Production Manager",
+  "Store Manager"
+];
 
 export const BARCODE_REGISTRY_ROLES = [
   "Admin",
@@ -1854,6 +1864,20 @@ export const BARCODE_REGISTRY_ROLES = [
 ];
 
 export const DEFAULT_ROLE_PERMISSIONS = generateFullRolePermissions(false);
+
+/** Fill a missing direct_slitting key. An explicit true or false stays. */
+export function applyDirectSlittingDefaults(matrix) {
+  if (!matrix || typeof matrix !== 'object' || Array.isArray(matrix)) return matrix;
+  const next = {};
+  Object.entries(matrix).forEach(([role, permissions]) => {
+    const row = { ...(permissions || {}) };
+    if (row.direct_slitting !== true && row.direct_slitting !== false) {
+      row.direct_slitting = DIRECT_SLITTING_ROLES.includes(role);
+    }
+    next[role] = row;
+  });
+  return next;
+}
 
 /** Fill a missing barcodes key from the role list. An explicit true or false stays. */
 export function applyBarcodePermissionDefaults(matrix) {

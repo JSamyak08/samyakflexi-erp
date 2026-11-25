@@ -102,7 +102,8 @@ export default function UniversalBarcodeScannerModal({
   scrapItems: scrapItemsProp = null,
   storeIssueTransactions = [],
   sfgGoods = [],
-  onNavigateToProductionRecord
+  onNavigateToProductionRecord,
+  onPickRoll
 }) {
   const [loadedScrapItems, setLoadedScrapItems] = useState([]);
   const scrapItems = Array.isArray(scrapItemsProp) ? scrapItemsProp : loadedScrapItems;
@@ -1420,6 +1421,18 @@ export default function UniversalBarcodeScannerModal({
                 </div>
                 )}
               </div>
+
+              {typeof onPickRoll === 'function' && searchResults.type === 'ROLL' && searchResults.raw && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  data-testid="use-scanned-roll"
+                  onClick={() => onPickRoll(searchResults.raw)}
+                  style={{ alignSelf: 'flex-start', marginTop: '4px' }}
+                >
+                  Use this roll
+                </button>
+              )}
 
               {/* Comprehensive Properties Grid */}
               <div 

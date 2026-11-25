@@ -5,6 +5,7 @@ import {
   isReconciliationDue,
   DEFAULT_ROLE_PERMISSIONS,
   applyBarcodePermissionDefaults,
+  applyDirectSlittingDefaults,
   applyOperatorSfgViewBoundary,
   applyPrintRunAnalyticsDefaults,
   isOrderOverdue,
@@ -625,7 +626,7 @@ export default function App() {
   const [rolePermissions, setRolePermissions] = useState(() => {
     const cached = safeLocalStorageGet('samyak_cache_role_permissions', null);
     if (cached && typeof cached === 'object' && !Array.isArray(cached) && Object.keys(cached).length > 0) {
-      return applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(cached));
+      return applyPrintRunAnalyticsDefaults(applyDirectSlittingDefaults(applyBarcodePermissionDefaults(cached)));
     }
     return DEFAULT_ROLE_PERMISSIONS;
   });
@@ -1448,7 +1449,7 @@ export default function App() {
         if (loadedMatrix && typeof loadedMatrix === 'object' && !Array.isArray(loadedMatrix) && Object.keys(loadedMatrix).length > 0) {
           accessMatrix = loadedMatrix;
         }
-        accessMatrix = applyOperatorSfgViewBoundary(applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(accessMatrix)));
+        accessMatrix = applyOperatorSfgViewBoundary(applyPrintRunAnalyticsDefaults(applyDirectSlittingDefaults(applyBarcodePermissionDefaults(accessMatrix))));
         setRolePermissions(accessMatrix);
         safeLocalStorageSet('samyak_cache_role_permissions', accessMatrix);
         const allow = (moduleKey) => roleHasModule(accessMatrix, roleNames, moduleKey);
@@ -1797,7 +1798,7 @@ export default function App() {
         }
 
         if (supaRolePerms && typeof supaRolePerms === 'object' && Object.keys(supaRolePerms).length > 0) {
-          const nextPerms = applyPrintRunAnalyticsDefaults(applyBarcodePermissionDefaults(supaRolePerms));
+          const nextPerms = applyPrintRunAnalyticsDefaults(applyDirectSlittingDefaults(applyBarcodePermissionDefaults(supaRolePerms)));
           setRolePermissions(nextPerms);
           safeLocalStorageSet('samyak_cache_role_permissions', nextPerms);
         }
@@ -6837,6 +6838,17 @@ export default function App() {
             onInwardQcDeleted={handleInwardQcDeleted}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}
+            canDirectSlit={roleHasModule(rolePermissions, assignedRolesOf(currentUser), 'direct_slitting')}
+            canOverrideDirectSlit={assignedRolesOf(currentUser).some((role) => role === 'Admin' || role === 'Plant Manager')}
+            canReverseDirectSlit={assignedRolesOf(currentUser).some((role) => role === 'Admin' || role === 'Plant Manager' || role === 'Store Manager')}
+            onDirectSlitRefresh={async () => {
+              const [items, rolls] = await Promise.all([
+                fetchInventory().catch(() => null),
+                fetchInventoryRolls().catch(() => null)
+              ]);
+              if (Array.isArray(items)) setInventory(items);
+              if (Array.isArray(rolls)) setInventoryRolls(rolls);
+            }}
           />
         )}
 
