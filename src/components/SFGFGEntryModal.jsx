@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { userHasAnyRole } from '../assignedRoles';
 import { 
   Layers, 
@@ -36,7 +36,9 @@ import {
   validateProductionEntry
 } from '../utils/jobMasterGuardrails';
 import { factoryCalendarDate } from '../services/employeeAttendance';
-import { buildSfgFgBatchPlan, OPENING_BALANCE_TOGGLE_LABEL, processKindForType, processRecordBlockVisible, shareMetersByWeight } from '../utils/sfgFgBatchEntry';
+import { fetchOrders } from '../services/supabaseDataService';
+import { buildSfgFgBatchPlan, OPENING_BALANCE_TOGGLE_LABEL, processKindForType, processRecordBlockVisible, rollMetreWarnings, shareMetersByWeight } from '../utils/sfgFgBatchEntry';
+import { useModalDismiss } from './useModalDismiss';
 
 export const SFG_TYPES = [
   'Printed Rolls',
@@ -64,6 +66,13 @@ export const FILM_TYPE_OPTIONS = [
   'Nylon / OPA',
   'Paper'
 ];
+
+function sameOrderId(left, right) {
+  const clean = (value) => String(value || '').replace(/#/g, '').trim();
+  const a = clean(left);
+  const b = clean(right);
+  return Boolean(a && b && a === b);
+}
 
 function emptyRollUse() {
   return { barcode: '', beforeKg: '', balanceLeftKg: '', balanceMeters: '' };
@@ -118,6 +127,8 @@ export default function SFGFGEntryModal({
   onSave, // (plan) => void. plan is the production-record and stock write from buildSfgFgBatchPlan
   onPrintRolls // (rolls) => void
 }) {
+  const dialogRef = useRef(null);
+  useModalDismiss(dialogRef, onClose);
   const isSFG = mode === 'SFG';
   const title = isSFG ? 'Create Semi-Finished Goods (SFG)' : 'Create Finished Goods (FG)';
   const categoryName = isSFG ? 'Semi-Finished Goods (SFG)' : 'Finished Goods (FG)';
@@ -173,6 +184,7 @@ export default function SFGFGEntryModal({
   const [laminationPlainWastageKg, setLaminationPlainWastageKg] = useState('');
   const [laminateWastageKg, setLaminateWastageKg] = useState('');
   const [isOpeningBalance, setIsOpeningBalance] = useState(false);
+  const [confirmMetreDrift, setConfirmMetreDrift] = useState(false);
 
   // Filtered Job List from Orders & Job Masters (Strictly real data only, zero dummy fallbacks)
   const activeJobsList = useMemo(() => {
@@ -200,6 +212,7 @@ export default function SFGFGEntryModal({
           micron: spec?.micron != null ? String(spec.micron) : '',
           filmType: spec?.filmType || '',
           unitPrice: parseFloat(ord.ratePerKg || ord.sellingPricePerKg || 0),
+          createdAt: ord.createdAt || ord.created_at || '',
           jmStatus: resolution.status
         });
       }
@@ -257,9 +270,7 @@ export default function SFGFGEntryModal({
 
     // 1. Check inventoryRolls
     (inventoryRolls || []).forEach(r => {
-      const matchJob = (r.orderId && String(r.orderId) === String(currentJob.orderId)) ||
-                       (r.jobCode && String(r.jobCode).toUpperCase() === String(currentJob.jobCode).toUpperCase()) ||
-                       (r.jobName && (r.jobName || '').toLowerCase().trim() === (currentJob.jobName || '').toLowerCase().trim());
+      const matchJob = sameOrderId(r.orderId, currentJob.orderId);
       
       const matchType = (r.rollType === (isSFG ? 'SFG' : 'FG')) || 
                         ((r.category || '').includes(isSFG ? 'Semi-Finished' : 'Finished'));
@@ -289,9 +300,7 @@ export default function SFGFGEntryModal({
 
     // 2. Check productionRecords outputRolls
     (productionRecords || []).forEach(pr => {
-      const matchJob = (pr.orderId && String(pr.orderId) === String(currentJob.orderId)) ||
-                       (pr.jobCode && String(pr.jobCode).toUpperCase() === String(currentJob.jobCode).toUpperCase()) ||
-                       (pr.jobName && (pr.jobName || '').toLowerCase().trim() === (currentJob.jobName || '').toLowerCase().trim());
+      const matchJob = sameOrderId(pr.orderId, currentJob.orderId);
 
       if (matchJob && Array.isArray(pr.outputRolls)) {
         pr.outputRolls.forEach(r => {
@@ -573,18 +582,22 @@ export default function SFGFGEntryModal({
     return balance === undefined || balance === null || balance === '' ? '' : String(balance);
   };
 
-  const entryDraft = () => ({
+  const entryDraft = (order = null) => {
+    const identity = order || currentJob || {};
+    const orderId = identity.id || identity.orderId || currentJob?.orderId || selectedJobId;
+    return {
     mode,
     stageType: selectedType,
     process: processKind,
     isOpeningBalance,
     enteredBy: currentUser?.name || currentUser?.fullName || currentUser?.username || '',
     enteredAt: new Date().toISOString(),
-    orderId: currentJob?.orderId || selectedJobId,
-    jobName: currentJob?.jobName || '',
-    jobCode: currentJob?.jobCode || '',
-    clientName: currentJob?.clientName || '',
-    jobMasterId: currentJob?.jobMasterId || '',
+    orderId,
+    orderCreatedAt: identity.createdAt || identity.created_at || currentJob?.createdAt || '',
+    jobName: identity.jobName || currentJob?.jobName || '',
+    jobCode: identity.jobCode || currentJob?.jobCode || '',
+    clientName: identity.clientName || currentJob?.clientName || '',
+    jobMasterId: identity.jobMasterId || currentJob?.jobMasterId || '',
     structure: jobStructure,
     filmType: jobFilmType,
     micron: jobMicron,
@@ -631,16 +644,30 @@ export default function SFGFGEntryModal({
     inventory,
     inventoryRolls,
     sfgGoods,
-    existingLot: (sfgGoods || []).find((item) => item?.sfgBatchCode === `SFG-LOT-${currentJob?.orderId || selectedJobId}`) || null,
-    existingRecord: (productionRecords || []).find((record) => String(record?.orderId) === String(currentJob?.orderId || selectedJobId)) || null
+    existingLot: (sfgGoods || []).find((item) => item?.sfgBatchCode === `SFG-LOT-${orderId}`) || null,
+    existingRecord: (productionRecords || []).find((record) => sameOrderId(record?.orderId, orderId)) || null
+  };
+  };
+
+  const metreWarnings = rollMetreWarnings(newRollsToSave, {
+    widthMm: jobWidthMm,
+    micron: jobMicron,
+    density: getFilmSubstrateDensity(jobFilmType || currentJob?.filmType)
   });
+  const metreDriftKey = metreWarnings.map((warning) => `${warning.barcodeId}:${warning.actual}:${warning.expected}`).join('|');
+  useEffect(() => {
+    setConfirmMetreDrift(false);
+  }, [metreDriftKey]);
 
   // Validate all fields before submission
-  const validateForm = () => {
+  const validateForm = (order = null) => {
     const errors = {};
 
     if (!selectedJobId) {
       errors.selectedJobId = "Please select an active production job.";
+    }
+    if (metreWarnings.length && !confirmMetreDrift) {
+      errors.metres = metreWarnings;
     }
     if (!jobWidthMm || parseFloat(jobWidthMm) <= 0) {
       errors.jobWidthMm = "Please enter valid roll width in mm (> 0).";
@@ -674,7 +701,7 @@ export default function SFGFGEntryModal({
       }
     }
 
-    const draftCheck = buildSfgFgBatchPlan(entryDraft());
+    const draftCheck = buildSfgFgBatchPlan(entryDraft(order));
     if (!draftCheck.ok) {
       errors.process = draftCheck.errors;
     }
@@ -687,30 +714,60 @@ export default function SFGFGEntryModal({
   const handleSaveAndSubmit = async (e) => {
     e.preventDefault();
 
-    const fieldErrors = validateForm();
+    let liveOrder = null;
+    if (selectedJobId) {
+      try {
+        const freshOrders = await fetchOrders();
+        liveOrder = (freshOrders || []).find((order) => sameOrderId(order?.id, selectedJobId)) || null;
+      } catch (err) {
+        alert(err?.message || 'Could not re-check the selected order. The batch was not saved.');
+        return;
+      }
+      if (!liveOrder) {
+        const missing = `Order ${selectedJobId} no longer exists. The batch was not saved.`;
+        setFormErrors((prev) => ({ ...prev, selectedJobId: missing }));
+        alert(missing);
+        return;
+      }
+    }
+
+    const fieldErrors = validateForm(liveOrder);
     if (Object.keys(fieldErrors).length > 0) {
       const detail = Array.isArray(fieldErrors.process) ? `\n\n${fieldErrors.process.join('\n')}` : '';
-      alert(`Please fill in all required fields accurately before submitting.${detail}`);
+      const metres = Array.isArray(fieldErrors.metres)
+        ? '\n\nSome roll metres differ by more than 10% from the kilograms, width, and micron. Confirm those metres to save.'
+        : '';
+      alert(`Please fill in all required fields accurately before submitting.${detail}${metres}`);
       return;
     }
 
-    const plan = buildSfgFgBatchPlan(entryDraft());
+    const plan = buildSfgFgBatchPlan(entryDraft(liveOrder));
     if (!plan.ok) {
       setFormErrors((prev) => ({ ...prev, process: plan.errors }));
       alert(plan.errors.join('\n'));
       return;
     }
 
+    const savedJob = liveOrder
+      ? {
+          orderId: liveOrder.id,
+          jobName: liveOrder.jobName || currentJob?.jobName || '',
+          jobCode: liveOrder.jobCode || currentJob?.jobCode || '',
+          clientName: liveOrder.clientName || currentJob?.clientName || '',
+          filmType: currentJob?.filmType || '',
+          plannedQtyKg: liveOrder.orderQtyKg || currentJob?.plannedQtyKg
+        }
+      : currentJob;
     const formattedNewRolls = plan.outputRolls.map((roll, index) => ({
       ...roll,
       rollType: isSFG ? 'SFG' : 'FG',
       category: categoryName,
       subType: selectedType,
-      itemName: `${selectedType} - ${currentJob.jobName} (Roll #${index + 1})`,
-      jobName: currentJob.jobName,
-      jobCode: currentJob.jobCode,
-      orderId: currentJob.orderId,
-      clientName: currentJob.clientName,
+      itemName: `${selectedType} - ${savedJob.jobName} (Roll #${index + 1})`,
+      jobName: savedJob.jobName,
+      jobCode: savedJob.jobCode,
+      orderId: savedJob.orderId,
+      clientName: savedJob.clientName,
       structure: jobStructure || currentJob.structure,
       filmType: jobFilmType || currentJob.filmType,
       widthMm: parseFloat(jobWidthMm) || 0,
@@ -728,7 +785,7 @@ export default function SFGFGEntryModal({
     }));
 
     // 3. Construct Production Record Linkage Object
-    const order = (orders || []).find((item) => item.id === currentJob.orderId) || null;
+    const order = liveOrder || (orders || []).find((item) => item.id === savedJob.orderId) || null;
     const guardrail = validateProductionEntry({
       context: 'sfg-fg',
       order,
@@ -736,16 +793,16 @@ export default function SFGFGEntryModal({
       role: currentUser,
       densities: getFilmSubstrateMap(),
       entry: {
-        orderId: currentJob.orderId,
+        orderId: savedJob.orderId,
         machineName,
         operatorName: operatorName.trim(),
         shift,
-        filmType: jobFilmType || currentJob.filmType,
+        filmType: jobFilmType || savedJob.filmType,
         micron: jobMicron,
         widthMm: jobWidthMm,
         outputRolls: formattedNewRolls,
         quantityKg: newNetKg,
-        orderQtyKg: order?.orderQtyKg || currentJob.plannedQtyKg,
+        orderQtyKg: order?.orderQtyKg || savedJob.plannedQtyKg,
         goodKg: newNetKg,
         scrapKg: isOpeningBalance ? 0 : (parseFloat(plainSettingKg) || 0) + (parseFloat(printingWastageKg) || 0) + (parseFloat(laminationPlainWastageKg) || 0) + (parseFloat(laminateWastageKg) || 0),
         meters: isOpeningBalance ? '' : (processKind === 'printing' ? actualMeters : stageMeters),
@@ -784,9 +841,11 @@ export default function SFGFGEntryModal({
   };
 
   return (
-    <div 
-      className="modal-overlay" 
-      onClick={onClose} 
+    <div
+      ref={dialogRef}
+      className="modal-overlay"
+      data-modal-root=""
+      data-modal-backdrop=""
       style={{ 
         position: 'fixed',
         top: 0,
@@ -840,7 +899,7 @@ export default function SFGFGEntryModal({
             </p>
           </div>
 
-          <button className="btn-secondary" style={{ padding: '6px 10px', fontSize: '0.8rem' }} onClick={onClose}>
+          <button type="button" className="btn-secondary" aria-label="Close" style={{ padding: '6px 10px', fontSize: '0.8rem' }} onClick={onClose}>
             <X size={16} />
           </button>
         </div>
@@ -924,13 +983,14 @@ export default function SFGFGEntryModal({
                   <option value="">-- Select Active Production Job / Order * --</option>
                   {activeJobsList.map(j => (
                     <option key={j.id} value={j.id}>
-                      {j.jobName} {j.clientName ? `(${j.clientName})` : ''} {j.structure ? `• ${j.structure}` : ''} • Code: {j.jobCode}
+                      {j.orderId} — {j.jobName} {j.clientName ? `(${j.clientName})` : ''} {j.structure ? `• ${j.structure}` : ''} • Code: {j.jobCode}
                     </option>
                   ))}
                 </SearchableSelect>
 
                 {currentJob && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', fontSize: '0.75rem', color: '#475569', marginTop: '6px', background: '#ffffff', padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                    <span data-testid="sfg-batch-order-id">This batch is saved on <strong>{currentJob.orderId}</strong> only.</span>
                     <span>Client: <strong>{currentJob.clientName || '—'}</strong></span>
                     <span>Structure: <strong>{currentJob.structure || '—'}</strong></span>
                     {existingLockedRolls.length > 0 && (
@@ -1493,6 +1553,27 @@ export default function SFGFGEntryModal({
             {formErrors.rolls && (
               <div style={{ fontSize: '0.72rem', color: '#dc2626', marginTop: '4px', fontWeight: '600' }}>
                 {formErrors.rolls}
+              </div>
+            )}
+            {metreWarnings.length > 0 && (
+              <div data-testid="sfg-metre-drift" style={{ marginTop: '8px', padding: '10px 12px', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: '8px' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#9a3412', marginBottom: '6px' }}>
+                  These metres differ by more than 10% from the kilograms, width, and micron.
+                </div>
+                {metreWarnings.map((warning) => (
+                  <div key={warning.barcodeId || warning.expected} style={{ fontSize: '0.75rem', color: '#7c2d12', marginBottom: '4px' }}>
+                    {warning.barcodeId || 'Roll'}: entered {warning.actual} m, implied {warning.expected} m ({warning.percent}% away).
+                  </div>
+                ))}
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '8px', fontSize: '0.78rem', fontWeight: 700, color: '#9a3412' }}>
+                  <input
+                    type="checkbox"
+                    data-testid="sfg-metre-drift-confirm"
+                    checked={confirmMetreDrift}
+                    onChange={(event) => setConfirmMetreDrift(event.target.checked)}
+                  />
+                  I have checked these metres
+                </label>
               </div>
             )}
           </div>

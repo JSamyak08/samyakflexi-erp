@@ -229,12 +229,48 @@ test('order groups keep every roll and the pager counts groups, not a fixed firs
   assert.deepEqual(empty.groups, []);
 });
 
+test('store groups keep each order id and mark a missing order deleted', () => {
+  const chocolate = batch(1, {
+    orderId: 'ORD-2026-252',
+    jobName: 'Chocolate bite inner 90mm',
+    clientName: 'Nyra Chocolates',
+    sfgBatchCode: 'SFG-LOT-ORD-2026-252'
+  });
+  const bambaiya = batch(2, {
+    orderId: 'ORD-2026-253',
+    jobName: 'Chocolate bite inner 90mm extra',
+    clientName: 'S K Products',
+    sfgBatchCode: 'SFG-LOT-ORD-2026-253'
+  });
+  const gone = batch(3, {
+    orderId: 'ORD-2026-115',
+    jobName: 'Black Light Inner',
+    clientName: 'Mark Food Product',
+    sfgBatchCode: 'SFG-ITEM-ORD-2026-115'
+  });
+  const orders = [
+    { id: 'ORD-2026-252', jobName: 'Black Light Inner', clientName: 'Shri Ashirwad', quantityKg: 1000 },
+    { id: 'ORD-2026-253', jobName: 'Bambaiya Premium', clientName: 'S K Products', quantityKg: 800 }
+  ];
+  const groups = groupSfgStoreItems([chocolate, bambaiya, gone], orders);
+  assert.deepEqual(groups.map((group) => group.orderId), ['ORD-2026-252', 'ORD-2026-253', 'ORD-2026-115']);
+  assert.equal(groups[0].orderDeleted, false);
+  assert.equal(groups[0].clientName, 'Nyra Chocolates');
+  assert.equal(groups[1].orderDeleted, false);
+  assert.equal(groups[2].orderDeleted, true);
+  assert.equal(groups[2].jobName, 'Black Light Inner');
+  assert.equal(groups[2].clientName, 'Mark Food Product');
+});
+
 test('the store screen pages filtered order groups and the other tabs do not slice to 10', () => {
   const screen = fs.readFileSync(path.join(root, 'src/components/SFGStoreManagement.jsx'), 'utf8');
   assert.match(screen, /filterSfgStoreItems\(allSfgItems/);
   assert.match(screen, /sortSfgStoreItems\(omitPrintedLotChildren\(cleanList\)\)/);
   assert.doesNotMatch(screen, /sortInventoryByFifo\(/);
   assert.match(screen, /groupSfgStoreItems\(filteredItems,\s*orders\)/);
+  assert.match(screen, /exactSfgStoreOrder\(item,\s*ordersList\)/);
+  assert.match(screen, /Order deleted/);
+  assert.doesNotMatch(screen, /itemJobName\.includes|oJobName\.includes/);
   assert.match(screen, /usePagination\(groupedOrders,\s*SFG_STORE_GROUP_PAGE_SIZE\)/);
   assert.match(screen, /<TablePagination pagination=\{groupPagination\} \/>/);
   assert.match(screen, /const expandAllOrders = \(\) => \{[\s\S]*?groupedOrders\.forEach/);
