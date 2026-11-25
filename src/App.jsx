@@ -3646,11 +3646,15 @@ export default function App() {
         // Only after Supabase confirms deletion:
         setOrders(prev => prev.filter(o => o.id !== orderId));
         await logAudit('DELETE', 'Orders', `Deleted job order record ${orderId}`, orderId);
+        return { success: true };
       }
+      deletedOrderIdsRef.current.delete(orderId);
+      return { success: false };
     } catch (err) {
       console.error('[ORDERS][DELETE] Delete failed:', err);
       deletedOrderIdsRef.current.delete(orderId);
       alert(`Failed to delete order ${orderId} from Supabase database: ${err.message || err}`);
+      return { success: false };
     } finally {
       setDeletingOrderId(null);
     }

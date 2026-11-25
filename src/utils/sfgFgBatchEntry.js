@@ -865,6 +865,130 @@ function openingAuditRecord(existing, entry, batch) {
   return record;
 }
 
+export const EARLIER_ORDER_LOT_MESSAGE = 'A lot from an earlier order with this number exists. It was not merged.';
+
+export const ROLL_METRE_DRIFT_LIMIT = 0.1;
+
+/**
+ * A printed lot may be updated only when it is this order row's lot.
+ * The batch code SFG-LOT-{orderId} is not enough: a deleted order can leave
+ * that code behind, and a later order must not absorb its rolls.
+ */
+export function lotBelongsToOrder(lot, order = {}) {
+  if (!lot) return true;
+  const orderId = text(order.id || order.orderId);
+  if (!orderId) return false;
+  const lotOrder = text(lot.orderId);
+  if (lotOrder && lotOrder.toLowerCase() !== orderId.toLowerCase()) return false;
+
+  const lotCreated = Date.parse(lot.createdAt || lot.created_at || '');
+  const orderCreated = Date.parse(order.createdAt || order.created_at || '');
+  if (Number.isFinite(lotCreated) && Number.isFinite(orderCreated) && lotCreated < orderCreated) {
+    return false;
+  }
+
+  const lotJob = text(lot.jobMasterId || lot.jobId);
+  const orderJob = text(order.jobMasterId || order.jobId);
+  if (lotJob && orderJob && lotJob !== orderJob) return false;
+
+  const lotCode = text(lot.jobCode).toUpperCase();
+  const orderCode = text(order.jobCode).toUpperCase();
+  if (lotCode && orderCode && lotCode !== orderCode) return false;
+
+  const lotName = text(lot.jobName).toLowerCase();
+  const orderName = text(order.jobName).toLowerCase();
+  const sameMaster = Boolean(lotJob && orderJob && lotJob === orderJob);
+  const sameJobCode = Boolean(lotCode && orderCode && lotCode === orderCode);
+  if (lotName && orderName && lotName !== orderName && !sameMaster && !sameJobCode) return false;
+  return true;
+}
+
+function orderIdentity(entry) {
+  return {
+    id: entry?.orderId,
+    createdAt: entry?.orderCreatedAt || entry?.createdAt,
+    jobMasterId: entry?.jobMasterId,
+    jobCode: entry?.jobCode,
+    jobName: entry?.jobName
+  };
+}
+
+function resolveOwnedPrintedLot(entry) {
+  const code = printingSfgLotCode(entry?.orderId).toLowerCase();
+  const listed = (entry?.sfgGoods || []).find((item) => text(item?.sfgBatchCode).toLowerCase() === code) || null;
+  const passed = entry?.existingLot || null;
+  const passedCode = text(passed?.sfgBatchCode).toLowerCase();
+  let candidate = null;
+  if (listed && passed && passedCode === code) {
+    candidate = {
+      ...listed,
+      ...passed,
+      createdAt: listed.createdAt || passed.createdAt,
+      created_at: listed.created_at || passed.created_at,
+      orderId: listed.orderId || passed.orderId,
+      jobCode: listed.jobCode || passed.jobCode,
+      jobName: listed.jobName || passed.jobName,
+      jobMasterId: listed.jobMasterId || passed.jobMasterId || listed.jobId || passed.jobId,
+      jobId: listed.jobId || passed.jobId,
+      childRolls: passed.childRolls || listed.childRolls,
+      totalMeters: listed.totalMeters ?? passed.totalMeters,
+      id: passed.id || listed.id
+    };
+  } else if (listed) {
+    candidate = listed;
+  } else if (passed && (passedCode === code || !passedCode)) {
+    candidate = passed;
+  }
+  if (!candidate) return { lot: null };
+  if (!lotBelongsToOrder(candidate, orderIdentity(entry))) {
+    return { error: EARLIER_ORDER_LOT_MESSAGE };
+  }
+  return { lot: candidate };
+}
+
+/** Lot metres are the rolls already on the lot plus this batch, not this batch alone. */
+export function sumPrintedLotMeters({ existingLot, children, batchMeters = 0, previousBatchMeters = 0 } = {}) {
+  const rolls = Array.isArray(children) ? children : [];
+  const childSum = rolls.reduce((sum, roll) => sum + (Number(roll?.lengthMeters) || 0), 0);
+  const everyRollHasMeters = rolls.length > 0 && rolls.every((roll) => Number(roll?.lengthMeters) > 0);
+  if (everyRollHasMeters) return roundFilmKg(childSum);
+  const kept = Math.max(0, (Number(existingLot?.totalMeters) || 0) - (Number(previousBatchMeters) || 0));
+  return roundFilmKg(Math.max(childSum, kept + (Number(batchMeters) || 0)));
+}
+
+/** Metres implied by kilograms, width, micron, and density. Null when the inputs are incomplete. */
+export function expectedRollMeters({ netKg, widthMm, micron, density } = {}) {
+  const weight = Number(netKg);
+  const width = Number(widthMm);
+  const thick = Number(micron);
+  const dens = Number(density);
+  if (!(weight > 0) || !(width > 0) || !(thick > 0) || !(dens > 0)) return null;
+  return Math.round((weight * 1000000) / (width * thick * dens));
+}
+
+export function rollMetreWarnings(rolls, spec = {}) {
+  const warnings = [];
+  (rolls || []).forEach((roll) => {
+    const actual = Number(roll?.lengthMeters);
+    const expected = expectedRollMeters({
+      netKg: roll?.netWeightKg,
+      widthMm: roll?.widthMm || spec.widthMm,
+      micron: roll?.micron || spec.micron,
+      density: spec.density
+    });
+    if (!(actual > 0) || expected == null || !(expected > 0)) return;
+    const gap = Math.abs(actual - expected) / expected;
+    if (gap <= ROLL_METRE_DRIFT_LIMIT) return;
+    warnings.push({
+      barcodeId: roll.barcodeId || roll.id || '',
+      actual,
+      expected,
+      percent: Math.round(gap * 100)
+    });
+  });
+  return warnings;
+}
+
 function openingPrintedLot(entry, outputs, enteredBy, enteredAt) {
   const existingLot = entry.existingLot || null;
   const children = mergeChildren(existingLot?.childRolls, outputs);
@@ -903,9 +1027,11 @@ function openingPrintedLot(entry, outputs, enteredBy, enteredAt) {
   printedLot.openingBalanceEnteredBy = text(existingLot?.openingBalanceEnteredBy) || enteredBy;
   printedLot.openingBalanceEnteredAt = text(existingLot?.openingBalanceEnteredAt) || enteredAt;
   const addedMeters = outputs.reduce((sum, roll) => sum + (Number(roll.lengthMeters) || 0), 0);
-  if ((kg(existingLot?.totalMeters) || 0) > 0) {
-    printedLot.totalMeters = roundFilmKg((kg(existingLot.totalMeters) || 0) + addedMeters);
-  }
+  printedLot.totalMeters = sumPrintedLotMeters({
+    existingLot,
+    children: printedLot.childRolls,
+    batchMeters: addedMeters
+  });
   const previousGross = kg(existingLot?.totalGrossKg) || kg(existingLot?.totalNetKg) || 0;
   const addedGross = outputs.reduce((sum, roll) => sum + (roll.grossWeightKg ?? roll.netWeightKg), 0);
   printedLot.totalGrossKg = roundFilmKg(Math.max(printedLot.totalNetKg, previousGross + addedGross));
@@ -1002,6 +1128,21 @@ export function buildSfgFgBatchPlan(entry = {}) {
     };
   }
 
+  if (process === 'printing') {
+    const owned = resolveOwnedPrintedLot(entry);
+    if (owned.error) {
+      return {
+        ok: false,
+        errors: [owned.error],
+        process,
+        batchCode,
+        inventoryMaster: null,
+        stockRows: []
+      };
+    }
+    entry = { ...entry, existingLot: owned.lot };
+  }
+
   if (entry.isOpeningBalance === true) {
     return buildOpeningBalancePlan(entry, process, batchCode);
   }
@@ -1049,7 +1190,7 @@ export function buildSfgFgBatchPlan(entry = {}) {
       widthMm: entry.widthMm,
       outputRolls: children,
       inputRolls: rollLines(entry.inputRolls).map((row) => ({ barcodeId: row.barcode })),
-      meters: kg(entry.actualMeters),
+      meters: null,
       existingLot
     });
     printedLot.childRolls = (printedLot.childRolls || []).map((child) => {
@@ -1067,6 +1208,13 @@ export function buildSfgFgBatchPlan(entry = {}) {
     const grossTotal = roundFilmKg((kg(existingLot?.totalGrossKg) || kg(existingLot?.totalNetKg) || 0) + gross - previousGross);
     printedLot.totalGrossKg = roundFilmKg(Math.max(printedLot.totalNetKg, grossTotal));
     printedLot.grossWeightKg = printedLot.totalGrossKg;
+    const batchMeters = kg(entry.actualMeters) || outputs.reduce((sum, roll) => sum + (Number(roll.lengthMeters) || 0), 0);
+    printedLot.totalMeters = sumPrintedLotMeters({
+      existingLot,
+      children: printedLot.childRolls,
+      batchMeters,
+      previousBatchMeters: previousBatch(entry.existingRecord, batchCode)?.meters
+    });
   } else {
     outputBatch = outputBatchFrom(entry, batchCode, outputs);
   }

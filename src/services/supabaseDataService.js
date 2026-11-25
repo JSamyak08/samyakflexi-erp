@@ -258,7 +258,8 @@ export async function fetchOrders() {
           isPrintingCompleted
         },
         materialRequirements: matReqs,
-        rawMaterialRequirements: matReqs
+        rawMaterialRequirements: matReqs,
+        createdAt: o.created_at || null
       };
     });
   } catch (err) {
@@ -426,6 +427,86 @@ export async function saveOrderToSupabase(order, options = {}) {
 }
 
 
+function stockKg(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function isSfgOrFgRoll(row) {
+  const described = `${row?.roll_type || ''} ${row?.rollType || ''} ${row?.category || ''} ${row?.sfg_type || ''} ${row?.fg_type || ''}`.toLowerCase();
+  return /semi[-_ ]?finished|finished goods|\bsfg\b|\bfg\b/i.test(described);
+}
+
+export function orderDeleteBlockedMessage(orderId, rows) {
+  const lines = (rows || []).filter(Boolean);
+  if (!lines.length) return '';
+  const shown = lines.slice(0, 12).map((row) => `${row.code} (${row.kg} kg)${row.jobName ? ` — ${row.jobName}` : ''}`);
+  const more = lines.length > shown.length ? `\nand ${lines.length - shown.length} more` : '';
+  return `Cannot delete order ${orderId} while SFG/FG stock remains:\n${shown.join('\n')}${more}`;
+}
+
+async function listSfgFgStockBlockingDelete(orderId) {
+  const dust = 0.009;
+  const blocks = [];
+  const read = async (table, build) => {
+    const { data, error } = await build(supabase.from(table));
+    if (error) {
+      if (isMissingRelationError(error)) return [];
+      handleSupabaseError(error, table);
+    }
+    return data || [];
+  };
+
+  const sfgRows = await read('sfg_goods', (query) => query
+    .select('sfg_batch_code, job_name, available_kg, total_net_kg, consumed_kg')
+    .eq('order_id', orderId));
+  sfgRows.forEach((row) => {
+    const available = row.available_kg != null && row.available_kg !== ''
+      ? stockKg(row.available_kg)
+      : Math.max(0, stockKg(row.total_net_kg) - stockKg(row.consumed_kg));
+    if (available > dust) {
+      blocks.push({ code: row.sfg_batch_code || orderId, kg: available.toFixed(2), jobName: row.job_name || '' });
+    }
+  });
+
+  const fgRows = await read('fg_goods', (query) => query
+    .select('fg_batch_code, job_name, total_net_kg, status')
+    .eq('order_id', orderId));
+  fgRows.forEach((row) => {
+    const status = String(row.status || '');
+    if (/consumed|dispatch/i.test(status)) return;
+    const kg = stockKg(row.total_net_kg);
+    if (kg > dust) blocks.push({ code: row.fg_batch_code || orderId, kg: kg.toFixed(2), jobName: row.job_name || '' });
+  });
+
+  const itemIds = [`SFG-ITEM-${orderId}`, `FG-ITEM-${orderId}`];
+  const items = await read('inventory', (query) => query
+    .select('id, item_code, item_name, stock_qty_kg, category')
+    .in('id', itemIds));
+  items.forEach((row) => {
+    const kg = stockKg(row.stock_qty_kg);
+    if (kg > dust && isSfgOrFgRoll({ category: row.category, roll_type: row.id })) {
+      blocks.push({ code: row.item_code || row.id, kg: kg.toFixed(2), jobName: row.item_name || '' });
+    }
+  });
+
+  const rolls = await read('inventory_rolls', (query) => query
+    .select('barcode_id, item_name, available_weight_kg, roll_type, category, status, sfg_type, fg_type')
+    .eq('order_id', orderId)
+    .gt('available_weight_kg', dust));
+  rolls.forEach((row) => {
+    const status = String(row.status || '');
+    if (/reversed|void/i.test(status)) return;
+    if (!isSfgOrFgRoll(row)) return;
+    blocks.push({
+      code: row.barcode_id,
+      kg: stockKg(row.available_weight_kg).toFixed(2),
+      jobName: row.item_name || ''
+    });
+  });
+  return blocks;
+}
+
 export async function deleteOrderFromSupabase(orderId) {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
@@ -434,6 +515,11 @@ export async function deleteOrderFromSupabase(orderId) {
     throw new Error("Cannot delete order: orderId is missing.");
   }
   await ensureValidSession();
+  const blocking = await listSfgFgStockBlockingDelete(orderId);
+  const blockedMessage = orderDeleteBlockedMessage(orderId, blocking);
+  if (blockedMessage) {
+    throw new Error(blockedMessage);
+  }
   console.log(`[ORDERS][DELETE] Starting delete orderId=${orderId}`);
 
   try {
