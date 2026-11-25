@@ -3,8 +3,14 @@
 -- SFG-LOT-{order id} from the deleted order and merged the new job into it.
 --
 -- Retired ids and a per-year high-water mark keep a used number from coming
--- back. A printed lot is updated only when it belongs to the current order
--- row. Deleting an order is refused while SFG/FG stock is still on hand.
+-- back. Every order number that was ever used is stored in retired_order_ids,
+-- including outliers such as ORD-2026-2259 and ORD-2026-9697. The high-water
+-- mark follows the live series only: a number more than 100 above the normal
+-- maximum does not move it, so the next id after ORD-2026-252 is
+-- ORD-2026-253. allocate_order_id still skips each retired number when the
+-- counter reaches it.
+-- A printed lot is updated only when it belongs to the current order row.
+-- Deleting an order is refused while SFG/FG stock is still on hand.
 
 CREATE TABLE IF NOT EXISTS private.retired_order_ids (
   order_id text PRIMARY KEY,
@@ -38,6 +44,88 @@ $$;
 
 REVOKE ALL ON FUNCTION private.order_id_serial(text, text) FROM PUBLIC;
 
+-- The highest serial that still belongs to the ordinary ORD-YYYY series.
+-- Walk forward from the lowest live order or reservation, at most 100 at a
+-- time, so a deleted ORD-2026-9697 does not become the maximum.
+CREATE OR REPLACE FUNCTION private.order_id_normal_max(p_year text)
+RETURNS bigint
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  normal bigint;
+  nxt bigint;
+  guard integer := 0;
+BEGIN
+  SELECT MIN(n)
+    INTO normal
+  FROM (
+    SELECT private.order_id_serial(j.id, p_year) AS n
+    FROM public.orders j
+    UNION ALL
+    SELECT private.order_id_serial(r.order_id, p_year)
+    FROM private.order_id_reservations r
+  ) AS live
+  WHERE n IS NOT NULL;
+
+  IF normal IS NULL THEN
+    RETURN 0;
+  END IF;
+
+  LOOP
+    guard := guard + 1;
+    IF guard > 10000 THEN
+      RETURN normal;
+    END IF;
+    SELECT MAX(n)
+      INTO nxt
+    FROM (
+      SELECT private.order_id_serial(j.id, p_year) AS n
+      FROM public.orders j
+      UNION ALL
+      SELECT private.order_id_serial(r.order_id, p_year)
+      FROM private.order_id_reservations r
+    ) AS live
+    WHERE n IS NOT NULL
+      AND n > normal
+      AND n <= normal + 100;
+    EXIT WHEN nxt IS NULL;
+    normal := nxt;
+  END LOOP;
+
+  RETURN normal;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.order_id_normal_max(text) FROM PUBLIC;
+
+-- High-water value: the normal series, plus retired numbers that sit within
+-- 100 of it. Outliers stay retired and are left out of this mark.
+CREATE OR REPLACE FUNCTION private.order_id_series_mark(p_year text)
+RETURNS bigint
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  normal bigint;
+  nearby bigint;
+BEGIN
+  normal := private.order_id_normal_max(p_year);
+  SELECT MAX(private.order_id_serial(d.order_id, p_year))
+    INTO nearby
+  FROM private.retired_order_ids d
+  WHERE private.order_id_serial(d.order_id, p_year) IS NOT NULL
+    AND private.order_id_serial(d.order_id, p_year) <= normal + 100;
+  RETURN GREATEST(COALESCE(normal, 0), COALESCE(nearby, 0));
+END;
+$$;
+
+REVOKE ALL ON FUNCTION private.order_id_series_mark(text) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION private.note_retired_order_id(p_order_id text)
 RETURNS void
 LANGUAGE plpgsql
@@ -57,6 +145,7 @@ BEGIN
   v_year := substring(btrim(p_order_id) from 5 for 4);
   v_serial := private.order_id_serial(p_order_id, v_year);
   IF v_serial IS NOT NULL AND v_year ~ '^[0-9]{4}$' THEN
+    v_serial := private.order_id_series_mark(v_year);
     INSERT INTO private.order_id_high_water (year, serial)
     VALUES (v_year::int, v_serial)
     ON CONFLICT (year) DO UPDATE
@@ -68,9 +157,9 @@ $$;
 
 REVOKE ALL ON FUNCTION private.note_retired_order_id(text) FROM PUBLIC;
 
--- Remember ids that already left the orders table. A stray barcode number
--- far above the real series (the ORD-2026-2259 typo) does not move the
--- high-water mark. Audit deletes do, because those numbers were issued.
+-- Remember every order number that is no longer a live order, including
+-- outliers. Only numbers within 100 of the normal series move the high-water
+-- mark. Re-applying this seed replaces a mark that an outlier had raised.
 DO $backfill$
 DECLARE
   source record;
@@ -122,42 +211,28 @@ BEGIN
           SELECT 1 FROM public.orders o
           WHERE lower(btrim(o.id)) = lower(btrim(src.%1$I))
         )
-        AND private.order_id_serial(src.%1$I, substring(btrim(src.%1$I) from 5 for 4))
-            <= COALESCE((
-              SELECT MAX(used.n) FROM (
-                SELECT private.order_id_serial(o.id, substring(btrim(src.%1$I) from 5 for 4)) AS n
-                FROM public.orders o
-                UNION ALL
-                SELECT private.order_id_serial(r.order_id, substring(btrim(src.%1$I) from 5 for 4))
-                FROM private.retired_order_ids r
-              ) AS used
-            ), 0) + 100
       ON CONFLICT (order_id) DO NOTHING
     $sql$, source.column_name, source.regclass_name, source.regclass_name);
   END LOOP;
 
   INSERT INTO private.order_id_high_water (year, serial)
-  SELECT year_num, MAX(serial_num)
+  SELECT year_num::int, private.order_id_series_mark(year_num)
   FROM (
-    SELECT (regexp_match(lower(btrim(id)), '^ord-([0-9]{4})-([0-9]+)$'))[1]::int AS year_num,
-           (regexp_match(lower(btrim(id)), '^ord-([0-9]{4})-([0-9]+)$'))[2]::bigint AS serial_num
+    SELECT (regexp_match(lower(btrim(id)), '^ord-([0-9]{4})-[0-9]+$'))[1] AS year_num
     FROM public.orders
     WHERE id ~* '^ORD-[0-9]{4}-[0-9]+$'
-    UNION ALL
-    SELECT (regexp_match(lower(btrim(order_id)), '^ord-([0-9]{4})-([0-9]+)$'))[1]::int,
-           (regexp_match(lower(btrim(order_id)), '^ord-([0-9]{4})-([0-9]+)$'))[2]::bigint
+    UNION
+    SELECT (regexp_match(lower(btrim(order_id)), '^ord-([0-9]{4})-[0-9]+$'))[1]
     FROM private.retired_order_ids
     WHERE order_id ~* '^ORD-[0-9]{4}-[0-9]+$'
-    UNION ALL
-    SELECT (regexp_match(lower(btrim(order_id)), '^ord-([0-9]{4})-([0-9]+)$'))[1]::int,
-           (regexp_match(lower(btrim(order_id)), '^ord-([0-9]{4})-([0-9]+)$'))[2]::bigint
+    UNION
+    SELECT (regexp_match(lower(btrim(order_id)), '^ord-([0-9]{4})-[0-9]+$'))[1]
     FROM private.order_id_reservations
     WHERE order_id ~* '^ORD-[0-9]{4}-[0-9]+$'
-  ) AS used
-  WHERE year_num IS NOT NULL AND serial_num IS NOT NULL
-  GROUP BY year_num
+  ) AS years
+  WHERE year_num IS NOT NULL
   ON CONFLICT (year) DO UPDATE
-    SET serial = GREATEST(private.order_id_high_water.serial, EXCLUDED.serial),
+    SET serial = EXCLUDED.serial,
         updated_at = pg_catalog.now();
 END
 $backfill$;
@@ -201,14 +276,7 @@ BEGIN
   SELECT COALESCE(MAX(n), 0)
     INTO serial
   FROM (
-    SELECT private.order_id_serial(j.id, v_year) AS n
-    FROM public.orders j
-    UNION ALL
-    SELECT private.order_id_serial(r.order_id, v_year)
-    FROM private.order_id_reservations r
-    UNION ALL
-    SELECT private.order_id_serial(d.order_id, v_year)
-    FROM private.retired_order_ids d
+    SELECT private.order_id_series_mark(v_year) AS n
     UNION ALL
     SELECT h.serial
     FROM private.order_id_high_water h
