@@ -196,3 +196,61 @@ test('a deleted order number is not issued again and stock blocks the delete', a
   assert.equal(Number(summed.rows[0].total_meters), 10000);
   await db.close();
 });
+
+test('prod-like outliers stay retired and the next order number is 253', async () => {
+  const db = new PGlite();
+  await db.exec(schema());
+  const yearRow = await db.query(`SELECT EXTRACT(YEAR FROM CURRENT_DATE)::int AS year`);
+  const year = yearRow.rows[0].year;
+  const id = (serial) => `ORD-${year}-${serial}`;
+  await db.query(
+    `INSERT INTO public.orders (id, job_name, client_name, status) VALUES
+      ($1, 'Live 200', 'Client', 'Open'),
+      ($2, 'Live max', 'Client', 'Open')`,
+    [id(200), id(252)]
+  );
+  await db.query(
+    `INSERT INTO public.audit_logs (id, action_type, target_id) VALUES
+      ('audit-9697', 'DELETE', $1),
+      ('audit-2259', 'DELETE', $2),
+      ('audit-252-old', 'DELETE', $3)`,
+    [id(9697), id(2259), id(252)]
+  );
+  await db.query(
+    `INSERT INTO public.sfg_goods (id, sfg_batch_code, sfg_type, order_id, job_name, total_net_kg, available_kg)
+     VALUES ('00000000-0000-0000-0000-000000002259', 'SFG-LOT-TYPO-2259', 'Printed Rolls', $1, 'Typo', 1, 0)`,
+    [id(2259)]
+  );
+  await db.exec(previousSql);
+  await db.exec(migrationSql);
+
+  const mark = await db.query(`SELECT serial FROM private.order_id_high_water WHERE year = $1`, [year]);
+  assert.equal(Number(mark.rows[0].serial), 252);
+  const retired = await db.query(
+    `SELECT order_id FROM private.retired_order_ids WHERE order_id IN ($1, $2) ORDER BY order_id`,
+    [id(2259), id(9697)]
+  );
+  assert.deepEqual(retired.rows.map((row) => row.order_id), [id(2259), id(9697)]);
+
+  await db.query(`DELETE FROM public.orders WHERE id = $1`, [id(252)]);
+  const reused = await db.query(
+    `SELECT 1 FROM private.retired_order_ids WHERE order_id = $1`,
+    [id(252)]
+  );
+  assert.equal(reused.rows.length, 1);
+  const next = await db.query(`SELECT public.allocate_order_id(1) AS issued`);
+  assert.deepEqual(next.rows[0].issued, [id(253)]);
+  assert.notEqual(next.rows[0].issued[0], id(252));
+  assert.notEqual(next.rows[0].issued[0], id(9697));
+
+  await db.query(`UPDATE private.order_id_high_water SET serial = 2258 WHERE year = $1`, [year]);
+  const aroundTypo = await db.query(`SELECT public.allocate_order_id(2) AS issued`);
+  assert.deepEqual(aroundTypo.rows[0].issued, [id(2260), id(2261)]);
+  assert.equal(aroundTypo.rows[0].issued.includes(id(2259)), false);
+
+  await db.query(`UPDATE private.order_id_high_water SET serial = 9696 WHERE year = $1`, [year]);
+  const aroundOutlier = await db.query(`SELECT public.allocate_order_id(1) AS issued`);
+  assert.deepEqual(aroundOutlier.rows[0].issued, [id(9698)]);
+  assert.equal(aroundOutlier.rows[0].issued.includes(id(9697)), false);
+  await db.close();
+});
