@@ -26,9 +26,23 @@ function escapeHtml(str) {
 export function resolveItemPurchaseRate(r, inventory = [], inks = []) {
   if (!r) return 0;
 
-  // 1. Check explicit rate on roll/sticker object
-  const directRate = Number(r.purchaseRatePerKg || r.purchaseRate || r.unitPrice || r.rate || r.ratePerKg || 0);
+  const meta = r.metadata && typeof r.metadata === 'object' ? r.metadata : {};
+  // 1. Check explicit rate on roll/sticker object, then the roll metadata.
+  const directRate = Number(
+    r.purchaseRatePerKg || r.purchaseRate || r.unitPrice || r.rate || r.ratePerKg
+    || meta.purchaseRatePerKg || meta.unitPrice || meta.purchaseRate
+    || 0
+  );
   if (directRate > 0) return directRate;
+
+  const recordedZero = (meta.directSlitting === true || r.directSlitting === true) && [
+    meta.purchaseRatePerKg, meta.unitPrice, r.purchaseRatePerKg, r.unitPrice
+  ].some((value) => {
+    if (value === undefined || value === null || value === '') return false;
+    const number = Number(value);
+    return Number.isFinite(number) && number <= 0;
+  });
+  if (recordedZero) return 0;
 
   // 2. Cross-reference with live inventory list
   const cleanId = String(r.itemId || r.id || r.itemCode || r.barcodeId || '').toLowerCase().trim();

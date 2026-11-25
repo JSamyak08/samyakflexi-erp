@@ -1,9 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Scissors, ScanBarcode, Plus, Trash2, X } from 'lucide-react';
+import { Scissors, ScanBarcode, Plus, Trash2, X, Printer } from 'lucide-react';
 import ModalOverlay from './ModalOverlay';
 import UniversalBarcodeScannerModal from './UniversalBarcodeScannerModal';
 import BarcodePrinterModal from './BarcodePrinterModal';
-import { assessDirectSlitting } from '../utils/directSlitting';
+import {
+  assessDirectSlitting,
+  blendDirectSlitRate,
+  directSlitRatesDiffer,
+  directSlitStickerFromRow,
+  formatDirectSlitRate,
+  resolveDirectSlitRollRate
+} from '../utils/directSlitting';
 import { postDirectSlitting, reverseDirectSlitting } from '../services/directSlitting';
 import { supabase } from '../services/supabaseClient';
 
@@ -16,7 +23,7 @@ function rollBarcode(roll) {
   return String(roll?.barcodeId || roll?.barcode_id || roll?.id || '').trim();
 }
 
-function filmParentFromScan(roll, inventory) {
+function filmParentFromScan(roll, inventory, grns) {
   const barcode = rollBarcode(roll);
   const available = num(roll?.availableWeightKg ?? roll?.available_weight_kg);
   const status = String(roll?.status || '');
@@ -40,49 +47,45 @@ function filmParentFromScan(roll, inventory) {
       density: num(item?.density) || 1.4,
       lengthMeters: num(roll?.lengthMeters ?? roll?.length_meters),
       metallocenePct: item?.metallocenePct || item?.metallocene_pct || roll?.metallocenePct || '',
-      itemName: roll?.itemName || item?.itemName || barcode
+      itemName: roll?.itemName || item?.itemName || barcode,
+      purchaseRatePerKg: resolveDirectSlitRollRate(roll, { inventory, grns })
     }
   };
 }
 
-function stickerFromRow(row) {
-  const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
-  return {
-    id: row.barcode_id,
-    barcodeId: row.barcode_id,
-    itemName: row.item_name,
-    filmType: row.film_type,
-    micron: row.micron,
-    widthMm: row.width_mm,
-    netWeightKg: row.net_weight_kg,
-    availableWeightKg: row.available_weight_kg,
-    grossWeightKg: row.gross_weight_kg,
-    lengthMeters: row.length_meters,
-    vendorName: row.vendor_name,
-    batchNo: row.batch_no,
-    rollType: row.roll_type,
-    category: row.category,
-    status: row.status,
-    orderId: row.order_id,
-    jobName: row.job_name,
-    parentBarcodeId: meta.parentBarcodeId || meta.parentBarcode || '',
-    directSlitting: meta.directSlitting === true,
-    balanceRoll: meta.balanceRoll === true || /-BAL$/i.test(String(row.barcode_id || '')),
-    metadata: meta
-  };
+function stickerFromRow(row, recordedRate) {
+  return directSlitStickerFromRow(row, recordedRate);
+}
+
+function childCodes(result) {
+  const outputs = (result?.outputs || []).map((row) => row?.barcode).filter(Boolean);
+  const balances = (result?.parents || []).map((row) => row?.balanceBarcode).filter(Boolean);
+  return [...outputs, ...balances];
+}
+
+function recordedRateFor(result, code) {
+  const output = (result?.outputs || []).find((row) => row?.barcode === code);
+  if (output && output.purchaseRate !== undefined && output.purchaseRate !== null && output.purchaseRate !== '') {
+    return output.purchaseRate;
+  }
+  return result?.purchaseRate;
 }
 
 async function loadStickers(result) {
-  const codes = [
-    ...(result?.parents || []).map((row) => row.balanceBarcode),
-    ...(result?.outputs || []).map((row) => row.barcode)
-  ].filter(Boolean);
+  const codes = childCodes(result);
   if (!codes.length || !supabase) return [];
   const { data, error } = await supabase.from('inventory_rolls').select('*').in('barcode_id', codes);
   if (error) throw error;
-  const byCode = new Map((data || []).map((row) => [row.barcode_id, stickerFromRow(row)]));
-  return codes.map((code) => byCode.get(code)).filter(Boolean);
+  const byCode = new Map((data || []).map((row) => [row.barcode_id, row]));
+  return codes
+    .map((code) => {
+      const row = byCode.get(code);
+      return row ? stickerFromRow(row, recordedRateFor(result, code)) : null;
+    })
+    .filter(Boolean);
 }
+
+const emptyOutput = () => ({ key: `out-${Date.now()}`, widthMm: '', netKg: '', destination: 'inventory', orderId: '', lane: '1' });
 
 export default function DirectSlittingModal({
   onClose,
@@ -102,14 +105,17 @@ export default function DirectSlittingModal({
   onStockRefresh
 }) {
   const [parents, setParents] = useState([]);
-  const [outputs, setOutputs] = useState([{ key: 'out-1', widthMm: '', netKg: '', destination: 'inventory', orderId: '', lane: '1' }]);
+  const [outputs, setOutputs] = useState([emptyOutput()]);
   const [trimScrapKg, setTrimScrapKg] = useState('');
   const [settingScrapKg, setSettingScrapKg] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
   const [formError, setFormError] = useState('');
   const [posting, setPosting] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
-  const [stickers, setStickers] = useState(null);
+  const [barcodeDraft, setBarcodeDraft] = useState('');
+  const [printerOpen, setPrinterOpen] = useState(false);
+  const [postedStickers, setPostedStickers] = useState([]);
+  const [posted, setPosted] = useState(null);
   const [view, setView] = useState('entry');
   const [conversions, setConversions] = useState([]);
   const [listError, setListError] = useState('');
@@ -132,6 +138,13 @@ export default function DirectSlittingModal({
     metallocenePct: parents[0]?.metallocenePct
   }), [parents, outputs, trimScrapKg, settingScrapKg]);
 
+  const previewParents = useMemo(() => parents.map((parent) => ({
+    ...parent,
+    consumedKg: num(parent.consumedKg)
+  })), [parents]);
+  const blend = blendDirectSlitRate(previewParents);
+  const ratesDiffer = directSlitRatesDiffer(previewParents);
+
   useEffect(() => {
     if (view !== 'list') return undefined;
     let cancel = false;
@@ -148,7 +161,7 @@ export default function DirectSlittingModal({
   }, [view, posting]);
 
   const addParent = (roll) => {
-    const picked = filmParentFromScan(roll, inventory);
+    const picked = filmParentFromScan(roll, inventory, grns);
     if (!picked.ok) {
       setFormError(picked.reason);
       return;
@@ -160,6 +173,39 @@ export default function DirectSlittingModal({
     setParents((rows) => [...rows, picked.parent]);
     setFormError('');
     setScanOpen(false);
+    setBarcodeDraft('');
+  };
+
+  const addTypedParent = () => {
+    const wanted = barcodeDraft.trim().toLowerCase();
+    if (!wanted) {
+      setFormError('Type a roll barcode.');
+      return;
+    }
+    const roll = (inventoryRolls || []).find((row) => rollBarcode(row).toLowerCase() === wanted);
+    if (!roll) {
+      setFormError('That roll is not in stock.');
+      return;
+    }
+    addParent(roll);
+  };
+
+  const resetEntry = () => {
+    setParents([]);
+    setOutputs([emptyOutput()]);
+    setTrimScrapKg('');
+    setSettingScrapKg('');
+    setOverrideReason('');
+    setFormError('');
+    setBarcodeDraft('');
+    setPosted(null);
+    setPostedStickers([]);
+    setPrinterOpen(false);
+  };
+
+  const openPrinter = (labels) => {
+    setPostedStickers(labels);
+    setPrinterOpen(labels.length > 0);
   };
 
   const post = async () => {
@@ -200,9 +246,29 @@ export default function DirectSlittingModal({
       });
       const labels = await loadStickers(result);
       if (typeof onStockRefresh === 'function') await onStockRefresh();
-      setStickers(labels);
+      setPosted(result);
+      setView('success');
+      openPrinter(labels);
+      if (!labels.length) setFormError('The slit was posted. The sticker list could not be loaded.');
     } catch (error) {
       setFormError(error?.message || 'The slit was not posted.');
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  const reprint = async (row) => {
+    setListError('');
+    setPosting(true);
+    try {
+      const labels = await loadStickers(row?.result || {});
+      if (!labels.length) {
+        setListError('Those stickers could not be loaded.');
+        return;
+      }
+      openPrinter(labels);
+    } catch (error) {
+      setListError(error?.message || 'Those stickers could not be loaded.');
     } finally {
       setPosting(false);
     }
@@ -229,6 +295,7 @@ export default function DirectSlittingModal({
   };
 
   const varianceTone = assessment.overrideRequired ? '#b91c1c' : assessment.metresStatus === 'warn' ? '#b45309' : '#166534';
+  const historyRate = (row) => formatDirectSlitRate(row?.purchase_rate ?? row?.result?.purchaseRate);
 
   return (
     <>
@@ -237,9 +304,16 @@ export default function DirectSlittingModal({
           <header className="direct-slit-head">
             <h2 id="direct-slit-title"><Scissors size={18} /> Direct slitting</h2>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className={view === 'list' ? 'btn-primary' : 'btn-secondary'} onClick={() => setView(view === 'list' ? 'entry' : 'list')}>
-                {view === 'list' ? 'New slit' : 'Conversions'}
-              </button>
+              {view === 'success' ? (
+                <>
+                  <button type="button" className="btn-secondary" onClick={() => setView('list')}>Conversions</button>
+                  <button type="button" className="btn-primary" onClick={() => { resetEntry(); setView('entry'); }}>New slit</button>
+                </>
+              ) : (
+                <button type="button" className={view === 'list' ? 'btn-primary' : 'btn-secondary'} onClick={() => setView(view === 'list' ? 'entry' : 'list')}>
+                  {view === 'list' ? 'New slit' : 'Conversions'}
+                </button>
+              )}
               <button type="button" className="btn-secondary" data-modal-dismiss="" onClick={onClose} aria-label="Close">
                 <X size={16} /> Close
               </button>
@@ -257,6 +331,12 @@ export default function DirectSlittingModal({
                     <span>{row.status}</span>
                     <span>{Number(row.consumed_kg) || 0} kg consumed</span>
                     <span>{row.film_type || ''} {row.width_mm || ''} mm</span>
+                    <span aria-label={`History rate ${row.id}`}>{historyRate(row)}</span>
+                    {row.status === 'posted' && (
+                      <button type="button" className="btn-secondary" aria-label={`Print stickers ${row.id}`} disabled={posting} onClick={() => reprint(row)}>
+                        <Printer size={16} /> Print stickers
+                      </button>
+                    )}
                     {canReverse && row.status === 'posted' && (
                       <button type="button" className="btn-secondary" aria-label={`Reverse ${row.id}`} onClick={() => { setReverseId(row.id); setReverseReason(''); }}>
                         Reverse
@@ -274,6 +354,53 @@ export default function DirectSlittingModal({
                 </div>
               )}
             </div>
+          ) : view === 'success' && posted ? (
+            <div className="direct-slit-body">
+              {formError && <p className="direct-slit-error" role="alert">{formError}</p>}
+              <section className="direct-slit-card" aria-label="Slit posted">
+                <div>
+                  <strong>{posted.id}</strong>
+                  <div>New rolls and balance rolls are valued at {formatDirectSlitRate(posted.purchaseRate)}.</div>
+                </div>
+                <button type="button" className="btn-primary" aria-label="Print stickers" onClick={() => setPrinterOpen(true)} disabled={!postedStickers.length}>
+                  <Printer size={16} /> Print stickers
+                </button>
+              </section>
+              <section>
+                <h3>Mother rolls</h3>
+                {(posted.parents || []).map((parent) => (
+                  <div key={parent.barcode} className="direct-slit-card">
+                    <div>
+                      <strong>{parent.barcode}</strong>
+                      <div>{parent.consumedKg} kg used · balance {parent.balanceKg} kg</div>
+                      {parent.balanceBarcode && <div>Balance roll {parent.balanceBarcode}</div>}
+                    </div>
+                    <div aria-label={`Recorded rate ${parent.barcode}`}>{formatDirectSlitRate(parent.purchaseRate)}</div>
+                  </div>
+                ))}
+              </section>
+              <section>
+                <h3>New rolls</h3>
+                {(posted.outputs || []).map((output) => (
+                  <div key={output.barcode} className="direct-slit-card">
+                    <div>
+                      <strong>{output.barcode}</strong>
+                      <div>{output.widthMm} mm · {output.netKg} kg · {output.lengthMeters || '—'} m · {output.destination}</div>
+                    </div>
+                    <div aria-label={`Recorded rate ${output.barcode}`}>{formatDirectSlitRate(output.purchaseRate ?? posted.purchaseRate)}</div>
+                  </div>
+                ))}
+                {(posted.parents || []).filter((parent) => parent.balanceBarcode).map((parent) => (
+                  <div key={parent.balanceBarcode} className="direct-slit-card">
+                    <div>
+                      <strong>{parent.balanceBarcode}</strong>
+                      <div>{parents.find((row) => row.barcode === parent.barcode)?.widthMm || ''} mm · {parent.balanceKg} kg · balance roll</div>
+                    </div>
+                    <div aria-label={`Recorded rate ${parent.balanceBarcode}`}>{formatDirectSlitRate(posted.purchaseRate)}</div>
+                  </div>
+                ))}
+              </section>
+            </div>
           ) : (
             <>
               <div className="direct-slit-body">
@@ -285,12 +412,20 @@ export default function DirectSlittingModal({
                       <ScanBarcode size={16} /> Scan roll
                     </button>
                   </div>
+                  <div className="direct-slit-type">
+                    <label>
+                      Barcode
+                      <input aria-label="Parent barcode" value={barcodeDraft} onChange={(event) => setBarcodeDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTypedParent(); } }} />
+                    </label>
+                    <button type="button" className="btn-secondary" onClick={addTypedParent}>Add roll</button>
+                  </div>
                   {parents.length === 0 && <p>Scan a film roll that is in stock.</p>}
                   {parents.map((parent) => (
                     <div key={parent.barcode} className="direct-slit-card">
                       <div>
                         <strong>{parent.barcode}</strong>
                         <div>{parent.itemName} · {parent.widthMm} mm · {parent.availableKg} kg in stock</div>
+                        <div aria-label={`Rate ${parent.barcode}`}>{formatDirectSlitRate(parent.purchaseRatePerKg)}</div>
                       </div>
                       <label>
                         Consumed kg
@@ -306,6 +441,11 @@ export default function DirectSlittingModal({
                       </button>
                     </div>
                   ))}
+                  {ratesDiffer && (
+                    <p className="direct-slit-blend" aria-label="Blended rate">
+                      New rolls and balance rolls will be valued at {formatDirectSlitRate(blend)} (weighted by kilograms used).
+                    </p>
+                  )}
                 </section>
 
                 <section>
@@ -379,6 +519,7 @@ export default function DirectSlittingModal({
                 <span>Scrap {assessment.trimScrapKg + assessment.settingScrapKg} kg</span>
                 <span>Balance {assessment.balanceKg} kg</span>
                 <span>Variance {assessment.varianceKg} kg</span>
+                <span aria-label="Review rate">{parents.length ? formatDirectSlitRate(blend) : '₹—'}</span>
                 <button type="button" className="btn-primary" disabled={posting} onClick={post}>
                   {posting ? 'Posting…' : 'Post slit'}
                 </button>
@@ -398,16 +539,19 @@ export default function DirectSlittingModal({
           .direct-slit-body { overflow: auto; padding: 12px 14px 20px; display: flex; flex-direction: column; gap: 16px; }
           .direct-slit-section-head, .direct-slit-card { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
           .direct-slit-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin-top: 8px; }
-          .direct-slit-card label, .direct-slit-scrap label, .direct-slit-override { display: flex; flex-direction: column; gap: 4px; font-size: .82rem; font-weight: 700; }
-          .direct-slit-card input, .direct-slit-card select, .direct-slit-scrap input, .direct-slit-override textarea, .direct-slit-reverse input { font: inherit; padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; min-width: 0; width: 100%; }
+          .direct-slit-card label, .direct-slit-scrap label, .direct-slit-override, .direct-slit-type label { display: flex; flex-direction: column; gap: 4px; font-size: .82rem; font-weight: 700; }
+          .direct-slit-card input, .direct-slit-card select, .direct-slit-scrap input, .direct-slit-override textarea, .direct-slit-reverse input, .direct-slit-type input { font: inherit; padding: 8px; border: 1px solid #cbd5e1; border-radius: 8px; min-width: 0; width: 100%; }
           .direct-slit-output { align-items: end; }
+          .direct-slit-type { display: flex; gap: 8px; align-items: end; margin-top: 8px; }
+          .direct-slit-type label { flex: 1; }
           .direct-slit-scrap { display: grid; grid-template-columns: 1fr; gap: 10px; }
           @media (min-width: 700px) { .direct-slit-scrap { grid-template-columns: 1fr 1fr; } }
           .direct-slit-error { color: #b91c1c; font-weight: 700; margin: 0; }
-          .direct-slit-warn { color: #b45309; font-weight: 700; margin: 0; }
+          .direct-slit-warn, .direct-slit-blend { color: #b45309; font-weight: 700; margin: 8px 0 0; }
           .direct-slit-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
           .direct-slit-list li, .direct-slit-reverse { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; }
           .direct-slit-metres { font-weight: 800; color: #1e3a8a; }
+          .direct-slit-sheet button { min-height: 44px; }
         `}</style>
       </ModalOverlay>
       {scanOpen && (
@@ -428,13 +572,13 @@ export default function DirectSlittingModal({
           onPickRoll={addParent}
         />
       )}
-      {stickers && (
+      {printerOpen && postedStickers.length > 0 && (
         <BarcodePrinterModal
-          rolls={stickers}
+          rolls={postedStickers}
           inventory={inventory}
           inks={inks}
           inventoryRolls={inventoryRolls}
-          onClose={() => { setStickers(null); onClose(); }}
+          onClose={() => setPrinterOpen(false)}
         />
       )}
     </>

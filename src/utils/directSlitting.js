@@ -187,3 +187,119 @@ export function assessDirectSlitting(doc = {}) {
     outputs: named
   };
 }
+
+/** A rupee rate the slit can record. Zero and blanks fall through. */
+export function positiveDirectSlitRate(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return null;
+  return number;
+}
+
+function rollMetadata(roll) {
+  const meta = roll?.metadata;
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) return null;
+  return meta;
+}
+
+/**
+ * Preview of one mother roll's rupees per kg.
+ * The database uses the same order and does not trust a rate sent by the client.
+ */
+export function resolveDirectSlitRollRate(roll, { inventory = [], grns = [] } = {}) {
+  const meta = rollMetadata(roll);
+  const fromMeta = positiveDirectSlitRate(meta?.purchaseRatePerKg) ?? positiveDirectSlitRate(meta?.unitPrice);
+  if (fromMeta !== null) return fromMeta;
+  const flattened = positiveDirectSlitRate(roll?.purchaseRatePerKg) ?? positiveDirectSlitRate(roll?.unitPrice);
+  if (flattened !== null) return flattened;
+
+  const lineId = String(roll?.grnLineItemId || roll?.grn_line_item_id || meta?.grnLineItemId || '').trim();
+  if (lineId) {
+    for (const grn of grns || []) {
+      const lines = Array.isArray(grn?.lineItems) ? grn.lineItems : [];
+      for (const line of lines) {
+        if (String(line?.id || '') !== lineId) continue;
+        const grnRate = positiveDirectSlitRate(line?.purchaseRate ?? line?.purchase_rate ?? line?.purchaseRatePerKg);
+        if (grnRate !== null) return grnRate;
+      }
+    }
+  }
+
+  const itemId = String(roll?.itemId || roll?.item_id || '').trim();
+  const item = (inventory || []).find((row) => String(row?.id || '') === itemId);
+  return positiveDirectSlitRate(item?.unitPrice ?? item?.unit_price ?? item?.purchaseRatePerKg) ?? 0;
+}
+
+/** round(sum(kg × rate) / sum(kg), 2). A missing rate counts as 0 and still counts in the kilograms. */
+export function blendDirectSlitRate(parents = []) {
+  let kilograms = 0;
+  let amount = 0;
+  for (const parent of parents || []) {
+    const taken = Number(parent?.consumedKg);
+    const kg = Number.isFinite(taken) && taken > 0 ? taken : 0;
+    const priced = positiveDirectSlitRate(parent?.purchaseRatePerKg) ?? 0;
+    kilograms += kg;
+    amount += kg * priced;
+  }
+  if (!(kilograms > 0)) return 0;
+  return Math.round((amount / kilograms) * 100) / 100;
+}
+
+export function formatDirectSlitRate(rate) {
+  const number = Number(rate);
+  if (!Number.isFinite(number) || number <= 0) return '₹—';
+  const text = number.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `₹${text} / kg`;
+}
+
+export function directSlitRatesDiffer(parents = []) {
+  if (!Array.isArray(parents) || parents.length < 2) return false;
+  const seen = new Set(parents.map((parent) => (positiveDirectSlitRate(parent?.purchaseRatePerKg) ?? 0).toFixed(2)));
+  return seen.size > 1;
+}
+
+/**
+ * Sticker object for a slit child. Metadata rates are copied onto the fields
+ * the thermal printer already reads.
+ */
+export function directSlitStickerFromRow(row, recordedRate) {
+  const meta = rollMetadata(row) || {};
+  const metaRate = positiveDirectSlitRate(meta.purchaseRatePerKg) ?? positiveDirectSlitRate(meta.unitPrice);
+  const recorded = positiveDirectSlitRate(recordedRate);
+  const rate = metaRate ?? recorded ?? positiveDirectSlitRate(row?.purchase_rate) ?? 0;
+  const unitPrice = positiveDirectSlitRate(meta.unitPrice) ?? rate;
+  const barcode = row?.barcode_id || row?.barcodeId || '';
+  const directSlitting = meta.directSlitting === true || row?.directSlitting === true;
+  return {
+    id: barcode,
+    barcodeId: barcode,
+    itemId: row?.item_id || row?.itemId || '',
+    itemName: row?.item_name || row?.itemName || '',
+    filmType: row?.film_type || row?.filmType || '',
+    micron: row?.micron,
+    widthMm: row?.width_mm ?? row?.widthMm,
+    netWeightKg: row?.net_weight_kg ?? row?.netWeightKg,
+    availableWeightKg: row?.available_weight_kg ?? row?.availableWeightKg,
+    grossWeightKg: row?.gross_weight_kg ?? row?.grossWeightKg,
+    lengthMeters: row?.length_meters ?? row?.lengthMeters,
+    vendorName: row?.vendor_name || row?.vendorName || '',
+    batchNo: row?.batch_no || row?.batchNo || '',
+    rollType: row?.roll_type || row?.rollType || '',
+    category: row?.category || '',
+    status: row?.status || '',
+    orderId: row?.order_id || row?.orderId || '',
+    jobName: row?.job_name || row?.jobName || '',
+    parentBarcodeId: meta.parentBarcodeId || meta.parentBarcode || '',
+    directSlitting,
+    balanceRoll: meta.balanceRoll === true || /-BAL$/i.test(String(barcode)),
+    purchaseRatePerKg: rate,
+    unitPrice,
+    purchaseRate: rate,
+    metadata: {
+      ...meta,
+      directSlitting,
+      purchaseRatePerKg: rate,
+      unitPrice
+    }
+  };
+}
