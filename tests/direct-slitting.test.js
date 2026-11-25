@@ -7,6 +7,9 @@ import {
   generateFullRolePermissions
 } from '../src/factoryStore.js';
 import { assessDirectSlitting, directSlitItemName, filmMetresFromKg } from '../src/utils/directSlitting.js';
+import { generateSingleStickerHtml } from '../src/utils/thermalBarcodePrinter.js';
+import { roleHasModule } from '../src/bootAccess.js';
+import fs from 'node:fs';
 import { postDirectSlitting, reverseDirectSlitting } from '../src/services/directSlitting.js';
 
 const parent = {
@@ -103,6 +106,37 @@ test('direct slitting permission defaults to four roles and keeps an explicit fa
   assert.equal(filled['Store Manager'].inventory, true);
   assert.equal(filled['Sales Manager'].direct_slitting, false);
   assert.equal(DIRECT_SLITTING_ROLES.includes('Shop Floor Operator'), false);
+});
+
+test('a slit child sticker names the parent roll', () => {
+  const html = generateSingleStickerHtml({
+    barcodeId: 'RM-BC-CHILD',
+    itemName: 'PET-600-12',
+    filmType: 'PET',
+    micron: 12,
+    widthMm: 600,
+    netWeightKg: 36,
+    rollType: 'RAW_MATERIAL',
+    category: 'Film Substrates',
+    parentBarcodeId: 'RM-PARENT'
+  }, { name: 'SAMYAK INTERNATIONAL LTD.' });
+  assert.match(html, /Split from:/);
+  assert.match(html, /RM-PARENT/);
+});
+
+test('inventory shows direct slitting only when the permission is on', () => {
+  const defaults = generateFullRolePermissions(false);
+  assert.equal(roleHasModule(defaults, 'Store Manager', 'direct_slitting'), true);
+  assert.equal(roleHasModule(defaults, 'Shop Floor Operator', 'direct_slitting'), false);
+  assert.equal(roleHasModule(defaults, 'Admin', 'direct_slitting'), true);
+  const screen = fs.readFileSync(new URL('../src/components/InventoryManagement.jsx', import.meta.url), 'utf8');
+  assert.match(screen, /canDirectSlit &&/);
+  assert.match(screen, /Direct slitting/);
+  const modal = fs.readFileSync(new URL('../src/components/DirectSlittingModal.jsx', import.meta.url), 'utf8');
+  assert.match(modal, /ModalOverlay/);
+  assert.match(modal, /postDirectSlitting/);
+  assert.match(modal, /UniversalBarcodeScannerModal/);
+  assert.match(modal, /BarcodePrinterModal/);
 });
 
 test('the client posts and reverses only through the database functions', async () => {

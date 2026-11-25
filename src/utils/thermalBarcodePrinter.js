@@ -452,7 +452,11 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
   const barcodeCodeStr = barcodeCode || stickerBarcode(r);
   const displayDate = getStickerDisplayDate(r, dateStr);
   const balanceSpecs = balanceSpecHtml(origin);
-  const originHtml = balanceOriginHtml(origin, (value) => formatStickerDateTime(value, ''));
+  const splitParent = String(
+    r.parentBarcodeId || r.parentBarcode || r.metadata?.parentBarcodeId || r.metadata?.parentBarcode || ''
+  ).trim();
+  const originHtml = balanceOriginHtml(origin, (value) => formatStickerDateTime(value, ''))
+    || (splitParent ? `<div class="origin-line">Split from: <strong>${escapeHtml(splitParent)}</strong></div>` : '');
 
   const qrSvg = generateSyncQrSvg(barcodeCodeStr, 1);
 
@@ -536,8 +540,8 @@ export function generateSingleStickerHtml(r, company = {}, { inventory = [], ink
               <span>Batch / Heat #: <strong>${escapeHtml(batchStr)}</strong></span>
               <span style="color: #047857; font-weight: 700;">Rate: <strong>${rateVal > 0 ? `₹${rateVal} / ${escapeHtml(displayUnit)}` : '₹-'}</strong></span>
             </div>
-            ${originHtml}
           `}
+          ${originHtml}
           ${r.inputBarcodeIds && r.inputBarcodeIds.length > 0 ? `
             <div class="meta-line" style="color: #4f46e5; font-weight: 600;">Input Roll Ref: ${escapeHtml(r.inputBarcodeIds.join(', '))}</div>
           ` : ''}

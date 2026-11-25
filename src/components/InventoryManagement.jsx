@@ -28,6 +28,7 @@ import {
   Truck,
   Scale,
   ScanBarcode as BarcodeIcon,
+  Scissors,
   Scan,
   FileText,
   Check,
@@ -50,6 +51,7 @@ import BarcodePrinterModal from './BarcodePrinterModal';
 import DispatchPackingListPDF from './DispatchPackingListPDF';
 import TablePagination, { usePagination } from './TablePagination';
 import ModalOverlay from './ModalOverlay';
+import DirectSlittingModal from './DirectSlittingModal';
 import SearchableSelect from './SearchableSelect';
 import GrnPoSuggestion from './GrnPoSuggestion';
 import SFGFGEntryModal, { SFG_TYPES, FG_TYPES } from './SFGFGEntryModal';
@@ -332,7 +334,11 @@ export default function InventoryManagement({
   cylinders = [],
   onUpdateCylinder,
   onUpdateOrder,
-  onInwardQcDeleted
+  onInwardQcDeleted,
+  canDirectSlit = false,
+  canOverrideDirectSlit = false,
+  canReverseDirectSlit = false,
+  onDirectSlitRefresh
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -1122,6 +1128,7 @@ export default function InventoryManagement({
   };
 
   // Issue / Return Modal state
+  const [isDirectSlitOpen, setIsDirectSlitOpen] = useState(false);
   const [isIssueModalOpen, setIsIssueModalOpen] = useState(false);
   const [issueType, setIssueType] = useState('issue'); // issue or return
   const [selectedInvItem, setSelectedInvItem] = useState(null);
@@ -5125,6 +5132,11 @@ export default function InventoryManagement({
       <div className="glass-panel" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
         {/* Top Actions Row */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap', gap: '10px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+          {canDirectSlit && (
+            <button type="button" className="btn-secondary" data-testid="direct-slitting-open" onClick={() => setIsDirectSlitOpen(true)}>
+              <Scissors size={16} /> Direct slitting
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => openIssueReturnModal('issue')}>
             <ArrowUpRight size={16} /> Issue / Return to Store
           </button>
@@ -8637,6 +8649,26 @@ export default function InventoryManagement({
 
           </div>
         </div>
+      )}
+
+      {canDirectSlit && isDirectSlitOpen && (
+        <DirectSlittingModal
+          onClose={() => setIsDirectSlitOpen(false)}
+          inventory={inventory}
+          inventoryRolls={inventoryRolls}
+          orders={orders}
+          grns={grns}
+          cylinders={cylinders}
+          jobMasters={jobMasters}
+          inks={inks}
+          dispatchShipments={dispatchShipments}
+          productionRecords={productionRecords}
+          vendors={vendors}
+          sfgGoods={sfgGoods}
+          canOverride={canOverrideDirectSlit}
+          canReverse={canReverseDirectSlit}
+          onStockRefresh={onDirectSlitRefresh}
+        />
       )}
 
       {/* Modal: Issue / Return to Store (2D QR Code Scan & Auto-Fetch) */}
