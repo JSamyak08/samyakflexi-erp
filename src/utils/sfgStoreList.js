@@ -104,21 +104,31 @@ export function sortSfgStoreItems(items) {
 }
 
 function orderKeyFor(item) {
-  const raw = (item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A')
-    ? item.orderId
-    : (item.jobCode && item.jobCode !== 'N/A' ? item.jobCode : (item.jobName || 'Unassigned Order'));
+  const ownId = sfgStoreOrderId(item);
+  if (ownId) return ownId;
+  const raw = (item.jobCode && item.jobCode !== 'N/A' ? item.jobCode : (item.jobName || 'Unassigned Order'));
   return String(raw).replace('#', '').trim();
 }
 
-function matchingOrder(item, orderKey, orderMap, cleanOrderMap, orders) {
-  let direct = orderMap.get(item.orderId) || cleanOrderMap.get(orderKey);
-  if (!direct) {
-    direct = (orders || []).find((order) => {
-      const id = String(order.id || '').replace('#', '').trim();
-      return id === orderKey || id.endsWith(orderKey) || orderKey.endsWith(id);
-    });
+/** The order id stored on the row. A missing order is not guessed from the job name. */
+export function sfgStoreOrderId(item) {
+  let ordId = item?.orderId;
+  if (!ordId || ordId === 'N/A' || ordId === '#N/A') {
+    const rawId = String(item?.id || '');
+    if (rawId.includes('ORD-')) {
+      ordId = rawId.replace(/^SFG-ITEM-/i, '').replace(/^SFG-BC-/i, '').split('-').slice(0, 3).join('-');
+    }
   }
-  return direct || null;
+  const clean = String(ordId || '').replace(/#/g, '').trim();
+  if (!clean || clean.toUpperCase() === 'N/A') return '';
+  return clean;
+}
+
+/** Exact order id only. Job names are not matched. */
+export function exactSfgStoreOrder(item, orders = []) {
+  const id = sfgStoreOrderId(item);
+  if (!id) return null;
+  return (orders || []).find((order) => String(order?.id || '').replace(/#/g, '').trim() === id) || null;
 }
 
 /**
@@ -135,13 +145,15 @@ export function groupSfgStoreItems(items, orders = []) {
     const orderKey = orderKeyFor(item);
 
     if (!map.has(orderKey)) {
-      const directOrderMatch = matchingOrder(item, orderKey, orderMap, cleanOrderMap, orders);
+      const directOrderMatch = exactSfgStoreOrder(item, orders) || orderMap.get(item.orderId) || cleanOrderMap.get(orderKey) || null;
+      const ownOrderId = sfgStoreOrderId(item);
       const rawQty = item.orderQty || directOrderMatch?.totalOrderQty || directOrderMatch?.quantityKg || directOrderMatch?.orderQtyKg || directOrderMatch?.quantity || directOrderMatch?.orderQty || directOrderMatch?.targetQtyKg || directOrderMatch?.plannedQtyKg || null;
       const rawUnit = item.orderQtyUnit || directOrderMatch?.quantityUnit || directOrderMatch?.orderQtyUnit || directOrderMatch?.unit || 'Kg';
       const rawDate = item.orderDate || directOrderMatch?.orderDate || directOrderMatch?.date || directOrderMatch?.order_date || directOrderMatch?.created_at || null;
       const group = {
         orderKey,
-        orderId: item.orderId && item.orderId !== 'N/A' && item.orderId !== '#N/A' ? item.orderId : '',
+        orderId: ownOrderId,
+        orderDeleted: Boolean(ownOrderId) && !directOrderMatch,
         jobName: item.jobName || 'Untitled Job',
         jobCode: item.jobCode || '',
         clientName: item.clientName || '',

@@ -1400,8 +1400,10 @@ export default function OrderManagement({
     }
 
     if (window.confirm(`Are you sure you want to permanently delete Order "${order.id} - ${order.jobName}"? This action cannot be undone.`)) {
-      if (onDeleteOrder) onDeleteOrder(order.id);
-      alert(`Order ${order.id} deleted.`);
+      if (!onDeleteOrder) return;
+      Promise.resolve(onDeleteOrder(order.id)).then((result) => {
+        if (result && result.success) alert(`Order ${order.id} deleted.`);
+      });
     }
   };
 

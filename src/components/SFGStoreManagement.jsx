@@ -109,8 +109,10 @@ import {
 } from '../utils/scrapStoreFilters';
 import {
   SFG_STORE_GROUP_PAGE_SIZE,
+  exactSfgStoreOrder,
   filterSfgStoreItems,
   groupSfgStoreItems,
+  sfgStoreOrderId,
   sortSfgStoreItems
 } from '../utils/sfgStoreList';
 
@@ -409,30 +411,8 @@ export default function SFGStoreManagement({
     const ordersList = orders || [];
 
     const resolveItemSpecs = (item) => {
-      let ordId = item.orderId;
-      if (!ordId || ordId === 'N/A' || ordId === '#N/A') {
-        if (item.id && item.id.includes('ORD-')) {
-          ordId = item.id.replace('SFG-ITEM-', '').replace('SFG-BC-', '').split('-').slice(0, 3).join('-');
-        }
-      }
-      const cleanOrdId = String(ordId || '').replace('#', '').trim();
-
-      let matchedOrder = orderMap.get(ordId) || orderMap.get(cleanOrdId);
-      if (!matchedOrder) {
-        matchedOrder = ordersList.find(o => {
-          const oId = String(o.id || '').replace('#', '').trim();
-          const oJobCode = String(o.jobCode || '').trim();
-          const oJobName = String(o.jobName || '').toLowerCase().trim();
-          const itemJobName = String(item.jobName || '').toLowerCase().trim();
-          const itemJobCode = String(item.jobCode || '').trim();
-          
-          return (
-            (cleanOrdId && (oId === cleanOrdId || oId.endsWith(cleanOrdId) || cleanOrdId.endsWith(oId))) ||
-            (itemJobCode && (oJobCode === itemJobCode || oId === itemJobCode)) ||
-            (itemJobName && (oJobName === itemJobName || itemJobName.includes(oJobName) || oJobName.includes(itemJobName)))
-          );
-        });
-      }
+      const cleanOrdId = sfgStoreOrderId(item);
+      const matchedOrder = exactSfgStoreOrder(item, ordersList) || orderMap.get(item.orderId) || orderMap.get(cleanOrdId) || null;
 
       const topLayer = Array.isArray(matchedOrder?.layers) && matchedOrder.layers.length > 0 ? matchedOrder.layers[0] : null;
 
@@ -452,7 +432,7 @@ export default function SFGStoreManagement({
         ? item.clientName
         : (matchedOrder?.clientName || matchedOrder?.customerName || item.clientName || 'In-House Printing Press');
 
-      const resolvedOrderId = matchedOrder?.id || (ordId && ordId !== 'N/A' && ordId !== '#N/A' ? ordId : '');
+      const resolvedOrderId = cleanOrdId;
 
       const rawOrderQty = item.orderQty || item.orderQuantity || matchedOrder?.totalOrderQty || matchedOrder?.quantityKg || matchedOrder?.orderQtyKg || matchedOrder?.quantity || matchedOrder?.orderQty || matchedOrder?.targetQtyKg || matchedOrder?.plannedQtyKg || null;
       
@@ -2205,6 +2185,11 @@ export default function SFGStoreManagement({
                         }}>
                           {group.orderId ? `Order #${group.orderId}` : `Job Ref: ${group.orderKey}`}
                         </span>
+                        {group.orderDeleted && (
+                          <span data-testid="sfg-order-deleted" style={{ fontSize: '0.75rem', fontWeight: 800, color: '#9a3412', background: '#ffedd5', border: '1px solid #fdba74', padding: '3px 8px', borderRadius: '6px' }}>
+                            Order deleted
+                          </span>
+                        )}
 
                         {group.orderQty && (
                           <span style={{
