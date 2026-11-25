@@ -4,11 +4,10 @@
 --
 -- Retired ids and a per-year high-water mark keep a used number from coming
 -- back. Every order number that was ever used is stored in retired_order_ids,
--- including outliers such as ORD-2026-2259 and ORD-2026-9697. The high-water
--- mark follows the live series only: a number more than 100 above the normal
--- maximum does not move it, so the next id after ORD-2026-252 is
--- ORD-2026-253. allocate_order_id still skips each retired number when the
--- counter reaches it.
+-- including ORD-2026-294, ORD-2026-2259, and ORD-2026-9697. The high-water
+-- mark is the maximum of live orders and reservations only. Retired numbers
+-- never move it. allocate_order_id skips each retired number when the counter
+-- reaches it, so the next id after ORD-2026-252 is ORD-2026-253.
 -- A printed lot is updated only when it belongs to the current order row.
 -- Deleting an order is refused while SFG/FG stock is still on hand.
 
@@ -101,27 +100,16 @@ $$;
 
 REVOKE ALL ON FUNCTION private.order_id_normal_max(text) FROM PUBLIC;
 
--- High-water value: the normal series, plus retired numbers that sit within
--- 100 of it. Outliers stay retired and are left out of this mark.
+-- High-water value: live orders and reservations only. Retired ids are not
+-- an input. allocate_order_id skips them one by one.
 CREATE OR REPLACE FUNCTION private.order_id_series_mark(p_year text)
 RETURNS bigint
-LANGUAGE plpgsql
+LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = ''
 AS $$
-DECLARE
-  normal bigint;
-  nearby bigint;
-BEGIN
-  normal := private.order_id_normal_max(p_year);
-  SELECT MAX(private.order_id_serial(d.order_id, p_year))
-    INTO nearby
-  FROM private.retired_order_ids d
-  WHERE private.order_id_serial(d.order_id, p_year) IS NOT NULL
-    AND private.order_id_serial(d.order_id, p_year) <= normal + 100;
-  RETURN GREATEST(COALESCE(normal, 0), COALESCE(nearby, 0));
-END;
+  SELECT private.order_id_normal_max(p_year);
 $$;
 
 REVOKE ALL ON FUNCTION private.order_id_series_mark(text) FROM PUBLIC;
@@ -157,9 +145,9 @@ $$;
 
 REVOKE ALL ON FUNCTION private.note_retired_order_id(text) FROM PUBLIC;
 
--- Remember every order number that is no longer a live order, including
--- outliers. Only numbers within 100 of the normal series move the high-water
--- mark. Re-applying this seed replaces a mark that an outlier had raised.
+-- Remember every order number that is no longer a live order. The high-water
+-- mark is recomputed from live orders and reservations only, so a retired
+-- ORD-2026-294 cannot move it from 252 to 294.
 DO $backfill$
 DECLARE
   source record;

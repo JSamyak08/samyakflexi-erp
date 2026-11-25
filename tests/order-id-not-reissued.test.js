@@ -213,8 +213,9 @@ test('prod-like outliers stay retired and the next order number is 253', async (
     `INSERT INTO public.audit_logs (id, action_type, target_id) VALUES
       ('audit-9697', 'DELETE', $1),
       ('audit-2259', 'DELETE', $2),
-      ('audit-252-old', 'DELETE', $3)`,
-    [id(9697), id(2259), id(252)]
+      ('audit-294', 'DELETE', $3),
+      ('audit-252-old', 'DELETE', $4)`,
+    [id(9697), id(2259), id(294), id(252)]
   );
   await db.query(
     `INSERT INTO public.sfg_goods (id, sfg_batch_code, sfg_type, order_id, job_name, total_net_kg, available_kg)
@@ -227,10 +228,10 @@ test('prod-like outliers stay retired and the next order number is 253', async (
   const mark = await db.query(`SELECT serial FROM private.order_id_high_water WHERE year = $1`, [year]);
   assert.equal(Number(mark.rows[0].serial), 252);
   const retired = await db.query(
-    `SELECT order_id FROM private.retired_order_ids WHERE order_id IN ($1, $2) ORDER BY order_id`,
-    [id(2259), id(9697)]
+    `SELECT order_id FROM private.retired_order_ids WHERE order_id IN ($1, $2, $3) ORDER BY length(order_id), order_id`,
+    [id(294), id(2259), id(9697)]
   );
-  assert.deepEqual(retired.rows.map((row) => row.order_id), [id(2259), id(9697)]);
+  assert.deepEqual(retired.rows.map((row) => row.order_id), [id(294), id(2259), id(9697)]);
 
   await db.query(`DELETE FROM public.orders WHERE id = $1`, [id(252)]);
   const reused = await db.query(
@@ -242,6 +243,11 @@ test('prod-like outliers stay retired and the next order number is 253', async (
   assert.deepEqual(next.rows[0].issued, [id(253)]);
   assert.notEqual(next.rows[0].issued[0], id(252));
   assert.notEqual(next.rows[0].issued[0], id(9697));
+
+  await db.query(`UPDATE private.order_id_high_water SET serial = 293 WHERE year = $1`, [year]);
+  const aroundNearby = await db.query(`SELECT public.allocate_order_id(1) AS issued`);
+  assert.deepEqual(aroundNearby.rows[0].issued, [id(295)]);
+  assert.equal(aroundNearby.rows[0].issued.includes(id(294)), false);
 
   await db.query(`UPDATE private.order_id_high_water SET serial = 2258 WHERE year = $1`, [year]);
   const aroundTypo = await db.query(`SELECT public.allocate_order_id(2) AS issued`);
