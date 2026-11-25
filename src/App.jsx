@@ -6834,6 +6834,17 @@ export default function App() {
             onInwardQcDeleted={handleInwardQcDeleted}
             onAddDispatchShipment={handleAddDispatchShipment}
             onSaveProductionRecord={handleSaveProductionRecord}
+            canDirectSlit={roleHasModule(rolePermissions, assignedRolesOf(currentUser), 'direct_slitting')}
+            canOverrideDirectSlit={assignedRolesOf(currentUser).some((role) => role === 'Admin' || role === 'Plant Manager')}
+            canReverseDirectSlit={assignedRolesOf(currentUser).some((role) => role === 'Admin' || role === 'Plant Manager' || role === 'Store Manager')}
+            onDirectSlitRefresh={async () => {
+              const [items, rolls] = await Promise.all([
+                fetchInventory().catch(() => null),
+                fetchInventoryRolls().catch(() => null)
+              ]);
+              if (Array.isArray(items)) setInventory(items);
+              if (Array.isArray(rolls)) setInventoryRolls(rolls);
+            }}
           />
         )}
 

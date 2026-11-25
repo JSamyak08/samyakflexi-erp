@@ -81,6 +81,7 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
     const catInfo = getStickerCategoryInfo(r);
     const { isSFG, isFG, isFilmItem, isQCHold, displayUnit, displayQty, tagLabel, grossKg, showLength, lengthLabel } = catInfo;
     const origin = balanceOriginView(r);
+    const splitParent = origin?.parentBarcode || r.parentBarcodeId || r.metadata?.parentBarcodeId || r.metadata?.parentBarcode || '';
     const titleName = (origin && origin.itemName) || r.itemName || r.jobName || '-';
     const originDate = origin?.grnDate ? formatStickerDateTime(origin.grnDate) : '';
 
@@ -258,11 +259,6 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
                 <span>Batch / Heat #: <strong>{batchStr}</strong></span>
                 <span style={{ color: '#047857', fontWeight: '700' }}>Rate: <strong>{rateVal > 0 ? `₹${rateVal} / ${displayUnit}` : '₹-'}</strong></span>
               </div>
-              {origin?.parentBarcode ? (
-                <div style={{ fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  Split from: <strong>{origin.parentBarcode}</strong>
-                </div>
-              ) : null}
               {(origin?.grnNo || originDate) ? (
                 <div style={{ fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   Original GRN: <strong>{[origin.grnNo, originDate].filter(Boolean).join(' · ')}</strong>
@@ -275,6 +271,11 @@ export default function BarcodePrinterModal({ roll, rolls, inventory = [], inks 
               ) : null}
             </>
           )}
+          {splitParent ? (
+            <div style={{ fontSize: '0.62rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Split from: <strong>{splitParent}</strong>
+            </div>
+          ) : null}
 
           {r.inputBarcodeIds && r.inputBarcodeIds.length > 0 && (
             <div style={{ fontSize: '0.64rem', color: '#4f46e5', fontWeight: '600' }}>
