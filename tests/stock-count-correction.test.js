@@ -1,16 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  classifyStockCorrection,
+  correctionActionLabel,
+  correctionTotals,
+  filterStockCorrections,
   formatStockKg,
   isCountableStockRoll,
   ledgerBalanceAfterCount,
+  planAddFilmRoll,
+  planRemoveFilmRoll,
   planStockCountCorrection,
   reconciliationLedgerFields,
   rollOnHandKg,
   rollReceiptKgAfterCorrections,
+  rollRemovalBlock,
   stockCorrectionSummary,
+  stockCorrectionsCsv,
   stockCorrectionType
 } from '../src/services/stockCountCorrection.js';
+import { roleHasModule } from '../src/bootAccess.js';
 
 const film = {
   id: 'INVT-QA-SCC',
@@ -178,6 +187,73 @@ test('the ledger shows a correction once and keeps a running balance that matche
   assert.equal(liveExcess.openingKg, 50);
   assert.equal(liveExcess.runningKg, 53);
   assert.equal(liveExcess.runningKg, liveExcess.itemKg);
+});
+
+test('adding a roll increases the item and names the new barcode', () => {
+  const result = planAddFilmRoll({
+    item: film,
+    kg: 12.5,
+    micron: 12,
+    widthMm: 333,
+    lengthMeters: 1800,
+    reason: 'Found an untagged roll',
+    barcode: 'RM-BC-20261127-NEW1',
+    adjustedBy: 'QA Admin',
+    now: new Date('2026-11-27T09:00:00.000Z')
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.nextOwnerKg, 62.5);
+  assert.equal(result.nextItemKg, 62.5);
+  assert.equal(result.adjustment.action, 'added');
+  assert.equal(result.adjustment.qtyKg, 12.5);
+  assert.equal(result.adjustment.type, 'Stock correction: excess (+12.50 kg), new roll RM-BC-20261127-NEW1');
+  assert.equal(result.adjustment.rollKgBefore, 0);
+  assert.equal(result.adjustment.rollKgAfter, 12.5);
+  assert.equal(result.adjustment.itemKgBefore, 50);
+  assert.equal(result.adjustment.itemKgAfter, 62.5);
+  const blank = planAddFilmRoll({ item: film, kg: 0, micron: 12, widthMm: 333, reason: 'x', barcode: 'RM-BC-1' });
+  assert.equal(blank.ok, false);
+});
+
+test('removing a missing roll writes it off and blocks an issued roll', () => {
+  const result = planRemoveFilmRoll({
+    item: film,
+    roll: rolls[0],
+    reason: 'Roll was not on the floor',
+    adjustedBy: 'QA Plant Manager',
+    now: new Date('2026-11-27T09:10:00.000Z')
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.diffKg, -30);
+  assert.equal(result.nextItemKg, 20);
+  assert.equal(result.adjustment.action, 'removed');
+  assert.equal(result.adjustment.type, 'Stock correction: short (−30.00 kg), roll RM-BC-QA-SCC-1 removed');
+  assert.equal(result.adjustment.rollKgAfter, 0);
+  assert.equal(result.adjustment.countedQtyKg, 0);
+  const issued = { ...rolls[1], status: 'Issued to Printing', availableWeightKg: 20 };
+  assert.match(rollRemovalBlock(issued), /Issued to Printing/);
+  const blocked = planRemoveFilmRoll({ item: film, roll: issued, reason: 'gone' });
+  assert.equal(blocked.ok, false);
+});
+
+test('the corrections register keeps legacy rows and filters them', () => {
+  const rows = [
+    { id: '1', date: '2026-11-27T10:00:00.000Z', itemName: 'PET-334-12', itemCode: 'INVT-QA-SCC', barcode: 'RM-BC-1', action: 'updated', qtyKg: -4, systemQtyKg: 30, countedQtyKg: 26, reason: 'short', adjustedBy: 'QA Admin', category: 'Film Substrates', filmType: 'PET' },
+    { id: '2', date: '2026-11-27T11:00:00.000Z', itemName: 'PET-334-12', itemCode: 'INVT-QA-SCC', barcode: 'RM-BC-NEW', action: 'added', qtyKg: 8, systemQtyKg: 0, countedQtyKg: 8, reason: 'found', adjustedBy: 'QA Plant Manager', category: 'Film Substrates' },
+    { id: '3', date: '2026-10-21T10:00:00.000Z', itemName: 'PET-24.5-12', itemId: 'INVT-0001', barcode: 'ADJ-OLD', type: 'Physical Audit (+)', qtyKg: 3, reason: 'QA deep count', adjustedBy: 'Old Store' }
+  ];
+  assert.equal(classifyStockCorrection(rows[0]), 'updated');
+  assert.equal(correctionActionLabel(rows[2]), 'Legacy adjustment');
+  const filtered = filterStockCorrections(rows, { item: 'PET-334', direction: 'excess', action: 'added' });
+  assert.deepEqual(filtered.map((row) => row.id), ['2']);
+  const dated = filterStockCorrections(rows, { from: '2026-11-27', to: '2026-11-27' });
+  assert.deepEqual(dated.map((row) => row.id), ['2', '1']);
+  assert.deepEqual(correctionTotals(rows), { shortKg: 4, excessKg: 11 });
+  assert.match(stockCorrectionsCsv(rows), /Legacy adjustment/);
+  assert.equal(roleHasModule({}, 'Plant Manager', 'stock_count_corrections'), true);
+  assert.equal(roleHasModule({}, 'Admin', 'stock_count_corrections'), true);
+  assert.equal(roleHasModule({ 'Printing Operator': { inventory: true } }, 'Printing Operator', 'stock_count_corrections'), false);
+  assert.equal(roleHasModule({ 'Shop Floor Operator': { inventory: true } }, 'Shop Floor Operator', 'stock_count_corrections'), false);
 });
 
 test('a roll receipt stays at the original kilograms after a correction', () => {

@@ -115,8 +115,11 @@ import {
   isCountableStockRoll,
   isFilmStockItem,
   isStockCountCorrection,
+  planAddFilmRoll,
+  planRemoveFilmRoll,
   planStockCountCorrection,
   reconciliationLedgerFields,
+  rollRemovalBlock,
   rollBarcode,
   roundStockKg,
   rollOnHandKg,
@@ -923,6 +926,10 @@ export default function InventoryManagement({
   const [adjReason, setAdjReason] = useState('');
   const [adjError, setAdjError] = useState('');
   const [adjSaving, setAdjSaving] = useState(false);
+  const [adjAction, setAdjAction] = useState('updated');
+  const [adjMicron, setAdjMicron] = useState('');
+  const [adjWidthMm, setAdjWidthMm] = useState('');
+  const [adjLength, setAdjLength] = useState('');
 
   // Barcode Printer & Packing List Modals State
   const [selectedRollForBarcodeModal, setSelectedRollForBarcodeModal] = useState(null);
@@ -989,48 +996,124 @@ export default function InventoryManagement({
     const countable = (inventoryRolls || []).filter((roll) => (
       isCountableStockRoll(roll) && rollBelongsOnItemLedger(roll, item).include
     ));
-    const plan = planStockCountCorrection({
-      item,
-      rolls: countable,
-      barcode: adjBarcode,
-      countedKg: adjCountedKg,
-      reason: adjReason,
-      adjustedBy: loggedInActorLabel(currentUser),
-      now: new Date()
-    });
-    if (!plan.ok) {
-      setAdjError(plan.errors.join(' '));
+    const barcodeKey = String(adjBarcode || '').trim().toLowerCase();
+    const chosenRoll = (adjAction === 'removed'
+      ? (inventoryRolls || []).filter((roll) => rollBelongsOnItemLedger(roll, item).include)
+      : countable
+    ).find((roll) => rollBarcode(roll).toLowerCase() === barcodeKey);
+    const actor = loggedInActorLabel(currentUser);
+    const now = new Date();
+    let plan;
+    let newRoll = null;
+    if (adjAction === 'added') {
+      let barcode = generateBarcodeId('RM-BC');
+      const taken = new Set((inventoryRolls || []).map((roll) => rollBarcode(roll).toLowerCase()).filter(Boolean));
+      while (taken.has(barcode.toLowerCase())) barcode = generateBarcodeId('RM-BC');
+      try {
+        const retired = await findDeletedBarcodeHits([barcode]);
+        if (retired[0]) barcode = generateBarcodeId('RM-BC');
+      } catch {
+        // The save still uses a freshly generated RM-BC code.
+      }
+      const length = String(adjLength).trim()
+        ? adjLength
+        : calculateFilmRollLength(adjCountedKg, adjWidthMm, adjMicron, item.filmType || item.itemName);
+      plan = planAddFilmRoll({
+        item,
+        kg: adjCountedKg,
+        micron: adjMicron,
+        widthMm: adjWidthMm,
+        lengthMeters: length,
+        reason: adjReason,
+        barcode,
+        adjustedBy: actor,
+        now
+      });
+      if (plan.ok) {
+        const owner = plan.owner || item;
+        newRoll = {
+          id: plan.barcode,
+          barcodeId: plan.barcode,
+          rollType: 'RAW_MATERIAL',
+          itemId: plan.targetItemId,
+          itemName: owner.itemName || item.itemName || '',
+          category: owner.category || item.category || 'Film Substrates',
+          filmType: owner.filmType || item.filmType || '',
+          micron: plan.micron,
+          widthMm: plan.widthMm,
+          unit: 'Kg',
+          netWeightKg: plan.countedKg,
+          availableWeightKg: plan.countedKg,
+          grossWeightKg: plan.countedKg,
+          lengthMeters: plan.lengthMeters,
+          status: 'In Stock (RM)',
+          qcStatus: 'Approved',
+          inwardDatetime: now.toISOString(),
+          locationBay: owner.location || item.location || 'Store Bay',
+          purchaseRatePerKg: Number(owner.unitPrice || owner.purchaseRatePerKg || item.unitPrice || 0) || 0,
+          remarks: plan.adjustment.reason,
+          stationId: 'STOCK_COUNT'
+        };
+      }
+    } else if (adjAction === 'removed') {
+      plan = planRemoveFilmRoll({
+        item,
+        roll: chosenRoll,
+        reason: adjReason,
+        adjustedBy: actor,
+        now
+      });
+    } else {
+      plan = planStockCountCorrection({
+        item,
+        rolls: countable,
+        barcode: adjBarcode,
+        countedKg: adjCountedKg,
+        reason: adjReason,
+        adjustedBy: actor,
+        now
+      });
+    }
+    if (!plan?.ok) {
+      setAdjError((plan?.errors || ['The stock count could not be saved.']).join(' '));
       return;
     }
 
     setAdjError('');
     setAdjSaving(true);
     const previousRollKg = plan.roll ? rollOnHandKg(plan.roll) : null;
+    const previousStatus = plan.roll?.status || '';
+    const previousQc = plan.roll?.qcStatus || '';
     let rollSaved = false;
     let itemSaved = false;
-    const patchRoll = async (kilograms) => {
-      const code = plan.adjustment.barcode;
-      if (onPatchInventoryRoll) {
-        await onPatchInventoryRoll(code, { availableWeightKg: kilograms });
-      } else {
-        await setInventoryRollAvailability(code, { availableWeightKg: kilograms });
-      }
+    const patchRoll = async (code, kilograms, status, qcStatus) => {
+      const patch = { availableWeightKg: kilograms };
+      if (status) patch.status = status;
+      if (qcStatus) patch.qcStatus = qcStatus;
+      if (onPatchInventoryRoll) await onPatchInventoryRoll(code, patch);
+      else await setInventoryRollAvailability(code, patch);
     };
     try {
-      if (plan.roll) {
-        await patchRoll(plan.nextRollKg);
+      if (newRoll) {
+        if (!onAddRoll) throw new Error('Saving a roll is not available.');
+        await onAddRoll(newRoll);
+        rollSaved = true;
+      } else if (adjAction === 'removed') {
+        await patchRoll(plan.adjustment.barcode, 0, 'Written Off', 'Void');
+        rollSaved = true;
+      } else if (plan.roll) {
+        await patchRoll(plan.adjustment.barcode, plan.nextRollKg);
         rollSaved = true;
       }
       const savedItem = { ...plan.owner, availableQtyKg: plan.nextOwnerKg };
       if (onSaveInventoryItem) {
         await onSaveInventoryItem(savedItem);
       } else if (onUpdateInventory) {
-        const updatedInv = inventory.map((invItem) => (
+        await onUpdateInventory(inventory.map((invItem) => (
           String(invItem.id) === String(plan.targetItemId)
             ? { ...invItem, availableQtyKg: plan.nextOwnerKg }
             : invItem
-        ));
-        await onUpdateInventory(updatedInv);
+        )));
       } else {
         throw new Error('Saving a stock item is not available.');
       }
@@ -1050,6 +1133,9 @@ export default function InventoryManagement({
       setAdjCountedKg('');
       setAdjBarcode('');
       setAdjReason('');
+      setAdjAction('updated');
+      setAdjLength('');
+      if (newRoll) setSelectedRollForBarcodeModal(newRoll);
     } catch (err) {
       if (itemSaved) {
         const previousKg = roundStockKg(plan.owner?.availableQtyKg) || 0;
@@ -1067,7 +1153,13 @@ export default function InventoryManagement({
         }
       }
       if (rollSaved) {
-        try { await patchRoll(previousRollKg); } catch (rollbackError) { console.error(rollbackError); }
+        try {
+          if (newRoll) await patchRoll(newRoll.barcodeId, 0, 'Void', 'Void');
+          else if (adjAction === 'removed') await patchRoll(plan.adjustment.barcode, previousRollKg, previousStatus, previousQc);
+          else await patchRoll(plan.adjustment.barcode, previousRollKg);
+        } catch (rollbackError) {
+          console.error(rollbackError);
+        }
       }
       setAdjError(`The stock count correction was not saved: ${describeSaveError(err)}`);
     } finally {
@@ -9653,15 +9745,28 @@ export default function InventoryManagement({
         const correctionRolls = (inventoryRolls || []).filter((roll) => (
           isCountableStockRoll(roll) && rollBelongsOnItemLedger(roll, ledgerSource).include
         ));
-        const selectedCorrectionRoll = correctionRolls.find((roll) => (
+        const removalRolls = (inventoryRolls || []).filter((roll) => {
+          if (!rollBelongsOnItemLedger(roll, ledgerSource).include) return false;
+          const status = String(roll.status || '');
+          if (/void|written\s*off|deleted|reversed|rejected/i.test(status)) return false;
+          return Boolean(rollBarcode(roll));
+        });
+        const selectedCorrectionRoll = (adjAction === 'removed' ? removalRolls : correctionRolls).find((roll) => (
           rollBarcode(roll).toLowerCase() === String(adjBarcode || '').trim().toLowerCase()
         ));
         const correctionSystemKg = selectedCorrectionRoll
           ? rollOnHandKg(selectedCorrectionRoll)
-          : ((isFilmStockItem(ledgerSource) && correctionRolls.length > 0) ? null : (Number(ledgerSource.availableQtyKg) || 0));
-        const correctionSummary = correctionSystemKg == null || String(adjCountedKg).trim() === ''
-          ? ''
-          : stockCorrectionSummary(correctionSystemKg, adjCountedKg, correctionUnit(ledgerSource));
+          : ((isFilmStockItem(ledgerSource) && correctionRolls.length > 0 && adjAction === 'updated') ? null : (Number(ledgerSource.availableQtyKg) || 0));
+        const correctionSummary = adjAction === 'added'
+          ? (String(adjCountedKg).trim() === '' ? '' : `System stock 0.00 kg, Counted ${formatStockKg(adjCountedKg)} kg, Difference: Excess by ${formatStockKg(adjCountedKg)} kg (will be added)`)
+          : adjAction === 'removed'
+            ? (selectedCorrectionRoll
+              ? `System stock ${formatStockKg(rollOnHandKg(selectedCorrectionRoll))} kg, Counted 0.00 kg, Difference: Short by ${formatStockKg(rollOnHandKg(selectedCorrectionRoll))} kg (will be reduced)`
+              : '')
+            : (correctionSystemKg == null || String(adjCountedKg).trim() === ''
+              ? ''
+              : stockCorrectionSummary(correctionSystemKg, adjCountedKg, correctionUnit(ledgerSource)));
+        const removalBlock = adjAction === 'removed' && selectedCorrectionRoll ? rollRemovalBlock(selectedCorrectionRoll) : '';
         const unitStr = item.unit || 'Kg';
         const itemActualUnitPrice = Number(item.unitPrice || item.purchaseRatePerKg || item.pricePerKg || 0);
 
@@ -10152,10 +10257,14 @@ export default function InventoryManagement({
                           setIsQuickAdjOpen(false);
                           return;
                         }
+                        setAdjAction('updated');
                         setAdjBarcode(correctionRolls.length === 1 ? rollBarcode(correctionRolls[0]) : '');
                         setAdjCountedKg('');
                         setAdjReason('');
                         setAdjError('');
+                        setAdjMicron(ledgerSource.micron && ledgerSource.micron !== '-' ? String(ledgerSource.micron) : '');
+                        setAdjWidthMm(ledgerSource.widthMm && ledgerSource.widthMm !== '-' ? String(ledgerSource.widthMm) : '');
+                        setAdjLength('');
                         setIsQuickAdjOpen(true);
                       }}
                     >
@@ -10255,16 +10364,42 @@ export default function InventoryManagement({
                     <FileSpreadsheet size={16} /> {STOCK_CORRECTION_ACTION}
                   </h4>
                   <p style={{ fontSize: '0.8rem', color: '#0c4a6e', margin: '0 0 12px' }}>
-                    Enter the physical stock you counted. The difference is applied in {correctionUnit(ledgerSource)} to this item{correctionRolls.length ? ' and the roll you choose' : ''}.
+                    {adjAction === 'added'
+                      ? 'Add a roll that was found with no barcode. A new RM-BC sticker is created and the item total increases by the same kilograms.'
+                      : adjAction === 'removed'
+                        ? 'Mark a missing roll written off. The barcode stays on record with no available kilograms, and the item total is reduced.'
+                        : `Enter the physical stock you counted. The difference is applied in ${correctionUnit(ledgerSource)} to this item${correctionRolls.length ? ' and the roll you choose' : ''}.`}
                   </p>
+                  {isFilmStockItem(ledgerSource) && (
+                    <div role="tablist" aria-label="Stock count barcode action" style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                      {[
+                        ['updated', 'Update a roll'],
+                        ['added', 'Add a new roll'],
+                        ['removed', 'Remove a missing roll']
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          role="tab"
+                          aria-selected={adjAction === value}
+                          data-testid={`stock-count-action-${value}`}
+                          className="btn-secondary"
+                          style={{ padding: '6px 10px', fontSize: '0.78rem', fontWeight: adjAction === value ? '800' : '600', background: adjAction === value ? '#0369a1' : '#ffffff', color: adjAction === value ? '#ffffff' : '#0f172a', borderColor: adjAction === value ? '#0369a1' : '#bae6fd' }}
+                          onClick={() => { setAdjAction(value); setAdjError(''); }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <form onSubmit={e => handleAddLedgerAdjustment(e, ledgerSource)}>
                     <div className="rm-ledger-adj-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
-                      {correctionRolls.length > 0 && (
+                      {adjAction !== 'added' && (adjAction === 'removed' ? removalRolls : correctionRolls).length > 0 && (
                         <div className="form-group">
-                          <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-roll">Roll counted *</label>
+                          <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-roll">{adjAction === 'removed' ? 'Missing roll *' : 'Roll counted *'}</label>
                           <SearchableSelect id="stock-count-roll" className="form-control" triggerStyle={{ padding: '6px 10px', fontSize: '0.85rem' }} value={adjBarcode} onChange={e => setAdjBarcode(e.target.value)} required placeholder="Choose the roll barcode">
                             <option value="">Choose the roll barcode</option>
-                            {correctionRolls.map((roll) => {
+                            {(adjAction === 'removed' ? removalRolls : correctionRolls).map((roll) => {
                               const code = rollBarcode(roll);
                               return (
                                 <option key={code} value={code}>
@@ -10276,21 +10411,40 @@ export default function InventoryManagement({
                         </div>
                       )}
 
-                      <div className="form-group">
-                        <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-counted">Physical stock counted ({correctionUnit(ledgerSource)}) *</label>
-                        <input
-                          id="stock-count-counted"
-                          data-testid="stock-count-counted"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          className="form-control"
-                          style={{ padding: '6px 10px', fontSize: '0.85rem' }}
-                          required
-                          value={adjCountedKg}
-                          onChange={e => setAdjCountedKg(e.target.value)}
-                        />
-                      </div>
+                      {adjAction !== 'removed' && (
+                        <div className="form-group">
+                          <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-counted">{adjAction === 'added' ? 'New roll weight (kg) *' : `Physical stock counted (${correctionUnit(ledgerSource)}) *`}</label>
+                          <input
+                            id="stock-count-counted"
+                            data-testid="stock-count-counted"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            className="form-control"
+                            style={{ padding: '6px 10px', fontSize: '0.85rem' }}
+                            required
+                            value={adjCountedKg}
+                            onChange={e => setAdjCountedKg(e.target.value)}
+                          />
+                        </div>
+                      )}
+
+                      {adjAction === 'added' && (
+                        <>
+                          <div className="form-group">
+                            <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-micron">Micron *</label>
+                            <input id="stock-count-micron" data-testid="stock-count-micron" type="number" min="0" step="0.1" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} required value={adjMicron} onChange={e => setAdjMicron(e.target.value)} />
+                          </div>
+                          <div className="form-group">
+                            <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-width">Width (mm) *</label>
+                            <input id="stock-count-width" data-testid="stock-count-width" type="number" min="0" step="0.1" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} required value={adjWidthMm} onChange={e => setAdjWidthMm(e.target.value)} />
+                          </div>
+                          <div className="form-group">
+                            <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-length">Length (m)</label>
+                            <input id="stock-count-length" data-testid="stock-count-length" type="number" min="0" step="1" className="form-control" style={{ padding: '6px 10px', fontSize: '0.85rem' }} placeholder={calculateFilmRollLength(adjCountedKg, adjWidthMm, adjMicron, ledgerSource.filmType) ? `Calculated ${calculateFilmRollLength(adjCountedKg, adjWidthMm, adjMicron, ledgerSource.filmType)} m` : 'Calculated from weight'} value={adjLength} onChange={e => setAdjLength(e.target.value)} />
+                          </div>
+                        </>
+                      )}
 
                       <div className="form-group">
                         <label style={{ fontSize: '0.8rem' }} htmlFor="stock-count-reason">Reason *</label>
@@ -10309,9 +10463,12 @@ export default function InventoryManagement({
                     </div>
 
                     <p data-testid="stock-count-preview" style={{ margin: '12px 0 0', fontSize: '0.86rem', fontWeight: '700', color: '#0f172a' }}>
-                      {correctionSystemKg == null
-                        ? 'Choose the roll that was counted.'
-                        : (correctionSummary || 'Enter the physical stock counted.')}
+                      {removalBlock
+                        || (adjAction === 'updated' && correctionSystemKg == null
+                          ? 'Choose the roll that was counted.'
+                          : adjAction === 'removed' && !selectedCorrectionRoll
+                            ? 'Choose the missing roll.'
+                            : (correctionSummary || 'Enter the physical stock counted.'))}
                     </p>
 
                     {adjError && (
