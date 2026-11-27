@@ -3688,11 +3688,19 @@ export default function ProductionScheduler({
                     ))}
                   </div>
                 )}
-                {endJobGuardrail && endJobGuardrail.warnings.some((item) => item.nonBlocking) && (
+                {endJobGuardrail && endJobGuardrail.warnings.some((item) => item.nonBlocking && item.rule !== 'speed') && (
                   <div data-testid="end-job-guardrail-note" style={{ background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '12px 14px', color: '#92400e' }}>
                     <div style={{ fontWeight: '900', marginBottom: '6px' }}>Meters check skipped</div>
-                    {endJobGuardrail.warnings.filter((item) => item.nonBlocking).map((item, index) => (
+                    {endJobGuardrail.warnings.filter((item) => item.nonBlocking && item.rule !== 'speed').map((item, index) => (
                       <div key={`${item.rule}-note-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
+                    ))}
+                  </div>
+                )}
+                {endJobGuardrail && endJobGuardrail.warnings.some((item) => item.rule === 'speed' && item.nonBlocking) && (
+                  <div data-testid="end-job-speed-note" style={{ background: '#fffbeb', border: '1.5px solid #f59e0b', borderRadius: '10px', padding: '12px 14px', color: '#92400e' }}>
+                    <div style={{ fontWeight: '900', marginBottom: '6px' }}>Press speed note</div>
+                    {endJobGuardrail.warnings.filter((item) => item.rule === 'speed' && item.nonBlocking).map((item, index) => (
+                      <div key={`speed-note-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
                     ))}
                   </div>
                 )}

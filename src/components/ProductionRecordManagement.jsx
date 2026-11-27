@@ -5484,7 +5484,7 @@ export default function ProductionRecordManagement({
                 {[...guardrailPreview.blocks, ...guardrailPreview.filmTypeBlocks, ...guardrailPreview.warnings].map((item, index) => (
                   <div key={`${item.rule}-${index}`} style={{ fontSize: '0.82rem', marginTop: '4px' }}>{item.message}</div>
                 ))}
-                {guardrailPreview.warnings.length > 0 && (
+                {guardrailPreview.warnings.some((item) => !item.nonBlocking) && (
                   <label style={{ display: 'block', marginTop: '10px', fontWeight: '700', fontSize: '0.8rem' }}>
                     Reason for the warning *
                     <textarea className="form-control" rows={2} value={guardrailWarningReason} onChange={(event) => setGuardrailWarningReason(event.target.value)} />

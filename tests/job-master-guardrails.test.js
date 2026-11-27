@@ -10,6 +10,8 @@ import {
   resolveJobMaster,
   expectedFilmKg,
   trimKgForWiderRoll,
+  ENFORCE_PRESS_SPEED_CHECK,
+  classifyPressSpeed,
   validateProductionEntry,
   decideGuardrailSave,
   applyGuardrailFields,
@@ -222,18 +224,58 @@ test('meters versus kg warns above 8 percent and blocks above 25 percent', () =>
 });
 
 test('press speed warns above rated speed, blocks above twice rated, and warns when rated speed is unset', () => {
-  const above = run(baseEntry({ meters: 2600, durationMinutes: 10 }));
-  assert.ok(rules(above, 'warn').includes('speed'));
-  assert.equal(rules(above, 'block').includes('speed'), false);
+  const above = classifyPressSpeed({ speed: 260, rated: 250, ratedKnown: true, defaultRatedSpeedMpm: 250, enforce: true });
+  assert.ok(above.warnings.some((item) => item.rule === 'speed'));
+  assert.equal(above.blocks.some((item) => item.rule === 'speed'), false);
 
-  const atTwice = run(baseEntry({ meters: 5000, durationMinutes: 10 }));
-  assert.equal(rules(atTwice, 'block').includes('speed'), false);
+  const atTwice = classifyPressSpeed({ speed: 500, rated: 250, ratedKnown: true, defaultRatedSpeedMpm: 250, enforce: true });
+  assert.equal(atTwice.blocks.some((item) => item.rule === 'speed'), false);
 
-  const overTwice = run(baseEntry({ meters: 5001, durationMinutes: 10 }));
-  assert.ok(rules(overTwice, 'block').includes('speed'));
+  const overTwice = classifyPressSpeed({ speed: 500.1, rated: 250, ratedKnown: true, defaultRatedSpeedMpm: 250, enforce: true });
+  assert.ok(overTwice.blocks.some((item) => item.rule === 'speed' && item.message.includes('above twice the rated')));
+
+  const unset = classifyPressSpeed({ speed: 100, rated: 250, ratedKnown: false, defaultRatedSpeedMpm: 250, enforce: true });
+  assert.ok(unset.warnings.some((item) => item.rule === 'speed' && item.message.includes('not set') && item.nonBlocking !== true));
+});
+
+test('ENFORCE_PRESS_SPEED_CHECK is off, so a fast press run is a note and still saves', () => {
+  assert.equal(ENFORCE_PRESS_SPEED_CHECK, false);
+
+  const meters = 8230;
+  const expected = expectedFilmKg({ meters, widthMm: 660, micron: 12, filmType: 'PET' }).kg;
+  const overTwice = run(baseEntry({
+    meters,
+    durationMinutes: 3,
+    ratedSpeedMpm: 200,
+    targetMeters: meters,
+    printInputKg: expected,
+    printedOutputKg: expected,
+    printingScrapKg: 0,
+    quantityKg: expected,
+    goodKg: expected,
+    scrapKg: 0,
+    orderQtyKg: 200,
+    inputRolls: [{ filmType: 'PET Film', micron: 12, widthMm: 660, consumedKg: expected }]
+  }), { order: { id: 'ORD-1', jobName: 'Sugar 1kg', orderQtyKg: 200 } });
+  assert.equal(rules(overTwice, 'block').includes('speed'), false);
+  const speedNote = overTwice.warnings.find((item) => item.rule === 'speed' && item.message.includes('above twice the rated'));
+  assert.ok(speedNote);
+  assert.equal(speedNote.nonBlocking, true);
+  assert.match(speedNote.message, /2743\.33 m\/min/);
+  assert.match(speedNote.message, /200 m\/min/);
+
+  const saved = decideGuardrailSave(overTwice, { role: 'Printing Operator' });
+  assert.equal(saved.ok, true);
+  assert.equal(saved.messages.some((message) => message.includes('Press speed')), false);
+
+  const above = classifyPressSpeed({ speed: 260, rated: 250, ratedKnown: true, defaultRatedSpeedMpm: 250, enforce: false });
+  assert.equal(above.warnings.find((item) => item.rule === 'speed').nonBlocking, true);
+  assert.equal(above.blocks.length, 0);
 
   const unset = run(baseEntry({ ratedSpeedMpm: null, ratedSpeedConfigured: false, meters: 1000, durationMinutes: 10 }));
-  assert.ok(unset.warnings.some((item) => item.rule === 'speed' && item.message.includes('not set')));
+  assert.ok(unset.warnings.some((item) => item.rule === 'speed' && item.message.includes('not set') && item.nonBlocking === true));
+  assert.equal(rules(unset, 'block').includes('speed'), false);
+  assert.equal(decideGuardrailSave(unset, { role: 'Admin' }).ok, true);
 });
 
 test('ink gain warns outside 0 to 4 g/m², blocks above 8, and blocks input lost with zero scrap', () => {
