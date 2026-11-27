@@ -4281,6 +4281,17 @@ export default function App() {
     logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${rollId} (${newRoll.netWeightKg} kg)`, rollId);
   };
 
+  const handlePatchInventoryRollAvailability = async (barcodeId, { availableWeightKg } = {}) => {
+    requireDatabaseConnection('update inventory roll');
+    const code = String(barcodeId || '').trim();
+    if (!code) throw new Error('A roll barcode is required.');
+    await setInventoryRollAvailability(code, { availableWeightKg });
+    setInventoryRolls((prev) => prev.map((roll) => {
+      if (String(roll.barcodeId || roll.id || '') !== code) return roll;
+      return { ...roll, availableWeightKg: Number(availableWeightKg) || 0 };
+    }));
+  };
+
   const handleUpdateRoll = async (updatedRoll) => {
     requireDatabaseConnection('update inventory roll');
     const rollId = updatedRoll.barcodeId || updatedRoll.id;
@@ -6833,6 +6844,7 @@ export default function App() {
             onAddRoll={handleAddRoll}
             onUpdateRoll={handleUpdateRoll}
             onUpdateInventoryRolls={handleUpdateInventoryRolls}
+            onPatchInventoryRoll={handlePatchInventoryRollAvailability}
             onSaveSFGGood={handleSaveSFGGood}
             sfgGoods={sfgGoods}
             onInwardQcDeleted={handleInwardQcDeleted}
