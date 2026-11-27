@@ -22,6 +22,15 @@ export const FILM_OVERRIDE_ROLES = ['Admin', 'Plant Manager', 'Production Manage
 export const GUARDRAIL_SETTING_KEY = 'job_master_guardrails';
 
 /**
+ * Temporary switch for the press speed check.
+ * true: speed above the rated speed warns and needs a reason; speed above
+ * twice the rated speed blocks the save.
+ * false: the same messages stay as notes and never stop the save.
+ * Set this back to true to turn the check on again.
+ */
+export const ENFORCE_PRESS_SPEED_CHECK = false;
+
+/**
  * Densities in g/cm³. Same values as the film substrate master, plus coated
  * PET (CCPET, 1.40) and nylon (1.14). System Settings → Film Substrates
  * overrides any of these. CPP stays 0.91 and LDPE/PE stay 0.93, matching the
@@ -474,6 +483,52 @@ function push(list, item) {
   if (item) list.push(item);
 }
 
+/**
+ * Press speed versus the machine's rated speed. `enforce` follows
+ * ENFORCE_PRESS_SPEED_CHECK. While it is false, every speed finding is a
+ * non-blocking note.
+ */
+export function classifyPressSpeed({
+  speed,
+  rated,
+  ratedKnown,
+  defaultRatedSpeedMpm,
+  enforce = ENFORCE_PRESS_SPEED_CHECK
+} = {}) {
+  const blocks = [];
+  const warnings = [];
+  const note = enforce !== true;
+  if (!ratedKnown) {
+    warnings.push(finding('speed', 'warn', `Machine rated speed is not set. The check uses the default ${defaultRatedSpeedMpm} m/min.`, {
+      actual: round2(speed),
+      expected: defaultRatedSpeedMpm,
+      nonBlocking: note
+    }));
+  }
+  if (speed > rated * 2) {
+    const message = `Press speed ${round2(speed)} m/min is above twice the rated ${rated} m/min.`;
+    if (enforce === true) {
+      blocks.push(finding('speed', 'block', message, {
+        actual: round2(speed),
+        expected: rated
+      }));
+    } else {
+      warnings.push(finding('speed', 'warn', message, {
+        actual: round2(speed),
+        expected: rated,
+        nonBlocking: true
+      }));
+    }
+  } else if (speed > rated) {
+    warnings.push(finding('speed', 'warn', `Press speed ${round2(speed)} m/min is above the rated ${rated} m/min.`, {
+      actual: round2(speed),
+      expected: rated,
+      nonBlocking: note
+    }));
+  }
+  return { blocks, warnings };
+}
+
 function compareFilm(actualFilm, expectedFilm) {
   const actual = normalizeFilmType(actualFilm);
   const expected = normalizeFilmType(expectedFilm);
@@ -856,23 +911,14 @@ export function validateProductionEntry({
     const configured = finiteNumber(entry.ratedSpeedMpm);
     const ratedKnown = entry.ratedSpeedConfigured === true && configured !== null && configured > 0;
     const rated = ratedKnown ? configured : limits.defaultRatedSpeedMpm;
-    if (!ratedKnown) {
-      warnings.push(finding('speed', 'warn', `Machine rated speed is not set. The check uses the default ${limits.defaultRatedSpeedMpm} m/min.`, {
-        actual: round2(speed),
-        expected: limits.defaultRatedSpeedMpm
-      }));
-    }
-    if (speed > rated * 2) {
-      blocks.push(finding('speed', 'block', `Press speed ${round2(speed)} m/min is above twice the rated ${rated} m/min.`, {
-        actual: round2(speed),
-        expected: rated
-      }));
-    } else if (speed > rated) {
-      warnings.push(finding('speed', 'warn', `Press speed ${round2(speed)} m/min is above the rated ${rated} m/min.`, {
-        actual: round2(speed),
-        expected: rated
-      }));
-    }
+    const speedCheck = classifyPressSpeed({
+      speed,
+      rated,
+      ratedKnown,
+      defaultRatedSpeedMpm: limits.defaultRatedSpeedMpm
+    });
+    speedCheck.blocks.forEach((item) => blocks.push(item));
+    speedCheck.warnings.forEach((item) => warnings.push(item));
   }
 
   const outputKg = finiteNumber(entry.printedOutputKg);
