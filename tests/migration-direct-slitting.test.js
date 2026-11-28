@@ -7,6 +7,10 @@ const migrationSql = fs.readFileSync(
   new URL('../supabase/migrations/20261125120000_direct_roll_slitting.sql', import.meta.url),
   'utf8'
 );
+const priceSql = fs.readFileSync(
+  new URL('../supabase/migrations/20261126120000_direct_slit_roll_price.sql', import.meta.url),
+  'utf8'
+);
 const specSql = fs.readFileSync(
   new URL('../supabase/migrations/20261030200000_inventory_spec_duplicate_guard.sql', import.meta.url),
   'utf8'
@@ -252,6 +256,7 @@ async function database({ storeExplicitFalse = false } = {}) {
   `);
   await db.exec(specSql);
   await db.exec(migrationSql);
+  await db.exec(priceSql);
   return db;
 }
 
@@ -517,6 +522,147 @@ test('an explicit false permission is not turned back on', async () => {
   await assert.rejects(() => post(db, slitDoc()), /Not allowed to post a direct slit/);
   const shop = await db.query(`SELECT permissions->>'direct_slitting' AS flag FROM public.role_permissions WHERE role = 'Shop Floor Operator'`);
   assert.equal(shop.rows[0].flag, 'false');
+});
+
+test('the price migration replaces functions and does not drop them', () => {
+  assert.match(priceSql, /CREATE OR REPLACE FUNCTION private\.direct_slit_roll_rate/);
+  assert.match(priceSql, /CREATE OR REPLACE FUNCTION private\.direct_slit_blend_rate/);
+  assert.match(priceSql, /CREATE OR REPLACE FUNCTION private\.direct_slit_post/);
+  assert.match(priceSql, /purchaseRatePerKg/);
+  assert.match(priceSql, /unitPrice/);
+  assert.doesNotMatch(priceSql, /DROP FUNCTION/);
+  assert.doesNotMatch(priceSql, /DROP TABLE/);
+  assert.doesNotMatch(priceSql, /DROP VIEW/);
+});
+
+test('each mother keeps its rate and children receive the weighted average', async () => {
+  const db = await database();
+  await asUser(db, STORE);
+  await db.exec(`
+    UPDATE public.inventory SET stock_qty_kg = 130, unit_price = 125 WHERE id = 'INVT-0001';
+    UPDATE public.inventory_rolls
+    SET net_weight_kg = 80, available_weight_kg = 80, length_meters = 0,
+        metadata = '{"purchaseRatePerKg":200}'::jsonb
+    WHERE barcode_id = 'RM-PARENT';
+    INSERT INTO public.inventory_rolls (
+      barcode_id, roll_type, item_id, item_name, category, film_type, micron, width_mm,
+      net_weight_kg, available_weight_kg, status, qc_status, length_meters, metadata
+    ) VALUES (
+      'RM-TWO', 'RAW_MATERIAL', 'INVT-0001', 'PET-1000-12', 'Film Substrates', 'PET', 12, 1000,
+      50, 50, 'In Stock (RM)', 'Approved', 0, '{"purchaseRatePerKg":260}'::jsonb
+    );
+    INSERT INTO public.inventory (
+      id, item_code, item_name, stock_qty_kg, unit_price, category, film_type, micron, width_mm, density, is_active
+    ) VALUES (
+      'INVT-600', 'INVT-600', 'PET-600-12', 10, 999, 'Film Substrates', 'PET', 12, 600, 1.4, true
+    );
+  `);
+  const posted = await post(db, {
+    id: 'CONV-BLEND',
+    parents: [
+      { barcode: 'RM-PARENT', consumedKg: 60 },
+      { barcode: 'RM-TWO', consumedKg: 40 }
+    ],
+    outputs: [
+      { destination: 'inventory', widthMm: 600, netKg: 60, lane: 1 },
+      { destination: 'inventory', widthMm: 400, netKg: 40, lane: 2 }
+    ],
+    trimScrapKg: 0,
+    settingScrapKg: 0
+  });
+  assert.equal(Number(posted.purchaseRate), 224);
+  assert.equal(Number(posted.parents.find((row) => row.barcode === 'RM-PARENT').purchaseRate), 200);
+  assert.equal(Number(posted.parents.find((row) => row.barcode === 'RM-TWO').purchaseRate), 260);
+  assert.equal(posted.outputs.every((row) => Number(row.purchaseRate) === 224), true);
+
+  const parents = await db.query(`SELECT barcode, purchase_rate FROM public.roll_conversion_parents WHERE conversion_id = 'CONV-BLEND' ORDER BY barcode`);
+  assert.deepEqual(parents.rows.map((row) => Number(row.purchase_rate)), [200, 260]);
+  const outputs = await db.query(`SELECT purchase_rate FROM public.roll_conversion_outputs WHERE conversion_id = 'CONV-BLEND'`);
+  assert.equal(outputs.rows.every((row) => Number(row.purchase_rate) === 224), true);
+  const header = await db.query(`SELECT purchase_rate FROM public.roll_conversions WHERE id = 'CONV-BLEND'`);
+  assert.equal(Number(header.rows[0].purchase_rate), 224);
+
+  const rolls = await db.query(`SELECT barcode_id, metadata FROM public.inventory_rolls WHERE barcode_id LIKE '%BAL' OR metadata->>'directSlitting' = 'true'`);
+  assert.equal(rolls.rows.length >= 4, true);
+  assert.equal(rolls.rows.every((row) => Number(row.metadata.purchaseRatePerKg) === 224 && Number(row.metadata.unitPrice) === 224), true);
+
+  const ledger = await db.query(`SELECT entry_kind, purchase_rate FROM public.inventory_ledger_entries WHERE scope_key = 'conv:CONV-BLEND' ORDER BY entry_kind, purchase_rate`);
+  const issues = ledger.rows.filter((row) => row.entry_kind === 'conversion_issue').map((row) => Number(row.purchase_rate));
+  assert.deepEqual(issues, [200, 260]);
+  assert.equal(ledger.rows.filter((row) => row.entry_kind !== 'conversion_issue').every((row) => Number(row.purchase_rate) === 224), true);
+
+  const prices = await db.query(`SELECT id, unit_price FROM public.inventory WHERE id IN ('INVT-0001', 'INVT-600') OR item_name = 'PET-400-12' ORDER BY id`);
+  assert.equal(Number(prices.rows.find((row) => row.id === 'INVT-0001').unit_price), 125);
+  assert.equal(Number(prices.rows.find((row) => row.id === 'INVT-600').unit_price), 999);
+  assert.equal(Number(prices.rows.find((row) => row.id !== 'INVT-0001' && row.id !== 'INVT-600').unit_price), 224);
+});
+
+test('a roll with no rate still posts and scrap uses the blend', async () => {
+  const db = await database();
+  await asUser(db, ADMIN);
+  await db.exec(`UPDATE public.inventory SET unit_price = 0 WHERE id = 'INVT-0001'`);
+  const posted = await post(db, slitDoc({ id: 'CONV-ZERO' }));
+  assert.equal(Number(posted.purchaseRate), 0);
+  assert.equal(Number(posted.parents[0].purchaseRate), 0);
+  assert.equal(posted.outputs.every((row) => Number(row.purchaseRate) === 0), true);
+
+  await db.exec(`
+    UPDATE public.inventory SET unit_price = 125, stock_qty_kg = 100 WHERE id = 'INVT-0001';
+    DELETE FROM public.inventory_rolls WHERE barcode_id = 'RM-PARENT-BAL';
+    UPDATE public.inventory_rolls
+    SET available_weight_kg = 100, status = 'In Stock (RM)', metadata = '{"purchaseRatePerKg":200}'::jsonb
+    WHERE barcode_id = 'RM-PARENT';
+  `);
+  const scrap = await post(db, slitDoc({
+    id: 'CONV-SCRAP',
+    overrideReason: 'Trim was weighed separately',
+    parents: [{ barcode: 'RM-PARENT', consumedKg: 60 }],
+    outputs: [
+      { destination: 'inventory', widthMm: 600, netKg: 34, lane: 1 },
+      { destination: 'inventory', widthMm: 400, netKg: 22, lane: 2 }
+    ],
+    trimScrapKg: 3,
+    settingScrapKg: 1
+  }));
+  assert.equal(Number(scrap.purchaseRate), 200);
+  const rows = await db.query(`SELECT id, (payload->>'ratePerKg')::numeric AS rate, (payload->>'valueRs')::numeric AS value FROM public.sfg_scrap_items WHERE id LIKE 'direct-slit:CONV-SCRAP:%' ORDER BY id`);
+  assert.equal(rows.rows.every((row) => Number(row.rate) === 200), true);
+  const trim = rows.rows.find((row) => row.id.endsWith(':trim'));
+  const setting = rows.rows.find((row) => row.id.endsWith(':setting'));
+  assert.equal(Number(trim.value), 600);
+  assert.equal(Number(setting.value), 200);
+});
+
+test('metadata rate wins over the GRN line, which wins over the item master', async () => {
+  const db = await database();
+  await db.exec('RESET ROLE');
+  await db.exec(`
+    ALTER TABLE public.inventory_rolls ADD COLUMN grn_line_item_id text;
+    CREATE TABLE public.grn_line_items (id text PRIMARY KEY, purchase_rate numeric);
+    INSERT INTO public.grn_line_items (id, purchase_rate) VALUES ('LINE-1', 180);
+    UPDATE public.inventory_rolls
+    SET grn_line_item_id = 'LINE-1', metadata = '{"purchaseRatePerKg":200}'::jsonb
+    WHERE barcode_id = 'RM-PARENT';
+  `);
+  await asUser(db, STORE);
+  const fromMeta = await post(db, slitDoc({ id: 'CONV-META' }));
+  assert.equal(Number(fromMeta.purchaseRate), 200);
+  assert.equal(Number(fromMeta.parents[0].purchaseRate), 200);
+
+  await db.exec('RESET ROLE');
+  await db.exec(`
+    UPDATE public.inventory SET stock_qty_kg = 100 WHERE id = 'INVT-0001';
+    DELETE FROM public.inventory_rolls WHERE barcode_id = 'RM-PARENT-BAL';
+    UPDATE public.inventory_rolls
+    SET available_weight_kg = 100, status = 'In Stock (RM)', metadata = '{}'::jsonb
+    WHERE barcode_id = 'RM-PARENT';
+    DELETE FROM public.inventory WHERE id <> 'INVT-0001';
+  `);
+  await asUser(db, STORE);
+  const fromGrn = await post(db, slitDoc({ id: 'CONV-GRN' }));
+  assert.equal(Number(fromGrn.parents[0].purchaseRate), 180);
+  const created = await db.query(`SELECT unit_price FROM public.inventory WHERE id <> 'INVT-0001' ORDER BY width_mm LIMIT 1`);
+  assert.equal(Number(created.rows[0].unit_price), 180);
 });
 
 test('issue and balance_receipt still fit the ledger check', async () => {

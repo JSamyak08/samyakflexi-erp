@@ -6,7 +6,16 @@ import {
   applyDirectSlittingDefaults,
   generateFullRolePermissions
 } from '../src/factoryStore.js';
-import { assessDirectSlitting, directSlitItemName, filmMetresFromKg } from '../src/utils/directSlitting.js';
+import {
+  assessDirectSlitting,
+  blendDirectSlitRate,
+  directSlitItemName,
+  directSlitStickerFromRow,
+  filmMetresFromKg,
+  formatDirectSlitRate,
+  resolveDirectSlitRollRate
+} from '../src/utils/directSlitting.js';
+import { resolveItemPurchaseRate } from '../src/utils/thermalBarcodePrinter.js';
 import { generateSingleStickerHtml } from '../src/utils/thermalBarcodePrinter.js';
 import { roleHasModule } from '../src/bootAccess.js';
 import fs from 'node:fs';
@@ -137,6 +146,87 @@ test('inventory shows direct slitting only when the permission is on', () => {
   assert.match(modal, /postDirectSlitting/);
   assert.match(modal, /UniversalBarcodeScannerModal/);
   assert.match(modal, /BarcodePrinterModal/);
+});
+
+test('a mother rate, a weighted blend, and a missing rate stay on the preview', () => {
+  const inventory = [{ id: 'INVT-1', unitPrice: 125 }];
+  assert.equal(resolveDirectSlitRollRate({
+    metadata: { purchaseRatePerKg: 200 },
+    itemId: 'INVT-1'
+  }, { inventory }), 200);
+  assert.equal(resolveDirectSlitRollRate({
+    metadata: { unitPrice: 210 },
+    itemId: 'INVT-1'
+  }, { inventory }), 210);
+  assert.equal(resolveDirectSlitRollRate({
+    grnLineItemId: 'LINE-1',
+    itemId: 'INVT-1'
+  }, {
+    inventory,
+    grns: [{ lineItems: [{ id: 'LINE-1', purchaseRate: 180 }] }]
+  }), 180);
+  assert.equal(resolveDirectSlitRollRate({ itemId: 'INVT-1', purchaseRatePerKg: 0 }, { inventory }), 125);
+  assert.equal(resolveDirectSlitRollRate({ itemId: 'NONE' }, { inventory: [] }), 0);
+  assert.equal(blendDirectSlitRate([
+    { consumedKg: 60, purchaseRatePerKg: 200 },
+    { consumedKg: 40, purchaseRatePerKg: 260 }
+  ]), 224);
+  assert.equal(blendDirectSlitRate([
+    { consumedKg: 60, purchaseRatePerKg: 200 },
+    { consumedKg: 40, purchaseRatePerKg: 0 }
+  ]), 120);
+  assert.equal(formatDirectSlitRate(0), '₹—');
+  assert.equal(formatDirectSlitRate(224), '₹224.00 / kg');
+});
+
+test('a slit child sticker prints the rate stored on the roll', () => {
+  const sticker = directSlitStickerFromRow({
+    barcode_id: 'RM-BC-CHILD',
+    item_name: 'PET-600-12',
+    film_type: 'PET',
+    micron: 12,
+    width_mm: 600,
+    net_weight_kg: 36,
+    roll_type: 'RAW_MATERIAL',
+    category: 'Film Substrates',
+    metadata: { purchaseRatePerKg: 224, directSlitting: true, parentBarcodeId: 'RM-PARENT' }
+  });
+  assert.equal(sticker.purchaseRatePerKg, 224);
+  assert.equal(sticker.unitPrice, 224);
+  assert.equal(resolveItemPurchaseRate({
+    itemName: 'PET-600-12',
+    metadata: { purchaseRatePerKg: 224 }
+  }, [{ itemName: 'PET-600-12', unitPrice: 50 }]), 224);
+  const html = generateSingleStickerHtml(sticker, { name: 'SAMYAK INTERNATIONAL LTD.' }, {
+    inventory: [{ itemName: 'PET-600-12', unitPrice: 50 }]
+  });
+  assert.match(html, /₹224/);
+  const zero = directSlitStickerFromRow({
+    barcode_id: 'RM-BC-ZERO',
+    item_name: 'PET-600-12',
+    film_type: 'PET',
+    micron: 12,
+    width_mm: 600,
+    net_weight_kg: 36,
+    roll_type: 'RAW_MATERIAL',
+    category: 'Film Substrates',
+    metadata: { purchaseRatePerKg: 0, unitPrice: 0, directSlitting: true }
+  });
+  const zeroHtml = generateSingleStickerHtml(zero, { name: 'SAMYAK INTERNATIONAL LTD.' }, {
+    inventory: [{ itemName: 'PET-600-12', unitPrice: 188 }]
+  });
+  assert.match(zeroHtml, /₹-/);
+  assert.doesNotMatch(zeroHtml, /₹188/);
+});
+
+test('direct slitting opens the barcode printer without auto print', () => {
+  const modal = fs.readFileSync(new URL('../src/components/DirectSlittingModal.jsx', import.meta.url), 'utf8');
+  assert.match(modal, /BarcodePrinterModal/);
+  assert.doesNotMatch(modal, /autoPrint/);
+  assert.match(modal, /Print stickers/);
+  assert.match(modal, /weighted by kilograms used/);
+  assert.match(modal, /setPrinterOpen\(false\)/);
+  assert.match(modal, /barcode: row\.barcode, consumedKg: num\(row\.consumedKg\)/);
 });
 
 test('the client posts and reverses only through the database functions', async () => {
