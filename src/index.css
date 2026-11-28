@@ -4844,6 +4844,24 @@ body {
   gap: 12px;
 }
 
+.scc-cards { display: none; }
+.scc-detail-list { display: grid; gap: 10px; margin: 16px 0 0; }
+.scc-detail-list div { display: grid; grid-template-columns: 140px 1fr; gap: 8px; }
+.scc-detail-list dt { font-weight: 700; color: #475569; }
+.scc-detail-list dd { margin: 0; }
+.scc-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+}
+
 @media (max-width: 768px) {
   .rm-stock-ledger-modal {
     padding: 16px 14px !important;
@@ -4893,6 +4911,12 @@ body {
     grid-template-columns: 1fr !important;
     gap: 10px !important;
   }
+
+  .scc-page { padding: 14px !important; }
+  .scc-filters { grid-template-columns: 1fr !important; }
+  .scc-table-wrap, .scc-scroll-hint { display: none !important; }
+  .scc-cards { display: flex; flex-direction: column; gap: 10px; }
+  .scc-detail-list div { grid-template-columns: 1fr; gap: 2px; }
 
   .rm-ledger-toolbar {
     flex-direction: column !important;

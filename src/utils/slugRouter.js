@@ -197,6 +197,14 @@ export const MODULES = [
     ],
   },
   {
+    key: 'stock_count_corrections',
+    path: '/stock-count-corrections',
+    legacy: ['/stock-count-corrections'],
+    patterns: [
+      { section: 'register', segs: [], default: true },
+    ],
+  },
+  {
     key: 'ink_management',
     path: '/inks',
     legacy: ['/ink-management', '/ink-master', '/inks'],

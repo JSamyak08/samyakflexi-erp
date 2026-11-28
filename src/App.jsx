@@ -89,6 +89,7 @@ import JobPunchingForm from './components/JobPunchingForm';
 import OrderManagement from './components/OrderManagement';
 import VendorManagement from './components/VendorManagement';
 import InventoryManagement from './components/InventoryManagement';
+import StockCountCorrections from './components/StockCountCorrections';
 import JobDataSheet from './components/JobDataSheet';
 import UserManagement from './components/UserManagement';
 import EmployeeManagement from './components/EmployeeManagement';
@@ -281,6 +282,7 @@ function getMobileTabTitle(activeTab, urlParams = {}) {
     case 'production': return 'Live Floor';
     case 'cylinders': return 'Cylinders';
     case 'inventory': return 'Inventory';
+    case 'stock_count_corrections': return 'Stock Count Corrections';
     case 'purchase_orders': return 'Purchase Orders';
     case 'vendors': return 'Vendors';
     case 'dispatch': return 'Dispatch';
@@ -4281,6 +4283,22 @@ export default function App() {
     logAudit('CREATE', 'Inventory Rolls', `Generated child roll barcode ${rollId} (${newRoll.netWeightKg} kg)`, rollId);
   };
 
+  const handlePatchInventoryRollAvailability = async (barcodeId, { availableWeightKg, status, qcStatus } = {}) => {
+    requireDatabaseConnection('update inventory roll');
+    const code = String(barcodeId || '').trim();
+    if (!code) throw new Error('A roll barcode is required.');
+    await setInventoryRollAvailability(code, { availableWeightKg, status, qcStatus });
+    setInventoryRolls((prev) => prev.map((roll) => {
+      if (String(roll.barcodeId || roll.id || '') !== code) return roll;
+      return {
+        ...roll,
+        availableWeightKg: Number(availableWeightKg) || 0,
+        ...(status ? { status } : {}),
+        ...(qcStatus ? { qcStatus } : {})
+      };
+    }));
+  };
+
   const handleUpdateRoll = async (updatedRoll) => {
     requireDatabaseConnection('update inventory roll');
     const rollId = updatedRoll.barcodeId || updatedRoll.id;
@@ -5666,6 +5684,16 @@ export default function App() {
                 </SidebarNavItem>
               )}
 
+              {isTabAllowed('stock_count_corrections') && (
+                <SidebarNavItem
+                  active={activeTab === 'stock_count_corrections'}
+                  onClick={() => handleTabChange('stock_count_corrections')}
+                  color="#0369a1"
+                  icon={ClipboardList}
+                  label="Stock Count Corrections"
+                />
+              )}
+
               {isTabAllowed('ink_management') && (
                 <SidebarNavItem
                   active={activeTab === 'ink_management'}
@@ -6797,6 +6825,10 @@ export default function App() {
         )}
 
         {/* TAB 6: INVENTORY, GRN & QC */}
+        {moduleOpen && activeTab === 'stock_count_corrections' && (
+          <StockCountCorrections />
+        )}
+
         {moduleOpen && activeTab === 'inventory' && (
           <InventoryManagement 
             urlParams={urlParams}
@@ -6833,6 +6865,7 @@ export default function App() {
             onAddRoll={handleAddRoll}
             onUpdateRoll={handleUpdateRoll}
             onUpdateInventoryRolls={handleUpdateInventoryRolls}
+            onPatchInventoryRoll={handlePatchInventoryRollAvailability}
             onSaveSFGGood={handleSaveSFGGood}
             sfgGoods={sfgGoods}
             onInwardQcDeleted={handleInwardQcDeleted}

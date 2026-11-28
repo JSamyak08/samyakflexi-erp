@@ -36,6 +36,14 @@ export function roleHasModule(matrix, roleOrRoles, moduleKey) {
   }
   if (roles.includes('Admin')) return true;
   if (moduleKey === 'my_bug_reports') return true;
+  if (moduleKey === 'stock_count_corrections') {
+    return roles.some((role) => (
+      role === 'Admin'
+      || role === 'Plant Manager'
+      || role === 'Production Manager'
+      || role === 'Store Manager'
+    ));
+  }
   if (moduleKey === 'user_management' || moduleKey === 'audit_logs' || moduleKey === 'bug_reports') return false;
   return roles.some((role) => permissionOpensModule(matrix?.[role], moduleKey));
 }

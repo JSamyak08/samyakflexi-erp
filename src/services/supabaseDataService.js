@@ -2704,13 +2704,14 @@ export async function saveInventoryRollToSupabase(roll) {
 }
 
 /** Sets available weight and status without replacing the rest of the roll. */
-export async function setInventoryRollAvailability(barcodeId, { availableWeightKg, status } = {}) {
+export async function setInventoryRollAvailability(barcodeId, { availableWeightKg, status, qcStatus } = {}) {
   if (!isSupabaseConfigured() || !barcodeId) {
     throw new Error('Cannot update inventory roll: Supabase database connection is not available.');
   }
   await ensureValidSession();
   const patch = { available_weight_kg: Number(availableWeightKg) || 0 };
   if (status) patch.status = status;
+  if (qcStatus) patch.qc_status = qcStatus;
   const { error } = await supabase.from('inventory_rolls').update(patch).eq('barcode_id', barcodeId);
   if (error) handleSupabaseError(error, 'inventory_rolls');
 }

@@ -84,6 +84,7 @@ const CANONICAL = [
   ['/purchase-orders/new', 'purchase_orders', 'new'],
   ['/purchase-orders/PO-1', 'purchase_orders', 'po'],
   ['/inventory', 'inventory', 'stock'],
+  ['/stock-count-corrections', 'stock_count_corrections', 'register'],
   ['/inventory/stock/ITEM-1', 'inventory', 'stock-item'],
   ['/inventory/issued-pos', 'inventory', 'issued-pos'],
   ['/inventory/grn', 'inventory', 'grn'],
@@ -609,7 +610,7 @@ test('canonical table covers every module that the sidebar can open', () => {
   for (const key of [
     'login', 'dashboard', 'sales', 'scrap_analytics', 'job_punching', 'orders', 'job_masters',
     'clients', 'printing_scheduler', 'production_records', 'sfg_store', 'cylinders',
-    'purchase_orders', 'inventory', 'ink_management', 'material_indents', 'pellet_fuel', 'barcodes',
+    'purchase_orders', 'inventory', 'stock_count_corrections', 'ink_management', 'material_indents', 'pellet_fuel', 'barcodes',
     'vendors', 'dispatch', 'employees', 'user_management', 'supabase', 'doc_settings', 'audit_logs',
     'changelog', 'bug_reports', 'my_bug_reports',
   ]) {
