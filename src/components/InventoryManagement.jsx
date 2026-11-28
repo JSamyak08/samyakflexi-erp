@@ -669,6 +669,8 @@ export default function InventoryManagement({
     uniformWinding: true,
     noOdor: true
   });
+  const [qcLineDrafts, setQcLineDrafts] = useState({});
+  const [qcActiveLineId, setQcActiveLineId] = useState('');
 
   const applyQcDraftToForm = (draft) => {
     if (!draft) return;
@@ -762,8 +764,6 @@ export default function InventoryManagement({
     }
   }, [qcInspectingGRN]);
 
-  const [qcActiveLineId, setQcActiveLineId] = useState('');
-  const [qcLineDrafts, setQcLineDrafts] = useState({});
   const qcActiveLine = useMemo(() => {
     if (!qcInspectingGRN) return null;
     const lines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
