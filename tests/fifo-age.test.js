@@ -7,6 +7,7 @@ import {
   fifoAgeForBarcode,
   formatConsumedFifoLabel,
   formatFifoAgeLabel,
+  listInStockBarcodeFifos,
   newerBarcodeWarning,
   rollsByBarcode
 } from '../src/utils/barcodeFifo.js';
@@ -227,6 +228,113 @@ test('two barcodes of one stock item keep separate ages and the newer one is war
     }
   });
   assert.equal(allowed.ok, true);
+});
+
+function mgpRoll(barcodeId, available, status, inward) {
+  return {
+    barcodeId,
+    itemId: 'INVT-0127',
+    itemName: 'MGP-1035-50',
+    status,
+    inwardDatetime: inward,
+    netWeightKg: available,
+    availableWeightKg: available
+  };
+}
+
+test('a reversed 0 kg balance tag does not hide its in-stock parent', () => {
+  const opening = '2026-10-29T13:24:06.493Z';
+  const grn = '2026-11-23T10:20:21.632Z';
+  const rolls = [
+    mgpRoll('RM-BC-20261029-19458AZ0', 232.3, 'In Stock', opening),
+    mgpRoll('RM-BC-20261029-194597VV', 234.9, 'In Stock', opening),
+    mgpRoll('RM-BC-20261029-1945RHIZ', 237.3, 'In Stock', opening),
+    mgpRoll('RM-BC-20261029-1945T0TO', 235.1, 'In Stock', opening),
+    mgpRoll('RM-BC-SIL/GRN/26-27/215-L1-R1', 270.2, 'In Stock', grn),
+    mgpRoll('RM-BC-SIL/GRN/26-27/215-L1-R2', 269.8, 'In Stock', grn),
+    mgpRoll('RM-BC-SIL/GRN/26-27/215-L1-R3', 270.8, 'In Stock', grn),
+    mgpRoll('RM-BC-SIL/GRN/26-27/215-L1-R4', 270.4, 'In Stock', grn),
+    {
+      barcodeId: 'RM-BC-SIL/GRN/26-27/215-L1-R2-BAL',
+      parentBarcodeId: 'RM-BC-SIL/GRN/26-27/215-L1-R2',
+      itemId: 'INVT-0127',
+      status: 'Reversed',
+      inwardDatetime: '2026-11-25T08:28:51.188Z',
+      netWeightKg: 0,
+      availableWeightKg: 0
+    }
+  ];
+  const index = buildRollFifoIndex(rolls, { now: laterNow });
+  const parent = index.get('rm-bc-sil/grn/26-27/215-l1-r2');
+  assert.equal(parent.balanceQty, 269.8);
+  assert.equal(parent.display.frozen, false);
+  assert.equal(index.get('rm-bc-sil/grn/26-27/215-l1-r2-bal').balanceQty, 0);
+
+  const listed = listInStockBarcodeFifos(['INVT-0127'], rolls, index);
+  const codes = listed.map(({ roll }) => roll.barcodeId);
+  assert.equal(listed.length, 8);
+  assert.equal(codes.includes('RM-BC-SIL/GRN/26-27/215-L1-R2'), true);
+  assert.equal(codes.includes('RM-BC-SIL/GRN/26-27/215-L1-R2-BAL'), false);
+});
+
+test('a reversed balance tag that still has a net weight does not zero the restored parent', () => {
+  const parent = {
+    barcodeId: 'RM-PARENT',
+    itemId: 'INVT-0127',
+    status: 'In Stock',
+    inwardDatetime: origin.toISOString(),
+    netWeightKg: 100,
+    availableWeightKg: 100
+  };
+  const reversed = {
+    barcodeId: 'RM-PARENT-BAL',
+    parentBarcodeId: 'RM-PARENT',
+    itemId: 'INVT-0127',
+    status: 'Reversed',
+    inwardDatetime: firstConsume.toISOString(),
+    netWeightKg: 40,
+    availableWeightKg: 0
+  };
+  const index = buildRollFifoIndex([parent, reversed], { now: laterNow });
+  assert.equal(index.get('rm-parent').balanceQty, 100);
+  const listed = listInStockBarcodeFifos(['INVT-0127'], [parent, reversed], index);
+  assert.deepEqual(listed.map(({ roll }) => roll.barcodeId), ['RM-PARENT']);
+});
+
+test('a live balance roll still owns the leftover and the parent stays off the in-stock list', () => {
+  const parent = {
+    barcodeId: 'RM-100',
+    itemId: 'INVT-PET',
+    status: 'In Stock',
+    inwardDatetime: origin.toISOString(),
+    netWeightKg: 100,
+    availableWeightKg: 0
+  };
+  const balance = {
+    barcodeId: 'RM-100-BAL',
+    itemId: 'INVT-PET',
+    status: 'In Stock',
+    inwardDatetime: firstConsume.toISOString(),
+    netWeightKg: 40,
+    availableWeightKg: 40
+  };
+  const index = buildRollFifoIndex([parent, balance], { now: secondConsume });
+  assert.equal(index.get('rm-100').balanceQty, 0);
+  assert.equal(index.get('rm-100').display.frozen, true);
+  const listed = listInStockBarcodeFifos(['INVT-PET'], [parent, balance], index);
+  assert.deepEqual(listed.map(({ roll }) => roll.barcodeId), ['RM-100-BAL']);
+});
+
+test('written off, fully issued, and 0 kg rolls stay off the in-stock barcode list', () => {
+  const rolls = [
+    { barcodeId: 'RM-OPEN', itemId: 'INVT-PET', status: 'In Stock', inwardDatetime: origin.toISOString(), netWeightKg: 10, availableWeightKg: 10 },
+    { barcodeId: 'RM-OFF', itemId: 'INVT-PET', status: 'Written Off', inwardDatetime: origin.toISOString(), netWeightKg: 8, availableWeightKg: 8 },
+    { barcodeId: 'RM-ISSUED', itemId: 'INVT-PET', status: 'Fully Issued', inwardDatetime: origin.toISOString(), netWeightKg: 8, availableWeightKg: 8 },
+    { barcodeId: 'RM-EMPTY', itemId: 'INVT-PET', status: 'In Stock', inwardDatetime: origin.toISOString(), netWeightKg: 8, availableWeightKg: 0 }
+  ];
+  const index = buildRollFifoIndex(rolls, { now: laterNow });
+  const listed = listInStockBarcodeFifos(['INVT-PET'], rolls, index);
+  assert.deepEqual(listed.map(({ roll }) => roll.barcodeId), ['RM-OPEN']);
 });
 
 test('SFG and raw-material screens show barcode FIFO and not one age on the stock item', () => {
