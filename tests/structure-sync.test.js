@@ -147,7 +147,7 @@ test('a structure change rebuilds lines, supersedes the old PO film, and keeps t
   assert.equal(plan.notice.type, 'STRUCTURE_CHANGED');
 
   assert.deepEqual(inventory.map((item) => item.allocatedQtyKg), allocatedBefore);
-  const stock = calculateOrderStockReservations(plan.orderWrites, inventory, []);
+  const stock = calculateOrderStockReservations(plan.orderWrites, inventory, [], { enabled: true });
   const supersededInfo = stock.getReqStockInfo(superseded[0], 'ORD-1');
   assert.equal(supersededInfo.reservedKg, 0);
   assert.equal(supersededInfo.balanceKg, 0);

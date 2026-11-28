@@ -19,6 +19,7 @@ import { isPayrollRecoverableAdvance } from './services/salaryAdvance.js';
 import { isFinishedGoodsStock, DISPATCH_READY_DUST_KG } from './utils/finishedGoods.js';
 import { dispatchedKgForOrder, normalizeAutoCloseSettings } from './utils/orderAutoClose.js';
 import { calculateStationInksMetrics } from './utils/inkStationCalculations.js';
+import { stockReservationsRequested } from './utils/stockReservation.js';
 
 export const getFilmSubstrateMap = () => {
   const substrates = getFilmSubstrates();
@@ -826,10 +827,20 @@ export function linkedRequirementMatches(linkedRequirements, orderId, reqId, leg
 }
 
 /**
- * Multi-Order Coordinated Stock Checking & Material Reservation Engine
- * Tracks live stock pools across all active orders and allocates stock sequentially.
+ * Multi-Order Coordinated Stock Checking & Material Reservation Engine.
+ * Tracks live stock pools across all active orders.
+ *
+ * options.enabled true allocates stock sequentially, which is today's
+ * reservation behaviour: an earlier delivery keeps what it took.
+ * options omitted or enabled false does not create reservations and does
+ * not reduce the pool. Each line is checked against the full on-hand
+ * quantity. reservedKg on a line is still the kilograms of that line
+ * covered by stock, so a purchase balance stays gross minus what is
+ * physically there. The pool reservation list stays empty, so available
+ * stock stays equal to on-hand. Order and inventory rows are not written.
  */
-export const calculateOrderStockReservations = (orders = [], inventory = [], jobMasters = []) => {
+export const calculateOrderStockReservations = (orders = [], inventory = [], jobMasters = [], options = {}) => {
+  const reserve = stockReservationsRequested(options);
   // Pool of available stock per inventory item
   const pool = {};
   (inventory || []).forEach(item => {
@@ -873,6 +884,7 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
           totalInStock: 0,
           matchedItemId: null,
           matchedItem: null,
+          reservationsActive: reserve,
           poStatus: req.poIssued ? 'PO Issued' : 'Pending PO'
         };
         return;
@@ -880,11 +892,12 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
 
       const invKey = String(matchedInv.id);
       const poolEntry = pool[invKey];
-      const availForThis = poolEntry ? poolEntry.remainingStockKg : 0;
+      const onHand = poolEntry ? poolEntry.totalStockKg : 0;
+      const availForThis = reserve ? (poolEntry ? poolEntry.remainingStockKg : 0) : onHand;
       const takenKg = Math.min(reqQty, Math.max(0, availForThis));
       const balance = lineMaterialBalance(reqQty, takenKg);
 
-      if (poolEntry) {
+      if (reserve && poolEntry) {
         poolEntry.remainingStockKg = roundKg(Math.max(0, poolEntry.remainingStockKg - balance.reservedKg));
         poolEntry.totalReservedKg = roundKg(poolEntry.totalReservedKg + balance.reservedKg);
 
@@ -906,9 +919,10 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
 
       reqStockInfoMap[reqKey] = {
         ...balance,
-        totalInStock: poolEntry ? poolEntry.totalStockKg : 0,
+        totalInStock: onHand,
         matchedItemId: matchedInv.id,
         matchedItem: matchedInv,
+        reservationsActive: reserve,
         poStatus: req.poIssued ? 'PO Issued' : (balance.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
       };
     });
@@ -917,9 +931,10 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
   return {
     pool,
     reqStockInfoMap,
+    reservationsActive: reserve,
     getReqStockInfo: (req, orderId) => {
-      if (!req) return { reqQty: 0, grossKg: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false, poStatus: 'Pending PO' };
-      if (isSupersededMaterialLine(req)) return presentRequirementStock(req, null);
+      if (!req) return { reqQty: 0, grossKg: 0, totalInStock: 0, reservedKg: 0, balanceKg: 0, isFullyAvailable: false, isPartiallyAvailable: false, poStatus: 'Pending PO', reservationsActive: reserve };
+      if (isSupersededMaterialLine(req)) return { ...presentRequirementStock(req, null), reservationsActive: reserve };
       const reqKey = requirementStockKey(orderId, req);
       const stored = reqKey && reqStockInfoMap[reqKey];
       if (stored) {
@@ -927,6 +942,7 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
         return {
           ...stored,
           ...aligned,
+          reservationsActive: reserve,
           poStatus: req.poIssued ? 'PO Issued' : (aligned.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
         };
       }
@@ -938,18 +954,21 @@ export const calculateOrderStockReservations = (orders = [], inventory = [], job
           totalInStock: 0,
           matchedItemId: null,
           matchedItem: null,
+          reservationsActive: reserve,
           poStatus: req.poIssued ? 'PO Issued' : 'Pending PO'
         };
       }
       const entry = pool[String(matched.id)];
       const totalInStock = entry ? entry.totalStockKg : (Number(matched.availableQtyKg) || 0);
-      const reservedKg = Math.min(parseFloat(req.qtyKg) || 0, entry ? entry.remainingStockKg : totalInStock);
+      const available = reserve ? (entry ? entry.remainingStockKg : totalInStock) : totalInStock;
+      const reservedKg = Math.min(parseFloat(req.qtyKg) || 0, available);
       const aligned = lineMaterialBalance(req.qtyKg, reservedKg);
       return {
         ...aligned,
         totalInStock,
         matchedItemId: matched.id,
         matchedItem: matched,
+        reservationsActive: reserve,
         poStatus: req.poIssued ? 'PO Issued' : (aligned.isFullyAvailable ? 'PO Not Required' : 'Pending PO')
       };
     }

@@ -24,8 +24,10 @@
  * written-off barcodes are left out (findRetiredBarcode). When the item has
  * raw-material rolls, on-hand is the sum of rolls still In Stock. Otherwise
  * it is the item's availableQtyKg. Shortfall is the balance from
- * calculateOrderStockReservations, so an earlier delivery keeps the stock it
- * already reserved. Issued kilograms are reported beside that and are not
+ * calculateOrderStockReservations. When stock reservation is on, an earlier
+ * delivery keeps the stock it already reserved. When it is off, each order
+ * is checked against the full on-hand quantity and nothing is held back for
+ * another order. Issued kilograms are reported beside that and are not
  * subtracted again, because on-hand stock is what remains after issues.
  * Issued kilograms are the production record's net consumed quantity when
  * that was recorded, otherwise the issued quantity. A store issue is used
@@ -531,7 +533,8 @@ export function buildOrderReportRows(options = {}) {
   const stock = calculateOrderStockReservations(
     prepared,
     inventoryWithUsableStock(options.inventory || [], options.inventoryRolls || [], options.retiredBarcodes || []),
-    jobMasters
+    jobMasters,
+    { enabled: options.stockReservationEnabled === true }
   );
   const structureOf = typeof options.structureOf === 'function'
     ? options.structureOf

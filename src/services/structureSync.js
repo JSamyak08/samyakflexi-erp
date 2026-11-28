@@ -456,8 +456,8 @@ export function scheduleCopyChanged(before, after) {
     || !sameText(before.clientName, after.clientName);
 }
 
-function reservationRows(orders, inventory) {
-  const stock = calculateOrderStockReservations(orders, inventory, []);
+function reservationRows(orders, inventory, reserve) {
+  const stock = calculateOrderStockReservations(orders, inventory, [], { enabled: reserve === true });
   const rows = new Map();
   (orders || []).forEach((order) => {
     const lines = requirementList(order).filter((line) => line && !isSupersededMaterialLine(line));
@@ -527,6 +527,7 @@ export function planStructureSync({
   actor = 'Staff',
   at = new Date().toISOString(),
   noticeId,
+  stockReservationEnabled = false,
 } = {}) {
   const empty = {
     changed: false,
@@ -574,7 +575,8 @@ export function planStructureSync({
     targets.push(order);
   });
 
-  const beforeReservations = reservationRows(orders, inventory);
+  const reserveStock = stockReservationEnabled === true;
+  const beforeReservations = reservationRows(orders, inventory, reserveStock);
   const orderWrites = [];
   const ocnAmendments = [];
   const noticeOrders = [];
@@ -653,7 +655,7 @@ export function planStructureSync({
 
   const replaced = new Map(orderWrites.map((order) => [order.id, order]));
   const ordersAfter = (orders || []).map((order) => replaced.get(order.id) || order);
-  const afterReservations = reservationRows(ordersAfter, inventory);
+  const afterReservations = reservationRows(ordersAfter, inventory, reserveStock);
 
   noticeOrders.forEach((entry) => {
     const material = entry.modules.find((item) => item.module === 'Material lines and reservations');
@@ -662,15 +664,16 @@ export function planStructureSync({
     const after = afterReservations.get(entry.orderId) || [];
     const bits = after.map((line) => {
       const prior = before.find((item) => item.id === line.id) || before.find((item) => item.label === line.label);
-      const reserved = prior ? `${describeKg(prior.reserved)} → ${describeKg(line.reserved)}` : describeKg(line.reserved);
       const balance = prior ? `${describeKg(prior.balance)} → ${describeKg(line.balance)}` : describeKg(line.balance);
+      if (!reserveStock) return `${line.label} balance for PO ${balance}`;
+      const reserved = prior ? `${describeKg(prior.reserved)} → ${describeKg(line.reserved)}` : describeKg(line.reserved);
       return `${line.label} reserved ${reserved}, balance for PO ${balance}`;
     });
     if (bits.length) material.detail = `${material.detail}. ${bits.join('; ')}.`;
   });
 
   const reservationEffects = [];
-  afterReservations.forEach((lines, orderId) => {
+  if (reserveStock) afterReservations.forEach((lines, orderId) => {
     if (replaced.has(orderId)) return;
     const before = beforeReservations.get(orderId) || [];
     const shifted = lines.filter((line) => {
@@ -835,6 +838,7 @@ async function runStructureSync(updatedJm, context) {
     actor: context.actor,
     at: context.at,
     noticeId: context.noticeId,
+    stockReservationEnabled: context.stockReservationEnabled === true,
   });
   if (!plan.changed) {
     if (previous) appliedSnapshots.set(key, clone(updatedJm));

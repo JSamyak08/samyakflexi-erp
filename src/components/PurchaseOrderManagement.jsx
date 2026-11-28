@@ -75,7 +75,8 @@ export default function PurchaseOrderManagement({
   onSaveInventoryItem,
   onUpdateInventory,
   onUpdateInventoryRolls,
-  onSaveAmendment
+  onSaveAmendment,
+  stockReservationEnabled = false,
 }) {
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -1516,8 +1517,8 @@ GSTIN: ${COMPANY_DETAILS.gstin}`;
   }, [enrichedPurchaseOrders]);
 
   const orderStockReservations = useMemo(
-    () => calculateOrderStockReservations(orders, inventory, []),
-    [orders, inventory]
+    () => calculateOrderStockReservations(orders, inventory, [], { enabled: stockReservationEnabled === true }),
+    [orders, inventory, stockReservationEnabled]
   );
 
   // Pending lines still without a PO. Quantity to order is this line's balance,
