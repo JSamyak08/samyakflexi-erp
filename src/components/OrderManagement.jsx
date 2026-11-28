@@ -92,6 +92,7 @@ export default function OrderManagement({
   inventoryRolls = [],
   storeIssueTransactions = [],
   extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT,
+  stockReservationEnabled = false,
 }) {
   // Helper: derive substrate structure (preserves locked order structure for punched orders)
   const getSubstrateStructure = (order) => {
@@ -745,8 +746,10 @@ export default function OrderManagement({
       });
       return { ...order, materialRequirements: plan.requirements, rawMaterialRequirements: plan.requirements };
     });
-    return calculateOrderStockReservations(withPrintedSfg, inventory, jobMasters);
-  }, [orders, inventory, jobMasters, sfgGoods, allocationDrafts, extraPrintPercent]);
+    return calculateOrderStockReservations(withPrintedSfg, inventory, jobMasters, {
+      enabled: stockReservationEnabled === true
+    });
+  }, [orders, inventory, jobMasters, sfgGoods, allocationDrafts, extraPrintPercent, stockReservationEnabled]);
 
   const getStockCheckForReq = (req, orderId) => {
     return stockReservations.getReqStockInfo(req, orderId);
@@ -1465,6 +1468,7 @@ export default function OrderManagement({
       structureOf: getSubstrateStructure,
       blockerContext: reminderContext,
       extraPrintPercent,
+      stockReservationEnabled: stockReservationEnabled === true,
     });
   };
 
@@ -2530,7 +2534,7 @@ export default function OrderManagement({
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '85px' }}>Micron (µ)</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '125px' }}>Width (mm)</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '125px' }}>Gross Required (Kg)</th>
-                                    <th style={{ whiteSpace: 'nowrap', minWidth: '220px' }}>Stock Check & Reservation</th>
+                                    <th style={{ whiteSpace: 'nowrap', minWidth: '220px' }}>{stockReservationEnabled ? 'Stock Check & Reservation' : 'Stock Check'}</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '130px', color: '#2563eb' }}>Balance Qty for PO (Kg)</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '170px' }}>Preferred Vendor</th>
                                     <th style={{ whiteSpace: 'nowrap', minWidth: '130px' }}>PO Status</th>
@@ -2549,7 +2553,7 @@ export default function OrderManagement({
                                           <td>{req.micron}</td>
                                           <td>{req.widthMm && req.widthMm !== '-' ? `${req.widthMm} mm` : '—'}</td>
                                           <td>Not counted ({req.qtyKg} kg was the old gross)</td>
-                                          <td>Not reserved</td>
+                                          <td>{stockReservationEnabled ? 'Not reserved' : 'Not counted'}</td>
                                           <td><span className="badge" style={{ background: '#f1f5f9', color: '#64748b', fontWeight: '800' }}>0 kg</span></td>
                                           <td>{req.preferredVendor || '—'}</td>
                                           <td>{req.poNumber || 'PO issued'}</td>
@@ -2637,14 +2641,16 @@ export default function OrderManagement({
                                             <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d', whiteSpace: 'nowrap' }}>
                                               <strong>✅ {stockInfo.reservedKg ?? 0} kg / {stockInfo.reqQty ?? req.qtyKg ?? 0} kg in stock</strong>
                                               <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                                Fully Reserved for Order (No PO Required)
+                                                {stockReservationEnabled ? 'Fully Reserved for Order (No PO Required)' : 'In stock (No PO Required)'}
                                               </div>
                                             </div>
                                           ) : stockInfo?.isPartiallyAvailable ? (
                                             <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857', whiteSpace: 'nowrap' }}>
                                               <strong>🟢 {stockInfo.reservedKg ?? 0} kg out of {stockInfo.reqQty ?? req.qtyKg ?? 0} kg available</strong>
                                               <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                                {stockInfo.reservedKg ?? 0} kg Reserved for Order
+                                                {stockReservationEnabled
+                                                  ? `${stockInfo.reservedKg ?? 0} kg Reserved for Order`
+                                                  : `${stockInfo.balanceKg ?? 0} kg still to purchase`}
                                               </div>
                                             </div>
                                           ) : (
@@ -2799,7 +2805,7 @@ export default function OrderManagement({
               <div className="glass-panel" style={{ padding: '16px 20px', borderLeft: '4px solid #10b981' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: '0.78rem', fontWeight: '700', textTransform: 'uppercase', color: '#047857', letterSpacing: '0.04em' }}>
-                    In-Stock & Reserved
+                    {stockReservationEnabled ? 'In-Stock & Reserved' : 'In stock'}
                   </span>
                   <PackageCheck size={18} style={{ color: '#10b981' }} />
                 </div>
@@ -2944,7 +2950,7 @@ export default function OrderManagement({
                       <th>Material Specification</th>
                       <th>Gauge / Width</th>
                       <th>Gross Req. (Kg)</th>
-                      <th style={{ minWidth: '210px' }}>Inventory Stock & Reservation</th>
+                      <th style={{ minWidth: '210px' }}>{stockReservationEnabled ? 'Inventory Stock & Reservation' : 'Inventory Stock'}</th>
                       <th style={{ color: '#2563eb' }}>Balance for PO</th>
                       <th>Preferred Vendor</th>
                       <th>Target Dispatch</th>
@@ -3090,14 +3096,18 @@ export default function OrderManagement({
                                 <div style={{ background: '#dcfce7', border: '1px solid #86efac', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#15803d' }}>
                                   <strong>✅ {stockInfo.reservedKg ?? 0} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#166534' }}>
-                                    Fully Reserved (No PO Required)
+                                    {stockReservationEnabled ? 'Fully Reserved (No PO Required)' : 'In stock (No PO Required)'}
                                   </div>
                                 </div>
                               ) : stockInfo?.isPartiallyAvailable ? (
                                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '4px 8px', borderRadius: '6px', fontSize: '0.76rem', color: '#047857' }}>
                                   <strong>🟢 {stockInfo.reservedKg ?? 0} / {stockInfo.reqQty ?? req.qtyKg ?? 0} kg in stock</strong>
                                   <div style={{ fontSize: '0.7rem', color: '#065f46' }}>
-                                    {stockInfo.reservedKg ?? 0} kg Reserved • <strong>{stockInfo.balanceKg ?? 0} kg Shortage</strong>
+                                    {stockReservationEnabled ? (
+                                      <>{stockInfo.reservedKg ?? 0} kg Reserved • <strong>{stockInfo.balanceKg ?? 0} kg Shortage</strong></>
+                                    ) : (
+                                      <strong>{stockInfo.balanceKg ?? 0} kg still to purchase</strong>
+                                    )}
                                   </div>
                                 </div>
                               ) : (

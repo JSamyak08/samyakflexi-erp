@@ -358,7 +358,8 @@ export default function InventoryManagement({
   canDirectSlit = false,
   canOverrideDirectSlit = false,
   canReverseDirectSlit = false,
-  onDirectSlitRefresh
+  onDirectSlitRefresh,
+  stockReservationEnabled = false,
 }) {
   const [activeTab, setActiveTab] = useState('stock'); // stock, grn_inward, qc_approval, issue_return, reconciliation
   const [searchTerm, setSearchTerm] = useState('');
@@ -500,11 +501,16 @@ export default function InventoryManagement({
 
   // Live pool of stock reservations across all active customer orders
   const stockReservations = useMemo(() => {
-    return calculateOrderStockReservations(orders, safeInventory, jobMasters);
-  }, [orders, safeInventory, jobMasters]);
+    return calculateOrderStockReservations(orders, safeInventory, jobMasters, {
+      enabled: stockReservationEnabled === true
+    });
+  }, [orders, safeInventory, jobMasters, stockReservationEnabled]);
 
   const getItemReservations = (targetItem) => {
-    if (!targetItem || !stockReservations?.pool) return { totalReservedKg: 0, remainingStockKg: 0, reservations: [] };
+    const grossOnHand = Number(targetItem?.availableQtyKg ?? 0);
+    if (!targetItem || stockReservationEnabled !== true || !stockReservations?.reservationsActive || !stockReservations?.pool) {
+      return { totalReservedKg: 0, remainingStockKg: Math.max(0, grossOnHand), reservations: [] };
+    }
     const ids = targetItem.allInventoryIds || [targetItem.id];
     let totalReservedKg = 0;
     const seenReqKeys = new Set();
@@ -755,6 +761,8 @@ export default function InventoryManagement({
     }
   }, [qcInspectingGRN]);
 
+  const [qcActiveLineId, setQcActiveLineId] = useState('');
+  const [qcLineDrafts, setQcLineDrafts] = useState({});
   const qcActiveLine = useMemo(() => {
     if (!qcInspectingGRN) return null;
     const lines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
@@ -1311,8 +1319,6 @@ export default function InventoryManagement({
   const [grnLineOrder, setGrnLineOrder] = useState(['line-active']);
   const grnItemEditorRef = useRef(null);
   const [expandedGrnNo, setExpandedGrnNo] = useState('');
-  const [qcLineDrafts, setQcLineDrafts] = useState({});
-  const [qcActiveLineId, setQcActiveLineId] = useState('');
   const [grnItemsList, setGrnItemsList] = useState([
     { id: 'item-1', grossWeightKg: '', tareWeightKg: 0, netWeightKg: '', lengthMeters: '', vendorRollNo: '', itemRemarks: '', notes: '' }
   ]);
@@ -5989,7 +5995,11 @@ export default function InventoryManagement({
                       <td style={{ fontSize: '0.85rem' }}>
                         {isFilm ? `${item.micron} Micron × ${item.widthMm}mm` : (item.widthMm && item.widthMm !== '-' ? `${item.widthMm}mm` : '-')}
                       </td>
-                      <td style={{ fontSize: '1.1rem', fontWeight: '800', color: (usableFreeStock ?? 0) === 0 ? (availQty === 0 && (pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}>
+                      <td
+                        data-testid="available-stock"
+                        data-item-code={item.itemCode || item.primaryId || item.id}
+                        style={{ fontSize: '1.1rem', fontWeight: '800', color: (usableFreeStock ?? 0) === 0 ? (availQty === 0 && (pendingQcQty ?? 0) > 0 ? '#d97706' : '#ef4444') : (isLow ? '#d97706' : '#047857') }}
+                      >
                         {(usableFreeStock ?? 0).toLocaleString()} {unitStr}
                         {(allocatedForOrders ?? 0) > 0 && (
                           <div style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '600', marginTop: '2px' }}>
@@ -6011,7 +6021,7 @@ export default function InventoryManagement({
                       <td style={{ color: 'var(--text-secondary)' }}>
                         {(effectiveAllocated ?? 0).toLocaleString()} {unitStr}
                         {(allocatedForOrders ?? 0) > 0 && (
-                          <div style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #86efac', display: 'inline-block', whiteSpace: 'nowrap' }}>
+                          <div data-testid="order-reserved-badge" style={{ fontSize: '0.7rem', color: '#15803d', fontWeight: '700', marginTop: '2px', background: '#dcfce7', padding: '1px 5px', borderRadius: '4px', border: '1px solid #86efac', display: 'inline-block', whiteSpace: 'nowrap' }}>
                             🔒 {(allocatedForOrders ?? 0).toLocaleString()} {unitStr} Reserved
                           </div>
                         )}
@@ -10205,6 +10215,7 @@ export default function InventoryManagement({
           return new Date(dStr).getTime() || 0;
         };
 
+        const ledgerTab = ledgerFilterTab === 'reservation' && orderResTxLines.length === 0 ? 'all' : ledgerFilterTab;
         const allTxLines = [...openingStockLine, ...inwardTxLines, ...openingReceiptLines, ...jobUsageLines, ...storeIssueLines, ...adjLines, ...orderResTxLines]
           .filter((tx) => !findRetiredBarcode(deletedBarcodes, tx.barcode));
         allTxLines.sort((a, b) => parseTxDate(a.date) - parseTxDate(b.date));
@@ -10236,9 +10247,9 @@ export default function InventoryManagement({
 
         // 8. Reverse to Newest First for Display & Apply Filters
         const displayLines = [...ledgerWithBalance].reverse().filter(tx => {
-          if (ledgerFilterTab === 'pending_qc') return tx.isPendingQC;
-          if (ledgerFilterTab === 'qc_hold') return tx.isRejected;
-          if (ledgerFilterTab !== 'all' && tx.category !== ledgerFilterTab) return false;
+          if (ledgerTab === 'pending_qc') return tx.isPendingQC;
+          if (ledgerTab === 'qc_hold') return tx.isRejected;
+          if (ledgerTab !== 'all' && tx.category !== ledgerTab) return false;
           if (ledgerSearchTerm.trim()) {
             const q = ledgerSearchTerm.toLowerCase();
             return (
@@ -10577,14 +10588,14 @@ export default function InventoryManagement({
 
                 <div className="rm-ledger-kpi-card">
                   <span className="stats-title" style={{ fontSize: '0.75rem' }}>Current Net Usable Stock</span>
-                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
+                  <div data-testid="ledger-net-usable" style={{ fontSize: '1.25rem', fontWeight: '800', color: '#0f172a', marginTop: '4px' }}>
                     {(netAvailableBalance ?? 0).toLocaleString()} {unitStr}
                   </div>
                   <div style={{ fontSize: '0.75rem', color: '#2563eb', fontWeight: '600' }}>
                     Avg Rate: ₹ {avgPurchaseRate.toFixed(2)}/{unitStr}
                   </div>
                   {totalReservedOrdersQty > 0 && (
-                    <div style={{ fontSize: '0.72rem', color: '#166534', fontWeight: '700', marginTop: '4px', background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', border: '1px solid #86efac' }}>
+                    <div data-testid="ledger-reserved-for-orders" style={{ fontSize: '0.72rem', color: '#166534', fontWeight: '700', marginTop: '4px', background: '#dcfce7', padding: '2px 6px', borderRadius: '4px', border: '1px solid #86efac' }}>
                       🔒 {(totalReservedOrdersQty ?? 0).toLocaleString()} {unitStr} Reserved for Active Orders
                     </div>
                   )}
@@ -10616,7 +10627,7 @@ export default function InventoryManagement({
                 <div className="rm-ledger-subtabs" style={{ display: 'flex', gap: '6px', background: '#e2e8f0', padding: '4px', borderRadius: '8px', maxWidth: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
                   <button 
                     className={`btn-secondary`}
-                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'all' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'all' ? '700' : '500', color: ledgerFilterTab === 'all' ? '#0f172a' : 'var(--text-secondary)' }}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'all' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'all' ? '700' : '500', color: ledgerTab === 'all' ? '#0f172a' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('all')}
                   >
                     📋 All Ledger ({allTxLines.length})
@@ -10624,7 +10635,7 @@ export default function InventoryManagement({
 
                   <button 
                     className={`btn-secondary`}
-                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'inward' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'inward' ? '700' : '500', color: ledgerFilterTab === 'inward' ? '#047857' : 'var(--text-secondary)' }}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'inward' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'inward' ? '700' : '500', color: ledgerTab === 'inward' ? '#047857' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('inward')}
                   >
                     📥 Inwards ({inwardTxLines.length + openingReceiptLines.length + (openingStockQty > 0 ? 1 : 0) + storeIssueLines.filter(tx => tx.category === 'inward').length})
@@ -10633,7 +10644,7 @@ export default function InventoryManagement({
                   {pendingInwardLines.length > 0 && (
                     <button 
                       className={`btn-secondary`}
-                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'pending_qc' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'pending_qc' ? '700' : '500', color: ledgerFilterTab === 'pending_qc' ? '#b45309' : 'var(--text-secondary)' }}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'pending_qc' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'pending_qc' ? '700' : '500', color: ledgerTab === 'pending_qc' ? '#b45309' : 'var(--text-secondary)' }}
                       onClick={() => setLedgerFilterTab('pending_qc')}
                     >
                       ⏳ Pending QC ({pendingInwardLines.length})
@@ -10643,7 +10654,7 @@ export default function InventoryManagement({
                   {rejectedInwardLines.length > 0 && (
                     <button 
                       className={`btn-secondary`}
-                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'qc_hold' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'qc_hold' ? '700' : '500', color: ledgerFilterTab === 'qc_hold' ? '#dc2626' : 'var(--text-secondary)' }}
+                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'qc_hold' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'qc_hold' ? '700' : '500', color: ledgerTab === 'qc_hold' ? '#dc2626' : 'var(--text-secondary)' }}
                       onClick={() => setLedgerFilterTab('qc_hold')}
                     >
                       🚫 QC Hold Store ({rejectedInwardLines.length})
@@ -10652,7 +10663,7 @@ export default function InventoryManagement({
 
                   <button 
                     className={`btn-secondary`}
-                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'usage' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'usage' ? '700' : '500', color: ledgerFilterTab === 'usage' ? '#7f1d1d' : 'var(--text-secondary)' }}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'usage' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'usage' ? '700' : '500', color: ledgerTab === 'usage' ? '#7f1d1d' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('usage')}
                   >
                     📤 Consumptions / Issues ({jobUsageLines.length + storeIssueLines.filter(tx => tx.category === 'usage').length})
@@ -10660,7 +10671,7 @@ export default function InventoryManagement({
 
                   <button 
                     className={`btn-secondary`}
-                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'reconciliation' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'reconciliation' ? '700' : '500', color: ledgerFilterTab === 'reconciliation' ? '#1e40af' : 'var(--text-secondary)' }}
+                    style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'reconciliation' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'reconciliation' ? '700' : '500', color: ledgerTab === 'reconciliation' ? '#1e40af' : 'var(--text-secondary)' }}
                     onClick={() => setLedgerFilterTab('reconciliation')}
                   >
                     ⚖️ Stock corrections ({adjLines.length})
@@ -10669,7 +10680,8 @@ export default function InventoryManagement({
                   {orderResTxLines.length > 0 && (
                     <button 
                       className={`btn-secondary`}
-                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerFilterTab === 'reservation' ? '#ffffff' : 'transparent', fontWeight: ledgerFilterTab === 'reservation' ? '700' : '500', color: ledgerFilterTab === 'reservation' ? '#15803d' : 'var(--text-secondary)' }}
+                      data-testid="ledger-order-reservations"
+                      style={{ padding: '4px 10px', fontSize: '0.78rem', border: 'none', background: ledgerTab === 'reservation' ? '#ffffff' : 'transparent', fontWeight: ledgerTab === 'reservation' ? '700' : '500', color: ledgerTab === 'reservation' ? '#15803d' : 'var(--text-secondary)' }}
                       onClick={() => setLedgerFilterTab('reservation')}
                     >
                       🔒 Order Reservations ({orderResTxLines.length})

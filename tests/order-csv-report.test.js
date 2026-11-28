@@ -326,6 +326,7 @@ test('available stock drops archived, QC hold, and retired barcodes, then reserv
     inventory,
     inventoryRolls: rolls,
     retiredBarcodes,
+    stockReservationEnabled: true,
   });
   assert.equal(row['Order No'], 'ORD-LATE');
   assert.equal(row['RM Status'], 'Partially Available');

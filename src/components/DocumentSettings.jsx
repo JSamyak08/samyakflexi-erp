@@ -103,6 +103,11 @@ import {
   EXTRA_PRINT_PERCENT_SETTING,
   normalizeExtraPrintPercent,
 } from '../utils/extraPrintRule';
+import {
+  DEFAULT_STOCK_RESERVATION_ENABLED,
+  STOCK_RESERVATION_SETTING,
+  normalizeStockReservationEnabled,
+} from '../utils/stockReservation';
 
 export default function DocumentSettings({
   machines = [],
@@ -115,17 +120,24 @@ export default function DocumentSettings({
   onSavePrintingLeadDays,
   extraPrintPercent = DEFAULT_EXTRA_PRINT_PERCENT,
   onSaveExtraPrintPercent,
+  stockReservationEnabled = DEFAULT_STOCK_RESERVATION_ENABLED,
+  onSaveStockReservation,
 }) {
   // Navigation Sub-tab State
   const [activeTab, setActiveTab] = useState(urlParams?.tab || 'general');
   const [leadDaysInput, setLeadDaysInput] = useState(() => normalizePrintingLeadDays(printingLeadDays));
   const [extraPrintInput, setExtraPrintInput] = useState(() => normalizeExtraPrintPercent(extraPrintPercent));
+  const [stockReservationInput, setStockReservationInput] = useState(() => normalizeStockReservationEnabled(stockReservationEnabled));
+  const canEditStockReservation = isAdminRole(currentUser);
   useEffect(() => {
     setLeadDaysInput(normalizePrintingLeadDays(printingLeadDays));
   }, [printingLeadDays]);
   useEffect(() => {
     setExtraPrintInput(normalizeExtraPrintPercent(extraPrintPercent));
   }, [extraPrintPercent]);
+  useEffect(() => {
+    setStockReservationInput(normalizeStockReservationEnabled(stockReservationEnabled));
+  }, [stockReservationEnabled]);
   useEffect(() => {
     let active = true;
     fetchSystemSetting(PRINTING_LEAD_DAYS_SETTING)
@@ -997,6 +1009,48 @@ export default function DocumentSettings({
             <div style={{ marginTop: '16px' }}>
               <button type="submit" className="btn-primary">Save company profile</button>
             </div>
+          </form>
+          <form
+            className="glass-panel"
+            data-testid="stock-reservation-setting"
+            style={{ padding: '24px', marginBottom: '24px' }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!canEditStockReservation) return;
+              const next = normalizeStockReservationEnabled(stockReservationInput);
+              setStockReservationInput(next);
+              persistSetting(async () => {
+                if (onSaveStockReservation) return onSaveStockReservation(next);
+                await saveSystemSetting(STOCK_RESERVATION_SETTING, next);
+                return next;
+              });
+            }}
+          >
+            <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ fontSize: '1.05rem', fontWeight: '700', margin: 0 }}>Stock reservation for orders</h3>
+              <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
+                When this is off, available stock is the on-hand quantity. Orders do not reserve raw material, reserved badges stay hidden, and an issue, a plan, or another order is not held back because stock was reserved. Turning it on reserves stock for active orders again. Order and stock records are left as they are. Only Admin can change it.
+              </p>
+            </div>
+            <label htmlFor="stock-reservation-for-orders" style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 700 }}>
+              <input
+                id="stock-reservation-for-orders"
+                data-testid="stock-reservation-toggle"
+                type="checkbox"
+                checked={stockReservationInput}
+                disabled={!canEditStockReservation}
+                onChange={(event) => setStockReservationInput(event.target.checked)}
+              />
+              Stock reservation for orders
+            </label>
+            <p data-testid="stock-reservation-status" style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '10px 0 0' }}>
+              Currently {stockReservationInput ? 'on' : 'off'}. {canEditStockReservation ? 'Only Admin can change it.' : 'You can read this setting. Only Admin can change it.'}
+            </p>
+            {canEditStockReservation && (
+              <div style={{ marginTop: '16px' }}>
+                <button type="submit" className="btn-primary" data-testid="save-stock-reservation">Save stock reservation</button>
+              </div>
+            )}
           </form>
           {isAdminRole(currentUser) && (
             <form

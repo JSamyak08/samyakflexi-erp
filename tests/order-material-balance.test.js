@@ -78,7 +78,7 @@ test('shared requirement ids keep each order line on its own gross', () => {
     ]
   };
 
-  const stock = calculateOrderStockReservations([tashibo, doughnut], inventory, []);
+  const stock = calculateOrderStockReservations([tashibo, doughnut], inventory, [], { enabled: true });
   const pet = presentRequirementStock(
     doughnut.materialRequirements[0],
     stock.getReqStockInfo(doughnut.materialRequirements[0], doughnut.id)
@@ -129,7 +129,7 @@ test('an earlier order keeps the stock it reserved when a later order reuses the
     targetDeliveryDate: '2026-11-08',
     materialRequirements: [line('REQ-1', 'PET', 12, 710, 80)]
   };
-  const stock = calculateOrderStockReservations([later, earlier], inventory, []);
+  const stock = calculateOrderStockReservations([later, earlier], inventory, [], { enabled: true });
   const first = stock.getReqStockInfo(earlier.materialRequirements[0], earlier.id);
   const second = stock.getReqStockInfo(later.materialRequirements[0], later.id);
 

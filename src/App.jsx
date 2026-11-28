@@ -28,6 +28,11 @@ import {
   EXTRA_PRINT_PERCENT_SETTING,
   normalizeExtraPrintPercent,
 } from './utils/extraPrintRule';
+import {
+  DEFAULT_STOCK_RESERVATION_ENABLED,
+  STOCK_RESERVATION_SETTING,
+  normalizeStockReservationEnabled,
+} from './utils/stockReservation';
 import { loggedInActorLabel } from './utils/recordedPerson';
 import { calculateGSTBreakdown } from './utils/pdfHelpers';
 import { syncChallansForShipment, tareEditSummary } from './utils/deliveryChallanGuard';
@@ -583,6 +588,7 @@ export default function App() {
   const [orderCloseSettings, setOrderCloseSettings] = useState({ enabled: true, tolerancePct: 10 });
   const [printingLeadDays, setPrintingLeadDays] = useState(DEFAULT_PRINTING_LEAD_DAYS);
   const [extraPrintPercent, setExtraPrintPercent] = useState(DEFAULT_EXTRA_PRINT_PERCENT);
+  const [stockReservationEnabled, setStockReservationEnabled] = useState(DEFAULT_STOCK_RESERVATION_ENABLED);
   const [deadlineSummary, setDeadlineSummary] = useState(null);
   const [deadlineDigestReady, setDeadlineDigestReady] = useState(false);
   const deadlineDigestKeyRef = useRef('');
@@ -1852,6 +1858,7 @@ export default function App() {
           setOrderCloseSettings(loadedCloseSettings);
           setPrintingLeadDays(normalizePrintingLeadDays(allSettings[PRINTING_LEAD_DAYS_SETTING]));
           setExtraPrintPercent(normalizeExtraPrintPercent(allSettings[EXTRA_PRINT_PERCENT_SETTING]));
+          setStockReservationEnabled(normalizeStockReservationEnabled(allSettings[STOCK_RESERVATION_SETTING]));
         }
 
         const [indentRows, issueRows, consumableRows, storeRows, pressBoard] = await Promise.all([
@@ -2076,6 +2083,9 @@ export default function App() {
               }
               if (settings[EXTRA_PRINT_PERCENT_SETTING] !== undefined) {
                 setExtraPrintPercent(normalizeExtraPrintPercent(settings[EXTRA_PRINT_PERCENT_SETTING]));
+              }
+              if (settings[STOCK_RESERVATION_SETTING] !== undefined) {
+                setStockReservationEnabled(normalizeStockReservationEnabled(settings[STOCK_RESERVATION_SETTING]));
               }
             }
           }
@@ -3081,6 +3091,14 @@ export default function App() {
     setExtraPrintPercent(next);
     await saveSystemSetting(EXTRA_PRINT_PERCENT_SETTING, next);
     await logAudit('UPDATE', 'Settings', `Extra print percent is ${next}.`, EXTRA_PRINT_PERCENT_SETTING);
+    return next;
+  };
+
+  const handleSaveStockReservation = async (value) => {
+    const next = normalizeStockReservationEnabled(value);
+    await saveSystemSetting(STOCK_RESERVATION_SETTING, next);
+    setStockReservationEnabled(next);
+    await logAudit('UPDATE', 'Settings', `Stock reservation for orders is ${next ? 'on' : 'off'}.`, STOCK_RESERVATION_SETTING);
     return next;
   };
 
@@ -4655,6 +4673,7 @@ export default function App() {
     schedules,
     inventory,
     actor: loggedInActorLabel(currentUser) || 'Staff',
+    stockReservationEnabled: stockReservationEnabled === true,
     loadConfirmations: () => fetchOrderConfirmations().catch((error) => {
       reportBackgroundFailure(error, 'Order confirmations were not loaded. No OCN was amended.');
       return [];
@@ -6783,6 +6802,7 @@ export default function App() {
             onOrderDeadlineSaved={handleOrderDeadlineSaved}
             printingLeadDays={printingLeadDays}
             extraPrintPercent={extraPrintPercent}
+            stockReservationEnabled={stockReservationEnabled}
             reminderContext={printingDeadlineContext}
             printingDeadlineSummary={deadlineSummary}
             inventoryRolls={inventoryRolls}
@@ -6821,6 +6841,7 @@ export default function App() {
             onSaveInventoryItem={handleSaveInventoryItem}
             onUpdateInventory={handleUpdateInventory}
             onUpdateInventoryRolls={handleUpdateInventoryRolls}
+            stockReservationEnabled={stockReservationEnabled}
           />
         )}
 
@@ -6882,6 +6903,7 @@ export default function App() {
               if (Array.isArray(items)) setInventory(items);
               if (Array.isArray(rolls)) setInventoryRolls(rolls);
             }}
+            stockReservationEnabled={stockReservationEnabled}
           />
         )}
 
@@ -7146,6 +7168,8 @@ export default function App() {
             onSavePrintingLeadDays={handleSavePrintingLeadDays}
             extraPrintPercent={extraPrintPercent}
             onSaveExtraPrintPercent={handleSaveExtraPrintPercent}
+            stockReservationEnabled={stockReservationEnabled}
+            onSaveStockReservation={handleSaveStockReservation}
           />
         )}
 
