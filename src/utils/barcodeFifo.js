@@ -269,10 +269,59 @@ export function openBarcodeIsOverAged(fifo, category, settings) {
   return fifo.display.ageDays > categoryThresholdDays(category, settings);
 }
 
+function retiredBalanceStatus(status) {
+  return /reversed|written\s*off|deleted|\bvoid\b|cancelled/i.test(String(status || '').trim());
+}
+
+/**
+ * A `-BAL` tag holds the parent's leftover only while that tag is still a
+ * real split. A reversed, written-off, or 0 kg tag does not. The parent
+ * keeps its own available weight.
+ */
+function balanceChildStillHoldsLeftover(child) {
+  if (!child || retiredBalanceStatus(child.status)) return false;
+  const availableRaw = child.availableWeightKg ?? child.availableKg;
+  const hasAvailable = availableRaw !== undefined && availableRaw !== null && availableRaw !== '';
+  const available = hasAvailable ? Number(availableRaw) : null;
+  if (available != null && available > 0) return true;
+  const net = Number(child.netWeightKg ?? child.totalNetKg ?? 0) || 0;
+  return net > 0;
+}
+
 function childBalanceRoll(roll, rollsByCode) {
   const code = barcodeCode(roll);
   if (!code || !rollsByCode) return null;
-  return rollsByCode.get(`${code}-BAL`.toLowerCase()) || null;
+  const child = rollsByCode.get(`${code}-BAL`.toLowerCase()) || null;
+  return balanceChildStillHoldsLeftover(child) ? child : null;
+}
+
+function rollAvailableKg(roll) {
+  const raw = roll?.availableWeightKg ?? roll?.availableKg;
+  if (raw === undefined || raw === null || raw === '') return 0;
+  const number = Number(raw);
+  return Number.isFinite(number) ? number : 0;
+}
+
+/** In stock, with weight still on the roll. Reversed, written off, fully issued, and 0 kg stay out. */
+export function isListedInStockRoll(roll) {
+  if (!roll) return false;
+  const status = String(roll.status || '').trim();
+  if (status && /reversed|written\s*off|deleted|\bvoid\b|fully\s*(issued|consumed)|issued to /i.test(status)) return false;
+  return rollAvailableKg(roll) > 0;
+}
+
+/**
+ * Barcodes to show on the item FIFO tab.
+ * A live `-BAL` child owns the leftover, so that parent stays off the list.
+ * A reversed or empty `-BAL` child does not hide the parent.
+ */
+export function listInStockBarcodeFifos(itemIds, rolls, index) {
+  const byCode = rollsByBarcode(rolls);
+  return fifosForItemIds(itemIds, rolls, index).filter(({ roll }) => {
+    if (!isListedInStockRoll(roll)) return false;
+    if (childBalanceRoll(roll, byCode)) return false;
+    return true;
+  });
 }
 
 function roundKg(value) {
@@ -324,7 +373,8 @@ function returnedQty(roll, issues) {
 }
 
 function rawBalanceQty(roll, events, issues, rollsByCode) {
-  // The leftover lives on the -BAL barcode, so the parent balance is zero.
+  // A live -BAL child holds the leftover, so the parent balance is zero.
+  // A reversed or empty -BAL tag is ignored by childBalanceRoll.
   if (childBalanceRoll(roll, rollsByCode)) return 0;
   const issued = events.reduce((sum, event) => sum + (Number(event.qty) || 0), 0);
   const returned = returnedQty(roll, issues);

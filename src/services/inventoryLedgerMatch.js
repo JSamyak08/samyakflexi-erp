@@ -268,3 +268,67 @@ export function grnInwardLedgerEntries(grn, item, rolls = []) {
     };
   }).filter((entry) => entry.qty > 0 || entry.barcode);
 }
+
+/** Trim surrounding whitespace and trailing commas. Case is kept for the empty-state message. */
+export function ledgerSearchText(raw) {
+  let text = String(raw ?? '');
+  let previous = null;
+  while (text !== previous) {
+    previous = text;
+    text = text.trim().replace(/,+$/g, '');
+  }
+  return text;
+}
+
+function pushSearchToken(tokens, value) {
+  const text = String(value ?? '').trim();
+  if (text.length < 3) return;
+  if (tokens.some((token) => token.toLowerCase() === text.toLowerCase())) return;
+  tokens.push(text);
+}
+
+/** Names and codes that identify this ledger item. Micron and width are not identifiers. */
+export function ledgerItemSearchTokens(item) {
+  const tokens = [];
+  const pushRow = (row) => {
+    if (!row || typeof row !== 'object') return;
+    pushSearchToken(tokens, row.itemName || row.item_name);
+    pushSearchToken(tokens, row.itemCode || row.item_code);
+    pushSearchToken(tokens, row.id);
+    pushSearchToken(tokens, row.primaryId || row.primary_id);
+  };
+  pushRow(item);
+  (item?.allInventoryIds || []).forEach((id) => pushSearchToken(tokens, id));
+  (item?.subItems || []).forEach(pushRow);
+  return tokens;
+}
+
+/**
+ * The typed text is this item's own name or code, or it contains that name or code.
+ * Those searches belong to the whole ledger, not to a single row field.
+ */
+export function ledgerSearchCoversItem(raw, item) {
+  const query = ledgerSearchText(raw).toLowerCase();
+  if (!query) return false;
+  return ledgerItemSearchTokens(item).some((token) => {
+    const key = token.toLowerCase();
+    return query === key || query.includes(key);
+  });
+}
+
+export function ledgerLineMatchesSearch(line, raw, item) {
+  const query = ledgerSearchText(raw).toLowerCase();
+  if (!query) return true;
+  if (ledgerSearchCoversItem(raw, item)) return true;
+  const fields = [
+    line?.refNo,
+    line?.partyName,
+    line?.barcode,
+    line?.type,
+    line?.notes,
+    line?.orderId,
+    line?.stage,
+    line?.jobLink?.label
+  ];
+  return fields.some((value) => String(value ?? '').toLowerCase().includes(query));
+}
