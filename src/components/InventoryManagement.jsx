@@ -63,6 +63,7 @@ import {
   buildRollFifoIndex,
   fifosForItemIds,
   formatFifoAgeLabel,
+  listInStockBarcodeFifos,
   getItemInwardDate,
   parseDateFlexible,
   isFifoConsumeFirst,
@@ -75,7 +76,7 @@ import { notifyGRNPendingQC, notifyGRNQCVarianceModified } from '../services/ema
 import { selectOverdueGrns, sendQcOverdueAlert } from '../services/qcEscalationDigest';
 
 import { sanitizeInventoryItem, sanitizeGRN, formatFilmItemName, allocateGrnNumber, allocateOrderIdFromServer, loadDeletedBarcodes, findDeletedBarcodeHits, previewInventoryItemDelete, deleteInwardQcInspection, setInventoryRollAvailability } from '../services/supabaseDataService';
-import { grnInwardLedgerEntries, ledgerRowLink, ledgerRowRate, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
+import { grnInwardLedgerEntries, ledgerLineMatchesSearch, ledgerRowLink, ledgerRowRate, ledgerSearchText, rollBelongsOnItemLedger } from '../services/inventoryLedgerMatch';
 import { ledgerRollMeters, mapRollLedgerRow, materialCoveredByRollLedger, rollLedgerTransactions } from '../utils/rollLedger';
 import { isInventoryItemActive } from '../services/inventoryArchive';
 import { deletedBarcodeMessage, findRetiredBarcode, isRetiredBarcode } from '../utils/barcodeRegistry';
@@ -883,9 +884,14 @@ export default function InventoryManagement({
   const [ledgerFilterTab, setLedgerFilterTab] = useState('all'); // 'all', 'inward', 'usage', 'reconciliation'
   const [ledgerPanel, setLedgerPanel] = useState('ledger'); // 'ledger' | 'barcodes'
   const [ledgerSearchTerm, setLedgerSearchTerm] = useState('');
+  const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState(50);
 
   useEffect(() => {
     setLedgerPanel('ledger');
+    setLedgerSearchTerm('');
+    setLedgerFilterTab('all');
+    setLedgerCurrentPage(1);
   }, [selectedItemForPurchaseHistory]);
   const [deletedBarcodes, setDeletedBarcodes] = useState([]);
   const [selectedStockIds, setSelectedStockIds] = useState(() => new Set());
@@ -1661,10 +1667,6 @@ export default function InventoryManagement({
     }));
   }, [selectedInvItem, safeGrns, inventoryRolls]);
 
-
-  // Ledger Modal Pagination State
-  const [ledgerCurrentPage, setLedgerCurrentPage] = useState(1);
-  const [ledgerPageSize, setLedgerPageSize] = useState(50);
 
   const isAdmin = !currentUser || anyAssignedRole(currentUser, (_role, lower) => lower === 'admin' || lower === 'superadmin');
 
@@ -10239,21 +10241,14 @@ export default function InventoryManagement({
           if (ledgerFilterTab === 'pending_qc') return tx.isPendingQC;
           if (ledgerFilterTab === 'qc_hold') return tx.isRejected;
           if (ledgerFilterTab !== 'all' && tx.category !== ledgerFilterTab) return false;
-          if (ledgerSearchTerm.trim()) {
-            const q = ledgerSearchTerm.toLowerCase();
-            return (
-              (tx.refNo && tx.refNo.toLowerCase().includes(q)) ||
-              (tx.partyName && tx.partyName.toLowerCase().includes(q)) ||
-              (tx.barcode && String(tx.barcode).toLowerCase().includes(q)) ||
-              (tx.type && tx.type.toLowerCase().includes(q)) ||
-              (tx.notes && tx.notes.toLowerCase().includes(q)) ||
-              (tx.orderId && String(tx.orderId).toLowerCase().includes(q)) ||
-              (tx.stage && String(tx.stage).toLowerCase().includes(q)) ||
-              (tx.jobLink?.label && tx.jobLink.label.toLowerCase().includes(q))
-            );
-          }
-          return true;
+          return ledgerLineMatchesSearch(tx, ledgerSearchTerm, {
+            ...item,
+            allInventoryIds: ledgerSource.allInventoryIds,
+            primaryId: ledgerSource.primaryId,
+            subItems: ledgerSource.subItems
+          });
         });
+        const ledgerQueryText = ledgerSearchText(ledgerSearchTerm);
 
         const paginatedLedgerItems = displayLines.slice((ledgerCurrentPage - 1) * ledgerPageSize, ledgerCurrentPage * ledgerPageSize);
 
@@ -10277,8 +10272,7 @@ export default function InventoryManagement({
         const totalReservedOrdersQty = orderResTxLines.reduce((sum, tx) => sum + tx.outwardQtyKg, 0);
         const netAvailableBalance = Math.max(0, runningStock);
 
-        const inStockBarcodeFifos = fifosForItemIds(item.allInventoryIds || [item.id], inventoryRolls, rollFifoIndex)
-          .filter(({ fifo }) => Number(fifo?.balanceQty) > 0);
+        const inStockBarcodeFifos = listInStockBarcodeFifos(item.allInventoryIds || [item.id], inventoryRolls, rollFifoIndex);
         const closeItemLedger = () => setSelectedItemForPurchaseHistory(null);
 
         return (
@@ -10607,8 +10601,12 @@ export default function InventoryManagement({
                     className="form-control"
                     style={{ paddingLeft: '32px', paddingRight: '10px', paddingTop: '8px', paddingBottom: '8px', fontSize: '0.85rem', width: '100%' }}
                     placeholder="Search by Barcode, Job, GRN or Vendor..."
+                    data-testid="ledger-search"
                     value={ledgerSearchTerm}
-                    onChange={e => setLedgerSearchTerm(e.target.value)}
+                    onChange={e => {
+                      setLedgerSearchTerm(e.target.value);
+                      setLedgerCurrentPage(1);
+                    }}
                   />
                 </div>
 
@@ -10701,7 +10699,25 @@ export default function InventoryManagement({
                     {paginatedLedgerItems.length === 0 ? (
                       <tr>
                         <td colSpan="10" style={{ textAlign: 'center', padding: '32px', color: 'var(--text-muted)' }}>
-                          No transaction records found matching the filter criteria.
+                          {ledgerQueryText && displayLines.length === 0 ? (
+                            <div data-testid="ledger-search-empty">
+                              <div>No rows match '{ledgerQueryText}'</div>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                data-testid="ledger-search-clear"
+                                style={{ marginTop: '10px', padding: '6px 12px', fontSize: '0.8rem', fontWeight: '700' }}
+                                onClick={() => {
+                                  setLedgerSearchTerm('');
+                                  setLedgerCurrentPage(1);
+                                }}
+                              >
+                                Clear search
+                              </button>
+                            </div>
+                          ) : (
+                            'No transaction records found matching the filter criteria.'
+                          )}
                         </td>
                       </tr>
                     ) : (

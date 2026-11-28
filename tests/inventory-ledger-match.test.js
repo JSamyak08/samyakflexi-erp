@@ -1,10 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   grnInwardLedgerEntries,
   grnQcDecision,
+  ledgerLineMatchesSearch,
   ledgerRowLink,
   ledgerRowRate,
+  ledgerSearchCoversItem,
+  ledgerSearchText,
   rollBelongsOnItemLedger
 } from '../src/services/inventoryLedgerMatch.js';
 
@@ -216,6 +220,64 @@ test('the GRN id fallback lists receipt rolls and leaves the balance roll off', 
   assert.equal(listedBarcodes(entry).includes(balanceCode), false);
   assert.equal(entry.rollCount, 8);
   assert.equal(entry.qty, 1499.4);
+});
+
+const mgp = {
+  id: 'INVT-0127',
+  itemCode: 'INVT-0127',
+  itemName: 'MGP-1035-50',
+  primaryId: 'INVT-0127'
+};
+
+function ledgerRow(overrides = {}) {
+  return {
+    refNo: 'RM-BC-20261029-19458AZ0',
+    partyName: 'Opening',
+    barcode: 'RM-BC-20261029-19458AZ0',
+    type: 'Opening Stock Receipt',
+    notes: 'Opening stock receipt per roll',
+    orderId: '',
+    stage: '',
+    ...overrides
+  };
+}
+
+test('ledger search trims whitespace and trailing commas', () => {
+  assert.equal(ledgerSearchText('  MGP-1035-50,  '), 'MGP-1035-50');
+  assert.equal(ledgerSearchText(' INVT-0127 , '), 'INVT-0127');
+  assert.equal(ledgerSearchText('keep, this,'), 'keep, this');
+});
+
+test('a search of the current item name or code matches every row of that item', () => {
+  const row = ledgerRow();
+  assert.equal(ledgerSearchCoversItem('MGP-1035-50,', mgp), true);
+  assert.equal(ledgerSearchCoversItem('  INVT-0127, ', mgp), true);
+  assert.equal(ledgerSearchCoversItem('lot INVT-0127 extra', mgp), true);
+  assert.equal(ledgerLineMatchesSearch(row, 'MGP-1035-50,', mgp), true);
+  assert.equal(ledgerLineMatchesSearch(row, 'INVT-0127', mgp), true);
+  assert.equal(ledgerSearchCoversItem('50', mgp), false);
+  assert.equal(ledgerSearchCoversItem('MGP', mgp), false);
+});
+
+test('a search that is not this item still filters by ref, vendor, barcode, and job', () => {
+  const row = ledgerRow();
+  const other = ledgerRow({ barcode: 'RM-OTHER', refNo: 'RM-OTHER', notes: 'other' });
+  assert.equal(ledgerLineMatchesSearch(row, '19458AZ0', mgp), true);
+  assert.equal(ledgerLineMatchesSearch(other, '19458AZ0', mgp), false);
+  assert.equal(ledgerLineMatchesSearch(row, '   ', mgp), true);
+  assert.equal(ledgerLineMatchesSearch(ledgerRow({ jobLink: { label: 'Job 44' } }), 'job 44', mgp), true);
+});
+
+test('the ledger modal clears a carried search when the item changes', () => {
+  const source = fs.readFileSync(new URL('../src/components/InventoryManagement.jsx', import.meta.url), 'utf8');
+  const effect = source.slice(source.indexOf("setLedgerPanel('ledger')"), source.indexOf("setLedgerPanel('ledger')") + 280);
+  assert.match(effect, /setLedgerSearchTerm\(''\)/);
+  assert.match(effect, /setLedgerFilterTab\('all'\)/);
+  assert.match(effect, /setLedgerCurrentPage\(1\)/);
+  assert.match(effect, /selectedItemForPurchaseHistory/);
+  assert.match(source, /No rows match '/);
+  assert.match(source, /Clear search/);
+  assert.match(source, /listInStockBarcodeFifos/);
 });
 
 test('a deleted roll is not ledger stock, and a row keeps its own rate', () => {

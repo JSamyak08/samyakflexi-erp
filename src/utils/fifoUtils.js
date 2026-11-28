@@ -160,6 +160,8 @@ export {
   formatFifoAgeLabel,
   isBalanceBarcode,
   isFifoConsumeFirst,
+  isListedInStockRoll,
+  listInStockBarcodeFifos,
   newerBarcodeWarning,
   openBarcodeIsOverAged,
   rollsByBarcode
