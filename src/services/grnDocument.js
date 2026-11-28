@@ -694,6 +694,107 @@ export function qcDraftFromLine(line) {
   };
 }
 
+/**
+ * Calculates physical measurement variances for an individual inward item/line between its
+ * original store inward values and the QC verified values.
+ *
+ * Prevents comparing an individual item against the entire GRN's total quantity.
+ */
+export function calculateItemQcVariances(originalItem, verifiedValues) {
+  if (!originalItem || !verifiedValues) return [];
+  const diffs = [];
+  const itemName = originalItem.itemName || (originalItem.lineNo ? `Item ${originalItem.lineNo}` : 'Item');
+
+  // 1. Inward Net Weight (Kg)
+  const origNet = round2(asNumber(originalItem.netWeightKg ?? originalItem.receivedQtyKg, 0));
+  const newNet = round2(asNumber(verifiedValues.netWeightKg, 0));
+  if (Math.abs(origNet - newNet) > 0.05) {
+    const diffVal = Number((newNet - origNet).toFixed(2));
+    diffs.push({
+      field: 'netWeightKg',
+      label: 'Inward Net Weight',
+      item: itemName,
+      oldVal: `${origNet} kg`,
+      newVal: `${newNet} kg`,
+      diff: `${diffVal > 0 ? '+' : ''}${diffVal} kg (${((diffVal / (origNet || 1)) * 100).toFixed(1)}%)`
+    });
+  }
+
+  // 2. Width (mm)
+  const origWidth = asNumber(originalItem.widthMm, 0);
+  const newWidth = asNumber(verifiedValues.widthMm, 0);
+  if (origWidth > 0 && newWidth > 0 && Math.abs(origWidth - newWidth) > 0.1) {
+    const diffVal = Number((newWidth - origWidth).toFixed(1));
+    diffs.push({
+      field: 'widthMm',
+      label: 'Width (mm)',
+      item: itemName,
+      oldVal: `${origWidth} mm`,
+      newVal: `${newWidth} mm`,
+      diff: `${diffVal > 0 ? '+' : ''}${diffVal} mm`
+    });
+  }
+
+  // 3. Thickness / Micron (µ)
+  const origMicron = asNumber(originalItem.micron, 0);
+  const newMicron = asNumber(verifiedValues.micron, 0);
+  if (origMicron > 0 && newMicron > 0 && Math.abs(origMicron - newMicron) > 0.1) {
+    const diffVal = Number((newMicron - origMicron).toFixed(1));
+    diffs.push({
+      field: 'micron',
+      label: 'Thickness / Micron',
+      item: itemName,
+      oldVal: `${origMicron} µ`,
+      newVal: `${newMicron} µ`,
+      diff: `${diffVal > 0 ? '+' : ''}${diffVal} µ`
+    });
+  }
+
+  // 4. Manufacturer Batch #
+  const origBatch = String(originalItem.batchNo || '').trim();
+  const newBatch = String(verifiedValues.batchNo || '').trim();
+  if (origBatch && newBatch && origBatch !== newBatch) {
+    diffs.push({
+      field: 'batchNo',
+      label: 'Manufacturer Batch #',
+      item: itemName,
+      oldVal: origBatch,
+      newVal: newBatch,
+      diff: 'Modified'
+    });
+  }
+
+  // 5. Film Substrate
+  const origFilm = String(originalItem.filmType || '').trim();
+  const newFilm = String(verifiedValues.filmType || '').trim();
+  if (origFilm && newFilm && origFilm !== newFilm) {
+    diffs.push({
+      field: 'filmType',
+      label: 'Film Substrate',
+      item: itemName,
+      oldVal: origFilm,
+      newVal: newFilm,
+      diff: 'Changed'
+    });
+  }
+
+  // 6. Packages / Rolls Count
+  const origRolls = parseInt(originalItem.rollsReceived, 10) || (Array.isArray(originalItem.rolls) ? originalItem.rolls.length : (Array.isArray(originalItem.itemsBreakdown) ? originalItem.itemsBreakdown.length : 1));
+  const newRollsCount = parseInt(verifiedValues.rollsReceived, 10) || (Array.isArray(verifiedValues.itemsBreakdown) ? verifiedValues.itemsBreakdown.length : (Array.isArray(verifiedValues.rolls) ? verifiedValues.rolls.length : 1));
+  if (origRolls !== newRollsCount) {
+    diffs.push({
+      field: 'rollsReceived',
+      label: 'Packages / Rolls Count',
+      item: itemName,
+      oldVal: `${origRolls}`,
+      newVal: `${newRollsCount}`,
+      diff: `${newRollsCount - origRolls > 0 ? '+' : ''}${newRollsCount - origRolls}`
+    });
+  }
+
+  return diffs;
+}
+
 export function applyMultiLineQc({ grn, draftsByLineId, status, formatFilmItemName, isMetalloceneEligibleFilm, calculateFilmRollLength }) {
   const approved = status === 'Approved';
   const lines = Array.isArray(grn?.lineItems) ? grn.lineItems : [];

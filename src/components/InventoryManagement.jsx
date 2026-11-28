@@ -102,6 +102,7 @@ import {
   planCapturedReceiptLink,
   prepareMultiLineReceipt,
   qcDraftFromLine,
+  calculateItemQcVariances,
   receiptLinesLinkError,
   validateCapturedLines
 } from '../services/grnDocument';
@@ -754,94 +755,65 @@ export default function InventoryManagement({
     }
   }, [qcInspectingGRN]);
 
+  const qcActiveLine = useMemo(() => {
+    if (!qcInspectingGRN) return null;
+    const lines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
+    if (lines.length === 0) return null;
+    if (qcActiveLineId) {
+      return lines.find((l) => l.id === qcActiveLineId) || lines[0];
+    }
+    return lines[0];
+  }, [qcInspectingGRN, qcActiveLineId]);
+
+  const qcActiveTarget = qcActiveLine || qcInspectingGRN;
+
+  // Physical measurement variances for the currently selected item/line against ITS inward quantity
   const qcVariances = useMemo(() => {
+    if (!qcInspectingGRN || !qcActiveTarget) return [];
+    return calculateItemQcVariances(qcActiveTarget, {
+      netWeightKg: qcEditNetWeightKg,
+      widthMm: qcEditWidthMm,
+      micron: qcEditMicron,
+      batchNo: qcEditBatchNo,
+      filmType: qcEditFilmType,
+      rollsReceived: qcEditRollsReceived,
+      itemsBreakdown: qcEditItemsBreakdown
+    });
+  }, [qcActiveTarget, qcEditNetWeightKg, qcEditWidthMm, qcEditMicron, qcEditBatchNo, qcEditFilmType, qcEditRollsReceived, qcEditItemsBreakdown]);
+
+  // Aggregate variances across all items for multi-line GRNs
+  const allQcLineVariances = useMemo(() => {
     if (!qcInspectingGRN) return [];
-    const diffs = [];
-    const orig = qcInspectingGRN;
-    
-    // 1. Net Weight
-    const origNet = parseFloat(orig.netWeightKg) || 0;
-    const newNet = parseFloat(qcEditNetWeightKg) || 0;
-    if (Math.abs(origNet - newNet) > 0.05) {
-      const diffVal = Number((newNet - origNet).toFixed(2));
-      diffs.push({
-        field: 'netWeightKg',
-        label: 'Inward Net Weight',
-        oldVal: `${origNet} kg`,
-        newVal: `${newNet} kg`,
-        diff: `${diffVal > 0 ? '+' : ''}${diffVal} kg (${((diffVal / (origNet || 1)) * 100).toFixed(1)}%)`
-      });
+    const lines = Array.isArray(qcInspectingGRN.lineItems) ? qcInspectingGRN.lineItems : [];
+    if (lines.length <= 1) {
+      return qcVariances;
     }
-
-    // 2. Width (mm)
-    const origWidth = parseFloat(orig.widthMm) || 0;
-    const newWidth = parseFloat(qcEditWidthMm) || 0;
-    if (origWidth > 0 && newWidth > 0 && Math.abs(origWidth - newWidth) > 0.1) {
-      const diffVal = Number((newWidth - origWidth).toFixed(1));
-      diffs.push({
-        field: 'widthMm',
-        label: 'Width (mm)',
-        oldVal: `${origWidth} mm`,
-        newVal: `${newWidth} mm`,
-        diff: `${diffVal > 0 ? '+' : ''}${diffVal} mm`
+    const result = [];
+    lines.forEach((line) => {
+      const draft = line.id === qcActiveLineId
+        ? {
+            netWeightKg: qcEditNetWeightKg,
+            widthMm: qcEditWidthMm,
+            micron: qcEditMicron,
+            batchNo: qcEditBatchNo,
+            filmType: qcEditFilmType,
+            rollsReceived: qcEditRollsReceived,
+            itemsBreakdown: qcEditItemsBreakdown
+          }
+        : (qcLineDrafts[line.id] || qcDraftFromLine(line));
+      const diffs = calculateItemQcVariances(line, draft);
+      diffs.forEach((d) => {
+        result.push({
+          ...d,
+          lineId: line.id,
+          lineNo: line.lineNo,
+          itemName: line.itemName,
+          itemPrefix: `Item ${line.lineNo} (${line.itemName || 'Item'})`
+        });
       });
-    }
-
-    // 3. Micron (µ)
-    const origMicron = parseFloat(orig.micron) || 0;
-    const newMicron = parseFloat(qcEditMicron) || 0;
-    if (origMicron > 0 && newMicron > 0 && Math.abs(origMicron - newMicron) > 0.1) {
-      const diffVal = Number((newMicron - origMicron).toFixed(1));
-      diffs.push({
-        field: 'micron',
-        label: 'Thickness / Micron',
-        oldVal: `${origMicron} µ`,
-        newVal: `${newMicron} µ`,
-        diff: `${diffVal > 0 ? '+' : ''}${diffVal} µ`
-      });
-    }
-
-    // 4. Batch Number
-    const origBatch = String(orig.batchNo || '').trim();
-    const newBatch = String(qcEditBatchNo || '').trim();
-    if (origBatch && newBatch && origBatch !== newBatch) {
-      diffs.push({
-        field: 'batchNo',
-        label: 'Manufacturer Batch #',
-        oldVal: origBatch,
-        newVal: newBatch,
-        diff: 'Modified'
-      });
-    }
-
-    // 5. Film Substrate
-    const origFilm = String(orig.filmType || '').trim();
-    const newFilm = String(qcEditFilmType || '').trim();
-    if (origFilm && newFilm && origFilm !== newFilm) {
-      diffs.push({
-        field: 'filmType',
-        label: 'Film Substrate',
-        oldVal: origFilm,
-        newVal: newFilm,
-        diff: 'Changed'
-      });
-    }
-
-    // 6. Rolls Received
-    const origRolls = parseInt(orig.rollsReceived, 10) || 1;
-    const newRollsCount = parseInt(qcEditRollsReceived, 10) || 1;
-    if (origRolls !== newRollsCount) {
-      diffs.push({
-        field: 'rollsReceived',
-        label: 'Packages / Rolls Count',
-        oldVal: `${origRolls}`,
-        newVal: `${newRollsCount}`,
-        diff: `${newRollsCount - origRolls > 0 ? '+' : ''}${newRollsCount - origRolls}`
-      });
-    }
-
-    return diffs;
-  }, [qcInspectingGRN, qcEditNetWeightKg, qcEditWidthMm, qcEditMicron, qcEditBatchNo, qcEditFilmType, qcEditRollsReceived]);
+    });
+    return result;
+  }, [qcInspectingGRN, qcActiveLineId, qcLineDrafts, qcVariances, qcEditNetWeightKg, qcEditWidthMm, qcEditMicron, qcEditBatchNo, qcEditFilmType, qcEditRollsReceived, qcEditItemsBreakdown]);
 
   // Updatable Barcodes & Stock Ledger Adjustments state
   const [customBarcodesMap, setCustomBarcodesMap] = useState({});
@@ -3735,11 +3707,22 @@ export default function InventoryManagement({
         calculateFilmRollLength
       });
       const inspectorName = loggedInActorLabel(currentUser);
+      const inspectionNowIso = new Date().toISOString();
       updatedGRN.qcNotes = qcNotesInput || (isApproved
         ? 'Inspected and passed all laboratory parameters.'
         : 'Rejected in QC Approval Lab due to spec variation. Transferred to QC Hold Store.');
       updatedGRN.inspectedBy = inspectorName;
-      updatedGRN.qcVerifiedAt = new Date().toISOString();
+      updatedGRN.qcVerifiedAt = inspectionNowIso;
+
+      const hasVariances = allQcLineVariances && allQcLineVariances.length > 0;
+      updatedGRN.qcVarianceDetected = hasVariances;
+      updatedGRN.qcVarianceLog = hasVariances
+        ? allQcLineVariances.map((v) => ({
+            ...v,
+            label: `${v.itemPrefix}: ${v.label}`
+          }))
+        : (qcInspectingGRN.qcVarianceLog || null);
+
       let savedGrn = null;
       try {
         if (onUpdateGRN) savedGrn = await onUpdateGRN(updatedGRN);
@@ -3771,6 +3754,47 @@ export default function InventoryManagement({
           await onSaveInventoryItem(item);
         }
       }
+
+      // IF EDITS WERE MADE: Notify Admin and other concerned roles
+      if (hasVariances) {
+        notifyGRNQCVarianceModified({
+          grn: updatedGRN,
+          originalDetails: {
+            netWeightKg: qcInspectingGRN.netWeightKg,
+            grossWeightKg: qcInspectingGRN.grossWeightKg,
+            tareWeightKg: qcInspectingGRN.tareWeightKg,
+            rollsReceived: qcInspectingGRN.rollsReceived
+          },
+          updatedDetails: {
+            netWeightKg: updatedGRN.netWeightKg,
+            grossWeightKg: updatedGRN.grossWeightKg,
+            tareWeightKg: updatedGRN.tareWeightKg,
+            rollsReceived: updatedGRN.rollsReceived
+          },
+          variances: updatedGRN.qcVarianceLog,
+          editedBy: inspectorName,
+          actionStatus: status,
+          reason: qcNotesInput || 'Quality physical verification & laboratory measurement',
+          users
+        }).catch((err) => console.warn('[QC Variance Notification] Failed:', err));
+
+        const newAlert = {
+          id: `notif-${Date.now()}`,
+          type: 'QC_VARIANCE_MODIFIED',
+          title: `GRN #${updatedGRN.grnNo} Inward Specs Corrected in QC Lab`,
+          message: `${inspectorName} adjusted inward parameters (${updatedGRN.qcVarianceLog.map((v) => `${v.label}: ${v.oldVal} ➔ ${v.newVal}`).join(', ')}) upon physical lab inspection and marked as ${status}.`,
+          grnNo: updatedGRN.grnNo,
+          timestamp: inspectionNowIso,
+          read: false
+        };
+        try {
+          const existingAlerts = await fetchPayloadRecords(supabase, 'erp_notifications');
+          await replacePayloadRecords(supabase, 'erp_notifications', [newAlert, ...(existingAlerts || []).filter((item) => item.id !== newAlert.id)].slice(0, 50));
+        } catch (err) {
+          console.warn('[QC Variance In-App Alert] Save failed:', err);
+        }
+      }
+
       setQcInspectingGRN(null);
       setQcNotesInput('');
       alert(isApproved
@@ -8242,24 +8266,35 @@ export default function InventoryManagement({
               </div>
               {Array.isArray(qcInspectingGRN.lineItems) && qcInspectingGRN.lineItems.length > 1 && (
                 <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', margin: '0 0 12px' }}>
-                  {qcInspectingGRN.lineItems.map((line) => (
-                    <button
-                      key={line.id}
-                      type="button"
-                      onClick={() => switchQcLine(line.id)}
-                      style={{
-                        border: line.id === qcActiveLineId ? '2px solid #059669' : '1px solid #cbd5e1',
-                        background: line.id === qcActiveLineId ? '#ecfdf5' : '#fff',
-                        borderRadius: '8px',
-                        padding: '6px 10px',
-                        fontSize: '0.75rem',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Item {line.lineNo}: {line.itemName}
-                    </button>
-                  ))}
+                  {qcInspectingGRN.lineItems.map((line) => {
+                    const lineHasVariance = allQcLineVariances.some((v) => v.lineId === line.id);
+                    return (
+                      <button
+                        key={line.id}
+                        type="button"
+                        onClick={() => switchQcLine(line.id)}
+                        style={{
+                          border: line.id === qcActiveLineId ? '2px solid #059669' : (lineHasVariance ? '1px solid #f59e0b' : '1px solid #cbd5e1'),
+                          background: line.id === qcActiveLineId ? '#ecfdf5' : (lineHasVariance ? '#fffbeb' : '#fff'),
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                          fontSize: '0.75rem',
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        <span>Item {line.lineNo}: {line.itemName}</span>
+                        {lineHasVariance && (
+                          <span style={{ fontSize: '0.68rem', color: '#b45309', background: '#fef3c7', padding: '1px 5px', borderRadius: '4px' }}>
+                            ⚠️ Modified
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               <button type="button" className="modal-close-btn" onClick={() => setQcInspectingGRN(null)}>
@@ -8347,24 +8382,39 @@ export default function InventoryManagement({
                       <AlertTriangle size={18} style={{ color: '#d97706', flexShrink: 0 }} />
                       <div>
                         <strong style={{ color: '#92400e', fontSize: '0.9rem' }}>
-                          Physical Measurement Variance Detected ({qcVariances.length} parameter{qcVariances.length > 1 ? 's' : ''} modified)
+                          Physical Measurement Variance Detected{qcActiveLine && Array.isArray(qcInspectingGRN.lineItems) && qcInspectingGRN.lineItems.length > 1 ? ` for Item ${qcActiveLine.lineNo}: ${qcActiveLine.itemName}` : ''} ({qcVariances.length} parameter{qcVariances.length > 1 ? 's' : ''} modified)
                         </strong>
                         <p style={{ margin: '2px 0 0 0', fontSize: '0.76rem', color: '#78350f' }}>
-                          The verified lab values differ from original store inward entries. On approval, stock will reflect verified values and Admin & Store will be notified automatically.
+                          The verified lab values differ from original store inward entries for this item. On approval, stock will reflect verified values and Admin & Store will be notified automatically.
                         </p>
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => {
-                        setQcEditNetWeightKg(qcInspectingGRN.netWeightKg !== undefined ? qcInspectingGRN.netWeightKg : '');
-                        setQcEditGrossWeightKg(qcInspectingGRN.grossWeightKg !== undefined ? qcInspectingGRN.grossWeightKg : '');
-                        setQcEditTareWeightKg(qcInspectingGRN.tareWeightKg !== undefined ? qcInspectingGRN.tareWeightKg : '');
-                        setQcEditWidthMm(qcInspectingGRN.widthMm !== '-' && qcInspectingGRN.widthMm !== undefined ? qcInspectingGRN.widthMm : '');
-                        setQcEditMicron(qcInspectingGRN.micron !== '-' && qcInspectingGRN.micron !== undefined ? qcInspectingGRN.micron : '');
-                        setQcEditBatchNo(qcInspectingGRN.batchNo || '');
-                        setQcEditFilmType(qcInspectingGRN.filmType || 'PET');
-                        setQcEditRollsReceived(qcInspectingGRN.rollsReceived || 1);
+                        const target = qcActiveTarget;
+                        if (!target) return;
+                        setQcEditNetWeightKg(target.netWeightKg !== undefined ? target.netWeightKg : '');
+                        setQcEditGrossWeightKg(target.grossWeightKg !== undefined ? target.grossWeightKg : '');
+                        setQcEditTareWeightKg(target.tareWeightKg !== undefined ? target.tareWeightKg : '');
+                        setQcEditWidthMm(target.widthMm !== '-' && target.widthMm !== undefined ? target.widthMm : '');
+                        setQcEditMicron(target.micron !== '-' && target.micron !== undefined ? target.micron : '');
+                        setQcEditBatchNo(target.batchNo || '');
+                        setQcEditFilmType(target.filmType || 'PET');
+                        const rollCount = target.rollsReceived || (Array.isArray(target.rolls) ? target.rolls.length : (Array.isArray(target.itemsBreakdown) ? target.itemsBreakdown.length : 1));
+                        setQcEditRollsReceived(rollCount);
+                        const origBreakdown = Array.isArray(target.rolls) && target.rolls.length > 0
+                          ? target.rolls.map((r, i) => ({ ...r, unitNo: r.unitNo || i + 1 }))
+                          : (Array.isArray(target.itemsBreakdown) && target.itemsBreakdown.length > 0
+                              ? target.itemsBreakdown.map((r, i) => ({ ...r, unitNo: r.unitNo || i + 1 }))
+                              : []);
+                        setQcEditItemsBreakdown(origBreakdown);
+                        if (qcActiveLineId) {
+                          setQcLineDrafts((prev) => ({
+                            ...prev,
+                            [qcActiveLineId]: qcDraftFromLine(target)
+                          }));
+                        }
                       }}
                       style={{
                         background: '#ffffff',

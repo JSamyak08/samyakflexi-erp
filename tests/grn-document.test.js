@@ -13,6 +13,7 @@ import {
   pdfLinesFromGrn,
   pendingQcKgForItem,
   prepareMultiLineReceipt,
+  calculateItemQcVariances,
   rollBarcode,
   summarizeReceiptLines,
   taxableAmountFromLines
@@ -394,4 +395,67 @@ test('a single-line QC approval leaves the balance roll untouched and keeps R1 t
   assert.equal(balance.barcodeId, balanceCode);
   assert.equal(balance.netWeightKg, 158.08);
   assert.equal(balance.availableWeightKg, 158.08);
+});
+
+test('calculateItemQcVariances computes variance against the specific item quantity, not total GRN inward quantity', () => {
+  // Scenario matching user screenshot: GRN total net weight is 2193.2 kg across 3 items.
+  // Item 1 (MATTA-685-90) itself has 518.8 kg and 4 rolls.
+  const item1 = {
+    id: 'GRN-220-L1',
+    lineNo: 1,
+    itemName: 'MATTA-685-90',
+    filmType: 'MATTA',
+    widthMm: 685,
+    micron: 90,
+    netWeightKg: 518.8,
+    grossWeightKg: 518.8,
+    tareWeightKg: 0,
+    rollsReceived: 4,
+    batchNo: '4370',
+    rolls: [
+      { unitNo: 1, netWeightKg: 129.8 },
+      { unitNo: 2, netWeightKg: 129.2 },
+      { unitNo: 3, netWeightKg: 129.6 },
+      { unitNo: 4, netWeightKg: 130.2 }
+    ]
+  };
+
+  // 1. When QC verified values match Item 1's inward specifications:
+  // Must return 0 variances (no false warning against total 2193.2 kg!)
+  const untouchedDraft = {
+    netWeightKg: 518.8,
+    widthMm: 685,
+    micron: 90,
+    batchNo: '4370',
+    filmType: 'MATTA',
+    rollsReceived: 4,
+    itemsBreakdown: item1.rolls
+  };
+  const diffsUntouched = calculateItemQcVariances(item1, untouchedDraft);
+  assert.equal(diffsUntouched.length, 0, 'No variance should be detected when verified values match item inward specifications');
+
+  // 2. When Item 1's quantity is changed during QC approval (e.g. 518.8 kg -> 510.0 kg):
+  // Variance MUST be calculated against Item 1's 518.8 kg (-8.8 kg), NOT against 2193.2 kg!
+  const modifiedDraft = {
+    ...untouchedDraft,
+    netWeightKg: 510.0
+  };
+  const diffsModified = calculateItemQcVariances(item1, modifiedDraft);
+  assert.equal(diffsModified.length, 1);
+  assert.equal(diffsModified[0].field, 'netWeightKg');
+  assert.equal(diffsModified[0].oldVal, '518.8 kg');
+  assert.equal(diffsModified[0].newVal, '510 kg');
+  assert.equal(diffsModified[0].diff, '-8.8 kg (-1.7%)');
+
+  // 3. When packages / rolls count is changed on Item 1 (e.g. 4 rolls -> 3 rolls):
+  const rollsModifiedDraft = {
+    ...untouchedDraft,
+    rollsReceived: 3
+  };
+  const diffsRolls = calculateItemQcVariances(item1, rollsModifiedDraft);
+  assert.equal(diffsRolls.length, 1);
+  assert.equal(diffsRolls[0].field, 'rollsReceived');
+  assert.equal(diffsRolls[0].oldVal, '4');
+  assert.equal(diffsRolls[0].newVal, '3');
+  assert.equal(diffsRolls[0].diff, '-1');
 });
